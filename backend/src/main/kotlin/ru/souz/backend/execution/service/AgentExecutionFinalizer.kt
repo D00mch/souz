@@ -1,7 +1,6 @@
 package ru.souz.backend.execution.service
 
 import io.ktor.http.HttpStatusCode
-import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -15,10 +14,8 @@ import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
 import ru.souz.backend.agent.runtime.BackendConversationTurnException
 import ru.souz.backend.agent.runtime.BackendConversationTurnOutcome
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
-import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.agent.session.AgentStateConflictException
-import ru.souz.backend.agent.session.AgentStateRepository
-import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.agent.session.toState
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -29,13 +26,10 @@ import ru.souz.backend.http.BackendV1Exception
 import ru.souz.llms.LLMResponse
 
 internal class AgentExecutionFinalizer(
-    agentStateRepository: AgentStateRepository,
-    private val chatRepository: ChatRepository,
     private val executionRepository: AgentExecutionRepository,
     private val turnRunner: BackendConversationTurnRunner,
-    private val clientThreadRegistry: ClientThreadRuntimeRegistry? = null,
+    private val clientThreadRegistry: ClientThreadRuntimeRegistry,
 ) {
-    private val sessionRepository = AgentStateBackedSessionRepository(agentStateRepository)
     private val logger = LoggerFactory.getLogger(AgentExecutionFinalizer::class.java)
 
     suspend fun runExecution(
@@ -59,122 +53,67 @@ internal class AgentExecutionFinalizer(
                 )
             }
             currentCoroutineContext().ensureActive()
-            return when (executionOutcome) {
-                is BackendConversationTurnOutcome.Completed -> persistSuccessfulExecution(
-                    execution = execution,
-                    executionOutcome = executionOutcome,
-                    conversationKey = conversationKey,
-                    eventSink = eventSink,
-                )
-
-                is BackendConversationTurnOutcome.WaitingOption -> persistWaitingOptionExecution(
-                    execution = execution,
-                    executionOutcome = executionOutcome,
-                    conversationKey = conversationKey,
-                )
-            }
+            return if (executionOutcome is BackendConversationTurnOutcome.Completed) {
+                withContext(NonCancellable) {
+                    val persisted = clientThreadRegistry.withTerminalTransition(execution.id) {
+                        persistTurn(execution, executionOutcome, conversationKey, eventSink)
+                    }
+                    eventSink.emitTerminal(persisted)
+                    persisted
+                }
+            } else persistTurn(execution, executionOutcome, conversationKey, eventSink)
         } catch (e: CancellationException) {
-            cancelExecution(execution, eventSink)
+            throw e
         } catch (e: Exception) {
             failExecution(execution, eventSink, e)
         }
     }
 
     suspend fun finalizeCancelledExecutionIfNeeded(
-        executionId: UUID,
-        userId: String,
-        chatId: UUID,
+        execution: AgentExecution,
         eventSink: BackendAgentRuntimeEventSink,
-    ) {
-        val currentExecution = executionRepository.getByChat(userId, chatId, executionId) ?: return
-        if (!currentExecution.status.isActive() || currentExecution.status == AgentExecutionStatus.WAITING_OPTION) return
-        markCancelled(
-            executionId = executionId,
-            userId = userId,
-            chatId = chatId,
-            usage = currentExecution.usage,
-        )
-        eventSink.emitExecutionCancelled()
+    ): AgentExecution? = withContext(NonCancellable) {
+        val current = executionRepository.getByChat(execution.userId, execution.chatId, execution.id)
+            ?: return@withContext null
+        val persisted = transition(execution, AgentExecutionStatus.CANCELLED, usage = current.usage)
+        eventSink.emitTerminal(persisted)
+        persisted
     }
 
     suspend fun markFailed(
-        executionId: UUID,
-        userId: String,
-        chatId: UUID,
+        execution: AgentExecution,
         errorCode: String,
         errorMessage: String,
-        usage: AgentExecutionUsage?,
-    ): AgentExecution = withTerminalTransition(executionId) {
-        val currentExecution = executionRepository.getByChat(userId, chatId, executionId) ?: return@withTerminalTransition AgentExecution(
-            id = executionId,
-            userId = userId,
-            chatId = chatId,
-            userMessageId = null,
-            assistantMessageId = null,
-            status = AgentExecutionStatus.FAILED,
-            requestId = null,
-            clientMessageId = null,
-            model = null,
-            provider = null,
-            startedAt = Instant.now(),
-            finishedAt = Instant.now(),
-            cancelRequested = false,
-            errorCode = errorCode,
-            errorMessage = errorMessage,
-            usage = usage,
-            metadata = emptyMap(),
-        )
-        if (currentExecution.status == AgentExecutionStatus.CANCELLING) {
-            return@withTerminalTransition persistCancelled(
-                executionId = executionId,
-                userId = userId,
-                chatId = chatId,
+        usage: AgentExecutionUsage? = execution.usage,
+    ): AgentExecution = transition(execution, AgentExecutionStatus.FAILED, errorCode, errorMessage, usage)
+
+    internal suspend fun transition(
+        execution: AgentExecution,
+        status: AgentExecutionStatus,
+        errorCode: String? = null,
+        errorMessage: String? = null,
+        usage: AgentExecutionUsage? = execution.usage,
+    ): AgentExecution = clientThreadRegistry.withTerminalTransition(execution.id) {
+        var current = currentExecution(execution.id, execution.userId, execution.chatId)
+        while (current.status.isActive()) {
+            val cancelling = status == AgentExecutionStatus.CANCELLING
+            if (!cancelling && current.runtimeOwner != execution.runtimeOwner) break
+            // WAITING_OPTION is published only after the event and continuation are durable.
+            if (!cancelling && current.status == AgentExecutionStatus.WAITING_OPTION && !current.cancelRequested) {
+                return@withTerminalTransition current
+            }
+            val cancelled = !cancelling && (status == AgentExecutionStatus.CANCELLED || current.cancelRequested ||
+                current.status == AgentExecutionStatus.CANCELLING)
+            executionRepository.transitionIfCurrent(
+                expected = current,
+                status = if (cancelled) AgentExecutionStatus.CANCELLED else status,
+                errorCode = if (cancelled) "agent_execution_cancelled" else errorCode,
+                errorMessage = if (cancelled) "Agent execution was cancelled." else errorMessage,
                 usage = usage,
-            )
+            )?.let { return@withTerminalTransition it }
+            current = currentExecution(execution.id, execution.userId, execution.chatId)
         }
-        if (!currentExecution.status.isActive()) return@withTerminalTransition currentExecution
-        executionRepository.update(
-            currentExecution.copy(
-                status = AgentExecutionStatus.FAILED,
-                finishedAt = Instant.now(),
-                errorCode = errorCode,
-                errorMessage = errorMessage,
-                usage = usage ?: currentExecution.usage,
-            )
-        )
-    }
-
-    suspend fun markCancelled(
-        executionId: UUID,
-        userId: String,
-        chatId: UUID,
-        usage: AgentExecutionUsage?,
-    ): AgentExecution = withTerminalTransition(executionId) {
-        persistCancelled(
-            executionId = executionId,
-            userId = userId,
-            chatId = chatId,
-            usage = usage,
-        )
-    }
-
-    internal suspend fun persistCancelled(
-        executionId: UUID,
-        userId: String,
-        chatId: UUID,
-        usage: AgentExecutionUsage?,
-    ): AgentExecution {
-        val currentExecution = currentExecution(executionId, userId, chatId)
-        return executionRepository.update(
-            currentExecution.copy(
-                status = AgentExecutionStatus.CANCELLED,
-                cancelRequested = true,
-                finishedAt = Instant.now(),
-                errorCode = "agent_execution_cancelled",
-                errorMessage = "Agent execution was cancelled.",
-                usage = usage ?: currentExecution.usage,
-            )
-        )
+        current
     }
 
     suspend fun currentExecution(
@@ -189,86 +128,36 @@ internal class AgentExecutionFinalizer(
                 message = "Execution not found.",
             )
 
-    private suspend fun persistSuccessfulExecution(
+    private suspend fun persistTurn(
         execution: AgentExecution,
-        executionOutcome: BackendConversationTurnOutcome.Completed,
+        outcome: BackendConversationTurnOutcome,
         conversationKey: AgentConversationKey,
         eventSink: BackendAgentRuntimeEventSink,
-    ): AgentExecution = withContext(NonCancellable) {
-        // Once completion starts, persist its outcome, usage log and terminal event together despite cancellation.
-        val persisted = withTerminalTransition(execution.id) {
-            val currentExecution = currentExecution(execution.id, execution.userId, execution.chatId)
-            if (currentExecution.status == AgentExecutionStatus.CANCELLING || currentExecution.cancelRequested) {
-                throw CancellationException("Execution cancellation was committed before completion.")
-            }
-            if (!currentExecution.status.isActive()) return@withTerminalTransition currentExecution
-            val assistantMessage = eventSink.completeAssistantMessage(executionOutcome.output)
-            val session = executionOutcome.session.let { current ->
-                if (assistantMessage.seq == current.basedOnMessageSeq + 1L) {
-                    current.copy(basedOnMessageSeq = assistantMessage.seq)
-                } else {
-                    current
-                }
-            }
-            sessionRepository.save(conversationKey, session)
-            chatRepository.touchUpdatedAt(execution.userId, execution.chatId, assistantMessage.createdAt)
-
-            executionRepository.update(
-                currentExecution.copy(
-                    assistantMessageId = assistantMessage.id,
-                    status = AgentExecutionStatus.COMPLETED,
-                    finishedAt = Instant.now(),
-                    errorCode = null,
-                    errorMessage = null,
-                    usage = executionOutcome.usage.toExecutionUsage(),
-                )
-            ).also {
-                logger.atInfo()
-                    .addKeyValue("event", "execution.token_usage")
-                    .addKeyValue("input_tokens", executionOutcome.usage.promptTokens)
-                    .addKeyValue("output_tokens", executionOutcome.usage.completionTokens)
-                    .addKeyValue("total_tokens", executionOutcome.usage.totalTokens)
-                    .addKeyValue("cached_input_tokens", executionOutcome.usage.precachedTokens)
-                    .log("Backend execution token usage")
-            }
-        }
-        if (persisted.status == AgentExecutionStatus.COMPLETED) eventSink.emitExecutionFinished(persisted)
-
-        persisted
-    }
-
-    private suspend fun persistWaitingOptionExecution(
-        execution: AgentExecution,
-        executionOutcome: BackendConversationTurnOutcome.WaitingOption,
-        conversationKey: AgentConversationKey,
     ): AgentExecution {
-        sessionRepository.save(conversationKey, executionOutcome.session)
-        val waitingExecution = currentExecution(execution.id, execution.userId, execution.chatId)
-        return executionRepository.update(
-            waitingExecution.copy(
-                status = AgentExecutionStatus.WAITING_OPTION,
-                usage = executionOutcome.usage.toExecutionUsage(),
-            )
-        )
-    }
-
-    internal suspend fun <T> withTerminalTransition(executionId: UUID, block: suspend () -> T): T =
-        clientThreadRegistry?.withTerminalTransition(executionId, block) ?: block()
-
-    private suspend fun cancelExecution(
-        execution: AgentExecution,
-        eventSink: BackendAgentRuntimeEventSink,
-    ): Nothing {
-        withContext(NonCancellable) {
-            markCancelled(
-                executionId = execution.id,
-                userId = execution.userId,
-                chatId = execution.chatId,
-                usage = execution.usage,
-            )
-            eventSink.emitExecutionCancelled()
+        val committed = executionRepository.commitTurn(
+            expected = execution,
+            state = outcome.session.toState(conversationKey),
+            usage = outcome.usage.toExecutionUsage(),
+            output = (outcome as? BackendConversationTurnOutcome.Completed)?.output,
+            assistantMessageId = eventSink.finalAssistantMessageId,
+        ) ?: run {
+            val current = currentExecution(execution.id, execution.userId, execution.chatId)
+            if (current.cancelRequested || current.status == AgentExecutionStatus.CANCELLING) {
+                throw CancellationException("Execution cancellation was committed before the turn.")
+            }
+            return current
         }
-        throw CancellationException("Agent execution was cancelled.")
+        if (outcome is BackendConversationTurnOutcome.Completed) {
+            logger.atInfo()
+                .addKeyValue("event", "execution.token_usage")
+                .addKeyValue("input_tokens", outcome.usage.promptTokens)
+                .addKeyValue("output_tokens", outcome.usage.completionTokens)
+                .addKeyValue("total_tokens", outcome.usage.totalTokens)
+                .addKeyValue("cached_input_tokens", outcome.usage.precachedTokens)
+                .log("Backend execution token usage")
+            eventSink.emitAssistantMessageCompleted(checkNotNull(committed.assistantMessage), committed.assistantMessageCreated)
+        }
+        return committed.execution
     }
 
     private suspend fun failExecution(
@@ -276,83 +165,31 @@ internal class AgentExecutionFinalizer(
         eventSink: BackendAgentRuntimeEventSink,
         error: Exception,
     ): Nothing {
-        val failure = error.toExecutionFailure(execution)
+        val turnException = error as? BackendConversationTurnException
+        val cause = turnException?.cause ?: error
+        val response = cause as? BackendV1Exception ?: BackendV1Exception(
+            status = HttpStatusCode.InternalServerError,
+            code = "agent_execution_failed",
+            message = "Agent execution failed.",
+        )
+        val stateConflict = cause is AgentStateConflictException
         val cancelled = withContext(NonCancellable) {
             val persisted = markFailed(
-                executionId = execution.id,
-                userId = execution.userId,
-                chatId = execution.chatId,
-                errorCode = failure.errorCode,
-                errorMessage = failure.errorMessage,
-                usage = failure.usage,
+                execution = execution,
+                errorCode = if (stateConflict) "state_conflict" else response.code,
+                errorMessage = if (stateConflict) "Agent state changed before save." else cause.message ?: response.message,
+                usage = turnException?.usage?.toExecutionUsage() ?: execution.usage,
             )
-            when (persisted.status) {
-                AgentExecutionStatus.FAILED -> eventSink.emitExecutionFailed(failure.errorCode, failure.errorMessage)
-                AgentExecutionStatus.CANCELLED -> eventSink.emitExecutionCancelled()
-                else -> Unit
-            }
+            eventSink.emitTerminal(persisted)
             persisted.status == AgentExecutionStatus.CANCELLED
         }
         if (cancelled) throw CancellationException("Execution cancellation won the terminal transition.")
-        throw failure.response
-    }
-}
-
-private data class ExecutionFailure(
-    val errorCode: String,
-    val errorMessage: String,
-    val usage: AgentExecutionUsage?,
-    val response: BackendV1Exception,
-)
-
-private fun Exception.toExecutionFailure(execution: AgentExecution): ExecutionFailure {
-    val turnException = this as? BackendConversationTurnException
-    val cause = turnException?.cause ?: this
-    val usage = turnException?.usage?.toExecutionUsage() ?: execution.usage
-    return when (cause) {
-        is BackendV1Exception -> ExecutionFailure(
-            errorCode = cause.code,
-            errorMessage = cause.message,
-            usage = usage,
-            response = cause,
-        )
-
-        is AgentStateConflictException -> ExecutionFailure(
-            errorCode = "state_conflict",
-            errorMessage = "Agent state changed before save.",
-            usage = usage,
-            response = BackendV1Exception(
-                status = HttpStatusCode.InternalServerError,
-                code = "agent_execution_failed",
-                message = "Agent execution failed.",
-            ),
-        )
-
-        else -> ExecutionFailure(
-            errorCode = "agent_execution_failed",
-            errorMessage = cause.message ?: "Agent execution failed.",
-            usage = usage,
-            response = BackendV1Exception(
-                status = HttpStatusCode.InternalServerError,
-                code = "agent_execution_failed",
-                message = "Agent execution failed.",
-            ),
-        )
+        throw response
     }
 }
 
 private fun LLMResponse.Usage.toExecutionUsage(): AgentExecutionUsage =
-    AgentExecutionUsage(
-        promptTokens = promptTokens,
-        completionTokens = completionTokens,
-        totalTokens = totalTokens,
-        precachedTokens = precachedTokens,
-    )
+    AgentExecutionUsage(promptTokens, completionTokens, totalTokens, precachedTokens)
 
 private fun AgentExecutionUsage.toLlmUsage(): LLMResponse.Usage =
-    LLMResponse.Usage(
-        promptTokens = promptTokens,
-        completionTokens = completionTokens,
-        totalTokens = totalTokens,
-        precachedTokens = precachedTokens,
-    )
+    LLMResponse.Usage(promptTokens, completionTokens, totalTokens, precachedTokens)

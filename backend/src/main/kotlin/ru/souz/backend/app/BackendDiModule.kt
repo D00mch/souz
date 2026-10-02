@@ -22,9 +22,7 @@ import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
-import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.agent.session.AgentStateRepository
-import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.channels.ChannelDeliveryService
 import ru.souz.backend.channels.ChannelProviderRegistry
@@ -242,9 +240,6 @@ fun backendDiModule(
             localModelAvailability = instance<LocalProviderAvailability>(),
         )
     }
-    bindSingleton<AgentSessionRepository> {
-        AgentStateBackedSessionRepository(instance())
-    }
     bindSingleton {
         UserSettingsService(
             userSettingsRepository = instance(),
@@ -300,7 +295,7 @@ fun backendDiModule(
             providerHttpClients = instance(),
             localChatApi = instance<LocalChatAPI>(),
             codexOAuthService = instance<CodexOAuthService>(),
-            sessionRepository = instance(),
+            agentStateRepository = instance(),
             messageRepository = instance(),
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
@@ -332,8 +327,6 @@ fun backendDiModule(
     }
     bindSingleton {
         AgentExecutionFinalizer(
-            agentStateRepository = instance(),
-            chatRepository = instance(),
             executionRepository = instance(),
             turnRunner = instance(),
             clientThreadRegistry = instance(),

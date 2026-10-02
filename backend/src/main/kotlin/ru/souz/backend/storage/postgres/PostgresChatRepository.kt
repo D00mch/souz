@@ -123,18 +123,22 @@ class PostgresChatRepository(
 
     override suspend fun touchUpdatedAt(userId: String, chatId: UUID, updatedAt: Instant) {
         dataSource.write { connection ->
-            connection.prepareStatement(
-                """
-                update chats
-                set updated_at = greatest(updated_at, ?)
-                where user_id = ? and id = ?
-                """.trimIndent()
-            ).use { statement ->
-                statement.setInstant(1, updatedAt)
-                statement.setString(2, userId)
-                statement.setObject(3, chatId)
-                statement.executeUpdate()
-            }
+            touchUpdatedAt(connection, userId, chatId, updatedAt)
+        }
+    }
+
+    internal fun touchUpdatedAt(connection: java.sql.Connection, userId: String, chatId: UUID, updatedAt: Instant) {
+        connection.prepareStatement(
+            """
+            update chats
+            set updated_at = greatest(updated_at, ?)
+            where user_id = ? and id = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setInstant(1, updatedAt)
+            statement.setString(2, userId)
+            statement.setObject(3, chatId)
+            statement.executeUpdate()
         }
     }
 

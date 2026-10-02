@@ -7,7 +7,6 @@ import kotlinx.coroutines.sync.withLock
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.chat.model.ChatMessage
-import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
@@ -32,7 +31,6 @@ import ru.souz.backend.events.model.ThreadFailedPayload
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
-import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.model.OptionKind
 import ru.souz.backend.options.model.OptionItem
@@ -54,23 +52,20 @@ internal class BackendAgentRuntimeEventSink(
     private val executionId: UUID,
     private val messageRepository: MessageRepository,
     private val optionRepository: OptionRepository,
-    private val executionRepository: AgentExecutionRepository,
     private val eventService: AgentEventService,
     private val toolCallRepository: ToolCallRepository,
     private val streamingMessagesEnabled: Boolean,
     private val toolEventsEnabled: Boolean,
     private val optionsEnabled: Boolean = false,
-    private val assistantMessageId: UUID? = null,
+    assistantMessageId: UUID? = null,
     private val toolCallPreviewer: ToolCallPreviewer = ToolCallPreviewer(),
     private val publicClientThread: Boolean = false,
     private val narrateSteps: Boolean = false,
 ) : AgentRuntimeEventSink {
     private val emitMutex = Mutex()
-    private val finalAssistantMessageId = assistantMessageId ?: UUID.randomUUID()
-    private var assistantMessage: ChatMessage? = null
+    val finalAssistantMessageId = assistantMessageId ?: UUID.randomUUID()
     private var requestedOptionId: UUID? = null
 
-    val currentAssistantMessageId: UUID? get() = assistantMessage?.id
     val hasRequestedOption: Boolean get() = requestedOptionId != null
 
     override suspend fun emit(event: AgentRuntimeEvent) = emitMutex.withLock {
@@ -89,14 +84,6 @@ internal class BackendAgentRuntimeEventSink(
             is AgentRuntimeEvent.ChoiceRequested -> if (optionsEnabled && !publicClientThread) {
                 val option = persistOption(event)
                 requestedOptionId = option.id
-                executionRepository.get(userId, executionId)?.let { execution ->
-                    executionRepository.update(
-                        execution.copy(
-                            status = AgentExecutionStatus.WAITING_OPTION,
-                            assistantMessageId = execution.assistantMessageId ?: assistantMessage?.id,
-                        )
-                    )
-                }
                 appendDurableEvent(
                     type = AgentEventType.OPTION_REQUESTED,
                     payload = ChoiceRequestedPayload(
@@ -189,53 +176,31 @@ internal class BackendAgentRuntimeEventSink(
         }
     }
 
-    suspend fun completeAssistantMessage(content: String): ChatMessage {
-        val completedMessage = assistantMessage?.let { existing ->
-            messageRepository.updateContent(
-                userId = userId,
-                chatId = chatId,
-                messageId = existing.id,
-                content = content,
-            ) ?: existing.copy(content = content)
-        } ?: loadExistingAssistantMessageIfPresent()?.let { existing ->
-            messageRepository.updateContent(
-                userId = userId,
-                chatId = chatId,
-                messageId = existing.id,
-                content = content,
-            ) ?: existing.copy(content = content)
-        } ?: messageRepository.append(
-            userId = userId,
-            chatId = chatId,
-            role = ChatRole.ASSISTANT,
-            content = content,
-            id = finalAssistantMessageId,
-        ).also { created ->
-            assistantMessage = created
-            emitMessageCreated(created)
-            linkAssistantMessage(created.id)
-        }
-
-        assistantMessage = completedMessage
+    suspend fun emitAssistantMessageCompleted(message: ChatMessage, created: Boolean) {
+        if (created) emitMessageCreated(message)
         if (!publicClientThread) {
             appendDurableEvent(
                 type = AgentEventType.MESSAGE_COMPLETED,
-                payload = MessageCompletedPayload(
-                    messageId = completedMessage.id,
-                    seq = completedMessage.seq,
-                    role = completedMessage.role.value,
-                    content = completedMessage.content,
-                ),
+                payload = MessageCompletedPayload(message.id, message.seq, message.role.value, message.content),
             )
         }
-        return completedMessage
     }
 
-    suspend fun emitExecutionFinished(execution: AgentExecution) {
+    suspend fun emitTerminal(execution: AgentExecution) {
+        when (execution.status) {
+            AgentExecutionStatus.COMPLETED -> emitExecutionFinished(execution)
+            AgentExecutionStatus.FAILED -> emitExecutionFailed(execution)
+            AgentExecutionStatus.CANCELLED -> emitExecutionCancelled(execution)
+            else -> Unit
+        }
+    }
+
+    private suspend fun emitExecutionFinished(execution: AgentExecution) {
         if (publicClientThread) {
             appendDurableEvent(
                 type = AgentEventType.THREAD_COMPLETED,
-                payload = ThreadCompletedPayload(response = assistantMessage?.content.orEmpty()),
+                payload = ThreadCompletedPayload(response = execution.assistantMessageId
+                    ?.let { messageRepository.getById(userId, chatId, it)?.content }.orEmpty()),
             )
         } else {
             appendDurableEvent(
@@ -257,10 +222,9 @@ internal class BackendAgentRuntimeEventSink(
         }
     }
 
-    suspend fun emitExecutionFailed(
-        errorCode: String,
-        errorMessage: String,
-    ) {
+    private suspend fun emitExecutionFailed(execution: AgentExecution) {
+        val errorCode = execution.errorCode ?: "agent_execution_failed"
+        val errorMessage = execution.errorMessage ?: "Agent execution failed."
         if (publicClientThread) {
             appendDurableEvent(
                 type = AgentEventType.THREAD_FAILED,
@@ -269,18 +233,18 @@ internal class BackendAgentRuntimeEventSink(
         } else {
             appendDurableEvent(
                 type = AgentEventType.EXECUTION_FAILED,
-                payload = ExecutionFailedPayload(executionId, assistantMessage?.id ?: assistantMessageId, errorCode, errorMessage),
+                payload = ExecutionFailedPayload(executionId, execution.assistantMessageId, errorCode, errorMessage),
             )
         }
     }
 
-    suspend fun emitExecutionCancelled() {
+    private suspend fun emitExecutionCancelled(execution: AgentExecution) {
         if (publicClientThread) {
             appendDurableEvent(type = AgentEventType.THREAD_CANCELLED, payload = ThreadCancelledPayload())
         } else {
             appendDurableEvent(
                 type = AgentEventType.EXECUTION_CANCELLED,
-                payload = ExecutionCancelledPayload(executionId, assistantMessage?.id ?: assistantMessageId),
+                payload = ExecutionCancelledPayload(executionId, execution.assistantMessageId),
             )
         }
     }
@@ -314,27 +278,6 @@ internal class BackendAgentRuntimeEventSink(
             executionId = executionId.toString(),
             toolCallId = toolCallId,
         )
-
-    private suspend fun loadExistingAssistantMessageIfPresent(): ChatMessage? {
-        if (assistantMessage != null || assistantMessageId == null) {
-            return assistantMessage
-        }
-        val existing = messageRepository.getById(
-            userId = userId,
-            chatId = chatId,
-            messageId = assistantMessageId,
-        ) ?: return null
-        assistantMessage = existing
-        return existing
-    }
-
-    private suspend fun linkAssistantMessage(messageId: UUID) {
-        val execution = executionRepository.get(userId, executionId) ?: return
-        if (execution.assistantMessageId == messageId) {
-            return
-        }
-        executionRepository.update(execution.copy(assistantMessageId = messageId))
-    }
 
     private suspend fun persistOption(event: AgentRuntimeEvent.ChoiceRequested): Option {
         val option = Option(

@@ -123,6 +123,16 @@ class PostgresMessageRepository(
         messageId: UUID,
         content: String,
     ): ChatMessage? = dataSource.write { connection ->
+        updateContent(connection, userId, chatId, messageId, content)
+    }
+
+    internal fun updateContent(
+        connection: Connection,
+        userId: String,
+        chatId: UUID,
+        messageId: UUID,
+        content: String,
+    ): ChatMessage? =
         connection.prepareStatement(
             """
             update messages
@@ -139,7 +149,6 @@ class PostgresMessageRepository(
                 if (resultSet.next()) resultSet.toMessage() else null
             }
         }
-    }
 
     override suspend fun list(
         userId: String,

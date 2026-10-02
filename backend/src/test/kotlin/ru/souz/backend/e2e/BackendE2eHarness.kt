@@ -33,6 +33,11 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 import kotlin.test.assertEquals
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
@@ -228,6 +233,34 @@ internal class BackendE2eScope(
     fun <T> sql(block: (Connection) -> T): T =
         backend.sql(block)
 
+    // Real database barriers make commit and shutdown races deterministic.
+    suspend fun withTableLocked(table: String, mode: String, block: suspend CoroutineScope.() -> Unit) = coroutineScope {
+        val locked = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val lock = launch(Dispatchers.IO) {
+            sql { connection ->
+                connection.autoCommit = false
+                connection.createStatement().use { it.execute("lock table $table in $mode mode") }
+                locked.complete(Unit)
+                try { runBlocking { release.await() } } finally { connection.rollback() }
+            }
+        }
+        locked.await()
+        try { block() } finally {
+            release.complete(Unit)
+            lock.join()
+        }
+    }
+
+    suspend fun awaitLockWait(table: String) {
+        eventually("database wait on $table") {
+            sql { connection -> connection.createStatement().use { statement ->
+                statement.executeQuery("select count(*) from pg_locks where not granted and relation = '$table'::regclass")
+                    .use { rows -> rows.next() && rows.getInt(1) > 0 }
+            } }.takeIf { it }
+        }
+    }
+
     suspend fun <T> withPeerBackend(
         llm: E2eLlmApi = E2eLlmApi(),
         providerClients: ProviderHttpClients? = null,
@@ -364,6 +397,10 @@ internal class BackendE2eBackend(
     val historyMemoryRepository: PostgresHistoryMemoryRepository get() = di.direct.instance()
 
     val toolCallRepository: ToolCallRepository get() = di.direct.instance()
+
+    val executionRepository: ru.souz.backend.execution.repository.AgentExecutionRepository get() = di.direct.instance()
+
+    suspend fun recoverClientThreads() = di.direct.instance<ClientThreadRecoveryService>().recover()
 
     val applicationScope: BackendApplicationScope get() = di.direct.instance()
 

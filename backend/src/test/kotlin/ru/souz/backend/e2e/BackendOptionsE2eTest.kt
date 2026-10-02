@@ -154,7 +154,10 @@ class BackendOptionsE2eTest {
     }
 }
 
-internal class ScriptedOptionTurnRunner : BackendConversationTurnRunner {
+internal class ScriptedOptionTurnRunner(
+    private val afterChoice: suspend () -> Unit = {},
+    private val beforeChoice: suspend () -> Unit = {},
+) : BackendConversationTurnRunner {
     val reasoningEfforts = CopyOnWriteArrayList<String?>()
     val narrationPreferences = CopyOnWriteArrayList<Boolean>()
     private val waitingConversations = LinkedHashSet<AgentConversationKey>()
@@ -168,6 +171,7 @@ internal class ScriptedOptionTurnRunner : BackendConversationTurnRunner {
         reasoningEfforts += request.reasoningEffort
         narrationPreferences += request.narrateSteps
         return if (waitingConversations.add(conversationKey)) {
+            beforeChoice()
             eventSink.emit(
                 AgentRuntimeEvent.ChoiceRequested(
                     choiceId = UUID.randomUUID().toString(),
@@ -180,6 +184,7 @@ internal class ScriptedOptionTurnRunner : BackendConversationTurnRunner {
                     ),
                 )
             )
+            afterChoice()
             BackendConversationTurnOutcome.WaitingOption(
                 usage = LLMResponse.Usage(3, 2, 5, 0),
                 session = sessionFor(request.prompt, "waiting for option"),

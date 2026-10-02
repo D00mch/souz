@@ -1,13 +1,21 @@
 package ru.souz.backend.storage.postgres
 
+import java.sql.Connection
 import java.sql.SQLException
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import ru.souz.backend.agent.session.AgentConversationState
+import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.execution.model.AgentExecution
+import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.execution.model.AgentExecutionUsage
 import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.ActiveAgentExecutionConflictException
 import ru.souz.backend.execution.repository.AgentExecutionRepository
+import ru.souz.backend.execution.repository.CommittedAgentTurn
 
 class PostgresAgentExecutionRepository(
     private val dataSource: DataSource,
@@ -17,31 +25,15 @@ class PostgresAgentExecutionRepository(
         insert(connection, execution)
     }
 
-    internal fun insert(connection: java.sql.Connection, execution: AgentExecution): AgentExecution {
+    internal fun insert(connection: Connection, execution: AgentExecution): AgentExecution {
         try {
             connection.prepareStatement(
                 """
                 insert into agent_executions(
-                    id,
-                    user_id,
-                    chat_id,
-                    user_message_id,
-                    assistant_message_id,
-                    status,
-                    request_id,
-                    client_message_id,
-                    model,
-                    provider,
-                    started_at,
-                    finished_at,
-                    cancel_requested,
-                    error_code,
-                    error_message,
-                    usage_json,
-                    metadata,
-                    latest_device_context,
-                    runtime_owner,
-                    runtime_lease_until
+                    id, user_id, chat_id, user_message_id, assistant_message_id, status,
+                    request_id, client_message_id, model, provider, started_at, finished_at,
+                    cancel_requested, error_code, error_message, usage_json, metadata,
+                    latest_device_context, runtime_owner, runtime_lease_until
                 )
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent()
@@ -58,46 +50,111 @@ class PostgresAgentExecutionRepository(
         return execution
     }
 
-    override suspend fun update(execution: AgentExecution): AgentExecution = dataSource.write { connection ->
-        update(connection, execution)
+    override suspend fun transitionIfCurrent(
+        expected: AgentExecution,
+        status: AgentExecutionStatus,
+        errorCode: String?,
+        errorMessage: String?,
+        usage: AgentExecutionUsage?,
+    ): AgentExecution? = dataSource.write { connection ->
+        connection.lockChat(expected.userId, expected.chatId)
+        transition(connection, expected, status, errorCode, errorMessage, usage)
     }
 
-    internal fun update(connection: java.sql.Connection, execution: AgentExecution): AgentExecution {
-        try {
-            connection.prepareStatement(
-                """
-                update agent_executions
-                set user_message_id = ?,
-                    assistant_message_id = ?,
-                    status = ?,
-                    request_id = ?,
-                    client_message_id = ?,
-                    model = ?,
-                    provider = ?,
-                    started_at = ?,
-                    finished_at = ?,
-                    cancel_requested = ?,
-                    error_code = ?,
-                    error_message = ?,
-                    usage_json = ?,
-                    metadata = ?,
-                    latest_device_context = ?,
-                    runtime_owner = ?,
-                    runtime_lease_until = ?
-                where user_id = ? and id = ?
-                """.trimIndent()
-            ).use { statement ->
-                bindExecutionUpdate(statement, execution)
-                statement.executeUpdate()
+    override suspend fun commitTurn(
+        expected: AgentExecution,
+        state: AgentConversationState,
+        usage: AgentExecutionUsage,
+        output: String?,
+        assistantMessageId: UUID?,
+    ): CommittedAgentTurn? {
+        require(state.userId == expected.userId && state.chatId == expected.chatId)
+        val context = currentCoroutineContext()
+        return dataSource.write { connection ->
+            connection.lockChat(expected.userId, expected.chatId)
+            val current = connection.findExecution(expected.userId, expected.chatId, expected.id)
+                ?: return@write null
+            if (current.status != AgentExecutionStatus.RUNNING || current.cancelRequested ||
+                current.runtimeOwner != expected.runtimeOwner) return@write null
+
+            val message = output?.let { content ->
+                val writer = PostgresMessageRepository(dataSource)
+                current.assistantMessageId?.let { id ->
+                    checkNotNull(writer.updateContent(connection, current.userId, current.chatId, id, content))
+                } ?: writer.append(
+                    connection, current.userId, current.chatId, ChatRole.ASSISTANT, content,
+                    emptyMap(), requireNotNull(assistantMessageId), Instant.now(),
+                )
             }
-        } catch (error: SQLException) {
-            if (error.isConstraintViolation(ACTIVE_EXECUTION_CONSTRAINT) && execution.status.isActive()) {
-                throw ActiveAgentExecutionConflictException(execution.userId, execution.chatId)
+            val savedState = if (message?.seq == state.basedOnMessageSeq + 1L) {
+                state.copy(basedOnMessageSeq = message.seq)
+            } else state
+            PostgresAgentStateRepository(dataSource).save(connection, savedState)
+            if (message != null) {
+                PostgresChatRepository(dataSource).touchUpdatedAt(connection, current.userId, current.chatId, message.createdAt)
             }
-            throw error
+            val execution = checkNotNull(transition(
+                connection, current,
+                if (output == null) AgentExecutionStatus.WAITING_OPTION else AgentExecutionStatus.COMPLETED,
+                usage = usage, assistantMessageId = message?.id,
+            ))
+            // JDBC may have waited for a lock while the option handoff was cancelled.
+            context.ensureActive()
+            CommittedAgentTurn(execution, message, message != null && current.assistantMessageId == null)
         }
-        return execution
     }
+
+    internal fun transition(
+        connection: Connection,
+        expected: AgentExecution,
+        status: AgentExecutionStatus,
+        errorCode: String? = null,
+        errorMessage: String? = null,
+        usage: AgentExecutionUsage? = null,
+        assistantMessageId: UUID? = null,
+    ): AgentExecution? = connection.prepareStatement(
+        """
+        update agent_executions
+        set status = ?, finished_at = ?, cancel_requested = ?, error_code = ?, error_message = ?,
+            usage_json = coalesce(?, usage_json), assistant_message_id = coalesce(?, assistant_message_id),
+            runtime_lease_until = case when ? = 'waiting_option' then null else runtime_lease_until end
+        where user_id = ? and chat_id = ? and id = ?
+          and status = ? and cancel_requested = ? and runtime_owner is not distinct from ?
+        returning *
+        """.trimIndent()
+    ).use { statement ->
+        statement.setString(1, status.value)
+        statement.setInstant(2, if (status.isActive()) null else Instant.now())
+        statement.setBoolean(3, status == AgentExecutionStatus.CANCELLING || status == AgentExecutionStatus.CANCELLED)
+        statement.setString(4, errorCode)
+        statement.setString(5, errorMessage)
+        statement.setJson(6, usage?.toUsageJson())
+        statement.setObject(7, assistantMessageId)
+        statement.setString(8, status.value)
+        statement.setString(9, expected.userId)
+        statement.setObject(10, expected.chatId)
+        statement.setObject(11, expected.id)
+        statement.setString(12, expected.status.value)
+        statement.setBoolean(13, expected.cancelRequested)
+        statement.setString(14, expected.runtimeOwner)
+        statement.executeQuery().use { resultSet ->
+            if (resultSet.next()) resultSet.toExecution() else null
+        }
+    }
+
+    internal fun updateDeviceContext(connection: Connection, execution: AgentExecution, deviceContextJson: String?): AgentExecution =
+        connection.prepareStatement(
+            "update agent_executions set latest_device_context = ? where user_id = ? and chat_id = ? and id = ? returning *"
+        ).use { statement ->
+            statement.setJson(1, deviceContextJson)
+            statement.setString(2, execution.userId)
+            statement.setObject(3, execution.chatId)
+            statement.setObject(4, execution.id)
+            statement.executeQuery().use { resultSet ->
+                check(resultSet.next())
+                resultSet.toExecution()
+            }
+        }
 
     override suspend fun start(execution: AgentExecution, userMessageId: UUID): AgentExecution? =
         dataSource.write { connection ->
@@ -136,16 +193,7 @@ class PostgresAgentExecutionRepository(
         chatId: UUID,
         executionId: UUID,
     ): AgentExecution? = dataSource.read { connection ->
-        connection.prepareStatement(
-            "select * from agent_executions where user_id = ? and chat_id = ? and id = ?"
-        ).use { statement ->
-            statement.setString(1, userId)
-            statement.setObject(2, chatId)
-            statement.setObject(3, executionId)
-            statement.executeQuery().use { resultSet ->
-                if (resultSet.next()) resultSet.toExecution() else null
-            }
-        }
+        connection.findExecution(userId, chatId, executionId, lock = false)
     }
 
     override suspend fun findByClientMessageId(
@@ -171,21 +219,7 @@ class PostgresAgentExecutionRepository(
     }
 
     override suspend fun findActive(userId: String, chatId: UUID): AgentExecution? = dataSource.read { connection ->
-        connection.prepareStatement(
-            """
-            select * from agent_executions
-            where user_id = ? and chat_id = ?
-              and status in ('queued', 'running', 'waiting_option', 'cancelling')
-            order by started_at desc
-            limit 1
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, userId)
-            statement.setObject(2, chatId)
-            statement.executeQuery().use { resultSet ->
-                if (resultSet.next()) resultSet.toExecution() else null
-            }
-        }
+        connection.findActiveExecution(userId, chatId, lock = false)
     }
 
     override suspend fun refreshClientThreadLease(
@@ -200,7 +234,8 @@ class PostgresAgentExecutionRepository(
             update agent_executions
             set runtime_owner = ?, runtime_lease_until = ?
             where user_id = ? and chat_id = ? and id = ?
-              and status in ('queued', 'running', 'waiting_option', 'cancelling')
+              and status in ('queued', 'running', 'cancelling')
+              and runtime_owner = ? and runtime_lease_until > now()
             returning *
             """.trimIndent()
         ).use { statement ->
@@ -209,6 +244,7 @@ class PostgresAgentExecutionRepository(
             statement.setString(3, userId)
             statement.setObject(4, chatId)
             statement.setObject(5, executionId)
+            statement.setString(6, runtimeOwner)
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next()) resultSet.toExecution() else null
             }
@@ -226,7 +262,7 @@ class PostgresAgentExecutionRepository(
             from chats chat
             where execution.chat_id = chat.id
               and chat.payload_hash not like 'internal:%'
-              and execution.status in ('queued', 'running', 'waiting_option', 'cancelling')
+              and execution.status in ('queued', 'running', 'cancelling')
               and execution.runtime_lease_until is not null
               and execution.runtime_lease_until < ?
             returning execution.*
@@ -316,25 +352,4 @@ class PostgresAgentExecutionRepository(
         statement.setInstant(20, execution.runtimeLeaseUntil)
     }
 
-    private fun bindExecutionUpdate(statement: java.sql.PreparedStatement, execution: AgentExecution) {
-        statement.setObject(1, execution.userMessageId)
-        statement.setObject(2, execution.assistantMessageId)
-        statement.setString(3, execution.status.value)
-        statement.setString(4, execution.requestId)
-        statement.setString(5, execution.clientMessageId)
-        statement.setString(6, execution.model?.alias)
-        statement.setString(7, execution.provider?.name)
-        statement.setInstant(8, execution.startedAt)
-        statement.setInstant(9, execution.finishedAt)
-        statement.setBoolean(10, execution.cancelRequested)
-        statement.setString(11, execution.errorCode)
-        statement.setString(12, execution.errorMessage)
-        statement.setJson(13, execution.usage?.toUsageJson())
-        statement.setJson(14, postgresStorageMapper.writeValueAsString(execution.metadata))
-        statement.setJson(15, execution.latestDeviceContextJson)
-        statement.setString(16, execution.runtimeOwner)
-        statement.setInstant(17, execution.runtimeLeaseUntil)
-        statement.setString(18, execution.userId)
-        statement.setObject(19, execution.id)
-    }
 }

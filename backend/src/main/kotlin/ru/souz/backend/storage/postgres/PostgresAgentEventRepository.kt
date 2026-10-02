@@ -36,7 +36,9 @@ class PostgresAgentEventRepository(
             """
             insert into agent_events(id, user_id, chat_id, execution_id, seq, type, payload, created_at)
             values (?, ?, ?, ?, ?, ?, ?, ?)
-            on conflict (execution_id) where type in ('execution.finished', 'execution.failed', 'execution.cancelled')
+            on conflict (execution_id) where type in (${if (type.value.startsWith("thread."))
+                "'thread.completed', 'thread.failed', 'thread.cancelled'" else
+                "'execution.finished', 'execution.failed', 'execution.cancelled'"})
             do update set execution_id = agent_events.execution_id
             returning *
             """.trimIndent()
@@ -62,21 +64,6 @@ class PostgresAgentEventRepository(
         ).use { statement ->
             statement.setString(1, userId)
             statement.setObject(2, eventId)
-            statement.executeQuery().use { resultSet ->
-                if (resultSet.next()) resultSet.toEvent() else null
-            }
-        }
-    }
-
-    override suspend fun findTerminal(executionId: UUID): AgentEvent? = dataSource.read { connection ->
-        connection.prepareStatement(
-            """
-            select * from agent_events
-            where execution_id = ? and type in ('thread.completed', 'thread.failed', 'thread.cancelled')
-            limit 1
-            """.trimIndent()
-        ).use { statement ->
-            statement.setObject(1, executionId)
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next()) resultSet.toEvent() else null
             }
