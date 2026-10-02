@@ -3,6 +3,7 @@ package agent
 import io.ktor.client.plugins.*
 import io.mockk.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.TestScope
 import org.junit.jupiter.api.Assumptions
 import org.kodein.di.DI
@@ -12,6 +13,7 @@ import org.kodein.di.direct
 import org.kodein.di.instance
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutor
+import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentId
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
@@ -42,6 +44,8 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.anthropic.AnthropicChatAPI
 import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import ru.souz.llms.runtime.SettingsRoutingLlmChatApi
+import ru.souz.llms.runtime.ImageGenerationGateway
+import ru.souz.llms.runtime.VisionGateway
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.service.keys.Keys
@@ -60,14 +64,18 @@ import kotlin.time.Duration.Companion.minutes
 
 class AgentScenarioTestSupport(
     private val selectedModel: LLMModel,
+    val agentType: AgentId = parseScenarioAgentId(readEnvironment(SOUZ_AGENT_INTEGRATION_TEST_AGENT)),
+    private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
+    private val captureScope: CoroutineScope? = null,
+    private val useProductionPrompt: Boolean = false,
 ) {
-    private val agentType: AgentId = parseScenarioAgentId(readEnvironment(SOUZ_AGENT_INTEGRATION_TEST_AGENT))
     val filesUtil: FilesToolUtil by lazy { FilesToolUtil(spySettings) }
-    private var fewShotExamplesEnabled: Boolean = true
+    private var fewShotExamplesEnabled: Boolean = !useProductionPrompt
 
     private val spySettings: SettingsProviderImpl by lazy {
         spyk(SettingsProviderImpl(ConfigStore)) {
             every { contextSize } returns 32_000
+            every { summarizationContextSize } returns null
             every { forbiddenFolders } returns emptyList()
             every { useStreaming } returns false
             every { useFewShotExamples } answers { fewShotExamplesEnabled }
@@ -75,7 +83,7 @@ class AgentScenarioTestSupport(
             every { requestTimeoutMillis } returns 60_000L
             every { temperature } returns 0f
             every { getSystemPromptForAgentModel(any(), any()) } answers {
-                scenarioSystemPrompt(firstArg())
+                if (useProductionPrompt) null else scenarioSystemPrompt(firstArg())
             }
         }
     }
@@ -103,7 +111,8 @@ class AgentScenarioTestSupport(
             bindSingleton<AgentToolsFilter>(overrides = true) { RuntimePassThroughToolsFilter }
             bindSingleton<SkillRegistryRepository>(overrides = true) { emptySkillRegistryRepository() }
             bindSingleton<McpToolProvider>(overrides = true) { EmptyMcpToolProvider }
-            bindSingleton<ConversationMemoryRuntime>(overrides = true) { NoopConversationMemoryRuntime }
+            bindSingleton<ConversationMemoryRuntime>(overrides = true) { memoryRuntime }
+            captureScope?.let { scope -> bindSingleton<CoroutineScope>(overrides = true) { scope } }
             bindSingleton<AgentRuntimeEnvironment>(overrides = true) { SystemAgentRuntimeEnvironment }
             bindSingleton<ProviderHttpClients>(overrides = true) {
                 ProviderHttpClients().also { clients ->
@@ -166,10 +175,13 @@ class AgentScenarioTestSupport(
         block: suspend TestScope.() -> Unit,
     ) = kotlinx.coroutines.test.runTest(timeout = DEFAULT_TEST_TIMEOUT, testBody = block)
 
-    fun checkEnvironment() {
+    fun checkEnvironment(
+        enabledFlag: String = SOUZ_AGENT_INTEGRATION_TESTS_ON,
+        requireCredentials: Boolean = false,
+    ) {
         Assumptions.assumeTrue(
-            isAgentScenarioIntegrationTestsEnabled(readEnvironment(SOUZ_AGENT_INTEGRATION_TESTS_ON)),
-            "Skipping agent scenario integration tests: set $SOUZ_AGENT_INTEGRATION_TESTS_ON=true",
+            isAgentScenarioIntegrationTestsEnabled(readEnvironment(enabledFlag)),
+            "Skipping agent scenario integration tests: set $enabledFlag=true",
         )
         val apiKeyName = when (selectedModel.provider) {
             LlmProvider.GIGA -> "GIGA_KEY"
@@ -182,6 +194,7 @@ class AgentScenarioTestSupport(
         }
         if (apiKeyName == null) return
         val apiKey = readEnvironment(apiKeyName) ?: readSystemProperty(apiKeyName)
+        if (requireCredentials) require(!apiKey.isNullOrBlank()) { "$apiKeyName is required for the selected model" }
         Assumptions.assumeTrue(
             !apiKey.isNullOrBlank(),
             "Skipping integration tests: $apiKeyName is not set (selected model=${selectedModel.alias})"
@@ -202,11 +215,20 @@ class AgentScenarioTestSupport(
         }
     }
 
-    internal fun createScenarioDi(mockedTools: List<LLMToolSetup>): DI =
+    internal fun createScenarioDi(mockedTools: List<LLMToolSetup>, llmApi: LLMChatAPI? = null): DI =
         DI.invoke(allowSilentOverride = true) {
             import(mainDiModule, allowOverride = true)
             import(testOverrideModule, allowOverride = true)
             bindProvider<DI> { this.di }
+            llmApi?.let { api ->
+                bindSingleton<LLMChatAPI>(overrides = true) { api }
+                // The catalog needs capability metadata even when its tools are not executable.
+                bindSingleton<ImageGenerationGateway>(overrides = true) { mockk() }
+                bindSingleton<VisionGateway>(overrides = true) { mockk() }
+                bindSingleton<ProviderHttpClients>(overrides = true) { error("Provider clients are disabled with an injected LLM") }
+                bindSingleton<GigaHttpClientResource>(overrides = true) { error("Giga client is disabled with an injected LLM") }
+                bindSingleton<LocalLlamaRuntime>(overrides = true) { error("Local LLM is disabled with an injected LLM") }
+            }
             bindSingleton<AgentToolCatalog>(overrides = true) {
                 ScenarioAgentToolCatalog(
                     productionCatalog = instance<ToolsFactory>(),
@@ -214,6 +236,26 @@ class AgentScenarioTestSupport(
                 )
             }
     }
+
+    internal suspend fun runConversationTurn(
+        di: DI,
+        userPrompt: String,
+        history: List<LLMRequest.Message> = emptyList(),
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
+        eventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
+    ): AgentExecutionResult = di.direct.instance<AgentExecutor>().execute(
+        agentId = agentType,
+        context = di.direct.instance<AgentContextFactory>().create(
+            agentId = agentType,
+            history = history,
+            model = selectedModel,
+            contextSize = spySettings.contextSize,
+            temperature = spySettings.temperature,
+            toolInvocationMeta = meta,
+        ),
+        input = userPrompt,
+        eventSink = eventSink,
+    )
 
     fun finish() {
         val prefix = "[agent=${agentType.storageValue}]"
@@ -256,14 +298,11 @@ class AgentScenarioTestSupport(
     }
 
     private suspend fun runAgent(di: DI, userPrompt: String) {
-        val contextFactory: AgentContextFactory = di.direct.instance()
-        val executor: AgentExecutor = di.direct.instance()
         val toolCalls = mutableListOf<ScenarioToolCall>()
         try {
-            executor.execute(
-                agentId = agentType,
-                context = contextFactory.create(agentType),
-                input = userPrompt,
+            runConversationTurn(
+                di = di,
+                userPrompt = userPrompt,
                 eventSink = object : AgentRuntimeEventSink {
                     override suspend fun emit(event: AgentRuntimeEvent) {
                         if (event is AgentRuntimeEvent.ToolCallStarted) {

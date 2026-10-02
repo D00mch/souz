@@ -16,4 +16,5 @@ Before changing this module, read the [pain-point index](docs/pain-points.md) an
 
 - Run the app: `./gradlew :desktopApp:run`
 - Run host/tool/service tests: `./gradlew :desktopApp:test`
+- Hindsight conversation evaluations are opt-in and default to a scripted agent LLM; see [the scenario guide](docs/hindsight-scenarios.md). Keep probe capture disabled, wait for seed capture, and mark scripted answer-quality checks as skipped.
 - Build a release distribution: `./gradlew :desktopApp:createReleaseDistributable`

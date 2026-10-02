@@ -1,5 +1,10 @@
 package agent
 
+import io.mockk.coEvery
+import io.mockk.mockk
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.test.runTest
 import org.kodein.di.direct
 import org.kodein.di.instance
@@ -12,6 +17,7 @@ import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -19,6 +25,9 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.CompletedTurnMemoryInput
+import ru.souz.memory.MemoryRetrievalRequest
+import ru.souz.memory.MemoryRetrievalResult
 import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.ToolCategory
@@ -34,6 +43,50 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class AgentScenarioTestSupportTest {
+    @Test
+    fun `conversation runner preserves history and metadata then probes with an empty context`() = runTest {
+        val captures = mutableListOf<CompletedTurnMemoryInput>()
+        val recalls = mutableListOf<MemoryRetrievalRequest>()
+        val memory = object : ConversationMemoryRuntime {
+            override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) { captures += input }
+            override suspend fun retrieveMemory(request: MemoryRetrievalRequest): MemoryRetrievalResult {
+                recalls += request
+                return MemoryRetrievalResult(null)
+            }
+        }
+        val requests = mutableListOf<LLMRequest.Chat>()
+        val api = mockk<LLMChatAPI>()
+        coEvery { api.message(any()) } answers {
+            requests += firstArg<LLMRequest.Chat>()
+            LLMResponse.Chat.Ok(
+                listOf(LLMResponse.Choice(LLMResponse.Message("Noted", LLMMessageRole.assistant, functionsStateId = null),
+                    0, LLMResponse.FinishReason.stop)),
+                1, "test", LLMResponse.Usage(1, 1, 2, 0),
+            )
+        }
+        val support = AgentScenarioTestSupport(
+            LLMModel.LocalGemma4_E4B_It, AgentId.SKILLS_GRAPH, memory, backgroundScope, useProductionPrompt = true,
+        )
+        val di = support.createScenarioDi(emptyList(), api)
+        assertSame(backgroundScope, di.direct.instance<CoroutineScope>())
+        assertFalse(di.direct.instance<AgentContextFactory>().systemPromptFor(AgentId.SKILLS_GRAPH, LLMModel.LocalGemma4_E4B_It)
+            .contains("your first assistant turn MUST"))
+        val firstMeta = ToolInvocationMeta("test-owner", "chat", "request-1", attributes = mapOf("userMessageId" to "message-1"))
+        val first = support.runConversationTurn(di, "My hotel is Azure-742", meta = firstMeta)
+        backgroundScope.coroutineContext[Job]!!.children.toList().joinAll()
+        val second = support.runConversationTurn(di, "Budget 63000", first.context.history,
+            firstMeta.copy(requestId = "request-2", attributes = mapOf("userMessageId" to "message-2")))
+        backgroundScope.coroutineContext[Job]!!.children.toList().joinAll()
+        assertTrue(second.context.history.any { "Azure-742" in it.content })
+        support.runConversationTurn(di, "Which hotel?", meta = firstMeta.copy(conversationId = "probe-chat"))
+        backgroundScope.coroutineContext[Job]!!.children.toList().joinAll()
+        assertFalse(requests.last().messages.any { "Azure-742" in it.content })
+        assertEquals(listOf("message-1", "message-2"), captures.take(2).map { it.userMessageId })
+        assertEquals("test-owner", recalls.last().context.ownerId.value)
+        assertEquals("probe-chat", recalls.last().context.conversationId?.value)
+        support.finish()
+    }
+
     @Test
     fun `scenario catalog exposes only declared mocks and delegates invocation`() = runTest {
         val productionFileTool = RecordingTool("FindFilesByName", "production metadata")
