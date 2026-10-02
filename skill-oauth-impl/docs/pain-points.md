@@ -4,6 +4,4 @@ Read the topic files relevant to the code you plan to change in `:skill-oauth-im
 
 ## Topics
 
-No module-specific pain-point topics are currently recorded.
-
-Add a focused topic only for a lasting, non-obvious constraint.
+- [OAuth lifecycle and concurrency](pain-points/oauth-lifecycle.md) — shared scope grants, single-use links, refresh failure handling, and database lock ordering.
