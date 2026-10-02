@@ -339,16 +339,8 @@ class AgentExecutionService internal constructor(
         )
 
     private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution = withContext(NonCancellable) {
-        val cancelling = finalizer.withTerminalTransition(execution.id) {
-            var current = finalizer.currentExecution(execution.id, execution.userId, execution.chatId)
-            while (current.status.isActive()) {
-                executionRepository.transitionIfCurrent(current, AgentExecutionStatus.CANCELLING)?.let {
-                    return@withTerminalTransition it
-                }
-                current = finalizer.currentExecution(execution.id, execution.userId, execution.chatId)
-            }
-            throw invalidV1Request("Execution is not active.")
-        }
+        val cancelling = finalizer.transition(execution, AgentExecutionStatus.CANCELLING, usage = null)
+        if (!cancelling.status.isActive()) throw invalidV1Request("Execution is not active.")
         propagateCancellation(cancelling)
     }
 

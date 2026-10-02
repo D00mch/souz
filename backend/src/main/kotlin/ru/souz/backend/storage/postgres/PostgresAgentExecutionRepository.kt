@@ -25,31 +25,15 @@ class PostgresAgentExecutionRepository(
         insert(connection, execution)
     }
 
-    internal fun insert(connection: java.sql.Connection, execution: AgentExecution): AgentExecution {
+    internal fun insert(connection: Connection, execution: AgentExecution): AgentExecution {
         try {
             connection.prepareStatement(
                 """
                 insert into agent_executions(
-                    id,
-                    user_id,
-                    chat_id,
-                    user_message_id,
-                    assistant_message_id,
-                    status,
-                    request_id,
-                    client_message_id,
-                    model,
-                    provider,
-                    started_at,
-                    finished_at,
-                    cancel_requested,
-                    error_code,
-                    error_message,
-                    usage_json,
-                    metadata,
-                    latest_device_context,
-                    runtime_owner,
-                    runtime_lease_until
+                    id, user_id, chat_id, user_message_id, assistant_message_id, status,
+                    request_id, client_message_id, model, provider, started_at, finished_at,
+                    cancel_requested, error_code, error_message, usage_json, metadata,
+                    latest_device_context, runtime_owner, runtime_lease_until
                 )
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent()
@@ -209,16 +193,7 @@ class PostgresAgentExecutionRepository(
         chatId: UUID,
         executionId: UUID,
     ): AgentExecution? = dataSource.read { connection ->
-        connection.prepareStatement(
-            "select * from agent_executions where user_id = ? and chat_id = ? and id = ?"
-        ).use { statement ->
-            statement.setString(1, userId)
-            statement.setObject(2, chatId)
-            statement.setObject(3, executionId)
-            statement.executeQuery().use { resultSet ->
-                if (resultSet.next()) resultSet.toExecution() else null
-            }
-        }
+        connection.findExecution(userId, chatId, executionId, lock = false)
     }
 
     override suspend fun findByClientMessageId(
@@ -244,21 +219,7 @@ class PostgresAgentExecutionRepository(
     }
 
     override suspend fun findActive(userId: String, chatId: UUID): AgentExecution? = dataSource.read { connection ->
-        connection.prepareStatement(
-            """
-            select * from agent_executions
-            where user_id = ? and chat_id = ?
-              and status in ('queued', 'running', 'waiting_option', 'cancelling')
-            order by started_at desc
-            limit 1
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, userId)
-            statement.setObject(2, chatId)
-            statement.executeQuery().use { resultSet ->
-                if (resultSet.next()) resultSet.toExecution() else null
-            }
-        }
+        connection.findActiveExecution(userId, chatId, lock = false)
     }
 
     override suspend fun refreshClientThreadLease(

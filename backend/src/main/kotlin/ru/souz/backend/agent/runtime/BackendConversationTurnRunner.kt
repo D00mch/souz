@@ -11,16 +11,17 @@ import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.llms.LLMResponse
 
 internal sealed interface BackendConversationTurnOutcome {
+    val usage: LLMResponse.Usage
     val session: AgentConversationSession
 
     data class Completed(
         val output: String,
-        val usage: LLMResponse.Usage,
+        override val usage: LLMResponse.Usage,
         override val session: AgentConversationSession,
     ) : BackendConversationTurnOutcome
 
     data class WaitingOption(
-        val usage: LLMResponse.Usage,
+        override val usage: LLMResponse.Usage,
         override val session: AgentConversationSession,
     ) : BackendConversationTurnOutcome
 }

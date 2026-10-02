@@ -39,30 +39,6 @@ class BackendExecutionFinalizationE2eTest {
         }
 
     @Test
-    fun `old runtime owner cannot renew a lease or cancel the replacement owner`() =
-        backendE2eTest("e2e_owner_fencing", llm = E2eLlmApi().apply { hangUntilCancelled() }) {
-            val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
-            val executionId = withPublicSocket(chatId) { socket ->
-                socket.send(Frame.Text(messageFrame(chatId, userId, "own", text = "work")))
-                UUID.fromString(readJson(socket)["thread"]["id"].asText())
-            }
-            llm.awaitPrompt("work")
-            val started = checkNotNull(backend.executionRepository.get(userId, executionId))
-            // Simulate ownership transfer while the old process still has a live job.
-            sql { connection -> connection.prepareStatement("update agent_executions set runtime_owner = 'replacement' where id = ?")
-                .use { it.setObject(1, executionId); assertEquals(1, it.executeUpdate()) } }
-            assertNull(backend.executionRepository.refreshClientThreadLease(userId, UUID.fromString(chatId), executionId,
-                checkNotNull(started.runtimeOwner), checkNotNull(started.runtimeLeaseUntil)))
-            backend.dependencies.executionService.propagateCancellation(started)
-            backend.awaitExecution(executionId)
-            backend.dependencies.executionService.finalizeInterruptedExecution(started)
-            assertEquals("running", threadStatus(chatId, executionId))
-            val events = client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(userId) }.jsonBody()["items"]
-            assertTrue(events.none { it["type"].asText().startsWith("thread.") })
-        }
-
-    @Test
     fun `saved option wait survives shutdown and resumes or explicitly cancels after restart`() {
         for (cancel in listOf(false, true)) {
             val schema = newPostgresSchema("e2e_wait_restart")
@@ -138,6 +114,10 @@ class BackendExecutionFinalizationE2eTest {
                             }
                             sql { connection -> connection.prepareStatement("update agent_executions set $mutation where id = ?")
                                 .use { it.setObject(1, executionId); assertEquals(1, it.executeUpdate()) } }
+                            if (winner == "owner") {
+                                assertNull(backend.executionRepository.refreshClientThreadLease(userId, UUID.fromString(chatId),
+                                    executionId, checkNotNull(started.runtimeOwner), checkNotNull(started.runtimeLeaseUntil)))
+                            }
                             if (winner == "recovery") {
                                 assertEquals(1, peer.backend.executionRepository.failInterruptedClientThreads(Instant.now()).size)
                             }
