@@ -2,7 +2,7 @@
 
 ## Invariant
 
-`SkillsGraphBasedAgent` exposes `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand`. `GraphBasedAgent` exposes the universal core subset `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` independently of classification. Both install the host's execution-bound `SpawnSubagent` when supplied through `AgentCoreTools`. The skills graph execution boundary replaces both the functions advertised to the model and the executable tool lookup before the graph starts. The effective system message contains compact Skill inventory data filtered by the active tool policy and user-scoped registry: enabled tool-backed Skill IDs and escaped file-backed Skill IDs only. `AgentContext.systemPrompt` remains equal to the caller-provided prompt. It does not run classification or MCP injection.
+`SkillsGraphBasedAgent` exposes `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand`. `GraphBasedAgent` exposes the universal core subset `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` independently of classification. Both install the host's execution-bound `SpawnSubagent` when supplied through `AgentCoreTools`. The skills graph execution boundary replaces both the functions advertised to the model and the executable tool lookup before the graph starts. The effective system message contains compact Skill inventory data filtered by the active tool policy and user-scoped registry: enabled tool-backed Skill IDs and escaped file-backed Skill IDs with concise descriptions beside relevant exact IDs. `AgentContext.systemPrompt` remains equal to the caller-provided prompt. It classifies file-backed description metadata with Jev and LLM fallback, using the current request and bounded recent conversation. It does not classify direct-tool categories or inject MCP tools.
 
 Continuation ordering, reserved publication, response acceptance, and stream revisions follow [Execution lifecycle](execution-lifecycle.md).
 
@@ -19,7 +19,7 @@ Advertising a small tool list without replacing executable lookup would let a fa
 ## Safe changes
 
 - Keep core-tool restriction at the execution boundary so every graph node sees the restricted context; tool loops return directly to the LLM.
-- Keep `AgentContext.systemPrompt` equal to the configured prompt. Let `NodesSkillInventory` capture filtered tool-backed Skill IDs and escaped file-backed Skill IDs per turn and append them only to the effective system message in history.
+- Keep `AgentContext.systemPrompt` equal to the configured prompt. Run `NodesSkillClassification` after memory recall and before `NodesSkillInventory`; clear prior selections on every turn. Let `NodesSkillInventory` capture filtered tool-backed Skill IDs, escaped file-backed Skill IDs, and selected descriptions per turn and append them only to the effective system message in history.
 - Keep memory recall after history input and before context enrichment. Run it only once per user turn.
 - Keep completed-turn memory capture in the graph's finalization node so failed finalization does not schedule capture.
 - Keep large-result processing in `NodesToolUseWithKnowledge`; `NodesPlain.toolUse()` remains inline-only.

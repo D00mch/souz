@@ -1,6 +1,8 @@
 package ru.souz.skills.registry
 
 import io.mockk.every
+import io.mockk.verify
+import io.mockk.spyk
 import io.mockk.mockk
 import java.nio.file.Files
 import java.nio.file.Path
@@ -36,6 +38,37 @@ import kotlin.test.assertTrue
 
 class FileSystemSkillRegistryRepositoryTest {
     private val createdPaths = mutableListOf<Path>()
+
+    @Test
+    fun `description discovery reads only markdown and isolates malformed Skills`() = runTest {
+        val stateRoot = createTempDirectory("skill-descriptions-")
+        val paths = DefaultSouzPaths(stateRoot = stateRoot)
+        val sandbox = createLocalSandbox(paths)
+        val recordingFs = spyk(sandbox.fileSystem)
+        val runtime = mockk<RuntimeSandbox> {
+            every { runtimePaths } returns sandbox.runtimePaths
+            every { mode } returns sandbox.mode
+            every { fileSystem } returns recordingFs
+        }
+        val repository = FileSystemSkillRegistryRepository(runtime)
+        val valid = SkillId("s17")
+        val broken = SkillId("broken")
+        val validRoot = paths.skillsDir.resolve(valid.value)
+        val brokenRoot = paths.skillsDir.resolve(broken.value)
+        Files.createDirectories(validRoot)
+        Files.createDirectories(brokenRoot)
+        Files.writeString(validRoot.resolve("SKILL.md"), "---\nname: Research\ndescription: Summarize papers.\n---\nPrivate instructions.")
+        Files.writeString(validRoot.resolve("support.txt"), "Private supporting file.")
+        Files.writeString(brokenRoot.resolve("SKILL.md"), "---\nname: Broken\ndescription: \"unterminated\n---\nInstructions.")
+
+        assertEquals(setOf(valid, broken), repository.listSkillInventoryIds("user-1").toSet())
+        assertEquals(mapOf(valid to "Summarize papers."), repository.listSkillDescriptions("user-1"))
+        verify(exactly = 0) { recordingFs.readBytes(match { it.name == "support.txt" }) }
+        assertEquals(listOf(valid), repository.listSkills("user-1").map { it.skillId })
+        assertNotNull(repository.loadSkillBundle("user-1", valid))
+        val error = assertFailsWith<SkillBundleException> { repository.loadSkillBundle("user-1", broken) }
+        assertTrue(error.message.orEmpty().contains("not valid YAML"))
+    }
 
     @AfterTest
     fun cleanup() {

@@ -17,6 +17,7 @@ import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
+import ru.souz.agent.nodes.NodesSkillClassification
 import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
@@ -387,6 +388,7 @@ private class Harness(
             nodesSummarization = nodesSummarization,
             nodesMemory = nodesMemory,
             nodesSkillInventory = nodesSkillInventory,
+            nodesSkillClassification = mockk { every { node() } returns Node("Skill Classification") { it } },
             nodesToolUseWithKnowledge = nodesToolUse,
             coreTools = testCoreTools(),
         )

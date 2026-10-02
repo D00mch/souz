@@ -7,16 +7,19 @@ import java.time.Clock
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleException
 import ru.souz.agent.skills.bundle.SkillBundleHasher
+import ru.souz.agent.skills.bundle.SkillBundleParser
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.validation.SkillValidationFinding
 import ru.souz.agent.skills.validation.SkillValidationRecord
+import ru.souz.agent.skills.validation.SkillValidationPolicy
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.runtime.paths.SandboxSouzPaths
@@ -117,6 +120,29 @@ class FileSystemSkillRegistryRepository(
 
         logSkillInventoryIdsListed(userId, store, skillsRoot, skillRoots, skillIds)
         skillIds
+    }
+
+    override suspend fun listSkillDescriptions(userId: String): Map<SkillId, String> = withContext(Dispatchers.IO) {
+        val store = storeFor(userId)
+        buildMap {
+            listSkillInventoryIds(userId).forEach { skillId ->
+                try {
+                    val stored = readStoredSkillOrNull(store, metadataPath(store.paths, skillId))
+                    val description = stored?.manifest?.description ?: SkillBundleParser.parseManifest(
+                        SandboxSkillBundleFileSystem(store.fileSystem).readUtf8File(
+                            context = SkillBundleFsContext(userId),
+                            path = skillRoot(store.paths, skillId).resolve(SKILL_MARKDOWN_FILE_NAME),
+                            maxBytes = SkillValidationPolicy.default().maxFileBytes.toLong(),
+                        )
+                    ).description
+                    put(skillId, description)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    logger.warn("Skill description unavailable skill={}: {}", skillId.value, error.message)
+                }
+            }
+        }
     }
 
     override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill = withContext(Dispatchers.IO) {
@@ -320,12 +346,14 @@ class FileSystemSkillRegistryRepository(
         val skillId = runCatching {
             SkillId(requireSafePathSegment(skillRoot.name, "SkillId"))
         }.getOrNull() ?: return null
-        val bundle = loadLooseSkillBundleOrNull(
-            store = store,
-            userId = userId,
-            skillId = skillId,
-            skillRoot = skillRoot,
-        ) ?: return null
+        val bundle = try {
+            loadLooseSkillBundleOrNull(store, userId, skillId, skillRoot)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            logLooseSkillBundleReadFailed(skillRoot, error)
+            null
+        } ?: return null
         return StoredSkill(
             userId = userId,
             skillId = skillId,
@@ -358,17 +386,13 @@ class FileSystemSkillRegistryRepository(
         val skillMarkdown = store.resolveChildPath(skillRoot, SKILL_MARKDOWN_FILE_NAME)
         if (!skillMarkdown.exists || !skillMarkdown.isRegularFile) return null
 
-        return runCatching {
-            FileSystemSkillBundleLoader(
-                fileSystem = SandboxSkillBundleFileSystem(store.fileSystem),
-            ).loadDirectory(
-                context = SkillBundleFsContext(userId = userId),
-                skillId = skillId,
-                rawRoot = skillRoot.path,
-            )
-        }.onFailure { error ->
-            logLooseSkillBundleReadFailed(skillRoot, error)
-        }.getOrNull()
+        return FileSystemSkillBundleLoader(
+            fileSystem = SandboxSkillBundleFileSystem(store.fileSystem),
+        ).loadDirectory(
+            context = SkillBundleFsContext(userId = userId),
+            skillId = skillId,
+            rawRoot = skillRoot.path,
+        )
     }
 
     private fun readValidationOrNull(

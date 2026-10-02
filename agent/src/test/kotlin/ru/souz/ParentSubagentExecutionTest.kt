@@ -21,6 +21,7 @@ import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesMemory
+import ru.souz.agent.nodes.NodesSkillClassification
 import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
@@ -268,7 +269,9 @@ private class ParentHarness(
         agent = if (id == AgentId.SKILLS_GRAPH) {
             SkillsGraphBasedAgent(
                 restJsonMapper, nodesLLM, nodesCommon, nodesErrorHandling, nodesSummarization,
-                nodesMemory, inventory, nodesToolUse, coreTools,
+                nodesMemory, inventory,
+                mockk<NodesSkillClassification> { every { node() } returns Node("Skill Classification") { it } },
+                nodesToolUse, coreTools,
             )
         } else {
             val classification = mockk<NodesClassification> {

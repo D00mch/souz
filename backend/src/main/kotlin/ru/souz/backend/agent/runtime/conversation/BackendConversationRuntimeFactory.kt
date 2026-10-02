@@ -9,6 +9,7 @@ import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillBundleProvider
+import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.model.AgentConversationKey
@@ -84,6 +85,7 @@ internal class BackendConversationRuntimeFactory(
     private val hookStore: HookStore,
     private val executionQuotas: ExecutionQuotaManager,
     private val testLlmApiFactory: (suspend (SettingsProvider) -> LLMChatAPI)? = null,
+    private val skillClassifier: SkillClassifier? = null,
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
@@ -215,6 +217,7 @@ internal class BackendConversationRuntimeFactory(
             telemetry = AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,
             llmApi = executionApi,
+            skillClassifier = skillClassifier,
             memoryRuntime = memoryRuntime,
             automaticMemoryRecall = automaticMemoryRecall,
             captureScope = agentBackgroundScope + backendLogContext(

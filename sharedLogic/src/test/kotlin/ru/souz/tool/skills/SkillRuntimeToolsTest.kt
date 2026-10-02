@@ -35,6 +35,7 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.knowledge.SandboxConversationKnowledgeStore
+import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxScope
@@ -60,6 +61,44 @@ import kotlin.test.assertTrue
 
 class SkillRuntimeToolsTest {
     private val createdPaths = mutableListOf<Path>()
+
+    @Test
+    fun `malformed loose and stored frontmatter returns actionable per Skill errors`() = runTest {
+        val home = createTempDirectory("malformed-skills-")
+        val state = home.resolve("state").createDirectories()
+        val repository = FileSystemSkillRegistryRepository(localSandbox(home, state))
+        val healthy = bundle("healthy")
+        repository.saveSkillBundle(USER_ID, healthy)
+        val malformed = mapOf(
+            "bad-yaml" to "---\nname: Broken\ndescription: \"unterminated\n---\nInstructions.",
+            "bad-shape" to "---\nname: Broken\ndescription: [one, two]\n---\nInstructions.",
+            "missing-delimiter" to "---\nname: Broken\ndescription: Broken",
+        )
+        malformed.forEach { (id, markdown) ->
+            val root = state.resolve("skills/$id").createDirectories()
+            Files.writeString(root.resolve("SKILL.md"), markdown)
+        }
+        val stored = repository.saveSkillBundle(USER_ID, bundle("stored-broken"))
+        Files.writeString(state.resolve("skills/stored-broken/bundles/${stored.bundleHash}/SKILL.md"), malformed.getValue("bad-shape"))
+        val detail = getSkillByNameTool(repository)
+        val invoke = invokeSkillTool(repository)
+        val ids = repository.listSkillInventoryIds(USER_ID).map { it.value }.toSet()
+        assertEquals(malformed.keys + setOf("healthy", "stored-broken"), ids)
+        val expectedProblems = mapOf(
+            "bad-yaml" to "not valid YAML", "bad-shape" to "description",
+            "missing-delimiter" to "closing YAML frontmatter delimiter", "stored-broken" to "wrong shape",
+        )
+        expectedProblems.forEach { (id, problem) ->
+            val error = detail.call(mapOf("skillId" to id))["error"]
+            assertEquals(id, error["skillId"].asText())
+            assertEquals("skill_invalid_bundle", error["code"].asText())
+            assertTrue(error["message"].asText().contains(id))
+            assertTrue(error["message"].asText().contains(problem))
+            assertTrue(error["message"].asText().contains("Fix"))
+            assertEquals("skill_invalid_bundle", invoke.call(mapOf("skillId" to id))["error"]["code"].asText())
+        }
+        assertEquals("healthy", detail.call(mapOf("skillId" to "healthy"))["skill"]["skillId"].asText())
+    }
 
     @AfterTest
     fun cleanup() {

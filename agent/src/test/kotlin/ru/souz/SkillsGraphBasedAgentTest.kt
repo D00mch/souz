@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.graph.Node
+import ru.souz.agent.nodes.NodesSkillClassification
 import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
@@ -32,6 +33,7 @@ import ru.souz.tool.ToolCategory
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class SkillsGraphBasedAgentTest {
     @Test
@@ -80,7 +82,11 @@ class SkillsGraphBasedAgentTest {
             nodesMemory,
             agentToolExecutor,
         )
-        val result = skillsAgent.execute(baseContext())
+        val steps = mutableListOf<String>()
+        val result = skillsAgent.execute(baseContext(), onStep = { _, node, _, _ -> steps += node.name.substringAfter("Node ").substringBefore(';') })
+        assertEquals(1, steps.count { it == "Skill Classification" })
+        assertTrue(steps.indexOf("Memory recall") < steps.indexOf("Skill Classification"))
+        assertTrue(steps.indexOf("Skill Classification") < steps.indexOf("Skill Inventory"))
 
         assertEquals("final", result.output)
         assertEquals(
@@ -164,6 +170,7 @@ class SkillsGraphBasedAgentTest {
             agentToolExecutor = agentToolExecutor,
             knowledgeStore = null,
         ),
+        nodesSkillClassification = mockk { every { node() } returns passthrough("Skill Classification", mutableListOf()) },
         coreTools = testCoreTools(),
     )
 

@@ -9,14 +9,14 @@ Shared provider clients, settings and memory contracts, sandbox contracts, skill
 `ru.souz.jev.JevClient` evaluates named yes/no questions through the [hosted TypeSafe API](https://api.typesafe.ai/docs)
 and returns their probabilities. Shared runtime DI binds it lazily using the host-owned HTTP client.
 The classic `GraphBasedAgent` can select multiple tool categories with Jev independently of its conversational
-model. The skills graph, including backend conversations, does not classify tool categories.
+model. The skills graph, including backend conversations, classifies file-backed Skills by description with Jev first and LLM fallback; it does not classify tool categories. Only selected Skills receive concise descriptions beside their exact IDs in inventory. Full instructions and supporting files load on demand, with approval where enabled.
 
 | Variable | Behavior |
 | --- | --- |
-| `SOUZ_CLASSIFIER` | Unset or `llm`: existing LLM classifier with regex fallback. `jev`: Jev classifier. |
+| `SOUZ_CLASSIFIER` | Classic tool categories only: unset or `llm` uses LLM with regex fallback; `jev` uses Jev. |
 | `JEV_TOKEN` | Required, nonblank Bearer credential for Jev and its live tests. |
 | `JEV_MODEL` | Hosted model ID or alias; defaults to `jev-latest`. |
-| `JEV_THRESHOLD` | Finite probability in `[0, 1]`; defaults to `0.5`. Categories must score strictly above it. |
+| `JEV_THRESHOLD` | Finite probability in `[0, 1]`; defaults to `0.5`. Categories and Skills must score strictly above it. |
 
 Export `JEV_TOKEN` in the environment that starts Souz, then run:
 
@@ -25,7 +25,7 @@ SOUZ_CLASSIFIER=jev JEV_MODEL=jev-latest JEV_THRESHOLD=0.5 ./gradlew :desktopApp
 ```
 
 Settings are read at construction; invalid Jev configuration fails when Jev is selected or its client is resolved.
-Requests time out after 30 seconds. The graph tries twice before regex fallback and propagates cancellation.
+Requests time out after 30 seconds. Classic category selection tries twice before regex fallback. File-backed Skill selection falls back to the current execution LLM when Jev configuration or requests fail, and keeps ID-only inventory if LLM classification also fails. Cancellation propagates.
 Only enabled, nonempty categories are evaluated; an empty catalog makes no request. No matches or `HELP`
 exposes all available tools.
 
@@ -161,11 +161,7 @@ The Docker image seeds the bundled paper skill directly into the registry-compat
 /souz/state/skills/paper-summarize-academic/bundles/{bundleHash}/...
 ```
 
-The agent pipeline selects skills returned by:
-
-```kotlin
-SkillRegistryRepository.listSkills(userId)
-```
+Inventory uses `SkillBundleProvider.listSkillInventoryIds(userId)`; file-backed classification uses `listSkillDescriptions(userId)`. Broken frontmatter does not remove an ID or block healthy Skills. Exact detail and invocation return `skill_invalid_bundle` with the Skill ID and parsing problem; fix that Skill’s `SKILL.md` and retry.
 
 The current runtime integration test covers that the Docker-seeded skill is visible through the registry.
 

@@ -21,6 +21,7 @@ import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkillInventory
+import ru.souz.agent.nodes.NodesSkillClassification
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
@@ -43,6 +44,7 @@ class SkillsGraphBasedAgent internal constructor(
     private val nodesSummarization: NodesSummarization,
     private val nodesMemory: NodesMemory,
     private val nodesSkillInventory: NodesSkillInventory,
+    private val nodesSkillClassification: NodesSkillClassification,
     private val nodesToolUseWithKnowledge: NodesToolUseWithKnowledge,
     private val coreTools: AgentCoreTools,
     private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegate(
@@ -57,6 +59,7 @@ class SkillsGraphBasedAgent internal constructor(
     private fun graph(controller: ActiveRunInputController): Graph<String, String> = buildGraph(name = "Skills Agent") {
         val inputToHistory = NodesPlain.inputToHistory()
         val memoryRecall = nodesMemory.recall()
+        val skillClassification = nodesSkillClassification.node()
         val skillInventory = nodesSkillInventory.node(
             skillTools = emptyList(),
             name = SKILL_INVENTORY_NODE_NAME,
@@ -76,7 +79,8 @@ class SkillsGraphBasedAgent internal constructor(
 
         nodeInput.edgeTo(inputToHistory)
         inputToHistory.edgeTo(memoryRecall)
-        memoryRecall.edgeTo(skillInventory)
+        memoryRecall.edgeTo(skillClassification)
+        skillClassification.edgeTo(skillInventory)
         skillInventory.edgeTo(contextEnrich)
         contextEnrich.edgeTo(chat)
         chat.edgeTo { ctx ->

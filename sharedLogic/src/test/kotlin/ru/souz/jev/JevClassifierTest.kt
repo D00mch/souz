@@ -15,6 +15,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.runtime.JevClassifier
+import ru.souz.agent.skills.SkillId
 import ru.souz.tool.ToolCategory
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -23,6 +24,26 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 
 class JevClassifierTest {
+    @Test
+    fun `Skills use description questions with independent exact id selection`() = runTest {
+        val skills = mapOf(SkillId("s17") to "Summarize academic papers", SkillId("s42") to "Compose music")
+        val engine = MockEngine { httpRequest ->
+            val payload = restJsonMapper.readTree(httpRequest.body.toByteArray())
+            assertEquals(setOf("s17", "s42"), payload["questions"].fieldNames().asSequence().toSet())
+            skills.forEach { (id, description) ->
+                assertContains(payload["questions"][id.value]["instructions"].asText(), description)
+            }
+            assertEquals(request.messages.drop(1).map { it.content }, payload["state"].map { it["content"].asText() })
+            respond("""{"answers":{"s17":{"type":"noul","noul":0.9},"s42":{"type":"noul","noul":0.5}}}""")
+        }
+        HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
+            val classifier = JevClassifier(JevClient(http, "test-token"))
+            assertEquals(setOf(SkillId("s17")), classifier.selectSkills(request, skills))
+            assertEquals(emptySet(), classifier.selectSkills(request, emptyMap()))
+            assertEquals(1, engine.requestHistory.size)
+        }
+    }
+
     private val request = LLMRequest.Chat(
         model = "conversational-model",
         messages = listOf(

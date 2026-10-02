@@ -1,6 +1,7 @@
 package ru.souz.agent.state
 
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.skills.SkillId
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
@@ -16,6 +17,7 @@ data class AgentContext<I>(
     val systemPrompt: String,
     val toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     val runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
+    val selectedSkillDescriptions: Map<SkillId, String> = emptyMap(),
 ) {
     /** Replaces advertised and executable tools without inheriting catalog categories. */
     internal fun withOnlyTools(tools: List<LLMToolSetup>): AgentContext<I> {
@@ -31,6 +33,7 @@ data class AgentContext<I>(
         history: List<LLMRequest.Message> = this.history,
         activeTools: List<LLMRequest.Function> = this.activeTools,
         systemPrompt: String = this.systemPrompt,
+        selectedSkillDescriptions: Map<SkillId, String> = this.selectedSkillDescriptions,
         transform: (I) -> O = { it as O },
     ): AgentContext<O> = AgentContext(
         input = transform(input),
@@ -40,6 +43,7 @@ data class AgentContext<I>(
         systemPrompt = systemPrompt,
         toolInvocationMeta = toolInvocationMeta,
         runtimeEventSink = runtimeEventSink,
+        selectedSkillDescriptions = selectedSkillDescriptions,
     )
 }
 
