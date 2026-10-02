@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.graph.Node
-import ru.souz.agent.nodes.NodesSkillClassification
+import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
@@ -170,7 +170,7 @@ class SkillsGraphBasedAgentTest {
             agentToolExecutor = agentToolExecutor,
             knowledgeStore = null,
         ),
-        nodesSkillClassification = mockk { every { node() } returns passthrough("Skill Classification", mutableListOf()) },
+        nodesClassification = mockk { every { selectSkills() } returns passthrough("Skill Classification", mutableListOf()) },
         coreTools = testCoreTools(),
     )
 

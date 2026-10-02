@@ -16,12 +16,12 @@ import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.graph.Graph
 import ru.souz.agent.graph.Node
 import ru.souz.agent.graph.buildGraph
+import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkillInventory
-import ru.souz.agent.nodes.NodesSkillClassification
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
@@ -44,7 +44,7 @@ class SkillsGraphBasedAgent internal constructor(
     private val nodesSummarization: NodesSummarization,
     private val nodesMemory: NodesMemory,
     private val nodesSkillInventory: NodesSkillInventory,
-    private val nodesSkillClassification: NodesSkillClassification,
+    private val nodesClassification: NodesClassification,
     private val nodesToolUseWithKnowledge: NodesToolUseWithKnowledge,
     private val coreTools: AgentCoreTools,
     private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegate(
@@ -57,25 +57,25 @@ class SkillsGraphBasedAgent internal constructor(
     private val activeRun = MutableStateFlow<ActiveRunInputController?>(null)
 
     private fun graph(controller: ActiveRunInputController): Graph<String, String> = buildGraph(name = "Skills Agent") {
-        val inputToHistory = NodesPlain.inputToHistory()
-        val memoryRecall = nodesMemory.recall()
-        val skillClassification = nodesSkillClassification.node()
-        val skillInventory = nodesSkillInventory.node(
+        val inputToHistory: Node<String, String> = NodesPlain.inputToHistory()
+        val memoryRecall: Node<String, String> = nodesMemory.recall()
+        val skillClassification: Node<String, String> = nodesClassification.selectSkills()
+        val skillInventory: Node<String, String> = nodesSkillInventory.node(
             skillTools = emptyList(),
             name = SKILL_INVENTORY_NODE_NAME,
         )
-        val contextEnrich = nodesCommon.nodeAppendAdditionalData()
+        val contextEnrich: Node<String, String> = nodesCommon.nodeAppendAdditionalData()
         val chat = SteerableChatNode(nodesLLM, controller)
         val chatOk: Node<LLMResponse.Chat, LLMResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
             ctx.map { ctx.input as LLMResponse.Chat.Ok }
         }
-        val toolUse = nodesToolUseWithKnowledge.node(
+        val toolUse: Node<LLMResponse.Chat.Ok, String> = nodesToolUseWithKnowledge.node(
             alwaysInlineToolNames = alwaysInlineResultTools.mapTo(mutableSetOf()) { it.fn.name },
         )
-        val finalizeTurn = nodesMemory.finalizeTurn(
+        val finalizeTurn: Node<LLMResponse.Chat.Ok, String> = nodesMemory.finalizeTurn(
             summarization = nodesSummarization.summarize(),
         )
-        val chatErrorToFinish = nodesErrorHandling.chatErrorToFinish()
+        val chatErrorToFinish: Node<LLMResponse.Chat, String> = nodesErrorHandling.chatErrorToFinish()
 
         nodeInput.edgeTo(inputToHistory)
         inputToHistory.edgeTo(memoryRecall)

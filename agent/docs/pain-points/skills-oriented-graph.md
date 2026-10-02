@@ -19,7 +19,7 @@ Advertising a small tool list without replacing executable lookup would let a fa
 ## Safe changes
 
 - Keep core-tool restriction at the execution boundary so every graph node sees the restricted context; tool loops return directly to the LLM.
-- Keep `AgentContext.systemPrompt` equal to the configured prompt. Run `NodesSkillClassification` after memory recall and before `NodesSkillInventory`; clear prior selections on every turn. Let `NodesSkillInventory` capture filtered tool-backed Skill IDs, escaped file-backed Skill IDs, and selected descriptions per turn and append them only to the effective system message in history.
+- Keep `AgentContext.systemPrompt` equal to the configured prompt. Run `NodesClassification.selectSkills()` after memory recall and before `NodesSkillInventory`; clear prior selections on every turn. Let `NodesSkillInventory` capture filtered tool-backed Skill IDs, escaped file-backed Skill IDs, and selected descriptions per turn and append them only to the effective system message in history.
 - Keep memory recall after history input and before context enrichment. Run it only once per user turn.
 - Keep completed-turn memory capture in the graph's finalization node so failed finalization does not schedule capture.
 - Keep large-result processing in `NodesToolUseWithKnowledge`; `NodesPlain.toolUse()` remains inline-only.

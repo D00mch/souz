@@ -79,7 +79,7 @@ class GraphBasedAgentTest {
         )
 
         every { nodesLLM.sideEffects } returns emptyFlow()
-        every { nodesClassify.node(CLASSIFY_NODE_NAME) } returns passthroughStringNode(CLASSIFY_NODE_NAME)
+        every { nodesClassify.selectCategories(CLASSIFY_NODE_NAME) } returns passthroughStringNode(CLASSIFY_NODE_NAME)
         every {
             nodesSkillInventory.node(
                 match { tools -> tools == expectedCoreTools },

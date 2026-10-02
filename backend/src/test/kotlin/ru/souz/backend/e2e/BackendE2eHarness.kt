@@ -1,5 +1,6 @@
 package ru.souz.backend.e2e
 
+import ru.souz.agent.skills.SkillClassifier
 import ru.souz.backend.execution.service.AgentExecutionLauncher
 import ru.souz.backend.hooks.HookConfig
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
@@ -320,6 +321,7 @@ internal class BackendE2eBackend(
                 appConfig = appConfig,
             )
         )
+        bindSingleton<SkillClassifier>(overrides = true) { SkillClassifier { _, _ -> emptySet() } }
         bindSingleton<LocalProviderAvailability>(overrides = true) { localAvailability }
         bindSingleton<LocalLlamaRuntime>(overrides = true) { localRuntime }
         bindSingleton<LocalChatAPI>(overrides = true) { localChatApi }

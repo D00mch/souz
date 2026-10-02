@@ -9,6 +9,7 @@ import io.mockk.unmockkAll
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
@@ -45,6 +46,24 @@ class NodesClassificationPromptTest {
                 input = "Open the website", history = emptyList(),
                 localClassifier = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(listOf(ToolCategory.FILES), 50.0) },
                 apiClassifier = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(categories, null) },
+            )
+            assertEquals(tools, result.activeTools.map { it.name })
+            assertEquals(selectedSkills, result.selectedSkillDescriptions)
+        }
+    }
+
+    @Test
+    fun `numeric confidence retains agreement and all-tools fallback for mismatches`() {
+        val replies = mapOf(
+            UserMessageClassifier.Reply(listOf(ToolCategory.BROWSER), 51.0) to listOf("Open"),
+            UserMessageClassifier.Reply(listOf(ToolCategory.BROWSER), 50.0) to listOf("Read", "Open"),
+            UserMessageClassifier.Reply(listOf(ToolCategory.FILES), 10.0) to listOf("Read"),
+        )
+        for ((reply, tools) in replies) {
+            val result = executeClassification(
+                input = "Read the file", history = emptyList(),
+                localClassifier = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(listOf(ToolCategory.FILES), 50.0) },
+                apiClassifier = UserMessageClassifier { _, _ -> reply },
             )
             assertEquals(tools, result.activeTools.map { it.name })
         }
@@ -102,6 +121,8 @@ class NodesClassificationPromptTest {
             assertEquals(LlmProvider.OPENAI, it.provider)
         }
     }
+
+    private val selectedSkills = mapOf(SkillId("UntouchedSkill.ID") to "previously selected")
 
     private val defaultTools: Map<ToolCategory, Map<String, LLMToolSetup>> = mapOf(
         ToolCategory.FILES to mapOf("Read" to dummySetup("Read")),
@@ -383,15 +404,12 @@ class NodesClassificationPromptTest {
     }
 
     private fun buildPromptWith(filteredTools: Map<ToolCategory, Map<String, LLMToolSetup>>): String {
-        val classification = NodesClassification(
-            logObjectMapper = ObjectMapper(),
-            apiClassifier = mockk(relaxed = true),
-            localClassifier = mockk(relaxed = true),
-            toolCatalog = mockk<AgentToolCatalog>(relaxed = true),
-            toolsFilter = mockk<AgentToolsFilter>(relaxed = true),
+        val classifier = CapturingClassifier(UserMessageClassifier.Reply(emptyList(), null))
+        executeClassification(
+            input = "test", history = emptyList(), tools = filteredTools,
+            localClassifier = classifier, apiClassifier = classifier,
         )
-
-        return classification.buildPrompt(filteredTools)
+        return classifier.requireBody().messages.first().content
     }
 
     private fun executeClassification(
@@ -409,6 +427,8 @@ class NodesClassificationPromptTest {
         }
         val classification = NodesClassification(
             logObjectMapper = ObjectMapper(),
+            skillBundleProvider = mockk(),
+            skillFallback = mockk(),
             apiClassifier = apiClassifier,
             localClassifier = localClassifier,
             toolCatalog = toolsFactory,
@@ -416,7 +436,7 @@ class NodesClassificationPromptTest {
         )
 
         return runBlocking {
-            classification.node().execute(
+            classification.selectCategories().execute(
                 ctx = AgentContext(
                     input = input,
                     settings = AgentSettings(
@@ -428,6 +448,7 @@ class NodesClassificationPromptTest {
                     history = history,
                     activeTools = emptyList(),
                     systemPrompt = "",
+                    selectedSkillDescriptions = selectedSkills,
                 ),
                 runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
             )

@@ -15,7 +15,6 @@ import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkillInventory
-import ru.souz.agent.nodes.NodesSkillClassification
 import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.skills.LlmSkillClassifier
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
@@ -72,15 +71,6 @@ fun agentDiModule(
         )
     }
     bindSingleton { NodesMemory(instance(), instance()) }
-    bindSingleton {
-        NodesSkillClassification(
-            skillBundleProvider = instance<SkillRegistryRepository>(),
-            toolCatalog = instance(),
-            toolsFilter = instance(),
-            classifier = instanceOrNull<SkillClassifier>(),
-            fallback = LlmSkillClassifier(instance()),
-        )
-    }
     bindSingleton { NodesLLM(instance(), instance()) }
     bindSingleton { NodesMCP(instance()) }
     bindSingleton { JsonUtils(restJsonMapper) }
@@ -90,6 +80,9 @@ fun agentDiModule(
             logObjectMapper = instance<ObjectMapper>(tag = logObjectMapperTag),
             apiClassifier = instance<UserMessageClassifier>(tag = apiClassifierTag),
             localClassifier = instance<UserMessageClassifier>(tag = localClassifierTag),
+            skillBundleProvider = instance<SkillRegistryRepository>(),
+            skillClassifier = instanceOrNull<SkillClassifier>(),
+            skillFallback = LlmSkillClassifier(instance()),
             toolCatalog = instance(),
             toolsFilter = instance(),
         )
@@ -129,7 +122,7 @@ fun agentDiModule(
             nodesSummarization = instance(),
             nodesMemory = instance(),
             nodesSkillInventory = instance(),
-            nodesSkillClassification = instance(),
+            nodesClassification = instance(),
             nodesToolUseWithKnowledge = instance(),
             coreTools = instance(),
         )

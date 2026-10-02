@@ -13,11 +13,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.ActiveRunInput
 import ru.souz.agent.graph.Node
+import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
-import ru.souz.agent.nodes.NodesSkillClassification
 import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
@@ -388,7 +388,7 @@ private class Harness(
             nodesSummarization = nodesSummarization,
             nodesMemory = nodesMemory,
             nodesSkillInventory = nodesSkillInventory,
-            nodesSkillClassification = mockk { every { node() } returns Node("Skill Classification") { it } },
+            nodesClassification = mockk { every { selectSkills() } returns Node("Skill Classification") { it } },
             nodesToolUseWithKnowledge = nodesToolUse,
             coreTools = testCoreTools(),
         )

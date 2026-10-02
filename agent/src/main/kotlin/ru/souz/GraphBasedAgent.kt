@@ -56,7 +56,7 @@ class GraphBasedAgent internal constructor(
         val chatErrorToFinish: Node<LLMResponse.Chat, String> = nodesErrorHandling.chatErrorToFinish()
         val contextEnrich: Node<String, String> = nodesCommon.nodeAppendAdditionalData()
         val memoryRecall: Node<String, String> = nodesMemory.recall()
-        val nodeClassify: Node<String, String> = nodesClassify.node(CLASSIFY_NODE_NAME)
+        val nodeClassify: Node<String, String> = nodesClassify.selectCategories(CLASSIFY_NODE_NAME)
         val nodeSkillInventory: Node<String, String> = nodesSkillInventory.node(
             skillTools = graphCoreTools,
             name = SKILL_INVENTORY_NODE_NAME,

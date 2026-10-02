@@ -4,12 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
 import ru.souz.SkillsGraphBasedAgent
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkillInventory
-import ru.souz.agent.nodes.NodesSkillClassification
 import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.skills.LlmSkillClassifier
 import ru.souz.agent.nodes.NodesSummarization
@@ -88,12 +88,13 @@ class AgentExecutionKernelFactory(
             nodesSummarization = nodesSummarization,
             nodesMemory = nodesMemory,
             nodesSkillInventory = nodesSkillInventory,
-            nodesSkillClassification = NodesSkillClassification(
+            nodesClassification = NodesClassification(
+                logObjectMapper = logObjectMapper,
                 skillBundleProvider = skillBundleProvider,
                 toolCatalog = toolCatalog,
                 toolsFilter = toolsFilter,
-                classifier = skillClassifier,
-                fallback = LlmSkillClassifier(llmApi),
+                skillClassifier = skillClassifier,
+                skillFallback = LlmSkillClassifier(llmApi),
             ),
             nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
             coreTools = coreTools,

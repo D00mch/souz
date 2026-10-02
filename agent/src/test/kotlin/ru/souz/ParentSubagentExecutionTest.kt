@@ -21,7 +21,6 @@ import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesMemory
-import ru.souz.agent.nodes.NodesSkillClassification
 import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
@@ -270,12 +269,12 @@ private class ParentHarness(
             SkillsGraphBasedAgent(
                 restJsonMapper, nodesLLM, nodesCommon, nodesErrorHandling, nodesSummarization,
                 nodesMemory, inventory,
-                mockk<NodesSkillClassification> { every { node() } returns Node("Skill Classification") { it } },
+                mockk<NodesClassification> { every { selectSkills() } returns Node("Skill Classification") { it } },
                 nodesToolUse, coreTools,
             )
         } else {
             val classification = mockk<NodesClassification> {
-                every { node(any()) } returns Node("Classify") { it.map(activeTools = emptyList()) }
+                every { selectCategories(any()) } returns Node("Classify") { it.map(activeTools = emptyList()) }
             }
             val mcp = mockk<NodesMCP> { every { nodeProvideMcpTools(any()) } returns Node("MCP") { it } }
             GraphBasedAgent(

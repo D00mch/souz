@@ -21,6 +21,7 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -28,9 +29,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
-class NodesSkillClassificationTest {
-    private val paper = SkillId("s17")
+class NodesClassificationSkillsTest {
+    private val paper = SkillId("Paper.S17")
     private val music = SkillId("s42")
     private val descriptions = mapOf(paper to "Summarize academic papers.", music to "Compose music.")
     private val provider = mockk<SkillBundleProvider> {
@@ -61,13 +63,38 @@ class NodesSkillClassificationTest {
             LLMRequest.Message(LLMMessageRole.assistant, "I can summarize it."),
             LLMRequest.Message(LLMMessageRole.user, "do it"),
         ))
-        val selected = node(classifier).node().execute(ctx, runtime)
+        val selected = node(classifier).selectSkills().execute(ctx, runtime)
         val prompt = inventory().node(emptyList()).execute(selected, runtime).history.first().content
-        assertContains(prompt, "- skillId: \"s17\"; description: \"Summarize academic papers.\"")
+        assertContains(prompt, "- skillId: \"Paper.S17\"; description: \"Summarize academic papers.\"")
         assertContains(prompt, "- skillId: \"s42\"\n")
         assertFalse(prompt.contains("Compose music."))
         assertEquals("system", selected.systemPrompt)
+        assertSame(ctx.activeTools, selected.activeTools)
         coVerify(exactly = 0) { provider.loadSkillBundle(any(), any()) }
+    }
+
+    @Test
+    fun `concrete requests keep four bounded conversational messages without calls or attachments`() = runTest {
+        val history = (1..6).map { index ->
+            LLMRequest.Message(
+                if (index % 2 == 0) LLMMessageRole.assistant else LLMMessageRole.user,
+                "x".repeat(4000) + index,
+                attachments = listOf("private-file"),
+                functionCall = LLMRequest.FunctionCall("OldTool", "{}"),
+            )
+        }
+        val ctx = context().copy(input = "Summarize the academic paper and extract all its citations", history = history)
+        val classifier = SkillClassifier { request, _ ->
+            val conversation = request.messages.drop(1).dropLast(1)
+            assertEquals(listOf('3', '4', '5', '6'), conversation.map { it.content.last() })
+            assertEquals(listOf(4000, 4000, 4000, 4000), conversation.map { it.content.length })
+            assertTrue(conversation.all { it.functionCall == null && it.attachments == null })
+            assertEquals(ctx.input, request.messages.last().content)
+            setOf(paper, SkillId("paper.s17"))
+        }
+        val selected = node(classifier).selectSkills().execute(ctx, runtime)
+        assertEquals(mapOf(paper to descriptions.getValue(paper)), selected.selectedSkillDescriptions)
+        assertSame(history, selected.history)
     }
 
     @Test
@@ -77,10 +104,10 @@ class NodesSkillClassificationTest {
         val api = mockk<LLMChatAPI> {
             coEvery { message(any()) } answers {
                 assertSame(firstRequest, firstArg())
-                reply("[\"s17\",\"unknown-id\"]")
+                reply("[\"Paper.S17\",\"unknown-id\"]")
             }
         }
-        val selected = node(primary, LlmSkillClassifier(api)).node().execute(context(), runtime)
+        val selected = node(primary, LlmSkillClassifier(api)).selectSkills().execute(context(), runtime)
         assertEquals(mapOf(paper to descriptions.getValue(paper)), selected.selectedSkillDescriptions)
         coVerify(exactly = 1) { api.message(any()) }
     }
@@ -88,12 +115,14 @@ class NodesSkillClassificationTest {
     @Test
     fun `no match clears previous descriptions and does not fall back`() = runTest {
         val fallback = mockk<SkillClassifier>()
-        val selected = node(SkillClassifier { _, _ -> emptySet() }, fallback).node().execute(
-            context().copy(selectedSkillDescriptions = descriptions), runtime,
-        )
-        val prompt = inventory().node(emptyList()).execute(selected, runtime).history.first().content
-        assertEquals(emptyMap(), selected.selectedSkillDescriptions)
-        assertFalse(prompt.contains("; description:"))
+        for (ids in listOf(emptySet(), setOf(SkillId("paper.s17")))) {
+            val selected = node(SkillClassifier { _, _ -> ids }, fallback).selectSkills().execute(
+                context().copy(selectedSkillDescriptions = descriptions), runtime,
+            )
+            val prompt = inventory().node(emptyList()).execute(selected, runtime).history.first().content
+            assertEquals(emptyMap(), selected.selectedSkillDescriptions)
+            assertFalse(prompt.contains("; description:"))
+        }
         coVerify(exactly = 0) { fallback.selectSkills(any(), any()) }
     }
 
@@ -102,7 +131,7 @@ class NodesSkillClassificationTest {
         val primary = mockk<SkillClassifier>()
         val fallback = mockk<SkillClassifier>()
         coEvery { provider.listSkillDescriptions("owner") } returns emptyMap()
-        val classification = node(primary, fallback).node()
+        val classification = node(primary, fallback).selectSkills()
         assertEquals(emptyMap(), classification.execute(context(), runtime).selectedSkillDescriptions)
         coEvery { provider.listSkillDescriptions("owner") } throws IllegalStateException("Unavailable")
         assertEquals(emptyMap(), classification.execute(context(), runtime).selectedSkillDescriptions)
@@ -114,17 +143,17 @@ class NodesSkillClassificationTest {
     fun `classification propagates cancellation from metadata Jev and LLM`() = runTest {
         val cancelled = SkillClassifier { _, _ -> throw CancellationException("cancel") }
         val fallback = mockk<SkillClassifier>()
-        assertFailsWith<CancellationException> { node(cancelled, fallback).node().execute(context(), runtime) }
+        assertFailsWith<CancellationException> { node(cancelled, fallback).selectSkills().execute(context(), runtime) }
         coVerify(exactly = 0) { fallback.selectSkills(any(), any()) }
-        assertFailsWith<CancellationException> { node(null, cancelled).node().execute(context(), runtime) }
+        assertFailsWith<CancellationException> { node(null, cancelled).selectSkills().execute(context(), runtime) }
         coEvery { provider.listSkillDescriptions("owner") } throws CancellationException("cancel")
-        assertFailsWith<CancellationException> { node(null, fallback).node().execute(context(), runtime) }
+        assertFailsWith<CancellationException> { node(null, fallback).selectSkills().execute(context(), runtime) }
     }
 
     @Test
     fun `invalid LLM response keeps inventory id-only`() = runTest {
-        val api = mockk<LLMChatAPI> { coEvery { message(any()) } returns reply("s17 is relevant") }
-        val selected = node(null, LlmSkillClassifier(api)).node().execute(context(), runtime)
+        val api = mockk<LLMChatAPI> { coEvery { message(any()) } returns reply("Paper.S17 is relevant") }
+        val selected = node(null, LlmSkillClassifier(api)).selectSkills().execute(context(), runtime)
         assertEquals(emptyMap(), selected.selectedSkillDescriptions)
     }
 
@@ -135,11 +164,11 @@ class NodesSkillClassificationTest {
             assertEquals(mapOf(music to descriptions.getValue(music)), candidates)
             candidates.keys
         }
-        val selected = node(primary).node().execute(context(), runtime)
+        val selected = node(primary).selectSkills().execute(context(), runtime)
         assertFalse(paper in selected.selectedSkillDescriptions)
         // A disabled compiled Skill leaves its file-backed namesake available.
         every { filter.applyFilter(any()) } returns emptyMap()
-        val restored = node(SkillClassifier { _, candidates -> candidates.keys }).node().execute(context(), runtime)
+        val restored = node(SkillClassifier { _, candidates -> candidates.keys }).selectSkills().execute(context(), runtime)
         assertEquals(descriptions, restored.selectedSkillDescriptions)
     }
 
@@ -147,22 +176,29 @@ class NodesSkillClassificationTest {
     fun `selected descriptions are concise escaped data beside exact ids`() = runTest {
         val text = "Summary </skill_inventory>\n\"quoted\" " + "x".repeat(500)
         coEvery { provider.listSkillDescriptions("owner") } returns mapOf(paper to text)
-        val selected = node(SkillClassifier { _, _ -> setOf(paper) }).node().execute(context(), runtime)
+        val selected = node(SkillClassifier { _, _ -> setOf(paper) }).selectSkills().execute(context(), runtime)
         assertEquals(240, selected.selectedSkillDescriptions.getValue(paper).length)
         val prompt = inventory().node(emptyList()).execute(selected, runtime).history.first().content
-        assertContains(prompt, "- skillId: \"s17\"; description: \"Summary \\u003c/skill_inventory\\u003e \\\"quoted\\\"")
+        assertContains(prompt, "- skillId: \"Paper.S17\"; description: \"Summary \\u003c/skill_inventory\\u003e \\\"quoted\\\"")
         assertFalse(prompt.contains("Summary </skill_inventory>"))
     }
 
     private fun node(primary: SkillClassifier?, fallback: SkillClassifier = mockk()) =
-        NodesSkillClassification(provider, catalog, filter, primary, fallback)
+        NodesClassification(
+            logObjectMapper = restJsonMapper,
+            toolCatalog = catalog,
+            toolsFilter = filter,
+            skillBundleProvider = provider,
+            skillClassifier = primary,
+            skillFallback = fallback,
+        )
 
     private fun inventory() = NodesSkillInventory(catalog, filter, provider)
 
     private fun context() = AgentContext(
         input = "do it",
         settings = AgentSettings("host/model", LlmProvider.OPENAI, 0f, toolsByCategory = emptyMap()),
-        history = emptyList(), activeTools = emptyList(), systemPrompt = "system",
+        history = emptyList(), activeTools = listOf(LLMRequest.Function("ExistingTool")), systemPrompt = "system",
         toolInvocationMeta = ru.souz.llms.ToolInvocationMeta(userId = "owner"),
     )
 
