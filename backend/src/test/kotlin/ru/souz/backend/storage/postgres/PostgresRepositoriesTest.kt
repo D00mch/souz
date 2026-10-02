@@ -1,6 +1,7 @@
 package ru.souz.backend.storage.postgres
 
 import java.lang.reflect.Proxy
+import java.sql.SQLException
 import java.sql.PreparedStatement
 import java.sql.Types
 import java.time.Instant
@@ -863,6 +864,62 @@ class PostgresRepositoriesTest {
                 listOf("execution.started", "option.requested", "execution.finished"),
                 repositories.eventRepository.listByChat(userId, chat.id).map { it.type.value },
             )
+        }
+    }
+
+    @Test
+    fun `transitionIfCurrent preserves fields updated after the expected snapshot`() = runTest {
+        postgresRepositories(newPostgresSchema("postgres_transition_fields")).use { r ->
+            val chat = chat("user-transition", Instant.parse("2026-05-01T10:00:00Z"))
+            r.userRepository.ensureUser(chat.userId)
+            r.chatRepository.create(chat)
+            val stale = r.executionRepository.create(execution(
+                chat.userId, chat.id, null, AgentExecutionStatus.RUNNING, chat.updatedAt,
+            ).copy(runtimeOwner = "owner", runtimeLeaseUntil = Instant.now().plusSeconds(60),
+                usage = AgentExecutionUsage(10, 5, 15, 1)))
+            val message = r.messageRepository.append(chat.userId, chat.id, ChatRole.ASSISTANT, "peer response")
+            r.dataSource.write { connection ->
+                connection.prepareStatement("""
+                    update agent_executions set assistant_message_id = ?, runtime_lease_until = ?,
+                        latest_device_context = '{"device":"peer"}'::jsonb, metadata = '{"source":"peer"}'::jsonb
+                    where id = ?
+                """.trimIndent()).use {
+                    it.setObject(1, message.id); it.setInstant(2, Instant.now().plusSeconds(600))
+                    it.setObject(3, stale.id); assertEquals(1, it.executeUpdate())
+                }
+            }
+            val fresh = assertNotNull(r.executionRepository.get(chat.userId, stale.id))
+            val expected = fresh.copy(status = AgentExecutionStatus.CANCELLING, cancelRequested = true)
+            assertEquals(expected, r.executionRepository.transitionIfCurrent(stale, AgentExecutionStatus.CANCELLING))
+            assertEquals(expected, r.executionRepository.get(chat.userId, stale.id))
+            assertNull(r.executionRepository.transitionIfCurrent(stale, AgentExecutionStatus.COMPLETED))
+        }
+    }
+
+    @Test
+    fun `commitTurn rolls back all turn writes when state or lifecycle persistence fails`() = runTest {
+        for ((table, constraint) in listOf(
+            "agent_conversation_state" to "based_on_message_seq < 0",
+            "agent_executions" to "status <> 'completed'",
+        )) postgresRepositories(newPostgresSchema("postgres_turn_rollback")).use { r ->
+            val chat = chat("user-rollback", Instant.parse("2026-05-01T10:00:00Z"))
+            r.userRepository.ensureUser(chat.userId)
+            r.chatRepository.create(chat)
+            val execution = r.executionRepository.create(execution(
+                chat.userId, chat.id, null, AgentExecutionStatus.RUNNING, chat.updatedAt,
+            ))
+            r.dataSource.write { connection -> connection.createStatement().use {
+                it.execute("alter table $table add constraint reject_turn check ($constraint)")
+            } }
+            assertFailsWith<SQLException> {
+                r.executionRepository.commitTurn(execution,
+                    agentState(chat.userId, chat.id, 0, emptyList()), AgentExecutionUsage(10, 5, 15, 1),
+                    output = "reply", assistantMessageId = UUID.randomUUID())
+            }
+            assertTrue(r.messageRepository.list(chat.userId, chat.id).isEmpty())
+            assertNull(r.stateRepository.get(chat.userId, chat.id))
+            assertEquals(chat, r.chatRepository.get(chat.userId, chat.id))
+            assertEquals(execution, r.executionRepository.get(chat.userId, execution.id))
         }
     }
 

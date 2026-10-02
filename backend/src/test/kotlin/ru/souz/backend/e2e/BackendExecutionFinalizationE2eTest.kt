@@ -19,26 +19,6 @@ import ru.souz.backend.storage.postgres.newPostgresSchema
 
 class BackendExecutionFinalizationE2eTest {
     @Test
-    fun `stopped scope finalizes HTTP execution before startup without logging usage`() =
-        backendE2eTest("e2e_before_start") {
-            withTokenUsageLogs { logs ->
-                val userId = UUID.randomUUID().toString()
-                val chatId = createPublicChat(userId)
-                backend.applicationScope.cancelAndJoin()
-                val sent = client.post(BackendHttpRoutes.chatMessages(chatId)) {
-                    trusted(userId)
-                    jsonBody("""{"content":"never starts","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
-                }
-                val executionId = UUID.fromString(sent.jsonBody()["execution"]["id"].asText())
-                assertEquals("cancelled", threadStatus(chatId, executionId))
-                assertTrue(llm.requests.isEmpty())
-                assertTrue(logs.isEmpty())
-                val events = client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(userId) }.jsonBody()["items"]
-                assertEquals(1, events.count { it["type"].asText() == "execution.cancelled" })
-            }
-        }
-
-    @Test
     fun `saved option wait survives shutdown and resumes or explicitly cancels after restart`() {
         for (cancel in listOf(false, true)) {
             val schema = newPostgresSchema("e2e_wait_restart")
@@ -51,10 +31,7 @@ class BackendExecutionFinalizationE2eTest {
                 turnRunnerOverride = ScriptedOptionTurnRunner()) {
                 withTokenUsageLogs { logs ->
                     chatId = createPublicChat(userId)
-                    val sent = client.post(BackendHttpRoutes.chatMessages(chatId)) {
-                        trusted(userId); jsonBody("""{"content":"need option","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
-                    }
-                    executionId = UUID.fromString(sent.jsonBody()["execution"]["id"].asText())
+                    executionId = requestOption(userId, chatId)
                     backend.awaitExecution(executionId)
                     backend.applicationScope.cancelAndJoin()
                     val waiting = checkNotNull(backend.executionRepository.get(userId, executionId))
@@ -159,10 +136,7 @@ class BackendExecutionFinalizationE2eTest {
                 withTokenUsageLogs { logs ->
                     val userId = UUID.randomUUID().toString()
                     val chatId = createPublicChat(userId)
-                    val sent = client.post(BackendHttpRoutes.chatMessages(chatId)) {
-                        trusted(userId); jsonBody("""{"content":"need option","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
-                    }
-                    val executionId = UUID.fromString(sent.jsonBody()["execution"]["id"].asText())
+                    val executionId = requestOption(userId, chatId)
                     if (pauseAt == "peer") {
                         handoffReady.await()
                         val running = checkNotNull(backend.executionRepository.get(userId, executionId))
@@ -193,71 +167,10 @@ class BackendExecutionFinalizationE2eTest {
         }
     }
 
-    @Test
-    fun `session write failure rolls back the completed message and chat update`() =
-        backendE2eTest("e2e_completion_rollback", llm = E2eLlmApi().apply { pauseUntilReleased() }) {
-            withTokenUsageLogs { logs ->
-                val userId = UUID.randomUUID().toString()
-                val chatId = createPublicChat(userId)
-                val executionId = withPublicSocket(chatId) { socket ->
-                    socket.send(Frame.Text(messageFrame(chatId, userId, "rollback", text = "finish")))
-                    UUID.fromString(readJson(socket)["thread"]["id"].asText())
-                }
-                llm.awaitPrompt("finish")
-                val updatedAt = chatUpdatedAt(chatId)
-                // Reject the continuation write after the assistant insert has been attempted.
-                sql { connection -> connection.createStatement().use {
-                    it.execute("alter table agent_conversation_state add constraint reject_turn check (based_on_message_seq < 0)")
-                } }
-                llm.release()
-                backend.awaitExecution(executionId)
-                assertEquals("failed", threadStatus(chatId, executionId))
-                assertNoTurnSaved(chatId, executionId)
-                assertEquals(updatedAt, chatUpdatedAt(chatId))
-                assertTrue(logs.isEmpty())
-                val events = client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(userId) }.jsonBody()["items"]
-                assertEquals(listOf("thread.failed"), events.map { it["type"].asText() }.filter { it.startsWith("thread.") })
-            }
-        }
-
-    @Test
-    fun `lifecycle transition preserves concurrent lease device and assistant updates`() =
-        backendE2eTest("e2e_transition_fields", llm = E2eLlmApi().apply { pauseUntilReleased() }) {
-            val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
-            val executionId = withPublicSocket(chatId) { socket ->
-                socket.send(Frame.Text(messageFrame(chatId, userId, "fields", text = "work")))
-                UUID.fromString(readJson(socket)["thread"]["id"].asText())
-            }
-            llm.awaitPrompt("work")
-            val stale = checkNotNull(backend.executionRepository.get(userId, executionId))
-            val messageId = UUID.randomUUID()
-            withPeerBackend { peer ->
-                assertTrue(peer.backend.executionRepository.refreshClientThreadLease(
-                    userId, UUID.fromString(chatId), executionId, checkNotNull(stale.runtimeOwner), Instant.now().plusSeconds(600),
-                ) != null)
-                sql { connection ->
-                    connection.prepareStatement("""
-                        insert into messages(id, user_id, chat_id, seq, role, content, metadata, created_at)
-                        select ?, ?, ?, max(seq) + 1, 'assistant', 'peer response', '{}'::jsonb, now()
-                        from messages where chat_id = ?
-                    """.trimIndent()).use {
-                        it.setObject(1, messageId); it.setString(2, userId)
-                        it.setObject(3, UUID.fromString(chatId)); it.setObject(4, UUID.fromString(chatId)); it.executeUpdate()
-                    }
-                    connection.prepareStatement("""
-                        update agent_executions set assistant_message_id = ?, latest_device_context = '{"device":"peer"}'::jsonb,
-                            metadata = '{"source":"peer"}'::jsonb where id = ?
-                    """.trimIndent()).use { it.setObject(1, messageId); it.setObject(2, executionId); it.executeUpdate() }
-                }
-                val fresh = checkNotNull(peer.backend.executionRepository.get(userId, executionId))
-                val cancelling = checkNotNull(backend.executionRepository.transitionIfCurrent(stale, AgentExecutionStatus.CANCELLING))
-                assertEquals(fresh.copy(status = AgentExecutionStatus.CANCELLING, cancelRequested = true), cancelling)
-                backend.dependencies.executionService.propagateCancellation(cancelling)
-                backend.awaitExecution(executionId)
-                assertEquals("cancelled", threadStatus(chatId, executionId))
-            }
-        }
+    private suspend fun BackendE2eScope.requestOption(userId: String, chatId: String): UUID =
+        UUID.fromString(client.post(BackendHttpRoutes.chatMessages(chatId)) {
+            trusted(userId); jsonBody("""{"content":"need option","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+        }.jsonBody()["execution"]["id"].asText())
 
     private fun BackendE2eScope.assertNoTurnSaved(chatId: String, executionId: UUID) = sql { connection ->
         connection.prepareStatement("""

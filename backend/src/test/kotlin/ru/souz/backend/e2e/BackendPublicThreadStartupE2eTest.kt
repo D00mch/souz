@@ -148,7 +148,7 @@ class BackendPublicThreadStartupE2eTest {
 
     @Test
     fun `shutdown joins acceptance and finalizes successful or failed startup without an ACK`() {
-        for (failStartup in listOf(false, true)) backendE2eTest("e2e_ws_startup_shutdown") {
+        for (failStartup in listOf(false, true)) backendE2eTest("e2e_ws_startup_shutdown") { withTokenUsageLogs { logs ->
             if (failStartup) rejectStartupMessage()
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
@@ -164,7 +164,9 @@ class BackendPublicThreadStartupE2eTest {
             val threadId = assertNotNull(threadIdOf(chatId))
             assertEquals(listOf(if (failStartup) "thread.failed" else "thread.cancelled"), terminalEvents(threadId))
             assertTrue(backend.clientThreadRegistry.isEmpty())
-        }
+            assertTrue(llm.requests.isEmpty())
+            assertTrue(logs.isEmpty())
+        } }
     }
 
     @Test
