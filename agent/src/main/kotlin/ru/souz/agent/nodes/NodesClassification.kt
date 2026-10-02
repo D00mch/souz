@@ -36,10 +36,10 @@ internal class NodesClassification(
      *
      * Modifies [AgentContext.activeTools] based on the classification algorithm and [AgentToolCatalog].
      */
-    fun node(name: String = "select categories"): Node<String, String> = Node(name, retryable = true) { ctx: AgentContext<String> ->
-        val categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>> =
-            toolsFilter.applyFilter(toolCatalog.toolsByCategory)
-                .filterValues { it.isNotEmpty() }
+    fun node(name: String = "select categories"): Node<String, String> = Node(name, retryable = true) { ctx ->
+        val categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>> = toolsFilter
+            .applyFilter(toolCatalog.toolsByCategory)
+            .filterValues { it.isNotEmpty() }
         val body = buildClassifierBody(ctx, categoryStates)
         val categories: List<ToolCategory> = classify(body, categoryStates.keys.associateWith { it.description() })
 
