@@ -202,9 +202,10 @@ internal fun toolCallReply(
     body: LLMRequest.Chat,
     name: String,
     arguments: Map<String, Any>,
+    progress: List<String> = emptyList(),
 ): LLMResponse.Chat.Ok =
     LLMResponse.Chat.Ok(
-        choices = listOf(
+        choices = (progress.flatMap { reply(body, it).choices } + listOf(
             LLMResponse.Choice(
                 message = LLMResponse.Message(
                     content = "",
@@ -215,7 +216,7 @@ internal fun toolCallReply(
                 index = 0,
                 finishReason = LLMResponse.FinishReason.function_call,
             )
-        ),
+        )).mapIndexed { index, choice -> choice.copy(index = index) },
         created = System.currentTimeMillis(),
         model = body.model,
         usage = LLMResponse.Usage(7, 3, 10, 0),

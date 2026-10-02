@@ -13,7 +13,6 @@ import ru.souz.backend.agent.model.chatId
 import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.agent.session.AgentConversationSession
-import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.chat.model.CROSS_CHANNEL_MESSAGE_METADATA_KEY
 import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
 import ru.souz.backend.chat.model.ChatMessage
@@ -29,7 +28,6 @@ import ru.souz.tool.skills.ToolInvokeSkill
 /** Request-scoped backend conversation runtime rebuilt from the stored snapshot. */
 internal class BackendConversationRuntime(
     private val key: AgentConversationKey,
-    private val sessionRepository: AgentSessionRepository,
     private val settingsProvider: BackendConversationSettingsProvider,
     private val contextFactory: AgentContextFactory,
     private val executor: AgentExecutor,
@@ -43,7 +41,6 @@ internal class BackendConversationRuntime(
 
     internal suspend fun execute(
         request: BackendConversationTurnRequest,
-        persistSession: Boolean = true,
         eventSink: AgentRuntimeEventSink? = null,
         onRuntimeReady: suspend () -> Unit = {},
     ): BackendConversationExecution {
@@ -64,7 +61,7 @@ internal class BackendConversationRuntime(
 
         val result = executor.execute(
             agentId = AgentId.SKILLS_GRAPH,
-            context = seedContext,
+            context = seedContext.copy(settings = seedContext.settings.copy(reasoningEffort = request.reasoningEffort)),
             input = request.prompt,
             eventSink = eventSink,
             onActiveRunReady = onRuntimeReady,
@@ -77,10 +74,6 @@ internal class BackendConversationRuntime(
             basedOnMessageSeq = cursorMutex.withLock { observedMessageSeq },
             rowVersion = persistedSession?.rowVersion ?: 0L,
         )
-
-        if (persistSession) {
-            sessionRepository.save(key, nextSession)
-        }
 
         return BackendConversationExecution(
             output = result.output,

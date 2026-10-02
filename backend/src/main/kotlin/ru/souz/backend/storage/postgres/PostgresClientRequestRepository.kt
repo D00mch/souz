@@ -76,10 +76,7 @@ class PostgresClientRequestRepository(
         } else {
             acceptedRequest.requireKey(key)
             require(acceptedRequest.threadId == threadId)
-            val updatedExecution = executionWriter.update(
-                this,
-                execution.copy(latestDeviceContextJson = input.latestDeviceContextJson),
-            )
+            val updatedExecution = executionWriter.updateDeviceContext(this, execution, input.latestDeviceContextJson)
             val message = messageWriter.append(
                 connection = this,
                 userId = userId,
@@ -140,10 +137,7 @@ class PostgresClientRequestRepository(
         } else {
             acceptedRequest.requireKey(key)
             require(acceptedRequest.threadId == threadId)
-            val cancelling = executionWriter.update(
-                this,
-                execution.copy(status = AgentExecutionStatus.CANCELLING, cancelRequested = true),
-            )
+            val cancelling = checkNotNull(executionWriter.transition(this, execution, AgentExecutionStatus.CANCELLING))
             insertClientRequest(this, acceptedRequest)
             ClientRequestResult.Accepted(acceptedRequest, cancelling)
         }
@@ -193,9 +187,9 @@ private fun Connection.findClientRequest(chatId: UUID, requestId: String): Clien
         }
     }
 
-private fun Connection.findExecution(userId: String, chatId: UUID, threadId: UUID): AgentExecution? =
+internal fun Connection.findExecution(userId: String, chatId: UUID, threadId: UUID, lock: Boolean = true): AgentExecution? =
     prepareStatement(
-        "select * from agent_executions where user_id = ? and chat_id = ? and id = ? for update"
+        "select * from agent_executions where user_id = ? and chat_id = ? and id = ?" + if (lock) " for update" else ""
     ).use { statement ->
         statement.setString(1, userId)
         statement.setObject(2, chatId)
@@ -205,7 +199,7 @@ private fun Connection.findExecution(userId: String, chatId: UUID, threadId: UUI
         }
     }
 
-private fun Connection.findActiveExecution(userId: String, chatId: UUID): AgentExecution? =
+internal fun Connection.findActiveExecution(userId: String, chatId: UUID, lock: Boolean = true): AgentExecution? =
     prepareStatement(
         """
         select * from agent_executions
@@ -213,8 +207,7 @@ private fun Connection.findActiveExecution(userId: String, chatId: UUID): AgentE
           and status in ('queued', 'running', 'waiting_option', 'cancelling')
         order by started_at desc
         limit 1
-        for update
-        """.trimIndent()
+        """.trimIndent() + if (lock) " for update" else ""
     ).use { statement ->
         statement.setString(1, userId)
         statement.setObject(2, chatId)

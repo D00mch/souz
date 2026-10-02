@@ -8,11 +8,14 @@ Before changing this module, read the [pain-point index](docs/pain-points.md) an
 
 - Treat proxy-provided identity as the authority for proxy routes. The public Client-Souz boundary accepts trusted UUID user identity in `POST /v1/chats`, `chat.create.payload.userId`, and `message.submit.payload.device.userId` and must keep those values equal for chat ownership.
 - Expose only the tools `BackendToolCapabilityPolicy` allows; desktop integrations and UI dependencies must stay outside this module. Change that policy, not its callers, when backend tool exposure changes.
-- Build one immutable request-scoped catalog by applying each execution's enabled-tool snapshot to the policy-hostable compiled tools before adding Client-Souz tool-backed Skills. When that client catalog supplies `web.search`, the policy excludes compiled `InternetSearch` for that execution only.
+- Build one immutable request-scoped catalog by applying each execution's enabled-tool snapshot to the policy-hostable compiled tools before adding Client-Souz tool-backed Skills. Client-Souz executions replace compiled `InternetSearch` with client `web.search`; other executions retain server search and can target client Skills with `channelId`.
 - Build every turn with the backend's single request-scoped steerable `AgentId.SKILLS_GRAPH`. Advertise only its fixed core Skill tools and discover catalog capabilities through Skill inventory.
 - Keep product messages, thread lifecycle, agent continuation state, client tool calls, idempotency receipts, and replay events in their existing ownership layers.
-- Telegram and VK bindings use encrypted tokens, private-account linking, and independent leased poll loops. Their shared poll scheduler keeps idle long polls outside the processing limit; channel providers share text splitting and delivery persistence.
-- PostgreSQL is the structured repository store. Sandbox workspaces remain filesystem-backed and user-scoped.
+- Telegram and VK bindings use encrypted tokens, private-account linking, and independent leased poll loops. Their shared poll scheduler keeps idle long polls outside the processing limit; channel providers use platform-specific formatting and shared chunk delivery bookkeeping.
+- Assistant progress is opt-in through `narrateSteps`; live-only bot observers stop delivery before the final reply. See [execution events](docs/pain-points/execution-openapi-and-events.md).
+- PostgreSQL stores structured repositories and [conversation Knowledge](docs/pain-points/conversation-knowledge.md). Sandbox workspaces remain filesystem-backed and user-scoped.
+- Workspace hooks authenticate before agent setup and persist receipts before acknowledgement. Each new receipt owns a separate hidden technical chat; duplicate deliveries reuse the receipt. Hook recovery is single-process and only touches receipt-linked executions; see [the hook contract](../docs/hooks.md).
+- Hook intake capacity is isolated per configured owner and survives reload. Verifier commands use the trusted owner's configured LOCAL/DOCKER sandbox through `SandboxCommandExecutor`, before Skill discovery or LLM use. They share that sandbox's permissions and do not create a separate verification container.
 - Give each ordinary HTTP route explicit OpenAPI metadata. Keep the WebSocket routes out of the generated document and maintain its schema in `docs/public-souz-contract`.
 
 ## Verification

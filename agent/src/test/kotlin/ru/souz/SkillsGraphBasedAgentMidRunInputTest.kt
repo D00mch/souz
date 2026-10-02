@@ -21,6 +21,8 @@ import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
+import ru.souz.agent.runtime.AgentRuntimeEvent
+import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -189,6 +191,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
                 harness.requestHistories.last().drop(1).map { it.content },
             )
             assertEquals("replacement", result.output)
+            assertEquals(emptyList(), harness.assistantMessages)
             assertEquals(1, harness.finalizationCount)
         }
     }
@@ -198,11 +201,13 @@ class SkillsGraphBasedAgentMidRunInputTest {
         val toolStarted = CompletableDeferred<Unit>()
         val releaseTool = CompletableDeferred<Unit>()
         var toolCancelled = false
-        val harness = Harness(
+        lateinit var harness: Harness
+        harness = Harness(
             chatHandler = { call, ctx ->
                 ctx.map { if (call == 1) toolResponse() else finalResponse("after tool") }
             },
             toolHandler = {
+                assertEquals(listOf("Checking", "Checking"), harness.assistantMessages)
                 toolStarted.complete(Unit)
                 try {
                     releaseTool.await()
@@ -225,6 +230,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
         releaseTool.complete(Unit)
         val result = execution.await()
         assertEquals("after tool", result.output)
+        assertEquals(listOf("Checking", "Checking"), harness.assistantMessages)
         assertFalse(toolCancelled)
 
         val replacementHistory = harness.requestHistories[1]
@@ -333,6 +339,7 @@ private class Harness(
 
     val requestHistories = mutableListOf<List<LLMRequest.Message>>()
     val streamRevisions = mutableListOf<Long>()
+    val assistantMessages = mutableListOf<String>()
     var chatCallCount = 0
         private set
     var finalizationCount = 0
@@ -396,6 +403,11 @@ private class Harness(
         history = emptyList(),
         activeTools = emptyList(),
         systemPrompt = "system",
+        runtimeEventSink = object : AgentRuntimeEventSink {
+            override suspend fun emit(event: AgentRuntimeEvent) {
+                if (event is AgentRuntimeEvent.AssistantMessage) assistantMessages += event.content
+            }
+        },
     )
 }
 
@@ -417,7 +429,9 @@ private fun finalResponse(content: String): LLMResponse.Chat.Ok = LLMResponse.Ch
 )
 
 private fun toolResponse(): LLMResponse.Chat.Ok = LLMResponse.Chat.Ok(
-    choices = listOf(
+    choices = listOf("Checking", " ", "Checking").flatMap { finalResponse(it).choices } +
+        finalResponse("").choices.map { it.copy(message = it.message.copy(reasoningContent = "private")) } +
+        finalResponse("system text").choices.map { it.copy(message = it.message.copy(role = LLMMessageRole.system)) } + listOf(
         LLMResponse.Choice(
             message = LLMResponse.Message(
                 content = "",

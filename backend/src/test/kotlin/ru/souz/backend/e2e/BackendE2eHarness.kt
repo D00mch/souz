@@ -1,5 +1,8 @@
 package ru.souz.backend.e2e
 
+import ru.souz.backend.execution.service.AgentExecutionLauncher
+import ru.souz.backend.hooks.HookConfig
+import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.zaxxer.hikari.HikariDataSource
@@ -30,6 +33,11 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 import kotlin.test.assertEquals
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
@@ -40,9 +48,11 @@ import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
 import ru.souz.backend.storage.postgres.PostgresHistoryMemoryRepository
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.app.BackendAppConfig
+import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.backend.app.BackendApplicationScope
 import ru.souz.backend.app.BackendRuntimeResources
 import ru.souz.backend.app.backendDiModule
+import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.config.BackendConfigSource
@@ -82,6 +92,7 @@ internal fun messageFrame(
     threadId: String? = null,
     text: String = "execute this",
     deviceId: String = "history-device",
+    timeZone: String = "Europe/Moscow",
 ): String =
     """
     {
@@ -104,7 +115,7 @@ internal fun messageFrame(
         "meta": {
           "model": "${E2E_LOCAL_MODEL.alias}",
           "locale": "ru-RU",
-          "timeZone": "Europe/Moscow"
+          "timeZone": "$timeZone"
         }
       }
     }
@@ -123,6 +134,9 @@ internal fun backendE2eTest(
     providerClients: ProviderHttpClients? = null,
     hindsightUrl: String? = null,
     clock: Clock = Clock.systemUTC(),
+    hookConfig: HookConfig = HookConfig(),
+    llmLimits: BackendLlmLimits = BackendLlmLimits(),
+    sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
     block: suspend BackendE2eScope.() -> Unit,
 ) = testApplication {
     val backend = BackendE2eBackend(
@@ -137,6 +151,9 @@ internal fun backendE2eTest(
         providerClients = providerClients,
         hindsightUrl = hindsightUrl,
         clock = clock,
+        hookConfig = hookConfig,
+        llmLimits = llmLimits,
+        sandboxFactory = sandboxFactory,
     )
     application {
         backendApplication(backend.dependencies)
@@ -216,6 +233,34 @@ internal class BackendE2eScope(
     fun <T> sql(block: (Connection) -> T): T =
         backend.sql(block)
 
+    // Real database barriers make commit and shutdown races deterministic.
+    suspend fun withTableLocked(table: String, mode: String, block: suspend CoroutineScope.() -> Unit) = coroutineScope {
+        val locked = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val lock = launch(Dispatchers.IO) {
+            sql { connection ->
+                connection.autoCommit = false
+                connection.createStatement().use { it.execute("lock table $table in $mode mode") }
+                locked.complete(Unit)
+                try { runBlocking { release.await() } } finally { connection.rollback() }
+            }
+        }
+        locked.await()
+        try { block() } finally {
+            release.complete(Unit)
+            lock.join()
+        }
+    }
+
+    suspend fun awaitLockWait(table: String) {
+        eventually("database wait on $table") {
+            sql { connection -> connection.createStatement().use { statement ->
+                statement.executeQuery("select count(*) from pg_locks where not granted and relation = '$table'::regclass")
+                    .use { rows -> rows.next() && rows.getInt(1) > 0 }
+            } }.takeIf { it }
+        }
+    }
+
     suspend fun <T> withPeerBackend(
         llm: E2eLlmApi = E2eLlmApi(),
         providerClients: ProviderHttpClients? = null,
@@ -252,6 +297,9 @@ internal class BackendE2eBackend(
     private val providerClients: ProviderHttpClients? = null,
     private val hindsightUrl: String? = null,
     private val clock: Clock = Clock.systemUTC(),
+    private val hookConfig: HookConfig = HookConfig(),
+    private val llmLimits: BackendLlmLimits = BackendLlmLimits(),
+    private val sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
 ) : AutoCloseable {
     private val appConfig: BackendAppConfig = postgresAppConfig(
         schema = schema,
@@ -260,7 +308,7 @@ internal class BackendE2eBackend(
         telegramTokenEncryptionKey = E2E_TELEGRAM_TOKEN_KEY.takeIf { featureFlags.telegramBot },
         vkTokenEncryptionKey = E2E_VK_TOKEN_KEY.takeIf { featureFlags.vkBot },
         includeSkillOAuthConfig = false,
-    ).copy(hindsightApiUrl = hindsightUrl)
+    ).copy(hindsightApiUrl = hindsightUrl, hooks = hookConfig, llmLimits = llmLimits)
     private val localChatApi = localChatApiBackedBy(llm)
     private val localAvailability = localProviderAvailability()
     private val localRuntime = relaxedLocalRuntime()
@@ -276,6 +324,9 @@ internal class BackendE2eBackend(
         bindSingleton<LocalLlamaRuntime>(overrides = true) { localRuntime }
         bindSingleton<LocalChatAPI>(overrides = true) { localChatApi }
         bindSingleton<Clock>(overrides = true) { clock }
+        if (sandboxFactory != null) {
+            bindSingleton<RuntimeSandboxFactory>(overrides = true) { sandboxFactory(instance()) }
+        }
         if (settingsSource != null) {
             bindSingleton<SettingsProvider>(overrides = true) {
                 BackendSettingsProvider(instance(), localAvailability, settingsSource)
@@ -300,6 +351,9 @@ internal class BackendE2eBackend(
     private val resources: BackendRuntimeResources = di.direct.instance()
 
     init {
+        if (hookConfig.owners.isNotEmpty()) {
+            runBlocking { dependencies.hookService.start(di.direct.instance<BackendApplicationScope>()) }
+        }
         if (startBackgroundServices) {
             val applicationScope: BackendApplicationScope = di.direct.instance()
             if (featureFlags.wsEvents) {
@@ -319,6 +373,12 @@ internal class BackendE2eBackend(
 
     private val vkSessions = mutableMapOf<UUID, VkBotPollingService.PollSession>()
 
+    suspend fun pollTelegramOnce() {
+        for (binding in di.direct.instance<ru.souz.backend.telegram.TelegramBotBindingRepository>().listEnabled()) {
+            di.direct.instance<TelegramBotPollingService>().pollBinding(binding.id)
+        }
+    }
+
     suspend fun pollVkOnce() {
         val bindings = di.direct.instance<PostgresVkBotBindingRepository>().listEnabled()
         vkSessions.keys.retainAll(bindings.map { it.id }.toSet())
@@ -329,12 +389,24 @@ internal class BackendE2eBackend(
         }
     }
 
+    suspend fun awaitExecution(id: UUID) { di.direct.instance<AgentExecutionLauncher>().join(id) }
+
     fun <T> sql(block: (Connection) -> T): T =
         dataSource.connection.use(block)
 
     val historyMemoryRepository: PostgresHistoryMemoryRepository get() = di.direct.instance()
 
     val toolCallRepository: ToolCallRepository get() = di.direct.instance()
+
+    val executionRepository: ru.souz.backend.execution.repository.AgentExecutionRepository get() = di.direct.instance()
+
+    suspend fun recoverClientThreads() = di.direct.instance<ClientThreadRecoveryService>().recover()
+
+    val applicationScope: BackendApplicationScope get() = di.direct.instance()
+
+    val clientThreadRegistry: ClientThreadRuntimeRegistry get() = di.direct.instance()
+
+    suspend fun shutdown() = resources.shutdown()
 
     suspend fun captureHistoryMemory(): Boolean = di.direct.instanceOrNull<HistoryMemoryWorker>()?.processNext() ?: false
 
@@ -350,6 +422,9 @@ internal class BackendE2eBackend(
             providerClients = providerClients,
             hindsightUrl = hindsightUrl,
             clock = clock,
+            hookConfig = hookConfig,
+            llmLimits = llmLimits,
+            sandboxFactory = sandboxFactory,
         )
 
     override fun close() {

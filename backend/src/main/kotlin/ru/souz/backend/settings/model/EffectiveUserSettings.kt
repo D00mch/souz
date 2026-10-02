@@ -7,6 +7,7 @@ import ru.souz.llms.LLMModel
 data class EffectiveUserSettings(
     val userId: String,
     val defaultModel: LLMModel,
+    val reasoningEffort: String? = null,
     val contextSize: Int,
     val temperature: Float,
     val locale: Locale,
@@ -15,6 +16,7 @@ data class EffectiveUserSettings(
     val enabledTools: Set<String>,
     val showToolEvents: Boolean,
     val streamingMessages: Boolean,
+    val narrateSteps: Boolean = false,
     val interfaceLanguage: String,
     val requestTimeoutMillis: Long,
     val useFewShotExamples: Boolean,

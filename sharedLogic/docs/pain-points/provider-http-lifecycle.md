@@ -8,6 +8,8 @@
 - The host that creates a provider transport closes it exactly once after in-flight application work is stopped.
 - OpenAI base URLs are normalized by `OpenAIEndpoint`. Only the semantically official HTTPS endpoint sends `stream_options.include_usage`; compatible custom endpoints omit that request option but still parse usage chunks they return.
 
+- Codex Responses requests map `LLMRequest.Chat.reasoningEffort` to `reasoning.effort`; omit the object when unset. Backend user settings persist the optional effort and pass it into each turn's agent settings.
+
 ## Why this is fragile
 
 Each Ktor client owns an engine, connection pool, plugins, and coroutine lifecycle. Constructing one in a provider adapter makes a cheap execution object retain expensive resources with no visible owner. Putting credentials or timeouts in shared client defaults also allows concurrent users and requests to affect each other. Giga token state is credential-specific and must never be stored in process-global system properties.

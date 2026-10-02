@@ -11,15 +11,18 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.backend.hooks.HookDefinitions
+import ru.souz.backend.hooks.HookService
+import ru.souz.backend.hooks.HookStore
+import ru.souz.backend.hooks.HookVerifier
+import ru.souz.backend.storage.postgres.PostgresConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
-import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.agent.session.AgentStateRepository
-import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.channels.ChannelDeliveryService
 import ru.souz.backend.channels.ChannelProviderRegistry
@@ -169,6 +172,7 @@ fun backendDiModule(
     }
     bindSingleton<UserRepository> { PostgresUserRepository(instance()) }
     bindSingleton<ChatRepository> { PostgresChatRepository(instance()) }
+    bindSingleton<ConversationKnowledgeStore> { PostgresConversationKnowledgeStore(instance<HikariDataSource>()) }
     bindSingleton<ClientRequestRepository> {
         PostgresClientRequestRepository(instance(), appConfig.hindsightApiUrl != null, instance())
     }
@@ -216,6 +220,10 @@ fun backendDiModule(
         )
     }
     bindSingleton { ExecutionQuotaManager(appConfig.llmLimits) }
+    bindSingleton { HookStore(instance<HikariDataSource>(), appConfig.hooks) }
+    bindSingleton { HookDefinitions(instance(), appConfig.hooks) }
+    bindSingleton { HookVerifier(appConfig.hooks, instance()) }
+    bindSingleton { HookService(appConfig.hooks, instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton<ProviderCredentialResolver> {
         StoredProviderCredentialResolver(
             baseSettingsProvider = instance(),
@@ -231,9 +239,6 @@ fun backendDiModule(
             toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
             localModelAvailability = instance<LocalProviderAvailability>(),
         )
-    }
-    bindSingleton<AgentSessionRepository> {
-        AgentStateBackedSessionRepository(instance())
     }
     bindSingleton {
         UserSettingsService(
@@ -259,6 +264,7 @@ fun backendDiModule(
             registry = instance(),
             toolCallRepository = instance(),
             eventService = instance(),
+            channelDeliveryService = instance(),
         )
     }
     bindSingleton<ConversationMemoryRuntime> {
@@ -268,6 +274,8 @@ fun backendDiModule(
                 httpClient = instance<ProviderHttpClients>().standard,
                 baseUrl = hindsightUrl,
                 apiToken = appConfig.hindsightApiToken,
+                clock = instance(),
+                retainAsync = appConfig.hindsightRetainAsync,
             )
         } else {
             NoopConversationMemoryRuntime
@@ -276,7 +284,7 @@ fun backendDiModule(
     if (appConfig.hindsightApiUrl != null) {
         bindSingleton { PostgresHistoryMemoryRepository(instance(), instance()) }
         bindSingleton {
-            HistoryMemoryWorker(instance(), instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime)
+            HistoryMemoryWorker(instance(), instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance())
         }
     }
     bindSingleton {
@@ -287,7 +295,7 @@ fun backendDiModule(
             providerHttpClients = instance(),
             localChatApi = instance<LocalChatAPI>(),
             codexOAuthService = instance<CodexOAuthService>(),
-            sessionRepository = instance(),
+            agentStateRepository = instance(),
             messageRepository = instance(),
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
@@ -304,12 +312,13 @@ fun backendDiModule(
             agentBackgroundScope = instance<BackendApplicationScope>(),
             memoryRuntime = instance<ConversationMemoryRuntime>(),
             automaticMemoryRecall = appConfig.featureFlags.wsAutomaticMemoryRecall,
+            hookStore = instance(),
+            executionQuotas = instance(),
         )
     }
     bindSingleton {
         AgentExecutionRequestFactory(
             effectiveSettingsResolver = instance(),
-            featureFlags = instance(),
             clientThreadRegistry = instance(),
         )
     }
@@ -318,8 +327,6 @@ fun backendDiModule(
     }
     bindSingleton {
         AgentExecutionFinalizer(
-            agentStateRepository = instance(),
-            chatRepository = instance(),
             executionRepository = instance(),
             turnRunner = instance(),
             clientThreadRegistry = instance(),
@@ -343,6 +350,9 @@ fun backendDiModule(
             requestFactory = instance(),
             finalizer = instance(),
             launcher = instance(),
+            optionsEnabled = appConfig.featureFlags.options,
+            hookStore = instance(),
+            hookConfig = appConfig.hooks,
         )
     }
     if (appConfig.featureFlags.telegramBot) {
@@ -478,6 +488,7 @@ fun backendDiModule(
             toolCallRepository = instance(),
             executionService = instance(),
             registry = instance(),
+            applicationScope = instance<BackendApplicationScope>(),
         )
     }
     bindSingleton {
@@ -513,6 +524,7 @@ fun backendDiModule(
             optionService = instance(),
             eventService = instance(),
             publicClientService = instance(),
+            hookService = instance(),
             telegramBotBindingService = if (featureFlags.telegramBot) instance() else null,
             vkBotBindingService = if (featureFlags.vkBot) instance() else null,
             featureFlags = featureFlags,

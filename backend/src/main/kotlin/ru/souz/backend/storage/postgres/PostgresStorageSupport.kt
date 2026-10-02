@@ -146,6 +146,7 @@ internal fun SQLException.isConstraintViolation(constraintName: String): Boolean
         message.orEmpty().contains(constraintName))
 
 internal data class StoredSettingsPayload(
+    val reasoningEffort: String? = null,
     val defaultModel: String? = null,
     val contextSize: Int? = null,
     val temperature: Float? = null,
@@ -155,6 +156,7 @@ internal data class StoredSettingsPayload(
     val enabledTools: Set<String>? = null,
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,
+    val narrateSteps: Boolean? = null,
     val interfaceLanguage: String? = null,
     val requestTimeoutMillis: Long? = null,
     val useFewShotExamples: Boolean? = null,
@@ -384,6 +386,7 @@ internal fun ResultSet.toUserSettings(): UserSettings {
     return UserSettings(
         userId = getString("user_id"),
         defaultModel = payload.defaultModel.toModelOrNull(),
+        reasoningEffort = payload.reasoningEffort,
         contextSize = payload.contextSize,
         temperature = payload.temperature,
         locale = payload.locale.toLocaleOrNull(),
@@ -392,6 +395,7 @@ internal fun ResultSet.toUserSettings(): UserSettings {
         enabledTools = payload.enabledTools,
         showToolEvents = payload.showToolEvents,
         streamingMessages = payload.streamingMessages,
+        narrateSteps = payload.narrateSteps,
         interfaceLanguage = payload.interfaceLanguage,
         requestTimeoutMillis = payload.requestTimeoutMillis,
         useFewShotExamples = payload.useFewShotExamples,
@@ -419,6 +423,7 @@ internal fun ResultSet.toUserProviderKeyOrNull(): UserProviderKey? =
 internal fun UserSettings.toSettingsJson(): String =
     postgresStorageMapper.writeValueAsString(
         StoredSettingsPayload(
+            reasoningEffort = reasoningEffort,
             defaultModel = defaultModel?.alias,
             contextSize = contextSize,
             temperature = temperature,
@@ -428,6 +433,7 @@ internal fun UserSettings.toSettingsJson(): String =
             enabledTools = enabledTools,
             showToolEvents = showToolEvents,
             streamingMessages = streamingMessages,
+            narrateSteps = narrateSteps,
             interfaceLanguage = interfaceLanguage,
             requestTimeoutMillis = requestTimeoutMillis,
             useFewShotExamples = useFewShotExamples,

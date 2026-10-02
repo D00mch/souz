@@ -1,6 +1,7 @@
 package ru.souz.backend.storage.postgres
 
 import java.lang.reflect.Proxy
+import java.sql.SQLException
 import java.sql.PreparedStatement
 import java.sql.Types
 import java.time.Instant
@@ -22,7 +23,8 @@ import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateConflictException
-import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
+import ru.souz.backend.agent.session.toConversationSession
+import ru.souz.backend.agent.session.toState
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
@@ -111,6 +113,7 @@ class PostgresRepositoriesTest {
             assertNull(stored.enabledTools)
             assertNull(stored.showToolEvents)
             assertNull(stored.streamingMessages)
+            assertNull(stored.narrateSteps)
             assertNull(stored.interfaceLanguage)
             assertNull(stored.requestTimeoutMillis)
             assertNull(stored.useFewShotExamples)
@@ -128,6 +131,8 @@ class PostgresRepositoriesTest {
         val settings = UserSettings(
             userId = "user-a",
             defaultModel = LLMModel.Max,
+            reasoningEffort = "low",
+            narrateSteps = true,
             contextSize = 16_000,
             temperature = 0.7f,
             locale = Locale.forLanguageTag("en-US"),
@@ -823,18 +828,10 @@ class PostgresRepositoriesTest {
                 ),
                 answeredAt = Instant.parse("2026-05-01T09:15:00Z"),
             )
-            val completedExecution = execution.copy(
-                status = AgentExecutionStatus.COMPLETED,
-                finishedAt = Instant.parse("2026-05-01T09:16:00Z"),
-                usage = AgentExecutionUsage(
-                    promptTokens = 10,
-                    completionTokens = 5,
-                    totalTokens = 15,
-                    precachedTokens = 1,
-                ),
-                metadata = execution.metadata + ("assistantMessageId" to assistantPlaceholder.id.toString()),
-            )
-            repositories.executionRepository.update(completedExecution)
+            assertNotNull(repositories.executionRepository.transitionIfCurrent(
+                execution, AgentExecutionStatus.COMPLETED,
+                usage = AgentExecutionUsage(10, 5, 15, 1),
+            ))
             val thirdEvent = repositories.eventRepository.append(
                 userId = userId,
                 chatId = chat.id,
@@ -867,6 +864,62 @@ class PostgresRepositoriesTest {
                 listOf("execution.started", "option.requested", "execution.finished"),
                 repositories.eventRepository.listByChat(userId, chat.id).map { it.type.value },
             )
+        }
+    }
+
+    @Test
+    fun `transitionIfCurrent preserves fields updated after the expected snapshot`() = runTest {
+        postgresRepositories(newPostgresSchema("postgres_transition_fields")).use { r ->
+            val chat = chat("user-transition", Instant.parse("2026-05-01T10:00:00Z"))
+            r.userRepository.ensureUser(chat.userId)
+            r.chatRepository.create(chat)
+            val stale = r.executionRepository.create(execution(
+                chat.userId, chat.id, null, AgentExecutionStatus.RUNNING, chat.updatedAt,
+            ).copy(runtimeOwner = "owner", runtimeLeaseUntil = Instant.now().plusSeconds(60),
+                usage = AgentExecutionUsage(10, 5, 15, 1)))
+            val message = r.messageRepository.append(chat.userId, chat.id, ChatRole.ASSISTANT, "peer response")
+            r.dataSource.write { connection ->
+                connection.prepareStatement("""
+                    update agent_executions set assistant_message_id = ?, runtime_lease_until = ?,
+                        latest_device_context = '{"device":"peer"}'::jsonb, metadata = '{"source":"peer"}'::jsonb
+                    where id = ?
+                """.trimIndent()).use {
+                    it.setObject(1, message.id); it.setInstant(2, Instant.now().plusSeconds(600))
+                    it.setObject(3, stale.id); assertEquals(1, it.executeUpdate())
+                }
+            }
+            val fresh = assertNotNull(r.executionRepository.get(chat.userId, stale.id))
+            val expected = fresh.copy(status = AgentExecutionStatus.CANCELLING, cancelRequested = true)
+            assertEquals(expected, r.executionRepository.transitionIfCurrent(stale, AgentExecutionStatus.CANCELLING))
+            assertEquals(expected, r.executionRepository.get(chat.userId, stale.id))
+            assertNull(r.executionRepository.transitionIfCurrent(stale, AgentExecutionStatus.COMPLETED))
+        }
+    }
+
+    @Test
+    fun `commitTurn rolls back all turn writes when state or lifecycle persistence fails`() = runTest {
+        for ((table, constraint) in listOf(
+            "agent_conversation_state" to "based_on_message_seq < 0",
+            "agent_executions" to "status <> 'completed'",
+        )) postgresRepositories(newPostgresSchema("postgres_turn_rollback")).use { r ->
+            val chat = chat("user-rollback", Instant.parse("2026-05-01T10:00:00Z"))
+            r.userRepository.ensureUser(chat.userId)
+            r.chatRepository.create(chat)
+            val execution = r.executionRepository.create(execution(
+                chat.userId, chat.id, null, AgentExecutionStatus.RUNNING, chat.updatedAt,
+            ))
+            r.dataSource.write { connection -> connection.createStatement().use {
+                it.execute("alter table $table add constraint reject_turn check ($constraint)")
+            } }
+            assertFailsWith<SQLException> {
+                r.executionRepository.commitTurn(execution,
+                    agentState(chat.userId, chat.id, 0, emptyList()), AgentExecutionUsage(10, 5, 15, 1),
+                    output = "reply", assistantMessageId = UUID.randomUUID())
+            }
+            assertTrue(r.messageRepository.list(chat.userId, chat.id).isEmpty())
+            assertNull(r.stateRepository.get(chat.userId, chat.id))
+            assertEquals(chat, r.chatRepository.get(chat.userId, chat.id))
+            assertEquals(execution, r.executionRepository.get(chat.userId, execution.id))
         }
     }
 
@@ -1004,7 +1057,7 @@ class PostgresRepositoriesTest {
     }
 
     @Test
-    fun `agent session repository round trips through postgres agent state repository`() = runTest {
+    fun `conversation session round trips through postgres agent state`() = runTest {
         val schema = newPostgresSchema("postgres_legacy_session")
 
         postgresRepositories(schema).use { repositories ->
@@ -1016,7 +1069,6 @@ class PostgresRepositoriesTest {
                     updatedAt = Instant.parse("2026-05-01T13:00:00Z"),
                 ).copy(id = chatId)
             )
-            val repository = AgentStateBackedSessionRepository(repositories.stateRepository)
             val key = AgentConversationKey.fromChat(
                 userId = "opaque/user:session",
                 chatId = chatId,
@@ -1039,11 +1091,10 @@ class PostgresRepositoriesTest {
                 rowVersion = 0L,
             )
 
-            repository.save(key, session)
+            repositories.stateRepository.save(session.toState(key))
 
-            val storedState = repositories.stateRepository.get(key.userId, chatId)
-            assertEquals(session, repository.load(key))
-            assertNotNull(storedState)
+            val storedState = assertNotNull(repositories.stateRepository.get(key.userId, chatId))
+            assertEquals(session, storedState.toConversationSession())
             assertEquals(session.history, storedState.history)
             assertEquals(Locale.forLanguageTag("en-US"), storedState.locale)
             assertEquals(ZoneId.of("Europe/Amsterdam"), storedState.timeZone)

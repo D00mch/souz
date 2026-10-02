@@ -30,6 +30,7 @@ import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.routes.v1Routes
+import ru.souz.backend.http.routes.hookRoutes
 import ru.souz.backend.security.RequestIdentityPlugin
 import ru.souz.skilloauth.impl.installSkillOAuthRoutes
 
@@ -130,6 +131,12 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
         ensureUser = dependencies.ensureTrustedUser
     }
     registerApiKeySecurityScheme(
+        name = "hookBearer",
+        keyName = "Authorization",
+        keyLocation = SecuritySchemeIn.HEADER,
+        description = "Bearer <per-hook secret>, or provider token when required by the hook verifier. Custom verifier authentication is defined in hook.yaml; trusted-proxy identity is never used.",
+    )
+    registerApiKeySecurityScheme(
         name = BackendOpenApiSecurity.PROXY_AUTH_SCHEME,
         keyName = BackendOpenApiSecurity.PROXY_AUTH_HEADER,
         keyLocation = SecuritySchemeIn.HEADER,
@@ -179,6 +186,7 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
         }
 
         v1Routes(dependencies)
+        hookRoutes(dependencies.hookService)
         dependencies.skillOAuthGatewayImpl?.let { installSkillOAuthRoutes(it, BackendHttpRoutes.OAUTH_CALLBACK) }
 
         swaggerUI(BackendHttpRoutes.DOCS) {

@@ -6,6 +6,8 @@ Backend storage is PostgreSQL-backed, but active runtime ownership is distribute
 
 Ordinary trusted-proxy HTTP executions and Telegram/VK-triggered executions run as process-local background jobs without a renewable runtime lease. Their durable `agent_executions` rows can remain active if the owning process exits while the job is running. `waiting_option` is durable user-wait state and must not be treated as a crashed runtime by lease recovery.
 
+[Workspace hooks](hooks.md) have single-process receipt-based recovery: pending work resumes and interrupted receipt-linked executions fail without replaying side effects. This does not provide distributed ownership or recover unrelated ordinary executions.
+
 Server-managed Codex OAuth is safe for a single backend process through process-local refresh coordination. A terminal refresh rejection suppresses deployment credentials only while the configured refresh token matches the rejected value. A different `CODEX_REFRESH_TOKEN` lifts suppression, so replace all four deployment values together before restarting. Multi-replica deployments must not enable it unless refresh is database-coordinated and replaces the access token, refresh token, account ID, and expiry as one credential set.
 
 ## Why it is fragile
@@ -21,7 +23,7 @@ Codex refresh tokens can rotate. Without database coordination, two replicas can
 - Document deployments as distributed-ready only for the Client-Souz public WebSocket active-thread path unless ordinary executions also gain runtime ownership, lease refresh, and recovery.
 - Keep `waiting_option` separate from owned runtime work. Clear any runtime lease when entering `waiting_option`, and acquire a fresh lease when an option continuation resumes.
 - Prefer a shared execution-ownership model over endpoint-specific recovery logic: `queued`, `running`, and `cancelling` should have an owner and renewable lease when a process is executing them.
-- Keep live Client-Souz frames owner-sticky while the live registry remains process-local.
+- Keep live Client-Souz frames owner-sticky while the live registry remains process-local. Cross-channel tool callers and target subscriptions must share that process; their waiters and events are live-only.
 - Do not fail active ordinary executions on backend startup in a multi-replica deployment unless ownership proves the starting process is recovering only abandoned work.
 - Do not enable server-managed Codex OAuth on multiple replicas without a database-backed lock or compare-and-set path that re-reads credentials before refresh and stores the refreshed credential set atomically.
 

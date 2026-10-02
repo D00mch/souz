@@ -2,9 +2,9 @@
 
 ## Invariant
 
-The primary backend suite runs through Ktor `testApplication`, `backendDiModule`, Flyway migrations, the real agent kernel, and PostgreSQL 16 Testcontainers. Tests fake only external or nondeterministic boundaries: provider/local LLM calls, Telegram, VK and Hindsight API calls, and clocks where a scenario requires deterministic time. Real Hindsight attribution checks are tracked in the [external-memory verification guide](external-memory.md#verification).
+The primary backend suite runs through Ktor `testApplication`, `backendDiModule`, Flyway migrations, the real agent kernel, and PostgreSQL 16 Testcontainers. Tests fake only external or nondeterministic boundaries: provider/local LLM calls, Telegram, VK and Hindsight API calls, clocks, and socket writes where a scenario requires deterministic time or backpressure. Real Hindsight attribution checks are tracked in the [external-memory verification guide](external-memory.md#verification).
 
-Focused unit tests remain for configuration validation, runtime shutdown and launcher races, LLM routing and accounting, quota limits, bounded event-bus behavior, compatibility codecs, datasource initialization failure handling, sandbox scoping, tool preview sanitization, channel text chunking, and repository lease fencing.
+Focused unit tests remain for configuration validation, runtime shutdown and launcher races, LLM routing and accounting, effective model selection, quota limits, bounded event-bus behavior, compatibility codecs, datasource initialization failure handling, sandbox scoping, tool preview sanitization, channel text chunking, and repository lease fencing.
 
 ## Why it is fragile
 
@@ -14,7 +14,8 @@ Partial route contexts and in-memory repositories can pass while the production 
 
 - Add backend workflow coverage under `ru.souz.backend.e2e`.
 - Use the shared E2E harness to allocate a unique Postgres schema, install production HTTP routes, override only external boundaries, and close runtime resources.
-- Use HTTP or WebSocket helpers for assertions. Direct SQL is reserved for encryption-at-rest, legacy compatibility, lease/crash recovery, and restart persistence checks.
+- Use HTTP or WebSocket helpers for assertions. Direct SQL is reserved for encryption-at-rest, legacy compatibility, lease/crash recovery, restart persistence checks, and deterministic database barriers/faults for acceptance and shutdown races.
+- Synchronize stalled hook intake tests on the server body read before sending competing requests; polling ingress can acquire the permit first and reject the intended stalled request.
 - Keep ordinary route validation table-driven inside workflow tests instead of adding one route class per branch.
 - Keep deterministic per-binding poll helpers in the test harness; production polling uses the shared scheduler.
 - Do not add general-purpose in-memory repository implementations.

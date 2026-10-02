@@ -16,7 +16,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import org.slf4j.LoggerFactory
-import ru.souz.backend.channels.channelTextChunks
 import ru.souz.backend.channels.pollBindings
 import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -191,6 +190,7 @@ class VkBotPollingService(
                         content = text,
                         clientMessageId = "vk:${binding.id}:${message.id}",
                         requestOverrides = UserSettingsOverrides(streamingMessages = false),
+                        onProgress = { replyFormatted(binding, token, message.peerId, it) },
                     )
                 } finally {
                     typing.cancelAndJoin()
@@ -209,18 +209,24 @@ class VkBotPollingService(
             logger.warn("VK turn failed for binding {}", binding.id)
             FAILURE_REPLY
         }
-        for (chunk in channelTextChunks(responseText.ifBlank { "Готово." })) {
-            reply(binding, token, message.peerId, chunk)
-        }
+        replyFormatted(binding, token, message.peerId, responseText)
         return binding
+    }
+
+    private suspend fun replyFormatted(binding: VkBotBinding, token: String, peerId: Long, text: String) {
+        for (chunk in VkMarkdown(text).chunks()) {
+            reply(binding, token, peerId, chunk.text, chunk.format)
+        }
     }
 
     private suspend fun owns(id: UUID): Boolean = repository.hasActiveLease(id, owner, clock.instant())
 
-    private suspend fun reply(binding: VkBotBinding, token: String, peerId: Long, text: String) {
+    private suspend fun reply(
+        binding: VkBotBinding, token: String, peerId: Long, text: String, format: List<VkFormatItem> = emptyList(),
+    ) {
         if (!owns(binding.id)) throw CancellationException("Lost VK binding lease.")
         // Delivery errors leave the batch cursor unchanged for retry.
-        botApi.sendMessage(token, peerId, text)
+        botApi.sendMessage(token, peerId, text, format)
     }
 
     private companion object {

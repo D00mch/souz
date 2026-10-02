@@ -8,6 +8,7 @@ import ru.souz.backend.options.service.AnswerOptionResult
 import ru.souz.backend.events.model.AgentEventEnvelope
 import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.AssistantMessagePayload
 import ru.souz.backend.events.model.ChoiceAnsweredPayload
 import ru.souz.backend.events.model.ChoiceRequestedPayload
 import ru.souz.backend.events.model.ExecutionCancelledPayload
@@ -48,6 +49,7 @@ internal data class BackendV1SettingsPatchRequest(
     val enabledTools: List<String>? = null,
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,
+    val narrateSteps: Boolean? = null,
     val interfaceLanguage: String? = null,
     val requestTimeoutMillis: Long? = null,
     val useFewShotExamples: Boolean? = null,
@@ -60,12 +62,13 @@ internal data class BackendV1OnboardingCompleteRequest(
     val enabledTools: List<String>? = null,
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,
+    val narrateSteps: Boolean? = null,
     val interfaceLanguage: String? = null,
     val requestTimeoutMillis: Long? = null,
     val useFewShotExamples: Boolean? = null,
 )
 
-internal data class BackendV1SettingsDto(
+data class BackendV1SettingsDto(
     val defaultModel: String,
     val contextSize: Int,
     val temperature: Float,
@@ -75,6 +78,7 @@ internal data class BackendV1SettingsDto(
     val enabledTools: List<String>,
     val showToolEvents: Boolean,
     val streamingMessages: Boolean,
+    val narrateSteps: Boolean,
     val interfaceLanguage: String,
     val requestTimeoutMillis: Long,
     val useFewShotExamples: Boolean,
@@ -265,7 +269,7 @@ internal data class BackendV1EventDto(
 
 internal data class PublicClientEventDto(
     val kind: String = "event",
-    val seq: Long,
+    val seq: Long?,
     val type: String,
     val chatId: String,
     // Null for out-of-band pushes not tied to any thread the client started — see
@@ -286,6 +290,7 @@ internal fun EffectiveUserSettings.toDto(): BackendV1SettingsDto =
         enabledTools = enabledTools.toList(),
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
+        narrateSteps = narrateSteps,
         interfaceLanguage = interfaceLanguage,
         requestTimeoutMillis = requestTimeoutMillis,
         useFewShotExamples = useFewShotExamples,
@@ -413,7 +418,10 @@ internal fun AgentEventEnvelope.toDto(): BackendV1EventDto =
 
 internal fun AgentEventEnvelope.toPublicDto(): PublicClientEventDto =
     PublicClientEventDto(
-        seq = requireNotNull(seq),
+        seq = when (type) {
+            AgentEventType.TOOL_CALL_STARTED, AgentEventType.ASSISTANT_MESSAGE -> seq
+            else -> requireNotNull(seq)
+        },
         type = type.value,
         chatId = chatId.toString(),
         // Null only for the out-of-band message.created case admitted by isPublicClientEvent() below.
@@ -427,6 +435,7 @@ internal fun AgentEventEnvelope.toPublicDto(): PublicClientEventDto =
 
 private fun AgentEventPayload.toTransportPayload(type: AgentEventType): Map<String, Any?> =
     when (this) {
+        is AssistantMessagePayload -> mapOf("content" to content)
         is PublicToolCallStartedPayload -> linkedMapOf<String, Any?>(
             "toolCallId" to toolCallId,
             "name" to name,
@@ -636,6 +645,7 @@ private fun Map<String, String>.toLegacyTransportPayload(type: AgentEventType): 
             copyLongIfPresent("durationMs")
         }
 
+        AgentEventType.ASSISTANT_MESSAGE -> error("Assistant messages have no legacy payload")
         AgentEventType.THREAD_COMPLETED -> buildLegacyPayload { copyIfPresent("response") }
         AgentEventType.THREAD_FAILED -> buildLegacyPayload { copyJsonValueIfPresent("error") }
         AgentEventType.THREAD_CANCELLED -> buildLegacyPayload { copyIfPresent("reason") }

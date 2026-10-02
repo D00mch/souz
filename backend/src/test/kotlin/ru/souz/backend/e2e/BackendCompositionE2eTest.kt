@@ -1,6 +1,7 @@
 package ru.souz.backend.e2e
 
 import com.fasterxml.jackson.databind.JsonNode
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
@@ -15,6 +16,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.llms.LLMModel
@@ -47,12 +49,16 @@ class BackendCompositionE2eTest {
     @Test
     fun `settings and provider keys go through production services and encrypted Postgres`() =
         backendE2eTest("e2e_settings_keys") {
+            assertFalse(client.get(BackendHttpRoutes.SETTINGS) {
+                trusted("settings-user")
+            }.jsonBody()["settings"]["narrateSteps"].asBoolean())
             val patch = client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted("settings-user")
                 jsonBody(
                     """
                     {
                       "defaultModel": "${E2E_LOCAL_MODEL.alias}",
+                      "narrateSteps": true,
                       "locale": "iw-IL",
                       "timeZone": "Europe/Amsterdam",
                       "streamingMessages": true,
@@ -73,6 +79,17 @@ class BackendCompositionE2eTest {
             val settings = patch.jsonBody()["settings"]
             assertEquals(E2E_LOCAL_MODEL.alias, settings["defaultModel"].asText())
             assertEquals("he-IL", settings["locale"].asText())
+            assertTrue(settings["narrateSteps"].asBoolean())
+            val preserved = client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted("settings-user"); jsonBody("""{"temperature":0.4}""")
+            }.jsonBody()["settings"]
+            assertTrue(preserved["narrateSteps"].asBoolean())
+            client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted("settings-user"); jsonBody("""{"narrateSteps":false}""")
+            }
+            assertFalse(client.get(BackendHttpRoutes.SETTINGS) {
+                trusted("settings-user")
+            }.jsonBody()["settings"]["narrateSteps"].asBoolean())
             assertEquals("Europe/Amsterdam", settings["timeZone"].asText())
             assertEquals(HttpStatusCode.OK, putKey.status)
             assertEquals("qwen", putKey.jsonBody()["providerKey"]["provider"].asText())
@@ -92,6 +109,42 @@ class BackendCompositionE2eTest {
                     }
                 }
             )
+        }
+
+    @Test
+    fun `stored provider keys decide the default model on each request`() =
+        backendE2eTest(
+            "e2e_key_model",
+            settingsSource = object : BackendConfigSource {
+                override fun env(key: String): String? = null
+                override fun property(key: String): String? = null
+            },
+        ) {
+            val userId = "key-model-user"
+            val qwen = """{"defaultModel":"${LLMModel.QwenMax.alias}"}"""
+            val withoutKey = client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted(userId)
+                jsonBody(qwen)
+            }
+            client.put(BackendHttpRoutes.providerKey("qwen")) {
+                trusted(userId)
+                jsonBody("""{"apiKey":"user-qwen-key"}""")
+            }
+            val withKey = client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted(userId)
+                jsonBody(qwen)
+            }
+            client.delete(BackendHttpRoutes.providerKey("qwen")) {
+                trusted(userId)
+            }
+            val afterDelete = client.get(BackendHttpRoutes.SETTINGS) {
+                trusted(userId)
+            }
+
+            assertEquals(HttpStatusCode.BadRequest, withoutKey.status)
+            assertEquals(HttpStatusCode.OK, withKey.status)
+            assertEquals(LLMModel.QwenMax.alias, withKey.jsonBody()["settings"]["defaultModel"].asText())
+            assertEquals(E2E_LOCAL_MODEL.alias, afterDelete.jsonBody()["settings"]["defaultModel"].asText())
         }
 
     @Test
@@ -223,6 +276,7 @@ class BackendCompositionE2eTest {
                       "timeZone": "Europe/Amsterdam",
                       "enabledTools": [],
                       "streamingMessages": true,
+                      "narrateSteps": true,
                       "interfaceLanguage": "en",
                       "requestTimeoutMillis": 45000,
                       "useFewShotExamples": false
@@ -242,6 +296,7 @@ class BackendCompositionE2eTest {
             assertEquals("he-IL", completed["currentSettings"]["locale"].asText())
             assertEquals("Europe/Amsterdam", completed["currentSettings"]["timeZone"].asText())
             assertEquals("en", completed["currentSettings"]["interfaceLanguage"].asText())
+            assertTrue(completed["currentSettings"]["narrateSteps"].asBoolean())
             assertEquals(45_000L, completed["currentSettings"]["requestTimeoutMillis"].asLong())
             assertFalse(completed["currentSettings"]["useFewShotExamples"].asBoolean())
         }
@@ -297,6 +352,9 @@ class BackendCompositionE2eTest {
         val expectedWithoutTelegram = linkedMapOf(
             "/" to setOf("get"),
             "/health" to setOf("get"),
+            "/hooks/{hookId}" to setOf("post"),
+            "/v1/hooks/reload" to setOf("post"),
+            "/v1/hooks/receipts/{receiptId}" to setOf("get"),
             "/v1/bootstrap" to setOf("get"),
             "/v1/onboarding/state" to setOf("get"),
             "/v1/onboarding/complete" to setOf("post"),
@@ -338,7 +396,7 @@ class BackendCompositionE2eTest {
                 assertFalse(actual.containsKey(BackendHttpRoutes.CHAT_WS_PATTERN))
                 assertFalse(actual.containsKey(BackendHttpRoutes.WS))
                 assertEquals(
-                    setOf("souzProxyAuth", "souzUserIdentity"),
+                    setOf("souzProxyAuth", "souzUserIdentity", "hookBearer"),
                     document["components"]["securitySchemes"].fieldNames().asSequence().toSet(),
                 )
                 document["paths"].properties().forEach { (path, pathItem) ->
@@ -349,7 +407,10 @@ class BackendCompositionE2eTest {
                                 path == "/" || path == "/health" ||
                                     (path == "/v1/chats" && method == "post") ||
                                     (path == "/v1/chats/{chatId}/threads/{threadId}" && method == "get")
-                            if (publicOperation) {
+                            if (path == "/hooks/{hookId}") {
+                                assertEquals(setOf("hookBearer"), operation["security"][0].fieldNames().asSequence().toSet())
+                                assertEquals(0, operation["security"][1].size(), "Custom verification need not use a Bearer header")
+                            } else if (publicOperation) {
                                 assertFalse(operation.has("security"), "$method $path")
                             } else {
                                 assertEquals(

@@ -27,6 +27,7 @@ interface TelegramBotApi {
         allowedUpdates: List<String> = listOf("message"),
     ): TelegramUpdatesResponse
 
+    /** Sends the supplied Markdown through Telegram sendRichMessage. */
     suspend fun sendMessage(
         token: String,
         chatId: Long,
@@ -46,7 +47,11 @@ interface TelegramBotApi {
     )
 }
 
-internal class HttpTelegramBotApi : TelegramBotApi {
+internal const val TELEGRAM_RICH_TEXT_LIMIT = 32_768
+
+internal class HttpTelegramBotApi(
+    private val apiBaseUrl: String = "https://api.telegram.org",
+) : TelegramBotApi {
     private val mapper = jacksonObjectMapper()
         .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
     private val client = HttpClient.newBuilder()
@@ -85,16 +90,16 @@ internal class HttpTelegramBotApi : TelegramBotApi {
     ) {
         val response = request(
             token = token,
-            methodName = "sendMessage",
+            methodName = "sendRichMessage",
             formParameters = mapOf(
                 "chat_id" to chatId.toString(),
-                "text" to text,
+                "rich_message" to mapper.writeValueAsString(mapOf("markdown" to text)),
             ),
         ).bodyAs<TelegramMethodAckResponse>()
             .normalizeHttpStatus()
         if (!response.ok) {
             throw TelegramBotApiHttpException(
-                methodName = "sendMessage",
+                methodName = "sendRichMessage",
                 statusCode = response.errorCode ?: 500,
                 telegramErrorCode = response.errorCode,
                 description = response.description,
@@ -183,7 +188,7 @@ internal class HttpTelegramBotApi : TelegramBotApi {
         formParameters: Map<String, String>,
     ): HttpRequest {
         val requestBuilder = HttpRequest.newBuilder()
-            .uri(URI.create("https://api.telegram.org/bot$token/$methodName"))
+            .uri(URI.create("$apiBaseUrl/bot$token/$methodName"))
             .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
 
         return if (formParameters.isEmpty()) {

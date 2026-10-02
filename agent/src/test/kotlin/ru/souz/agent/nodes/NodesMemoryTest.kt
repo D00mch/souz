@@ -203,6 +203,7 @@ class NodesMemoryTest {
             userId = "backend-user",
             conversationId = "conversation-1",
             requestId = "request-1",
+            timeZone = "Europe/Moscow",
             attributes = mapOf(
                 "userMessageId" to "user-message-1",
                 "assistantMessageId" to "assistant-message-1",
@@ -233,6 +234,7 @@ class NodesMemoryTest {
         assertEquals("assistant-message-1", captured.assistantMessageId)
         assertEquals("hello", captured.userMessage)
         assertEquals("assistant response", captured.assistantMessage)
+        assertEquals("Europe/Moscow", captured.timeZone)
         assertFalse(memoryRuntime.captureFinished.isCompleted)
 
         captureGate.complete(Unit)

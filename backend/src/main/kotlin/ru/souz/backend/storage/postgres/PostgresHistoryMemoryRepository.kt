@@ -4,6 +4,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import java.sql.Connection
 import java.sql.ResultSet
 import java.time.Clock
+import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.chat.model.ChatMessage
@@ -11,6 +12,7 @@ import ru.souz.backend.memory.hindsight.HistoryMemoryDocument
 import ru.souz.backend.memory.hindsight.HistoryMemoryFragment
 import ru.souz.backend.memory.hindsight.HistoryMemorySource
 import ru.souz.backend.memory.hindsight.historyMemoryDocuments
+import ru.souz.backend.memory.hindsight.memoryTimestamp
 
 internal class PostgresHistoryMemoryRepository(
     private val dataSource: DataSource,
@@ -73,7 +75,9 @@ internal class PostgresHistoryMemoryRepository(
                 """
                 select m.*, m.seq >= f.first_seq as current_source, (select u.content from messages u
                   where u.user_id = m.user_id and u.chat_id = m.chat_id and u.role = 'user' and u.seq <= m.seq
-                  order by u.seq desc limit 1) as user_intent
+                  order by u.seq desc limit 1) as user_intent, (select e.metadata ->> 'timeZone'
+                  from agent_executions e where e.user_id = f.user_id and e.chat_id = f.chat_id
+                  order by e.started_at desc limit 1) as time_zone
                 from history_memory_fragments f join messages m on m.user_id = f.user_id and m.chat_id = f.chat_id
                 where f.id = ? and m.id = any(f.source_ids || array(
                   select unnest(source_ids) from history_memory_fragments
@@ -88,43 +92,47 @@ internal class PostgresHistoryMemoryRepository(
                     while (rows.next()) {
                         val target = if (rows.getBoolean("current_source")) sources else preceding
                         target += HistoryMemorySource(
-                            rows.getString("id"), rows.getLong("seq"), rows.getString("role"),
-                            rows.getString("content"), rows.instant("created_at").toString(), rows.getString("user_intent"),
+                            rows.getString("id"), rows.getLong("seq"), rows.getString("role"), rows.getString("content"),
+                            memoryTimestamp(rows.instant("created_at"), rows.getString("time_zone")), rows.getString("user_intent"),
                         )
                     }
                     historyMemoryDocuments(fragment.id, sources, preceding)
                 }
             }
         }
-        check(update(fragment, "payload = ?") { it.setJson(1, postgresStorageMapper.writeValueAsString(documents)) }) {
+        check(update(fragment, "payload = ?::jsonb", postgresStorageMapper.writeValueAsString(documents))) {
             "History memory lease lost"
         }
         return documents
     }
 
     suspend fun renew(fragment: HistoryMemoryFragment): Boolean =
-        update(fragment, "lease_until = ?") { it.setInstant(1, clock.instant().plusSeconds(180)) }
+        update(fragment, "lease_until = ?", clock.instant().plusSeconds(180))
 
-    suspend fun complete(fragment: HistoryMemoryFragment): Boolean =
-        update(fragment, "completed_at = ?, payload = null, lease_token = null, lease_until = null") { it.setInstant(1, clock.instant()) }
+    suspend fun complete(fragment: HistoryMemoryFragment, failed: Boolean = false): Boolean {
+        val now = clock.instant()
+        return update(fragment, "completed_at = ?, failed_at = ?, payload = null, lease_token = null, lease_until = null",
+            now, now.takeIf { failed })
+    }
 
     suspend fun retry(fragment: HistoryMemoryFragment): Boolean =
-        update(fragment, "available_at = ?, lease_token = null, lease_until = null") {
-            it.setInstant(1, clock.instant().plusSeconds(minOf(300L, 5L shl minOf(fragment.attempts - 1, 6))))
-        }
+        update(fragment, "available_at = ?, lease_token = null, lease_until = null",
+            clock.instant().plusSeconds(minOf(300L, 5L shl minOf(fragment.attempts - 1, 6))))
 
     private suspend fun update(
         fragment: HistoryMemoryFragment,
         assignment: String,
-        bind: (java.sql.PreparedStatement) -> Unit,
+        vararg values: Any?,
     ): Boolean = dataSource.write { connection ->
         connection.prepareStatement(
             "update history_memory_fragments set $assignment where id = ? and lease_token = ? and lease_until > ?",
         ).use { statement ->
-            bind(statement)
-            statement.setObject(2, fragment.id)
-            statement.setObject(3, fragment.leaseToken)
-            statement.setInstant(4, clock.instant())
+            values.forEachIndexed { index, value ->
+                if (value is Instant) statement.setInstant(index + 1, value) else statement.setObject(index + 1, value)
+            }
+            statement.setObject(values.size + 1, fragment.id)
+            statement.setObject(values.size + 2, fragment.leaseToken)
+            statement.setInstant(values.size + 3, clock.instant())
             statement.executeUpdate() == 1
         }
     }
@@ -136,5 +144,6 @@ private fun ResultSet.fragment(): HistoryMemoryFragment = HistoryMemoryFragment(
     chatId = getObject("chat_id", UUID::class.java),
     leaseToken = getObject("lease_token", UUID::class.java),
     attempts = getInt("attempts"),
+    createdAt = instant("created_at"),
     documents = getString("payload")?.let { postgresStorageMapper.readValue(it) },
 )

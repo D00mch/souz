@@ -6,7 +6,6 @@ import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.AgentCoreTools
-import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
@@ -15,7 +14,6 @@ import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.giga.toGiga
-import ru.souz.knowledge.SandboxConversationKnowledgeStore
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.skilloauth.SkillOAuthGateway
@@ -126,13 +124,12 @@ fun DI.Builder.bindPortableRuntimeToolsFactory(
 
 /**
  * Catalog-independent Skill runtime tools that hosts can compose with a request-scoped catalog.
+ * Hosts supply the ConversationKnowledgeStore used by both retrieval tools and their agent kernel.
  *
  * Skill discovery and delegation remain in [portableSkillToolsDiModule] because they depend on the
  * host's [AgentToolCatalog], [AgentToolsFilter], and [SkillRegistryRepository].
  */
 fun portableSkillRuntimeToolsDiModule(): DI.Module = DI.Module("portableSkillRuntimeTools") {
-    bindSingleton { SandboxConversationKnowledgeStore(instance()) }
-    bindSingleton<ConversationKnowledgeStore> { instance<SandboxConversationKnowledgeStore>() }
     bindSingleton {
         SkillCommandExecutor(sandboxResolver = instance())
     }

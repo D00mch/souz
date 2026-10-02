@@ -13,10 +13,14 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.withTimeout
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.vk.VkBotApi
 import ru.souz.backend.vk.VkBotApiException
+import ru.souz.backend.vk.VkFormatItem
 import ru.souz.backend.vk.VkGroup
 import ru.souz.backend.vk.VkLongPollResponse
 import ru.souz.backend.vk.VkLongPollServer
@@ -27,6 +31,54 @@ import ru.souz.backend.vk.VkUser
 import ru.souz.llms.LLMMessageRole
 
 class BackendVkE2eTest {
+    @Test
+    fun `VK progress survives failed sends and cancels blocked sends before the final reply`() {
+        val vk = ScriptedVkApi()
+        val delivered = CompletableDeferred<Unit>()
+        val blocked = CompletableDeferred<Unit>()
+        val stopped = CompletableDeferred<Unit>()
+        vk.onSend = { text ->
+            if (text == "Failed") throw IOException("Progress unavailable")
+            if (text == "Checking two") delivered.complete(Unit)
+            if (text == "Blocked") {
+                blocked.complete(Unit)
+                try { awaitCancellation() } finally { stopped.complete(Unit) }
+            }
+        }
+        backendE2eTest("vk_progress", featureFlags = BackendFeatureFlags(wsEvents = true, vkBot = true), vkApi = vk,
+            llm = E2eLlmApi { request ->
+                val blocks = if (request.conversationPrompt() == "blocked") listOf("Blocked")
+                    else listOf("Failed", "Checking one", "Checking two")
+                assertTrue("Перед каждым вызовом инструментов" in request.messages.first().content)
+                if (request.messages.last().role == LLMMessageRole.function) {
+                    if (blocks == listOf("Blocked")) blocked.await() else delivered.await()
+                    reply(request, "Done")
+                } else toolCallReply(request, "GetSkillByName", mapOf("skillId" to "ListActiveChannels"), blocks)
+            },
+        ) {
+            val user = UUID.randomUUID().toString()
+            val chat = createPublicChat(user)
+            client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted(user); jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","narrateSteps":true,"locale":"ru-RU"}""")
+            }
+            val secret = bind(user, chat).jsonBody()["pendingLinkCommand"].asText()
+            vk.responses.add(VkLongPollResponse("2", listOf(update(1, secret))))
+            backend.pollVkOnce()
+            for ((index, prompt) in listOf("delivered", "blocked").withIndex()) {
+                vk.sent.clear()
+                vk.responses.add(VkLongPollResponse((index + 3).toString(), listOf(update(index + 2L, prompt))))
+                withTimeout(20_000) { backend.pollVkOnce() }
+                assertEquals(if (prompt == "blocked") listOf("Done") else listOf("Checking one", "Checking two", "Done"),
+                    vk.sent.map { it.second })
+            }
+            assertTrue(stopped.isCompleted)
+            val messages = client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(user) }.jsonBody()["items"]
+            assertEquals(listOf("delivered", "Done", "blocked", "Done"), messages.map { it["content"].asText() })
+            val events = client.get(BackendHttpRoutes.chatEvents(chat)) { trusted(user) }.jsonBody()["items"]
+            assertFalse(events.any { it["type"].asText() == "assistant.message" })
+        }
+    }
+
     @Test
     fun `binding API links only a private account and replays turns without repeating execution`() {
         val vk = ScriptedVkApi()
@@ -77,7 +129,8 @@ class BackendVkE2eTest {
             assertTrue(binding(user, chat)["linked"].asBoolean())
             assertEquals("Test", binding(user, chat)["vkFirstName"].asText())
 
-            val turn = update(5, "VK question")
+            val question = "**VK question**"
+            val turn = update(5, question)
             vk.failSend = true
             vk.responses.add(VkLongPollResponse("4", listOf(link, turn)))
             backend.pollVkOnce()
@@ -85,15 +138,16 @@ class BackendVkE2eTest {
             vk.responses.add(VkLongPollResponse("4", listOf(link, turn)))
             backend.pollVkOnce()
             assertEquals("4", stored(chat, "last_ts"))
-            assertEquals(1, llm.requests.count { it.conversationPrompt() == "VK question" })
+            assertEquals(1, llm.requests.count { it.conversationPrompt() == question })
             val messages = client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(user) }.jsonBody()["items"]
-            assertEquals(listOf("VK question", messages.last()["content"].asText()), messages.map { it["content"].asText() })
-            assertEquals(messages.last()["content"].asText(), vk.sent.last().second)
+            assertEquals(listOf(question, "assistant reply to $question"), messages.map { it["content"].asText() })
+            assertEquals("assistant reply to VK question", vk.sent.last().second)
+            assertEquals(listOf(VkFormatItem("bold", 19, 11)), vk.formats.last())
 
             vk.responses.add(VkLongPollResponse("5", listOf(update(6, "foreign", sender = 999), update(7, "foreign", sender = 999))))
             backend.pollVkOnce()
             assertEquals(1, vk.sent.count { it.first == 999L })
-            assertEquals(1, llm.requests.count { it.conversationPrompt() == "VK question" })
+            assertEquals(1, llm.requests.count { it.conversationPrompt() == question })
 
             llm.requestSkillForPrompt("discover", "ListActiveChannels", emptyMap())
             runSkill(user, source, "discover")
@@ -101,10 +155,11 @@ class BackendVkE2eTest {
             assertEquals(setOf("vk:$chat", "public_client:$source"), channels.map {
                 "${it["channelType"].asText()}:${it["channelId"].asText()}"
             }.toSet())
-            llm.requestSkillForPrompt("forward", "SendMessageToChannel", mapOf("channelType" to "vk", "channelId" to chat, "text" to "forwarded"))
+            llm.requestSkillForPrompt("forward", "SendMessageToChannel", mapOf("channelType" to "vk", "channelId" to chat, "text" to "**forwarded**"))
             runSkill(user, source, "forward")
             assertEquals("forwarded", vk.sent.last().second)
-            assertEquals("forwarded", client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(user) }.jsonBody()["items"].last()["content"].asText())
+            assertEquals(listOf(VkFormatItem("bold", 0, 9)), vk.formats.last())
+            assertEquals("**forwarded**", client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(user) }.jsonBody()["items"].last()["content"].asText())
 
             val replacement = bind(user, chat).jsonBody()["pendingLinkCommand"].asText()
             assertFalse(binding(user, chat)["linked"].asBoolean())
@@ -200,9 +255,11 @@ private class ScriptedVkApi : VkBotApi {
     val responses = ArrayDeque<VkLongPollResponse>()
     val cursors = mutableListOf<String>()
     val sent = mutableListOf<Pair<Long, String>>()
+    val formats = mutableListOf<List<VkFormatItem>>()
     var negotiations = 0
     var failSend = false
     var onPoll: (suspend () -> Unit)? = null
+    var onSend: suspend (String) -> Unit = {}
     override suspend fun getGroupInfo(groupToken: String): VkGroup {
         if (groupToken == "invalid") throw VkBotApiException(5)
         return VkGroup(123, "Test group")
@@ -217,9 +274,11 @@ private class ScriptedVkApi : VkBotApi {
         onPoll?.also { onPoll = null }?.invoke()
         return responses.removeFirstOrNull() ?: VkLongPollResponse(ts)
     }
-    override suspend fun sendMessage(groupToken: String, peerId: Long, text: String) {
+    override suspend fun sendMessage(groupToken: String, peerId: Long, text: String, format: List<VkFormatItem>) {
         if (failSend) { failSend = false; throw IOException("Failed send") }
+        onSend(text)
         sent += peerId to text
+        formats += format
     }
     override suspend fun setActivity(groupToken: String, peerId: Long, groupId: Long) = Unit
 }

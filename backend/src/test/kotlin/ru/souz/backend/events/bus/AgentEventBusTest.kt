@@ -4,27 +4,102 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.events.model.AgentEvent
+import ru.souz.backend.events.model.AgentEventEnvelope
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.AgentLiveEvent
+import ru.souz.backend.events.model.AssistantMessagePayload
+import ru.souz.backend.events.model.ThreadCompletedPayload
+import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.events.model.RawAgentEventPayload
+import ru.souz.backend.http.routes.forwardPublicEvents
+import ru.souz.llms.restJsonMapper
 
 class AgentEventBusTest {
     @Test
-    fun `slow subscriber sees only the latest bounded live window and publisher does not block`() = runTest {
+    fun `observers receive progress without advertising or accepting device commands`() = runTest {
+        val bus = AgentEventBus()
+        val chat = UUID.randomUUID()
+        val observer = bus.subscribe("user", chat, acceptsClientCommands = false)
+        val progress = AgentLiveEvent(UUID.randomUUID(), "user", chat, UUID.randomUUID(),
+            AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload("Checking"), Instant.EPOCH)
+        val command = progress.copy(type = AgentEventType.TOOL_CALL_STARTED,
+            payload = PublicToolCallStartedPayload("call", "user.ask", arguments = restJsonMapper.createObjectNode()))
+        assertFalse(bus.hasSubscriber("user", chat))
+        assertFalse(bus.publishCommand(command))
+        bus.publish(progress)
+        assertEquals(progress, observer.events.receive())
+        val device = bus.subscribe("user", chat)
+        assertTrue(bus.hasSubscriber("user", chat))
+        assertTrue(bus.publishCommand(command))
+        assertEquals(command, device.commands.receive())
+        assertTrue(observer.commands.tryReceive().isFailure)
+        device.close()
+        assertFalse(bus.hasSubscriber("user", chat))
+        observer.close()
+        bus.publish(progress)
+        assertTrue(observer.events.receiveCatching().isClosed)
+    }
+
+    @Test
+    fun `replay drops stale progress but preserves current progress and client commands`() = runTest {
+        for (initialReplay in listOf(false, true)) for (tool in listOf(false, true)) {
+            val progress = AgentLiveEvent(UUID.randomUUID(), "user", UUID.randomUUID(), UUID.randomUUID(),
+                AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload("Checking"), Instant.EPOCH, discardAfterSeq = 5)
+            val durable = AgentEvent(UUID.randomUUID(), progress.userId, progress.chatId, progress.executionId, 6,
+                if (tool) AgentEventType.TOOL_CALL_STARTED else AgentEventType.THREAD_COMPLETED,
+                if (tool) PublicToolCallStartedPayload("call", "user.ask", arguments = restJsonMapper.createObjectNode())
+                else ThreadCompletedPayload("Done"), Instant.EPOCH)
+            val current = progress.copy(executionId = UUID.randomUUID(), discardAfterSeq = 6)
+            val command = progress.copy(type = AgentEventType.TOOL_CALL_STARTED,
+                payload = PublicToolCallStartedPayload("live-call", "user.ask", arguments = restJsonMapper.createObjectNode()),
+                discardAfterSeq = null)
+            val live = Channel<AgentEventEnvelope>(Channel.UNLIMITED)
+            var stored = if (initialReplay) listOf(durable) else emptyList()
+            val stream = AgentEventStream(stored, live, Channel(), {}, { after -> stored.filter { it.seq > after } }, 5)
+            val ready = CompletableDeferred<Unit>()
+            val sent = mutableListOf<AgentEventEnvelope>()
+            val forwarding = async { stream.forwardPublicEvents(ready) { sent += it } }
+            ready.await()
+            stored = listOf(durable)
+            listOf(progress, durable, current, command).forEach { live.send(it) }
+            live.close()
+            forwarding.await()
+            assertEquals(listOf(durable, current, command), sent)
+        }
+    }
+
+    @Test
+    fun `slow subscriber keeps commands rejects overflow and bounds droppable notifications`() = runTest {
         val userId = "user-a"
         val chatId = UUID.randomUUID()
         val bus = AgentEventBus()
         val subscription = bus.subscribe(userId = userId, chatId = chatId)
         val totalEvents = AgentEventLimits.LIVE_BUFFER_SIZE + 32
+        val command = AgentLiveEvent(UUID.randomUUID(), userId, chatId, null,
+            AgentEventType.TOOL_CALL_STARTED, RawAgentEventPayload(emptyMap()), Instant.EPOCH)
 
         try {
+            repeat(AgentEventLimits.LIVE_BUFFER_SIZE) { assertTrue(bus.publishCommand(command)) }
+            assertFalse(bus.publishCommand(command))
+            // A full subscriber must not prevent another subscription from accepting a command.
+            val available = bus.subscribe(userId, chatId)
+            try {
+                assertTrue(bus.publishCommand(command))
+                assertEquals(command, available.commands.receive())
+            } finally {
+                available.close()
+            }
             withTimeout(1_000) {
                 repeat(totalEvents) { index ->
                     bus.publish(
@@ -46,9 +121,13 @@ class AgentEventBusTest {
 
             assertEquals((expectedFirstSeq..totalEvents.toLong()).toList(), receivedSeqs)
             assertTrue(subscription.events.tryReceive().isFailure)
+            repeat(AgentEventLimits.LIVE_BUFFER_SIZE) { assertEquals(command, subscription.commands.receive()) }
+            assertTrue(subscription.commands.tryReceive().isFailure)
+            assertTrue(bus.publishCommand(command))
         } finally {
             subscription.close()
         }
+        assertFalse(bus.publishCommand(command))
     }
 
     @Test

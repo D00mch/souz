@@ -13,12 +13,13 @@ internal fun backendExecutionToolCatalog(
     enabledCompiledToolNames: Set<String>?,
     clientToolCatalog: AgentToolCatalog,
     includeFewShotExamples: Boolean,
+    clientSearchEnabled: Boolean = clientToolCatalog.toolsByCategory.values.any { "web.search" in it },
 ): AgentToolCatalog {
     val selectedCompiledTools = BackendToolCapabilityPolicy.selectExecutionTools(
         processToolCatalog = compiledToolCatalog,
         executionLlmToolCatalog = executionLlmToolCatalog,
         enabledToolNames = enabledCompiledToolNames,
-        clientSearchEnabled = clientToolCatalog.toolsByCategory.values.any { "web.search" in it },
+        clientSearchEnabled = clientSearchEnabled,
     )
 
     // Client tools intentionally win name collisions because the live client owns their execution boundary.

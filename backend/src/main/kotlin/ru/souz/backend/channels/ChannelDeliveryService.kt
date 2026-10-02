@@ -33,21 +33,22 @@ class ChannelDeliveryService(
             .filter { it.userId == userId && !it.archived }
             .associateBy { it.id }
 
-    /** Persist only chunks accepted by the external channel, including on cancellation. */
-    suspend fun sendChunks(
+    /** Preserve source Markdown on complete delivery, and only accepted text on partial delivery. */
+    internal suspend fun <T> sendChunks(
         userId: String,
         chatId: UUID,
-        text: String,
+        sourceText: String,
         channelName: String,
-        send: suspend (String) -> Unit,
+        chunks: List<T>,
+        textOf: (T) -> String,
+        send: suspend (T) -> Unit,
     ): ChannelSendResult {
-        val chunks = channelTextChunks(text)
         val sent = StringBuilder()
         var sentCount = 0
         return try {
             for (chunk in chunks) {
                 send(chunk)
-                sent.append(chunk)
+                sent.append(textOf(chunk))
                 sentCount++
             }
             ChannelSendResult.Delivered("Sent via $channelName.")
@@ -57,7 +58,9 @@ class ChannelDeliveryService(
             ChannelSendResult.Failed("$channelName delivery failed after $sentCount/${chunks.size} part(s).")
         } finally {
             if (sent.isNotEmpty()) {
-                withContext(NonCancellable) { deliver(userId, chatId, sent.toString()) }
+                withContext(NonCancellable) {
+                    deliver(userId, chatId, if (sentCount == chunks.size) sourceText else sent.toString())
+                }
             }
         }
     }

@@ -1,5 +1,6 @@
 [versions]
 androidx-lifecycle = "2.9.5"
+commonmark = "0.30.0"
 commonsCsv = "1.10.0"
 composeHotReload = "1.0.0-rc04"
 composeMultiplatform = "1.9.3"
@@ -40,6 +41,7 @@ testcontainers = "1.21.4"
 [libraries]
 androidx-lifecycle-viewmodelCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
 androidx-lifecycle-runtimeCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
+commonmark = { module = "org.commonmark:commonmark", version.ref = "commonmark" }
 commons-csv = { module = "org.apache.commons:commons-csv", version.ref = "commonsCsv" }
 jackson = { module = "com.fasterxml.jackson.module:jackson-module-kotlin", version.ref = "jackson" }
 jackson-dataformat-yaml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml", version.ref = "jackson" }

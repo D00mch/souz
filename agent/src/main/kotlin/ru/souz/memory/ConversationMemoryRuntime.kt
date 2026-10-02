@@ -65,6 +65,7 @@ data class CompletedTurnMemoryInput(
     val userMessage: String,
     val assistantMessage: String,
     val evidence: List<CompletedTurnEvidence> = emptyList(),
+    val timeZone: String? = null,
 )
 
 /**

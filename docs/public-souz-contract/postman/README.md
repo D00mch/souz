@@ -19,7 +19,13 @@ Send the payloads from `ws-messages/` in order:
 
 After the first accepted `message.submit` ack, copy `thread.id` into the `threadId` environment variable. After the first `tool.call.started` event, copy `payload.toolCallId` into `toolCallIdAsk`. After the second `tool.call.started` event, copy `payload.toolCallId` into `toolCallIdOpenMedia`.
 
+Use the required, non-null `payload.deviceId` to identify the destination device for `assistant.message`, `thread.completed`, forwarded `message.created`, and `tool.call.started` named `user.ask`, including cross-channel questions. `payload.deviceType` is optional and non-null when present. Replayed events retain their original device values and omission of `deviceType`. Other tool calls have an optional, nullable `deviceId` and no `deviceType`; see [destination device](../README.md#destination-device).
+
+Before forwarding a message or asking a cross-channel question, the target chat must have accepted a `message.submit`. Creation and subscription alone are insufficient; missing device context fails the caller's operation without a target event. The latest newly accepted submit supplies the destination device, retained after thread completion and reconnects.
+
 Expected live sequence:
+
+On the submitting connection, zero or more `assistant.message` events may appear after the originating ACK and before tool events. Each contains one complete text block in `payload.content`, with `seq:null`. Send no reply, keep waiting for the terminal event, and exclude these live-only messages from replay cursors. Slow subscribers may miss stale progress.
 
 ```text
 message.submit -> ack accepted -> thread.status -> tool.call.started user.ask

@@ -4,20 +4,13 @@ import java.time.Instant
 import java.util.UUID
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
-import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
-import ru.souz.backend.chat.repository.MessageRepository
-import ru.souz.backend.config.BackendFeatureFlags
-import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
-import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.options.model.Option
-import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.settings.model.EffectiveUserSettings
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsOverrides
-import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.restJsonMapper
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.common.BackendLlmSupport
@@ -41,7 +34,6 @@ internal data class PreparedContinuationTurn(
 
 internal class AgentExecutionRequestFactory(
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
-    private val featureFlags: BackendFeatureFlags,
     private val clientThreadRegistry: ClientThreadRuntimeRegistry? = null,
 ) {
     suspend fun prepareChatTurn(
@@ -78,12 +70,14 @@ internal class AgentExecutionRequestFactory(
             errorMessage = null,
             usage = null,
             metadata = executionMetadata(
+                reasoningEffort = effectiveSettings.reasoningEffort,
                 contextSize = effectiveSettings.contextSize,
                 temperature = effectiveSettings.temperature,
                 locale = effectiveSettings.locale.toLanguageTag(),
                 timeZone = effectiveSettings.timeZone.id,
                 systemPrompt = effectiveSettings.systemPrompt,
                 streamingMessages = effectiveSettings.streamingMessages,
+                narrateSteps = effectiveSettings.narrateSteps,
                 showToolEvents = effectiveSettings.showToolEvents,
                 requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
@@ -100,6 +94,7 @@ internal class AgentExecutionRequestFactory(
             execution = execution,
             conversationKey = AgentConversationKey.fromChat(userId, chatId),
             runtimeRequest = BackendConversationTurnRequest(
+                reasoningEffort = effectiveSettings.reasoningEffort,
                 prompt = content,
                 model = effectiveSettings.defaultModel,
                 contextSize = effectiveSettings.contextSize,
@@ -109,6 +104,7 @@ internal class AgentExecutionRequestFactory(
                 temperature = effectiveSettings.temperature,
                 systemPrompt = effectiveSettings.systemPrompt,
                 streamingMessages = effectiveSettings.streamingMessages,
+                narrateSteps = effectiveSettings.narrateSteps,
                 requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
                 enabledTools = effectiveSettings.enabledTools.toSet(),
@@ -141,6 +137,7 @@ internal class AgentExecutionRequestFactory(
         }
         return BackendConversationTurnRequest(
             prompt = option.toContinuationInput(),
+            reasoningEffort = execution.metadata[METADATA_REASONING_EFFORT],
             model = model,
             contextSize = executionMetadataInt(execution, METADATA_CONTEXT_SIZE)
                 ?: throw internalError("Execution contextSize is missing."),
@@ -152,51 +149,25 @@ internal class AgentExecutionRequestFactory(
             temperature = executionMetadataFloat(execution, METADATA_TEMPERATURE),
             systemPrompt = execution.metadata[METADATA_SYSTEM_PROMPT]?.takeIf { it.isNotEmpty() },
             streamingMessages = executionMetadataBoolean(execution, METADATA_STREAMING_MESSAGES),
+            narrateSteps = executionMetadataBoolean(execution, METADATA_NARRATE_STEPS) ?: false,
             requestTimeoutMillis = executionMetadataLong(execution, METADATA_REQUEST_TIMEOUT_MILLIS),
             useFewShotExamples = executionMetadataBoolean(execution, METADATA_USE_FEW_SHOT_EXAMPLES),
             enabledTools = executionMetadataStringSet(execution, METADATA_ENABLED_TOOLS),
         )
     }
 
-    suspend fun createEventSink(
-        userId: String,
-        chatId: UUID,
-        execution: AgentExecution,
-        messageRepository: MessageRepository,
-        optionRepository: OptionRepository,
-        executionRepository: AgentExecutionRepository,
-        eventService: AgentEventService,
-        toolCallRepository: ToolCallRepository,
-        streamingMessagesEnabled: Boolean,
-        toolEventsEnabled: Boolean,
-    ): BackendAgentRuntimeEventSink =
-        BackendAgentRuntimeEventSink(
-            userId = userId,
-            chatId = chatId,
-            executionId = execution.id,
-            messageRepository = messageRepository,
-            optionRepository = optionRepository,
-            executionRepository = executionRepository,
-            eventService = eventService,
-            toolCallRepository = toolCallRepository,
-            streamingMessagesEnabled = streamingMessagesEnabled,
-            toolEventsEnabled = toolEventsEnabled,
-            optionsEnabled = featureFlags.options,
-            assistantMessageId = execution.assistantMessageId,
-            beforePublicEvent = { clientThreadRegistry?.awaitAcceptedInputAcks(execution.id) },
-            publicClientThread = execution.runtimeOwner != null,
-        )
-
     private fun userMessageMetadata(clientMessageId: String?): Map<String, String> =
         clientMessageId?.let { linkedMapOf("clientMessageId" to it) } ?: emptyMap()
 
     private fun executionMetadata(
+        reasoningEffort: String?,
         contextSize: Int,
         temperature: Float,
         locale: String,
         timeZone: String,
         systemPrompt: String?,
         streamingMessages: Boolean,
+        narrateSteps: Boolean,
         showToolEvents: Boolean,
         requestTimeoutMillis: Long,
         useFewShotExamples: Boolean,
@@ -207,11 +178,13 @@ internal class AgentExecutionRequestFactory(
         put(METADATA_LOCALE, locale)
         put(METADATA_TIME_ZONE, timeZone)
         put(METADATA_STREAMING_MESSAGES, streamingMessages.toString())
+        put(METADATA_NARRATE_STEPS, narrateSteps.toString())
         put(METADATA_SHOW_TOOL_EVENTS, showToolEvents.toString())
         put(METADATA_REQUEST_TIMEOUT_MILLIS, requestTimeoutMillis.toString())
         put(METADATA_USE_FEW_SHOT_EXAMPLES, useFewShotExamples.toString())
         put(METADATA_ENABLED_TOOLS, restJsonMapper.writeValueAsString(enabledTools.sorted()))
         systemPrompt?.let { put(METADATA_SYSTEM_PROMPT, it) }
+        reasoningEffort?.let { put(METADATA_REASONING_EFFORT, it) }
     }
 
     private fun executionMetadataInt(
@@ -277,11 +250,13 @@ private fun internalError(message: String): BackendV1Exception =
         message = message,
     )
 
+private const val METADATA_REASONING_EFFORT = "reasoningEffort"
 private const val METADATA_CONTEXT_SIZE = "contextSize"
 private const val METADATA_TEMPERATURE = "temperature"
 private const val METADATA_LOCALE = "locale"
 private const val METADATA_TIME_ZONE = "timeZone"
 private const val METADATA_SYSTEM_PROMPT = "systemPrompt"
+internal const val METADATA_NARRATE_STEPS = "narrateSteps"
 private const val METADATA_STREAMING_MESSAGES = "streamingMessages"
 private const val METADATA_SHOW_TOOL_EVENTS = "showToolEvents"
 private const val METADATA_REQUEST_TIMEOUT_MILLIS = "requestTimeoutMillis"

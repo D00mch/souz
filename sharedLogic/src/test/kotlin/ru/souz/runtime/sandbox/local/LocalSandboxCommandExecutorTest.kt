@@ -2,6 +2,7 @@ package ru.souz.runtime.sandbox.local
 
 import io.mockk.every
 import io.mockk.mockk
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.coroutines.async
@@ -15,6 +16,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.runtime.sandbox.SANDBOX_COMMAND_OUTPUT_LIMIT_BYTES
 import ru.souz.runtime.sandbox.SANDBOX_COMMAND_OUTPUT_TRUNCATION_PREFIX
 import ru.souz.runtime.sandbox.SandboxCommandRequest
+import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.tool.BadInputException
@@ -25,7 +27,6 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
-import kotlin.time.Duration.Companion.milliseconds
 
 class LocalSandboxCommandExecutorTest {
     @TempDir
@@ -69,13 +70,14 @@ class LocalSandboxCommandExecutorTest {
     }
 
     @Test
-    fun `executes script path with args`() = runTest {
+    fun `executes script path with args and stdin`() = runTest {
         val home = createTempDirectory("sandbox-home-")
         val scripts = home.resolve("scripts").createDirectories()
         val script = scripts.resolve("echo.sh").apply {
-            writeText($$"printf '%s:%s:%s' \"$PWD\" \"$1\" \"$2\"")
+            writeText($$"printf '%s:%s:%s:' \"$PWD\" \"$1\" \"$2\"; cat")
         }
         val sandbox = createSandbox(home)
+        val input = "Привет\n".repeat(4_000)
 
         val result = sandbox.commandExecutor.execute(
             SandboxCommandRequest(
@@ -83,11 +85,12 @@ class LocalSandboxCommandExecutorTest {
                 scriptPath = script.toString(),
                 args = listOf("first", "second"),
                 workingDirectory = "~/scripts",
+                stdin = input,
             ),
         )
 
         assertEquals(0, result.exitCode)
-        assertEquals("${scripts.toRealPath()}:first:second", result.stdout)
+        assertEquals("${scripts.toRealPath()}:first:second:$input", result.stdout)
     }
 
     @Test
@@ -116,56 +119,94 @@ class LocalSandboxCommandExecutorTest {
     }
 
     @Test
-    fun `does not hang when background child keeps stdout open`() = runBlocking {
+    fun `does not hang when background child retains stdin and stdout`() = runBlocking {
         val home = createTempDirectory("sandbox-home-")
         val sandbox = createSandbox(home)
-
+        val pidFile = home.resolve("child-pid")
         val startedAt = System.nanoTime()
-        val result = withTimeout(3_000.milliseconds) {
-            sandbox.commandExecutor.execute(
-                SandboxCommandRequest(
-                    runtime = SandboxCommandRuntime.BASH,
-                    script = "sleep 5 & disown; printf done",
-                    timeoutMillis = 10_000,
-                )
-            )
-        }
-        val elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000
+        try {
+            val result = sandbox.commandExecutor.execute(SandboxCommandRequest(
+                runtime = SandboxCommandRuntime.PYTHON,
+                script = """
+                    import pathlib, subprocess, sys
+                    child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(5)'],
+                                             stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+                    pathlib.Path('child-pid').write_text(str(child.pid))
+                    print('done', end='', flush=True)
+                """.trimIndent(),
+                workingDirectory = home.toString(),
+                timeoutMillis = 500,
+                stdin = "x".repeat(90_000),
+            ))
 
-        assertEquals(0, result.exitCode)
-        assertEquals("done", result.stdout)
-        assertTrue(elapsedMillis < 3_000, "Command should return after stream-drain grace, elapsed=${elapsedMillis}ms")
+            val elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000
+            assertEquals(0, result.exitCode)
+            assertEquals("done", result.stdout)
+            assertTrue(elapsedMillis < 3_000, "Inherited streams delayed completion: ${elapsedMillis}ms")
+        } finally {
+            if (Files.exists(pidFile)) {
+                ProcessHandle.of(Files.readString(pidFile).toLong()).ifPresent { it.destroyForcibly() }
+            }
+        }
     }
 
     @Test
     fun `timeout and cancellation terminate the process and its children`() = runBlocking {
-        for (cancel in listOf(false, true)) {
+        for (cancel in listOf(false, true)) for (input in listOf(null, "x".repeat(90_000))) {
             val home = createTempDirectory("sandbox-home-")
             val sandbox = createSandbox(home)
-            withTimeout(10_000) {
-                val execution = async {
-                    sandbox.commandExecutor.execute(SandboxCommandRequest(
-                        runtime = SandboxCommandRuntime.BASH,
-                        script = $$"sleep 30 & printf '%s %s' \"$$\" \"$!\" > pids.tmp; mv pids.tmp pids; wait",
-                        workingDirectory = home.toString(), timeoutMillis = if (cancel) null else 1_000,
-                    ))
+            val pidFile = home.resolve("pids")
+            var phase = "waiting for PID file"
+            var pids = emptyList<Long>()
+            var commandResult: SandboxCommandResult? = null
+            try {
+                withTimeout(10_000) {
+                    val execution = async {
+                        sandbox.commandExecutor.execute(SandboxCommandRequest(
+                            runtime = SandboxCommandRuntime.BASH,
+                            script = $$"sleep 30 & printf '%s %s' \"$$\" \"$!\" > pids.tmp; mv pids.tmp pids; wait",
+                            workingDirectory = home.toString(), timeoutMillis = if (cancel) null else 1_000, stdin = input,
+                        )).also { commandResult = it }
+                    }
+                    // Cancel only after both PIDs are published; allow startup and draining in the test watchdog.
+                    while (!Files.exists(pidFile)) delay(10)
+                    pids = Files.readString(pidFile).split(' ').map(String::toLong)
+                    phase = if (cancel) "cancelling command" else "waiting for command timeout"
+                    if (cancel) {
+                        assertTrue(execution.isActive)
+                        assertTrue(pids.all(::isProcessRunning))
+                        execution.cancelAndJoin()
+                        assertTrue(execution.isCancelled)
+                    } else {
+                        val result = execution.await()
+                        assertEquals(-1, result.exitCode)
+                        assertTrue(result.timedOut)
+                    }
+                    phase = "waiting for process termination"
+                    while (pids.any(::isProcessRunning)) delay(10)
                 }
-                // Cancel only after both PIDs are published; allow startup and draining in the test watchdog.
-                val pidFile = home.resolve("pids")
-                while (!Files.exists(pidFile)) delay(10)
-                val pids = Files.readString(pidFile).split(' ').map(String::toLong)
-                if (cancel) {
-                    assertTrue(execution.isActive)
-                    execution.cancelAndJoin()
-                    assertTrue(execution.isCancelled)
-                } else {
-                    val result = execution.await()
-                    assertEquals(-1, result.exitCode)
-                    assertTrue(result.timedOut)
+                phase = "completed"
+            } finally {
+                if (phase != "completed") {
+                    System.err.println(
+                        "Process cleanup failed: cancel=$cancel, stdinBytes=${input?.length ?: 0}, phase=$phase, " +
+                            "pidFileExists=${Files.exists(pidFile)}, result=$commandResult, " +
+                            "running=${pids.associateWith(::isProcessRunning)}",
+                    )
                 }
-                while (pids.any { ProcessHandle.of(it).map { process -> process.isAlive }.orElse(false) }) delay(10)
             }
         }
+    }
+
+    private fun isProcessRunning(pid: Long): Boolean {
+        if (!ProcessHandle.of(pid).map { it.isAlive }.orElse(false)) return false
+        // Linux retains killed children as zombies until their new parent reaps them.
+        val state = try {
+            Files.readString(Path.of("/proc/$pid/stat")).substringAfterLast(") ").first()
+        } catch (_: IOException) {
+            null
+        }
+        return state != 'Z'
     }
 
     private fun createSandbox(home: Path) = LocalRuntimeSandbox(
