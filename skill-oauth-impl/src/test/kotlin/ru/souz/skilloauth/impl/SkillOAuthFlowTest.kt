@@ -14,6 +14,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.Base64
+import javax.sql.DataSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -40,6 +41,25 @@ class SkillOAuthFlowTest {
         authorizationScheme = "OAuth",
     )
     private val request = ApiCallRequest("GET", "https://api.provider.example/resource")
+
+    @Test
+    fun `credential writes remain durable when the datasource disables autocommit`() = runTest {
+        skillOAuthTestDataSource(newSkillOAuthTestSchema("oauth_non_autocommit")).use { dataSource ->
+            val transactionalDataSource = object : DataSource by dataSource {
+                override fun getConnection() = dataSource.connection.apply { autoCommit = false }
+            }
+            val credentials = PostgresSkillOAuthCredentialRepository(transactionalDataSource)
+            val now = MutableClock().instant()
+            val stored = credentials.upsert(SkillOAuthCredential(
+                userId = "user", provider = config.name, accessTokenEncrypted = crypto.encrypt("access"),
+                refreshTokenEncrypted = null, grantedScopes = listOf("read"), expiresAt = null,
+                generation = 1, createdAt = now, updatedAt = now,
+            ))!!
+            assertEquals(stored, credentials.find("user", config.name))
+            credentials.delete("user", config.name)
+            assertEquals(null, credentials.find("user", config.name))
+        }
+    }
 
     @Test
     fun `authorization callback and proactive refresh preserve the stored grant and forward the new token`() = runTest {
