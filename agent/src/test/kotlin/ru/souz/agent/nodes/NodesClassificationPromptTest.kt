@@ -453,7 +453,10 @@ class NodesClassificationPromptTest {
         private var body: LLMRequest.Chat? = null
         private var categories: Map<ToolCategory, String> = emptyMap()
 
-        override suspend fun classify(body: LLMRequest.Chat, categories: Map<ToolCategory, String>): UserMessageClassifier.Reply {
+        override suspend fun classify(
+            body: LLMRequest.Chat,
+            categories: Map<ToolCategory, String>
+        ): UserMessageClassifier.Reply {
             this.body = body
             this.categories = categories
             return reply
