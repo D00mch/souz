@@ -162,6 +162,7 @@ enum class LLMModel(
     AiTunnelClaudeHaiku("AiT.claude-haiku-4.5", "claude-haiku-4.5", LlmProvider.AI_TUNNEL),
     AiTunnelClaudeFable5("AiT.claude-fable-5", "claude-fable-5", LlmProvider.AI_TUNNEL),
     AiTunnelKimiK3("AiT.kimi-k3", "kimi-k3", LlmProvider.AI_TUNNEL),
+    AiTunnelQwen36_35B_A3B("AiT.qwen3.6-35b-a3b", "qwen3.6-35b-a3b", LlmProvider.AI_TUNNEL),
     OpenAIGpt52("OpenAI GPT-5.2", "gpt-5.2", LlmProvider.OPENAI),
     OpenAIGpt5Mini("OpenAI GPT-5 mini", "gpt-5-mini", LlmProvider.OPENAI),
     OpenAICompatibleCustom("OpenAI-compatible custom", "openai-compatible-custom", LlmProvider.OPENAI),
