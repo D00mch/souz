@@ -280,7 +280,10 @@ object LLMRequest {
         val name: String? = null,
         @field:JsonInclude(JsonInclude.Include.NON_NULL)
         @field:JsonProperty("function_call") val functionCall: FunctionCall? = null,
-    )
+    ) {
+        fun shrinked(lastSymbols: Int): Message =
+            copy(content = content.takeLast(lastSymbols), functionCall = null, attachments = null)
+    }
 
     data class FunctionCall(
         val name: String,

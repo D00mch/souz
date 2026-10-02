@@ -36,6 +36,7 @@ internal class NodesClassification(
         const val EXPANDED_HISTORY_WINDOW = 4
         const val SHORT_MESSAGE_CHAR_THRESHOLD = 24
         const val SHORT_MESSAGE_WORD_THRESHOLD = 4
+        val DESCRIPTION_WHITESPACE = Regex("""\s+""")
         val WORD_REGEX = Regex("""[\p{L}\p{N}]+(?:['’_-][\p{L}\p{N}]+)*""")
     }
 
@@ -44,7 +45,7 @@ internal class NodesClassification(
      *
      * Modifies [AgentContext.activeTools] based on the classification algorithm and [AgentToolCatalog].
      */
-    fun selectCategories(name: String = "select categories"): Node<String, String> = Node(name, retryable = true) { ctx ->
+    fun selectCategories(name: String = "select categories"): Node<String, String> = Node(name, true) { ctx ->
         val categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>> = toolsFilter
             .applyFilter(toolCatalog.toolsByCategory)
             .filterValues { it.isNotEmpty() }
@@ -68,26 +69,41 @@ internal class NodesClassification(
 
     /** Selects discovery descriptions without loading or approving file-backed bundles. */
     fun selectSkills(): Node<String, String> = Node("Skill Classification") { ctx ->
-        val selected = try {
-            val compiledIds = toolsFilter.applyFilter(toolCatalog.toolsByCategory).values.flatMap { it.keys }.toSet()
-            val descriptions = skillBundleProvider.listSkillDescriptions(ctx.toolInvocationMeta.userId)
-                .filterKeys { it.value !in compiledIds }
-                .mapValues { (_, text) -> text.replace(Regex("\\s+"), " ").trim().take(1000) }
-                .filterValues { it.isNotBlank() }
-            if (descriptions.isEmpty()) emptyMap() else selectCandidates(
-                ctx, descriptions, buildSkillPrompt(descriptions),
-                historyForClassification(ctx, skillsOnly = true).map {
-                    it.copy(content = it.content.takeLast(4000), functionCall = null, attachments = null)
-                } + LLMRequest.Message(LLMMessageRole.user, ctx.input),
-                ::classifySkills,
+        val selected: Map<SkillId, String> = runCatching {
+            val descriptions = skillCandidates(ctx.toolInvocationMeta.userId)
+            if (descriptions.isEmpty()) return@runCatching emptyMap()
+            val conversation = buildList {
+                for (message in historyForClassification(ctx, skillsOnly = true)) {
+                    add(message.shrinked(lastSymbols = 4000))
+                }
+                add(LLMRequest.Message(LLMMessageRole.user, ctx.input))
+            }
+            selectCandidates(
+                ctx = ctx,
+                descriptions = descriptions,
+                prompt = buildSkillPrompt(descriptions),
+                conversation = conversation,
+                classifier = ::classifySkills,
             ).mapValues { (_, text) -> text.take(240) }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
+        }.getOrElse { error ->
+            if (error is CancellationException || error !is Exception) throw error
             l.warn("File-backed Skill classification unavailable: {}", error.message)
             emptyMap()
         }
         ctx.map(selectedSkillDescriptions = selected) { it }
+    }
+
+    private suspend fun skillCandidates(userId: String): Map<SkillId, String> {
+        val compiledIds = toolsFilter.applyFilter(toolCatalog.toolsByCategory)
+            .values.flatMapTo(mutableSetOf()) { it.keys }
+        val available = skillBundleProvider.listSkillDescriptions(userId)
+        return buildMap {
+            for ((id, text) in available) {
+                if (id.value in compiledIds) continue
+                val description = DESCRIPTION_WHITESPACE.replace(text, " ").trim().take(1000)
+                if (description.isNotBlank()) put(id, description)
+            }
+        }
     }
 
     private suspend fun <Id> selectCandidates(
