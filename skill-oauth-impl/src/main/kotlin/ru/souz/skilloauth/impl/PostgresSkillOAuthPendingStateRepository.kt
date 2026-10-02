@@ -17,7 +17,7 @@ class PostgresSkillOAuthPendingStateRepository(
         expiresAt: Instant,
         reuseExisting: Boolean,
     ): SkillOAuthPendingState =
-        dataSource.write { connection ->
+        dataSource.withTransaction { connection ->
             connection.prepareStatement(
                 """
                 insert into skill_oauth_requested_scopes(user_id, provider, requested_scopes, generation, updated_at)
@@ -31,13 +31,7 @@ class PostgresSkillOAuthPendingStateRepository(
                 statement.executeUpdate()
             }
 
-            // Held until this transaction commits below — a concurrent call for the same
-            // (userId, provider) blocks here until this whole method (reuse-or-widen decision,
-            // merge, bump, AND the pending-state write further down) has fully committed, not just
-            // part of it. That's what actually closes the race: splitting these into separate
-            // transactions would leave a window where two concurrent callers could each decide
-            // independently to create their own pending state, or an older, paused call could
-            // unconditionally overwrite a newer call's already-written one.
+            // Serialize reuse, scope merging, generation, and pending-state writes for this pair.
             val (existingScopes, existingGeneration, updatedAt) = connection.prepareStatement(
                 """
                 select requested_scopes, generation, updated_at from skill_oauth_requested_scopes
@@ -57,10 +51,7 @@ class PostgresSkillOAuthPendingStateRepository(
                 }
             }
 
-            // Still holding the row lock above: a still-live pending state that already covers
-            // [scopes] is handed back completely unchanged (same state/expiresAt/generation) rather
-            // than superseded — see the interface doc comment on why this decision has to happen
-            // inside the same lock as any write, not as a separate read beforehand.
+            // A covering live link keeps its original state, expiry, and generation.
             if (reuseExisting) {
                 val existingPending = connection.prepareStatement(
                     "select * from skill_oauth_pending_states where user_id = ? and provider = ?"
@@ -75,7 +66,7 @@ class PostgresSkillOAuthPendingStateRepository(
                     !existingPending.expiresAt.isBefore(now) &&
                     scopes.all { it in existingPending.requestedScopes }
                 ) {
-                    return@write existingPending
+                    return@withTransaction existingPending
                 }
             }
 
@@ -98,9 +89,7 @@ class PostgresSkillOAuthPendingStateRepository(
                 statement.executeUpdate()
             }
 
-            // Safe to be unconditional (no generation guard needed here, unlike credentials'
-            // upsert): the row lock above already serializes every call for this (userId,
-            // provider) pair, so nothing else can be racing this specific write.
+            // The requested-scope lock also serializes replacement of this pair's pending state.
             connection.prepareStatement(
                 """
                 insert into skill_oauth_pending_states(
@@ -131,17 +120,8 @@ class PostgresSkillOAuthPendingStateRepository(
         }
 
     override suspend fun consume(state: String, now: Instant): SkillOAuthPendingState? =
-        dataSource.write { connection ->
-            // Locks the requested-scopes row for this pending state's (userId, provider) FIRST —
-            // the same order beginAuthorization uses (that row, then the pending-states row) —
-            // before this transaction touches skill_oauth_pending_states at all. Locking in the
-            // reverse order, as this used to (delete the pending row, only then touch
-            // requested-scopes), let a concurrent beginAuthorization/consume pair for the same
-            // pair deadlock: one holding the requested-scopes lock while waiting on the pending-row
-            // lock, the other holding the pending-row lock while waiting on requested-scopes —
-            // Postgres detects the cycle and aborts one side with SQLSTATE 40P01, which
-            // DataSource.write does not retry. A single consistent lock order makes that cycle
-            // structurally impossible.
+        dataSource.withTransaction { connection ->
+            // Match beginAuthorization's lock order: requested scopes before pending state.
             connection.prepareStatement(
                 """
                 select rs.user_id
@@ -161,19 +141,13 @@ class PostgresSkillOAuthPendingStateRepository(
             ).use { statement ->
                 statement.setString(1, state)
                 statement.executeQuery().use { resultSet ->
-                    if (!resultSet.next()) return@write null
+                    if (!resultSet.next()) return@withTransaction null
                     val found = resultSet.toPendingState()
                     if (found.expiresAt.isBefore(now)) null else found
                 }
-            } ?: return@write null
+            } ?: return@withTransaction null
 
-            // Refreshes the durable requested-scope tracking row's freshness the moment its flow
-            // starts actually completing (this callback is about to exchange the code and save a
-            // credential) — not just when a *new* authorization is begun. Without this, a callback
-            // whose code exchange happens to take a while right around the staleness cutoff (see
-            // beginAuthorization's `activeSince`) could still be racing a concurrent new
-            // authorization that reads a stale `updated_at` and wrongly treats this in-flight flow
-            // as abandoned, discarding its requested scopes instead of widening on top of them.
+            // Keep this flow's scopes active while its callback exchanges the code.
             connection.prepareStatement(
                 "update skill_oauth_requested_scopes set updated_at = ? where user_id = ? and provider = ?"
             ).use { statement ->

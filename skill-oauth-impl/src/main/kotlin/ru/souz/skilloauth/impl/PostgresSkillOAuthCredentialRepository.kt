@@ -6,7 +6,7 @@ class PostgresSkillOAuthCredentialRepository(
     private val dataSource: DataSource,
 ) : SkillOAuthCredentialRepository {
     override suspend fun find(userId: String, provider: String): SkillOAuthCredential? =
-        dataSource.read { connection ->
+        dataSource.withConnection { connection ->
             connection.prepareStatement(
                 "select * from skill_oauth_credentials where user_id = ? and provider = ?"
             ).use { statement ->
@@ -19,7 +19,8 @@ class PostgresSkillOAuthCredentialRepository(
         }
 
     override suspend fun upsert(credential: SkillOAuthCredential): SkillOAuthCredential? =
-        dataSource.write { connection ->
+        dataSource.withConnection { connection ->
+            connection.autoCommit = true
             connection.prepareStatement(
                 """
                 insert into skill_oauth_credentials(
@@ -33,8 +34,7 @@ class PostgresSkillOAuthCredentialRepository(
                     granted_scopes = excluded.granted_scopes,
                     expires_at = excluded.expires_at,
                     generation = excluded.generation,
-                    -- Bumped relative to the *stored* row, not `excluded.revision` (which merely
-                    -- carries the revision this write was read at, for the CAS check below).
+                    -- Revision is the stored row's CAS token, incremented on every accepted write.
                     revision = skill_oauth_credentials.revision + 1,
                     updated_at = excluded.updated_at
                 where excluded.generation > skill_oauth_credentials.generation
@@ -56,16 +56,15 @@ class PostgresSkillOAuthCredentialRepository(
                 statement.setInstant(9, credential.createdAt)
                 statement.setInstant(10, credential.updatedAt)
                 statement.executeQuery().use { resultSet ->
-                    // No row means the `where` guard rejected the write — a fresher generation
-                    // already exists, or a same-generation write already landed since this
-                    // credential was read (see SkillOAuthCredentialRepository.upsert's doc comment).
+                    // A newer generation or revision rejects the write without changing the row.
                     if (resultSet.next()) resultSet.toCredential() else null
                 }
             }
         }
 
     override suspend fun delete(userId: String, provider: String) {
-        dataSource.write { connection ->
+        dataSource.withConnection { connection ->
+            connection.autoCommit = true
             connection.prepareStatement(
                 "delete from skill_oauth_credentials where user_id = ? and provider = ?"
             ).use { statement ->
