@@ -18,8 +18,11 @@ import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import org.slf4j.LoggerFactory
+import ru.souz.llms.local.LocalStrictJsonContract.instructions
 import ru.souz.llms.restJsonMapper
 import kotlin.time.TimeSource
+
+private const val JEV_TIMEOUT = 2_000L
 
 /** Reusable Noul evaluation; the caller owns the supplied HTTP client. */
 class JevClient(
@@ -48,10 +51,8 @@ class JevClient(
                 expectSuccess = false
                 bearerAuth(token)
                 contentType(ContentType.Application.Json)
-                timeout { requestTimeoutMillis = 30_000 }
-                setBody(mapOf("state" to state, "model" to model, "questions" to questions.mapValues { (_, instructions) ->
-                    mapOf("type" to "noul", "instructions" to instructions)
-                }))
+                timeout { requestTimeoutMillis = JEV_TIMEOUT }
+                setBody(JevRequest(state, model, questions.mapValues { JevQuestion(it.value) }))
             }
             status = response.status.value
             val text = response.bodyAsText()
@@ -69,8 +70,10 @@ class JevClient(
             }
             throw error
         } finally {
-            logger.info("Jev HTTP request durationMs={} status={} outcome={}", started.elapsedNow().inWholeMilliseconds,
-                status, outcome)
+            logger.info(
+                "Jev HTTP request durationMs={} status={} outcome={}",
+                started.elapsedNow().inWholeMilliseconds, status, outcome
+            )
         }
         check(status in 200..299) { "Jev request failed (HTTP $status)" }
         val result = try {
@@ -83,11 +86,13 @@ class JevClient(
             val answer = result.path("answers").path(name)
             val probability = answer.path("noul")
             val value = probability.asDouble()
-            check(answer.path("type").asText() == "noul" && probability.isNumber &&
-                value in 0.0..1.0) {
+            check(answer.path("type").asText() == "noul" && probability.isNumber && value in 0.0..1.0) {
                 "Jev response contains a missing or invalid Noul answer"
             }
             value
         }
     }
 }
+
+private data class JevRequest(val state: JsonNode, val model: String, val questions: Map<String, JevQuestion>)
+private data class JevQuestion(val instructions: String, val type: String = "noul")
