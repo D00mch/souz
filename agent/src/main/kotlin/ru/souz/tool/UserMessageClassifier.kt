@@ -4,18 +4,19 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 
 fun interface UserMessageClassifier {
-    suspend fun classify(body: LLMRequest.Chat): Reply
+    suspend fun classify(body: LLMRequest.Chat, categories: Map<ToolCategory, String>): Reply
 
     data class Reply(
         val categories: List<ToolCategory> = emptyList(),
-        val confidence: Double,
+        /** Null means the classifier has already applied its own selection policy. */
+        val confidence: Double?,
     )
 }
 
 object LocalRegexClassifier : UserMessageClassifier {
     private val defaultUnknown = UserMessageClassifier.Reply(emptyList(), 0.0)
 
-    override suspend fun classify(body: LLMRequest.Chat): UserMessageClassifier.Reply {
+    override suspend fun classify(body: LLMRequest.Chat, categories: Map<ToolCategory, String>): UserMessageClassifier.Reply {
         val lastUser = body.messages.lastOrNull { it.role == LLMMessageRole.user }
             ?: return defaultUnknown
 

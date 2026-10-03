@@ -2,6 +2,8 @@ package ru.souz.skills.registry
 
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.spyk
+import io.mockk.verify
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -116,6 +118,28 @@ class FileSystemSkillRegistryRepositoryTest {
         Files.write(skillRoot.resolve("SKILL.md"), ByteArray(2 * 1024 * 1024) { 'x'.code.toByte() })
 
         assertEquals(listOf(skillId), repository.listSkillInventoryIds("user-1"))
+    }
+
+    @Test
+    fun `description discovery isolates broken metadata and avoids supporting files`() = runTest {
+        val paths = DefaultSouzPaths(stateRoot = createTempDirectory("skill-descriptions-"))
+        val sandbox = createLocalSandbox(paths)
+        val fileSystem = spyk(sandbox.fileSystem)
+        val repository = FileSystemSkillRegistryRepository(mockk<RuntimeSandbox> {
+            every { runtimePaths } returns sandbox.runtimePaths
+            every { mode } returns sandbox.mode
+            every { this@mockk.fileSystem } returns fileSystem
+        })
+        for ((id, description) in listOf("paper" to "Summarize papers.", "broken" to "[invalid")) {
+            val root = paths.skillsDir.resolve(id)
+            Files.createDirectories(root)
+            Files.writeString(root.resolve("SKILL.md"), "---\nname: $id\ndescription: $description\n---\nPrivate instructions.")
+            Files.writeString(root.resolve("support.txt"), "Private supporting file.")
+        }
+        assertEquals(mapOf(SkillId("paper") to "Summarize papers."), repository.listSkillDescriptions("user-1"))
+        verify(exactly = 0) { fileSystem.readBytes(match { it.name == "support.txt" }) }
+        assertEquals(listOf(SkillId("paper")), repository.listSkills("user-1").map { it.skillId })
+        assertFailsWith<SkillBundleException> { repository.loadSkillBundle("user-1", SkillId("broken")) }
     }
 
     @Test

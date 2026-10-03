@@ -52,6 +52,8 @@ import ru.souz.service.keys.Keys
 import ru.souz.llms.tunnel.AiTunnelVoiceAPI
 import ru.souz.llms.openai.OpenAIVoiceAPI
 import ru.souz.llms.runtime.ApiClassifier
+import ru.souz.llms.runtime.JevClassifier
+import ru.souz.tool.UserMessageClassifier
 import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.RuntimeSandbox
@@ -395,7 +397,13 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<SpeechRecognitionProvider> {
         ModelAwareSpeechRecognitionProvider(instance(), instance(), instance(), instance(), instance())
     }
-    bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
+    bindSingleton<UserMessageClassifier>(tag = DiTags.TAG_API) {
+        when (System.getenv("SOUZ_CLASSIFIER")?.trim()?.lowercase()) {
+            null, "", "llm" -> ApiClassifier(instance())
+            "jev" -> JevClassifier(instance(), System.getenv("JEV_THRESHOLD")?.trim()?.toDouble() ?: 0.5)
+            else -> error("SOUZ_CLASSIFIER must be llm or jev")
+        }
+    }
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
 
     // Skill OAuth needs a public HTTP callback endpoint, which only :backend exposes —

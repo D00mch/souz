@@ -19,7 +19,7 @@ class ApiClassifier(
     private val noiceRegex = Regex("[<>'`“”«»\"]")
     private val spaceRegex = Regex("\\s+")
 
-    override suspend fun classify(body: LLMRequest.Chat): UserMessageClassifier.Reply {
+    override suspend fun classify(body: LLMRequest.Chat, categories: Map<ToolCategory, String>): UserMessageClassifier.Reply {
         l.debug("Classifying via API, body:\n{}", logObjectMapper.writeValueAsString(body))
         return when (val resp = api.message(body)) {
             is LLMResponse.Chat.Error -> {

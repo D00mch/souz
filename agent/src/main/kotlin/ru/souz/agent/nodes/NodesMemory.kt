@@ -196,19 +196,19 @@ internal class NodesMemory(
         }
     }
 
-    private fun String.trimMiddle(maxChars: Int): String {
-        if (length <= maxChars) return this
-        val marker = "\n...[truncated]...\n"
-        if (maxChars <= marker.length) return take(maxChars.coerceAtLeast(0))
-        val keep = (maxChars - marker.length).coerceAtLeast(0)
-        val head = keep / 2
-        val tail = keep - head
-        return take(head) + marker + takeLast(tail)
-    }
-
     private companion object {
         private const val MAX_EVIDENCE_SNIPPETS = 16
         private const val MAX_EVIDENCE_CHARS = 6_000
         private const val MAX_TOTAL_EVIDENCE_CHARS = 24_000
     }
+}
+
+internal fun String.trimMiddle(maxChars: Int): String {
+    if (length <= maxChars) return this
+    val marker = "\n...[truncated]...\n"
+    if (maxChars <= marker.length) return take(maxChars.coerceAtLeast(0))
+    val keep = maxChars - marker.length
+    val head = keep / 2
+    val tail = keep - head
+    return take(head) + marker + takeLast(tail)
 }

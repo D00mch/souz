@@ -41,7 +41,7 @@ internal class NodesClassification(
             toolsFilter.applyFilter(toolCatalog.toolsByCategory)
                 .filterValues { it.isNotEmpty() }
         val body = buildClassifierBody(ctx, categoryStates)
-        val categories: List<ToolCategory> = classify(body)
+        val categories: List<ToolCategory> = classify(body, categoryStates.keys.associateWith { it.description() })
 
         val categoriesToChoseFrom = if (categories.isEmpty() || categories.contains(HELP)) {
             categoryStates
@@ -54,28 +54,26 @@ internal class NodesClassification(
 
     private suspend fun classify(
         body: LLMRequest.Chat,
-        retriesCount: Int = 2
+        categoryDescriptions: Map<ToolCategory, String>,
     ): List<ToolCategory> {
         l.debug("Classifying user message, body: \n{}", logObjectMapper.writeValueAsString(body))
-        try {
-            val localResult: UserMessageClassifier.Reply = localClassifier.classify(body)
-            if (retriesCount <= 0) {
-                return localResult.categories
-            }
-
-            val apiResult: UserMessageClassifier.Reply = apiClassifier.classify(body)
-            if (apiResult.confidence > 50 || apiResult.categories.firstOrNull() == localResult.categories.firstOrNull()) {
-                return apiResult.categories
-            } else {
-                l.info("Categories mismatch: Local: ${localResult}, API: ${apiResult}.")
+        val localResult = localClassifier.classify(body, categoryDescriptions)
+        repeat(2) {
+            try {
+                val apiResult = apiClassifier.classify(body, categoryDescriptions)
+                if (apiResult.confidence == null || apiResult.confidence > 50 ||
+                    apiResult.categories.firstOrNull() == localResult.categories.firstOrNull()) {
+                    return apiResult.categories
+                }
+                l.info("Categories mismatch: Local: {}, API: {}.", localResult, apiResult)
                 return emptyList()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                l.error("Error in apiClassifier: {}", e.message)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            l.error("Error in apiClassifier: {}", e.message)
-            return classify(body, retriesCount.dec())
         }
+        return localResult.categories
     }
 
     private fun buildClassifierBody(
