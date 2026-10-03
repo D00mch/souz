@@ -4,7 +4,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
-import ru.souz.llms.http.createStandardProviderHttpClient
+import ru.souz.llms.http.createJevProviderHttpClient
 import ru.souz.llms.runtime.JevClassifier
 import ru.souz.tool.ToolCategory
 import kotlin.test.Test
@@ -14,7 +14,7 @@ class JevIntegrationTest {
     @Test
     fun `hosted Jev selects calendar and mail together`() = runBlocking {
         assumeTrue(System.getenv("SOUZ_TEST_JEV") == "1", "Enable with SOUZ_TEST_JEV=1 and JEV_TOKEN")
-        createStandardProviderHttpClient().use { http ->
+        createJevProviderHttpClient().use { http ->
             val classifier = JevClassifier(JevClient(http))
             val result = classifier.classify(
                 LLMRequest.Chat(

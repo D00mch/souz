@@ -132,7 +132,7 @@ fun runtimeLlmDiModule(
 /** Process-owned remote transports that are safe for backend and interactive hosts. */
 fun runtimeProviderHttpDiModule(): DI.Module = DI.Module("runtimeProviderHttp") {
     bindSingleton { ProviderHttpClients() }
-    bindSingleton { JevClient(instance<ProviderHttpClients>().standard) }
+    bindSingleton { JevClient(instance<ProviderHttpClients>().jev) }
     bindSingleton<SkillClassifier> {
         SkillClassifier { request, descriptions ->
             JevClassifier(instance<JevClient>(), System.getenv("JEV_THRESHOLD")?.trim()?.toDouble() ?: 0.5)

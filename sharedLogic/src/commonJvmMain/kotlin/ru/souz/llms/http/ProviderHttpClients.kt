@@ -5,6 +5,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngineConfig
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.cio.endpoint
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
@@ -22,10 +23,20 @@ import ru.souz.llms.openai.openAiTlsDefaults
 class ProviderHttpClients(
     val standard: HttpClient,
     val openAi: HttpClient,
+    jev: HttpClient? = standard,
 ) : AutoCloseable {
     constructor() : this(createProviderHttpClientPair())
 
-    private constructor(pair: ProviderHttpClientPair) : this(pair.standard, pair.openAi)
+    private constructor(pair: ProviderHttpClientPair) : this(pair.standard, pair.openAi, jev = null)
+
+    private val jevResource = if (jev == null) lazy { createJevProviderHttpClient() } else lazyOf(jev)
+
+    /** Separate, lazily created CIO profile; the host owns its shutdown too. */
+    val jev: HttpClient
+        get() {
+            check(!closed.get()) { "Provider HTTP clients are closed" }
+            return jevResource.value
+        }
 
     private val closed = AtomicBoolean(false)
 
@@ -33,19 +44,15 @@ class ProviderHttpClients(
         if (!closed.compareAndSet(false, true)) return
 
         var failure: Throwable? = null
-        try {
-            standard.close()
-        } catch (standardFailure: Throwable) {
-            failure = standardFailure
-        }
-        if (openAi !== standard) {
+        val clients = listOfNotNull(standard, openAi, jevResource.takeIf { it.isInitialized() }?.value)
+        for (client in clients.distinct()) {
             try {
-                openAi.close()
-            } catch (openAiFailure: Throwable) {
+                client.close()
+            } catch (closeFailure: Throwable) {
                 if (failure == null) {
-                    failure = openAiFailure
+                    failure = closeFailure
                 } else {
-                    failure.addSuppressed(openAiFailure)
+                    failure.addSuppressed(closeFailure)
                 }
             }
         }
@@ -77,6 +84,26 @@ fun createStandardProviderHttpClient(): HttpClient =
     HttpClient(CIO) {
         providerHttpClientDefaults()
     }
+
+/** CIO's idle setting is configurable for experiments; POST requests still use dedicated connections. */
+fun createJevProviderHttpClient(
+    keepAliveTimeMillis: Long = jevKeepAliveTimeMillis(System.getenv("JEV_KEEP_ALIVE_TIME_MS")),
+): HttpClient {
+    require(keepAliveTimeMillis > 0) { "JEV_KEEP_ALIVE_TIME_MS must be a positive integer in milliseconds" }
+    return HttpClient(CIO) {
+        providerHttpClientDefaults()
+        engine {
+            endpoint { keepAliveTime = keepAliveTimeMillis }
+        }
+    }
+}
+
+internal fun jevKeepAliveTimeMillis(value: String?): Long {
+    val configured = value?.trim()?.takeIf(String::isNotEmpty) ?: return 5_000L
+    return requireNotNull(configured.toLongOrNull()?.takeIf { it > 0 }) {
+        "JEV_KEEP_ALIVE_TIME_MS must be a positive integer in milliseconds"
+    }
+}
 
 fun createOpenAiProviderHttpClient(): HttpClient =
     HttpClient(CIO) {
