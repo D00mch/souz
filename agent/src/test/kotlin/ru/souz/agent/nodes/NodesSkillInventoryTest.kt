@@ -195,9 +195,12 @@ class NodesSkillInventoryTest {
             assertEquals(LlmProvider.OPENAI, request.provider)
             assertEquals(emptyList(), request.functions)
             assertEquals(6, request.messages.size)
+            assertEquals(listOf("intent-3", "intent-4", "intent-5", "intent-6"),
+                request.messages.drop(1).dropLast(1).map { it.content.lineSequence().first() })
             assertEquals(listOf('3', '4', '5', '6'), request.messages.drop(1).dropLast(1).map { it.content.last() })
             assertEquals("summarize it", request.messages.last().content)
             assertEquals(listOf(4000, 4000, 4000, 4000), request.messages.drop(1).dropLast(1).map { it.content.length })
+            request.messages.drop(1).dropLast(1).forEach { assertContains(it.content, "...[truncated]...") }
             assertEquals(true, request.messages.all { it.attachments == null && it.functionCall == null })
             selected
         }
@@ -205,7 +208,7 @@ class NodesSkillInventoryTest {
             .node(emptyList(), classifySkills = true)
         val context = contextWithCatalog().copy(input = "summarize it", history = (1..6).map {
             LLMRequest.Message(if (it % 2 == 0) LLMMessageRole.assistant else LLMMessageRole.user,
-                "x".repeat(4000) + it, attachments = listOf("private-file"),
+                "intent-$it\n" + "x".repeat(4000) + "\nrecent-$it", attachments = listOf("private-file"),
                 functionCall = LLMRequest.FunctionCall("OldTool", "{}"))
         } + listOf(
             LLMRequest.Message(LLMMessageRole.function, "private result"),
@@ -230,6 +233,10 @@ class NodesSkillInventoryTest {
     fun `classifier failures fall back once to LLM and cancellation propagates`() = runTest {
         val repository = repository("paper" to "Summarize papers.")
         val api = mockk<LLMChatAPI>()
+        val context = contextWithCatalog().let { it.copy(
+            settings = it.settings.copy(provider = LlmProvider.LOCAL, contextSize = 2048),
+            history = it.history + LLMRequest.Message(LLMMessageRole.user, "Use the paper Skill."),
+        ) }
         val classifier = SkillClassifier { _, _ -> error("Jev unavailable") }
         val node = node(catalog(), repository = repository, classifier = classifier, llmApi = api)
             .node(emptyList(), classifySkills = true)
@@ -241,11 +248,13 @@ class NodesSkillInventoryTest {
                 )),
                 created = 0, model = "test", usage = LLMResponse.Usage(0, 0, 0, 0),
             )
-            val prompt = node.execute(contextWithCatalog(), runtime()).history.first().content
+            val prompt = node.execute(context, runtime()).history.first().content
             assertEquals(content.startsWith("[\"paper\""), prompt.contains("; description:"))
             assertContains(prompt, "- skillId: \"paper\"")
         }
-        coVerify(exactly = 3) { api.message(any()) }
+        coVerify(exactly = 3) { api.message(match {
+            it.maxTokens == 2048 && it.provider == LlmProvider.LOCAL && it.messages[1].content == "Use the paper Skill."
+        }) }
         coEvery { api.message(any()) } throws CancellationException("cancelled")
         assertFailsWith<CancellationException> { node.execute(contextWithCatalog(), runtime()) }
         val cancelled = node(catalog(), repository = repository, llmApi = api,

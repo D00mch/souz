@@ -70,6 +70,7 @@ internal class NodesSkillInventory(
             val request = LLMRequest.Chat(
                 model = ctx.settings.model,
                 provider = ctx.settings.provider,
+                maxTokens = ctx.settings.contextSize,
                 functions = emptyList(),
                 messages = listOf(LLMRequest.Message(LLMMessageRole.system, """
                     Select Skills useful for the latest user request, considering every step.
@@ -78,7 +79,7 @@ internal class NodesSkillInventory(
                     Return only a JSON array of exact candidate IDs, or [] when none are useful.
                     Candidates: ${restJsonMapper.writeValueAsString(descriptions.mapKeys { it.key.value })}
                 """.trimIndent())) + previous.takeLast(4).map {
-                    LLMRequest.Message(it.role, it.content.takeLast(4000))
+                    LLMRequest.Message(it.role, it.content.trimMiddle(4000))
                 } + LLMRequest.Message(LLMMessageRole.user, ctx.input),
             )
             val selected = skillClassifier?.let { classifier ->

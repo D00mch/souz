@@ -18,6 +18,7 @@ The core tools merge compiled tools and stored bundles into one ID namespace. Ca
 
 - Keep discovery compact and user-scoped. ID listing reads no loose `SKILL.md`; description listing may read bounded frontmatter but never supporting files or bundle hashes.
 - Escape IDs and selected descriptions as untrusted metadata. Descriptions are bounded discovery hints; full instructions require bundle lookup and approval where enabled.
+- Bound classification history with shared head/tail truncation so long messages retain their original intent and recent details. Keep short messages intact and pass the execution's configured context size to the classification request.
 - When approval is enabled, keep the order structural validation, static validation, then bounded LLM validation. Cache both approvals and rejections for the exact identity.
 - When approval is enabled, treat a per-skill rejection as local to that skill lookup or invocation. Do not return `SKILL.md` or execute commands for rejected bundles.
 - Rethrow coroutine cancellation from every phase.
