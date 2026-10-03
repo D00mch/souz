@@ -17,6 +17,7 @@ model. The skills graph, including backend conversations, selects relevant file-
 | `JEV_TOKEN` | Required, nonblank Bearer credential for Jev and its live tests. |
 | `JEV_MODEL` | Hosted model ID or alias; defaults to `jev-latest`. |
 | `JEV_THRESHOLD` | Finite probability in `[0, 1]`; defaults to `0.5`. Categories and Skills must score strictly above it. |
+| `JEV_KEEP_ALIVE_TIME_MS` | Positive integer milliseconds for Jev's separate CIO profile; defaults to `5000`. `60000` is available for trials. CIO 3.5.1 does not reuse POST connections, so this setting alone does not reduce Jev connection setup. |
 
 Export `JEV_TOKEN` in the environment that starts Souz, then run:
 
@@ -46,6 +47,9 @@ suspend fun needsCalendar(jev: JevClient, message: String): Double {
 
 Callers can pass credentials and a model to `JevClient(http, token, model)`. The client validates probabilities
 but leaves selection policy to callers and never closes the supplied transport.
+`ProviderHttpClients` creates its Jev transport lazily and closes it during host shutdown. The standard,
+OpenAI, and Giga profiles retain their existing settings. See the [connection-retention investigation](docs/jev-connection-retention.md)
+for the measured timing boundary, transport evidence, and opt-in comparison procedure.
 
 Regular tests use mock HTTP responses. Run the opt-in hosted test with the same `JEV_TOKEN`:
 
