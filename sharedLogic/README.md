@@ -9,14 +9,14 @@ Shared provider clients, settings and memory contracts, sandbox contracts, skill
 `ru.souz.jev.JevClient` evaluates named yes/no questions through the [hosted TypeSafe API](https://api.typesafe.ai/docs)
 and returns their probabilities. Shared runtime DI binds it lazily using the host-owned HTTP client.
 The classic `GraphBasedAgent` can select multiple tool categories with Jev independently of its conversational
-model. The skills graph, including backend conversations, does not classify tool categories.
+model. The skills graph, including backend conversations, selects relevant file-backed Skill descriptions with Jev and execution-LLM fallback; it does not classify tool categories. Inventory keeps every exact ID and adds only selected descriptions as bounded, escaped metadata. Full instructions and supporting files load on demand with approval where enabled.
 
 | Variable | Behavior |
 | --- | --- |
 | `SOUZ_CLASSIFIER` | Unset or `llm`: existing LLM classifier with regex fallback. `jev`: Jev classifier. |
 | `JEV_TOKEN` | Required, nonblank Bearer credential for Jev and its live tests. |
 | `JEV_MODEL` | Hosted model ID or alias; defaults to `jev-latest`. |
-| `JEV_THRESHOLD` | Finite probability in `[0, 1]`; defaults to `0.5`. Categories must score strictly above it. |
+| `JEV_THRESHOLD` | Finite probability in `[0, 1]`; defaults to `0.5`. Categories and Skills must score strictly above it. |
 
 Export `JEV_TOKEN` in the environment that starts Souz, then run:
 
@@ -25,7 +25,7 @@ SOUZ_CLASSIFIER=jev JEV_MODEL=jev-latest JEV_THRESHOLD=0.5 ./gradlew :desktopApp
 ```
 
 Settings are read at construction; invalid Jev configuration fails when Jev is selected or its client is resolved.
-Requests time out after 30 seconds. The graph tries twice before regex fallback and propagates cancellation.
+Requests time out after 30 seconds. Classic category selection tries twice before regex fallback. Skill selection falls back to the current execution LLM when Jev configuration or requests fail; failure of both classifiers keeps ID-only inventory. Cancellation propagates.
 Only enabled, nonempty categories are evaluated; an empty catalog makes no request. No matches or `HELP`
 exposes all available tools.
 
@@ -52,6 +52,8 @@ Regular tests use mock HTTP responses. Run the opt-in hosted test with the same 
 ```zsh
 SOUZ_TEST_JEV=1 ./gradlew :sharedLogic:jvmTest --tests 'ru.souz.jev.JevIntegrationTest' --rerun
 ```
+
+Description listing reads stored metadata or bounded, strict UTF-8 loose frontmatter and isolates malformed Skills. Exact lookup or invocation returns `skill_invalid_bundle` with the Skill ID, parsing problem, and repair guidance.
 
 ## Sandbox Modes
 

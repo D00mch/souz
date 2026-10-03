@@ -2,7 +2,7 @@
 
 ## Invariant
 
-`SkillsGraphBasedAgent` exposes `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand`. `GraphBasedAgent` exposes the universal core subset `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` independently of classification. Both install the host's execution-bound `SpawnSubagent` when supplied through `AgentCoreTools`. The skills graph execution boundary replaces both the functions advertised to the model and the executable tool lookup before the graph starts. The effective system message contains compact Skill inventory data filtered by the active tool policy and user-scoped registry: enabled tool-backed Skill IDs and escaped file-backed Skill IDs only. `AgentContext.systemPrompt` remains equal to the caller-provided prompt. It does not run classification or MCP injection.
+`SkillsGraphBasedAgent` exposes `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand`. `GraphBasedAgent` exposes the universal core subset `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` independently of classification. Both install the host's execution-bound `SpawnSubagent` when supplied through `AgentCoreTools`. The skills graph replaces advertised and executable tools before execution. Its effective system message contains filtered tool-backed IDs, user-scoped escaped file-backed IDs, and concise descriptions beside relevant exact IDs. `AgentContext.systemPrompt` remains the caller-provided prompt. Inventory selects descriptions with Jev and execution-LLM fallback; direct-tool classification and MCP injection are omitted.
 
 Continuation ordering, reserved publication, response acceptance, and stream revisions follow [Execution lifecycle](execution-lifecycle.md).
 
@@ -19,7 +19,7 @@ Advertising a small tool list without replacing executable lookup would let a fa
 ## Safe changes
 
 - Keep core-tool restriction at the execution boundary so every graph node sees the restricted context; tool loops return directly to the LLM.
-- Keep `AgentContext.systemPrompt` equal to the configured prompt. Let `NodesSkillInventory` capture filtered tool-backed Skill IDs and escaped file-backed Skill IDs per turn and append them only to the effective system message in history.
+- Keep `AgentContext.systemPrompt` equal to the configured prompt. `NodesSkillInventory` reloads IDs and selects descriptions per turn, after memory recall; selections live only in the effective system message. Mid-run steering returns to the LLM without repeating discovery.
 - Keep memory recall after history input and before context enrichment. Run it only once per user turn.
 - Keep completed-turn memory capture in the graph's finalization node so failed finalization does not schedule capture.
 - Keep large-result processing in `NodesToolUseWithKnowledge`; `NodesPlain.toolUse()` remains inline-only.

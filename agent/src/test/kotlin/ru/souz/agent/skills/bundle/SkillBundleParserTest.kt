@@ -3,8 +3,24 @@ package ru.souz.agent.skills.bundle
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertContains
 
 class SkillBundleParserTest {
+
+    @Test
+    fun `malformed frontmatter identifies its field and location`() {
+        for ((frontmatter, problem) in listOf(
+            "\nname: Broken\ndescription: [one, two]" to "field 'description' has the wrong shape",
+            "\nname: Broken\ndescription: \"unterminated" to "not valid YAML",
+        )) {
+            val error = assertFailsWith<SkillBundleException> {
+                SkillBundleParser.parseManifest("---\n$frontmatter\n---\nBody")
+            }
+            assertContains(error.message.orEmpty(), problem)
+            assertContains(error.message.orEmpty(), "line ")
+            assertContains(error.message.orEmpty(), "column ")
+        }
+    }
 
     @Test
     fun `composites validate linear references and step shapes`() {

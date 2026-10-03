@@ -17,6 +17,10 @@ interface SkillBundleProvider {
     suspend fun listSkillInventoryIds(userId: String): List<SkillId> =
         listSkills(userId).map { it.skillId }
 
+    /** Description metadata only; isolate malformed Skills and avoid supporting-file reads. */
+    suspend fun listSkillDescriptions(userId: String): Map<SkillId, String> =
+        listSkills(userId).associate { it.skillId to it.manifest.description }
+
     /** Loads the exact bundle content needed for hashing, validation, and execution. */
     suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle?
 }

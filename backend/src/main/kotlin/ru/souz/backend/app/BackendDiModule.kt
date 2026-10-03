@@ -289,6 +289,7 @@ fun backendDiModule(
     }
     bindSingleton {
         BackendConversationRuntimeFactory(
+            skillClassifier = instance(),
             baseSettingsProvider = instance(),
             credentialResolver = instance(),
             retryPolicy = appConfig.providerRetryPolicy,

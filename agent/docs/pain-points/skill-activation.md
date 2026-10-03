@@ -2,7 +2,7 @@
 
 ## Invariant
 
-Every classic `GraphBasedAgent` turn runs direct-tool classification, Skill inventory/core-tool installation, then MCP injection. Classification narrows only direct tool schemas advertised to the model; executable lookup may still contain the wider direct tool catalog supplied by the host. The compact Skill inventory is appended to the effective system message and lists enabled tool-backed Skill IDs plus user-scoped file-backed Skill IDs without loading file-backed bundles or manifest text.
+Every classic `GraphBasedAgent` turn runs direct-tool classification, Skill inventory/core-tool installation, then MCP injection. Classification narrows advertised direct-tool schemas; executable lookup may retain the host's wider catalog. Inventory lists enabled tool-backed IDs and user-scoped file-backed IDs. The skills graph selects relevant descriptions inside inventory preparation using description metadata and bounded recent conversation, with a host classifier and execution-LLM fallback. Selection failure retains ID-only discovery.
 
 `GetSkillByName`, generic `RunSkillCommand`, and explicit `SpawnSubagent` selection load full file-backed bundles on demand. Hosts may pass `SkillApprovalGate` to require cached or fresh approval before exposing `SKILL.md` or executing bundled commands; without a gate, these paths use the loaded bundle directly. The backend intentionally passes no gate for classpath- and sandbox-backed Skills. When enabled, validation cache identity is the user, canonical skill ID, canonical bundle hash, and policy version. A changed bundle gets a different cache key. Changing validation rules requires a new policy version.
 
@@ -16,8 +16,9 @@ The core tools merge compiled tools and stored bundles into one ID namespace. Ca
 
 ## Safe changes
 
-- Keep prompt inventory compact and user-scoped. Use an ID-only registry path and do not load `SKILL.md` or supporting files while rendering the inventory.
-- Render file-backed Skill IDs as opaque escaped data only. Do not copy unapproved manifest names or descriptions into the system prompt.
+- Keep discovery compact and user-scoped. ID listing reads no loose `SKILL.md`; description listing may read bounded frontmatter but never supporting files or bundle hashes.
+- Escape IDs and selected descriptions as untrusted metadata. Descriptions are bounded discovery hints; full instructions require bundle lookup and approval where enabled.
+- Bound classification history with shared head/tail truncation so long messages retain their original intent and recent details. Keep short messages intact and pass the execution's configured context size to the classification request.
 - When approval is enabled, keep the order structural validation, static validation, then bounded LLM validation. Cache both approvals and rejections for the exact identity.
 - When approval is enabled, treat a per-skill rejection as local to that skill lookup or invocation. Do not return `SKILL.md` or execute commands for rejected bundles.
 - Rethrow coroutine cancellation from every phase.

@@ -13,6 +13,7 @@ import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.skills.registry.SkillBundleProvider
+import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
@@ -45,6 +46,7 @@ class AgentExecutionKernelFactory(
     private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
     private val captureScope: CoroutineScope,
     private val automaticMemoryRecall: Boolean = true,
+    private val skillClassifier: SkillClassifier? = null,
 ) {
     fun create(): AgentExecutionKernel {
         val agentToolExecutor = AgentToolExecutor(telemetry)
@@ -57,6 +59,8 @@ class AgentExecutionKernelFactory(
             toolCatalog = toolCatalog,
             toolsFilter = toolsFilter,
             skillBundleProvider = skillBundleProvider,
+            llmApi = llmApi,
+            skillClassifier = skillClassifier,
         )
         val nodesToolUseWithKnowledge = NodesToolUseWithKnowledge(
             agentToolExecutor = agentToolExecutor,
