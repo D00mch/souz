@@ -28,6 +28,7 @@ class JevClient(
     private val client: HttpClient,
     private val token: String = System.getenv("JEV_TOKEN").orEmpty().trim(),
     private val model: String = System.getenv("JEV_MODEL")?.trim()?.takeIf(String::isNotEmpty) ?: "jev-latest",
+    private val onHttpRequestCompleted: (JevHttpDiagnostic) -> Unit = {},
 ) {
     private val logger = LoggerFactory.getLogger(JevClient::class.java)
 
@@ -43,6 +44,7 @@ class JevClient(
         if (questions.isEmpty()) return emptyMap()
         require(state.isTextual || state.isObject || state.isArray) { "Jev state must be text, an object, or an array" }
         var status: Int? = null
+        var protocol: String? = null
         var outcome = "cancelled"
         val started = TimeSource.Monotonic.markNow()
         val body = try {
@@ -54,6 +56,7 @@ class JevClient(
                 setBody(JevRequest(state, model, questions.mapValues { JevQuestion(it.value) }))
             }
             status = response.status.value
+            protocol = response.version.toString()
             val text = response.bodyAsText()
             outcome = if (response.status.isSuccess()) "success" else "http_error"
             text
@@ -69,10 +72,18 @@ class JevClient(
             }
             throw error
         } finally {
-            logger.info(
-                "Jev HTTP request durationMs={} status={} outcome={}",
-                started.elapsedNow().inWholeMilliseconds, status, outcome
+            val diagnostic = JevHttpDiagnostic(
+                durationMs = started.elapsedNow().inWholeNanoseconds / 1_000_000.0,
+                status = status,
+                protocol = protocol,
+                outcome = outcome,
             )
+            logger.info(
+                "Jev HTTP request durationMs={} status={} protocol={} outcome={}",
+                diagnostic.durationMs, status, protocol, outcome
+            )
+            // Observability must not replace a result, timeout, or cancellation.
+            runCatching { onHttpRequestCompleted(diagnostic) }
         }
         check(status in 200..299) { "Jev request failed (HTTP $status)" }
         val result = try {
@@ -92,6 +103,14 @@ class JevClient(
         }
     }
 }
+
+/** Full HTTP duration through body receipt, before JSON parsing; no credentials or payload. */
+data class JevHttpDiagnostic(
+    val durationMs: Double,
+    val status: Int?,
+    val protocol: String?,
+    val outcome: String,
+)
 
 private data class JevRequest(val state: JsonNode, val model: String, val questions: Map<String, JevQuestion>)
 private data class JevQuestion(val instructions: String, val type: String = "noul")

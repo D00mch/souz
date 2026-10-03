@@ -17,6 +17,8 @@ model. The skills graph, including backend conversations, selects relevant file-
 | `JEV_TOKEN` | Required, nonblank Bearer credential for Jev and its live tests. |
 | `JEV_MODEL` | Hosted model ID or alias; defaults to `jev-latest`. |
 | `JEV_THRESHOLD` | Finite probability in `[0, 1]`; defaults to `0.5`. Categories and Skills must score strictly above it. |
+| `JEV_TRANSPORT` | Unset: shared standard CIO client. Opt-in: `CIO`, `OKHTTP_HTTP1`, or `OKHTTP_HTTP2` with HTTP/1.1 fallback over TLS. |
+| `JEV_IDLE_RETENTION_MS` | Positive idle-retention ceiling for the dedicated experimental transport; defaults to `60000`. No effect on the shared standard client. |
 
 Export `JEV_TOKEN` in the environment that starts Souz, then run:
 
@@ -52,6 +54,11 @@ Regular tests use mock HTTP responses. Run the opt-in hosted test with the same 
 ```zsh
 SOUZ_TEST_JEV=1 ./gradlew :sharedLogic:jvmTest --tests 'ru.souz.jev.JevIntegrationTest' --rerun
 ```
+
+The experimental transports reuse host-owned clients and close with the existing provider resources.
+Jev diagnostics contain full-body HTTP duration, response status, negotiated protocol, and outcome;
+they contain no token or request/response payload. See [transport evaluation](docs/jev-http-transport.md)
+for the benchmark, local findings, and the pending hosted measurement.
 
 Description listing reads stored metadata or bounded, strict UTF-8 loose frontmatter and isolates malformed Skills. Exact lookup or invocation returns `skill_invalid_bundle` with the Skill ID, parsing problem, and repair guidance.
 

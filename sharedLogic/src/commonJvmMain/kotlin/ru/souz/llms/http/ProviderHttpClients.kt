@@ -22,10 +22,14 @@ import ru.souz.llms.openai.openAiTlsDefaults
 class ProviderHttpClients(
     val standard: HttpClient,
     val openAi: HttpClient,
+    val jev: HttpClient = standard,
 ) : AutoCloseable {
-    constructor() : this(createProviderHttpClientPair())
+    constructor(
+        jevTransport: JevHttpTransport? = null,
+        jevIdleRetentionMillis: Long = JEV_IDLE_RETENTION_MILLIS,
+    ) : this(createProviderHttpClientSet(jevTransport, jevIdleRetentionMillis))
 
-    private constructor(pair: ProviderHttpClientPair) : this(pair.standard, pair.openAi)
+    private constructor(clients: ProviderHttpClientSet) : this(clients.standard, clients.openAi, clients.jev)
 
     private val closed = AtomicBoolean(false)
 
@@ -33,19 +37,18 @@ class ProviderHttpClients(
         if (!closed.compareAndSet(false, true)) return
 
         var failure: Throwable? = null
-        try {
-            standard.close()
-        } catch (standardFailure: Throwable) {
-            failure = standardFailure
+        val distinctClients = listOf(standard, openAi, jev).fold(mutableListOf<HttpClient>()) { clients, client ->
+            if (clients.none { it === client }) clients.add(client)
+            clients
         }
-        if (openAi !== standard) {
+        for (client in distinctClients) {
             try {
-                openAi.close()
-            } catch (openAiFailure: Throwable) {
+                client.close()
+            } catch (closeFailure: Throwable) {
                 if (failure == null) {
-                    failure = openAiFailure
+                    failure = closeFailure
                 } else {
-                    failure.addSuppressed(openAiFailure)
+                    failure.addSuppressed(closeFailure)
                 }
             }
         }
@@ -53,20 +56,30 @@ class ProviderHttpClients(
     }
 }
 
-private data class ProviderHttpClientPair(
+private data class ProviderHttpClientSet(
     val standard: HttpClient,
     val openAi: HttpClient,
+    val jev: HttpClient,
 )
 
-private fun createProviderHttpClientPair(): ProviderHttpClientPair {
+private fun createProviderHttpClientSet(
+    jevTransport: JevHttpTransport?,
+    jevIdleRetentionMillis: Long,
+): ProviderHttpClientSet {
     val standard = createStandardProviderHttpClient()
+    var openAi: HttpClient? = null
     return try {
-        ProviderHttpClientPair(
+        openAi = createOpenAiProviderHttpClient()
+        ProviderHttpClientSet(
             standard = standard,
-            openAi = createOpenAiProviderHttpClient(),
+            openAi = openAi,
+            jev = jevTransport?.let { createJevProviderHttpClient(it, jevIdleRetentionMillis) } ?: standard,
         )
     } catch (failure: Throwable) {
         runCatching { standard.close() }
+            .exceptionOrNull()
+            ?.let(failure::addSuppressed)
+        runCatching { openAi?.close() }
             .exceptionOrNull()
             ?.let(failure::addSuppressed)
         throw failure
