@@ -18,7 +18,6 @@ import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import org.slf4j.LoggerFactory
-import ru.souz.llms.local.LocalStrictJsonContract.instructions
 import ru.souz.llms.restJsonMapper
 import kotlin.time.TimeSource
 

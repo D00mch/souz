@@ -65,7 +65,7 @@ class JevClassifierTest {
             assertEquals("https://api.typesafe.ai/v1/systemone", httpRequest.url.toString())
             assertEquals(HttpMethod.Post, httpRequest.method)
             assertEquals("Bearer test-token", httpRequest.headers[HttpHeaders.Authorization])
-            assertEquals(30_000L, httpRequest.getCapabilityOrNull(HttpTimeoutCapability)?.requestTimeoutMillis)
+            assertEquals(2_000L, httpRequest.getCapabilityOrNull(HttpTimeoutCapability)?.requestTimeoutMillis)
             val payload = restJsonMapper.readTree(httpRequest.body.toByteArray())
             assertEquals("jev-configured", payload["model"].asText())
             assertEquals(request.messages.drop(1).map { it.content }, payload["state"].map { it["content"].asText() })

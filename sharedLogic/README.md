@@ -25,7 +25,7 @@ SOUZ_CLASSIFIER=jev JEV_MODEL=jev-latest JEV_THRESHOLD=0.5 ./gradlew :desktopApp
 ```
 
 Settings are read at construction; invalid Jev configuration fails when Jev is selected or its client is resolved.
-Requests time out after 30 seconds. Classic category selection tries twice before regex fallback. Skill selection falls back to the current execution LLM when Jev configuration or requests fail; failure of both classifiers keeps ID-only inventory. Cancellation propagates.
+Requests time out after 2 seconds. Classic category selection tries twice before regex fallback. Skill selection falls back to the current execution LLM when Jev configuration or requests fail; failure of both classifiers keeps ID-only inventory. Cancellation propagates.
 Only enabled, nonempty categories are evaluated; an empty catalog makes no request. No matches or `HELP`
 exposes all available tools.
 
