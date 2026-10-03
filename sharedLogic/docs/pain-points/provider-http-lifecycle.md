@@ -23,10 +23,12 @@ Each Ktor client owns an engine, connection pool, plugins, and coroutine lifecyc
 - Keep token accounting at the `LLMChatAPI` boundary, where normalized usage is available, rather than in HTTP middleware or provider adapters.
 - Keep custom OpenAI-compatible behavior explicit. Do not retry a rejected request with a different payload.
 - Resolve internal model selections with `executionModelId` when constructing requests and include their explicit provider. The desktop router and remote adapters forward exact IDs in streaming and ordinary calls; they do not guess models from prefixes or replace them with settings defaults. Classifiers pass typed requests to preserve routing metadata.
-- Jev uses the standard host-owned transport with credentials and model fixed at client construction and applied per request. Resolve it only when needed; the default LLM classifier requires no Jev configuration. Its probabilities are independent of conversational model routing and aggregate confidence. Validate every requested probability before applying category thresholds.
+- Jev uses `ProviderHttpClients.jev`, which aliases the standard transport unless an experimental profile is selected. Dedicated transports belong to the same host resource and close exactly once, including when another client's close fails. Credentials and model are fixed at Jev construction and applied per request. Resolve Jev only when needed; the default LLM classifier requires no Jev credential. Its probabilities are independent of conversational model routing and aggregate confidence. Validate every requested probability before applying category thresholds.
+- In Ktor 3.5.1, CIO POST requests take the dedicated-connection path; raising `endpoint.keepAliveTime` does not enable connection reuse for Jev. Keep an OkHttp HTTP/1.1 control when evaluating HTTP/2 so engine/pool gains are distinguishable from protocol gains. Preserve the two-second request timeout and measure through complete body receipt, before JSON parsing. Log the actual response version, status, outcome, and duration without credentials or payloads.
 
 ## Verification
 
 Run `./gradlew :sharedLogic:jvmTest`. Cover concurrent credential and timeout isolation, shared-client reuse, Giga token invalidation, and exactly-once host shutdown.
 
 Jev live verification is opt-in with `SOUZ_TEST_JEV=1` and `JEV_TOKEN`; see [setup and usage](../../README.md#jev-classification).
+The [transport benchmark](../jev-http-transport.md) is separately opt-in. Local TLS tests cover protocol negotiation/fallback, POST connection behavior, cancellation, timeout, and shutdown.

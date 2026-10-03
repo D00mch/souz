@@ -22,6 +22,8 @@ import ru.souz.llms.giga.GigaAuth
 import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.llms.http.GigaHttpClientResource
 import ru.souz.llms.http.ProviderHttpClients
+import ru.souz.llms.http.JevHttpTransport
+import ru.souz.llms.http.JEV_IDLE_RETENTION_MILLIS
 import ru.souz.llms.local.LocalBridgeLoader
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalHostInfoProvider
@@ -131,8 +133,15 @@ fun runtimeLlmDiModule(
 
 /** Process-owned remote transports that are safe for backend and interactive hosts. */
 fun runtimeProviderHttpDiModule(): DI.Module = DI.Module("runtimeProviderHttp") {
-    bindSingleton { ProviderHttpClients() }
-    bindSingleton { JevClient(instance<ProviderHttpClients>().standard) }
+    bindSingleton {
+        ProviderHttpClients(
+            jevTransport = System.getenv("JEV_TRANSPORT")?.trim()?.takeIf(String::isNotEmpty)
+                ?.let { JevHttpTransport.valueOf(it.uppercase()) },
+            jevIdleRetentionMillis = System.getenv("JEV_IDLE_RETENTION_MS")?.trim()?.toLong()
+                ?: JEV_IDLE_RETENTION_MILLIS,
+        )
+    }
+    bindSingleton { JevClient(instance<ProviderHttpClients>().jev) }
     bindSingleton<SkillClassifier> {
         SkillClassifier { request, descriptions ->
             JevClassifier(instance<JevClient>(), System.getenv("JEV_THRESHOLD")?.trim()?.toDouble() ?: 0.5)
