@@ -174,15 +174,17 @@ class SkillOAuthFlowTest {
             """{"error":"invalid_grant","error_description":"bad code"}""" to "OAuth token request failed: invalid_grant bad code",
             "{}" to "OAuth token request failed: unknown_error ",
         )) {
-            HttpClient(MockEngine { respond(body, HttpStatusCode.BadRequest) }).use { httpClient ->
-                val credentials = InMemorySkillOAuthCredentialRepository()
-                val gateway = gateway(credentials, InMemorySkillOAuthPendingStateRepository(), httpClient, MutableClock())
-                val authorization = assertIs<AuthorizationState.AuthorizationRequired>(gateway.ensureAuthorized("user", config.name, emptySet(), false))
-                val state = Url(authorization.url).parameters["state"]!!
-                assertEquals(null, Url(authorization.url).parameters["scope"])
-                assertEquals(CallbackResult.ExchangeFailed(reason), gateway.handleCallback("code", state))
-                assertEquals(null, credentials.find("user", config.name))
-                assertEquals(CallbackResult.InvalidOrExpiredState, gateway.handleCallback("code", state))
+            skillOAuthTestDataSource(newSkillOAuthTestSchema("oauth_failed_exchange")).use { dataSource ->
+                HttpClient(MockEngine { respond(body, HttpStatusCode.BadRequest) }).use { httpClient ->
+                    val credentials = PostgresSkillOAuthCredentialRepository(dataSource)
+                    val gateway = gateway(credentials, PostgresSkillOAuthPendingStateRepository(dataSource), httpClient, MutableClock())
+                    val authorization = assertIs<AuthorizationState.AuthorizationRequired>(gateway.ensureAuthorized("user", config.name, emptySet(), false))
+                    val state = Url(authorization.url).parameters["state"]!!
+                    assertEquals(null, Url(authorization.url).parameters["scope"])
+                    assertEquals(CallbackResult.ExchangeFailed(reason), gateway.handleCallback("code", state))
+                    assertEquals(null, credentials.find("user", config.name))
+                    assertEquals(CallbackResult.InvalidOrExpiredState, gateway.handleCallback("code", state))
+                }
             }
         }
     }
