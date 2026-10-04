@@ -1,69 +1,60 @@
 package ru.souz.llms
 
-import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.codex.CodexChatAPI
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.providerHttpClientDefaults
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 
 class CodexChatAPIRequestTest {
     @Test
-    fun `reasoning effort is nested for Responses and omitted when unset`() {
-        val api = createApi()
-        val configured = invokeBuildResponsesRequest(api, chatRequest().copy(reasoningEffort = "low"))
+    fun `reasoning effort is nested for Responses and omitted when unset`() = runTest {
+        val configured = captureRequest(chatRequest().copy(reasoningEffort = "low"))
         assertEquals(mapOf("effort" to "low"), configured["reasoning"])
         assertTrue("reasoning_effort" !in configured)
-        assertTrue("reasoning" !in invokeBuildResponsesRequest(api, chatRequest()))
+        assertTrue("reasoning" !in captureRequest(chatRequest()))
     }
 
     @Test
     fun `terminal stream failure is not followed by fallback success`() = runTest {
-        val fixture = streamingFixture(CODEX_FAILED_STREAM)
-
-        try {
-            val responses = fixture.api.messageStream(chatRequest()).toList()
+        HttpClient(responseEngine(CODEX_FAILED_STREAM)) { providerHttpClientDefaults() }.use { client ->
+            val responses = createApi(client).messageStream(chatRequest()).toList()
 
             val error = assertIs<LLMResponse.Chat.Error>(responses.single())
             assertEquals("terminal failure", error.message)
-        } finally {
-            fixture.client.close()
         }
     }
 
     @Test
     fun `message does not mask terminal stream failure with partial output`() = runTest {
-        val fixture = streamingFixture(CODEX_FAILED_STREAM)
-
-        try {
-            val response = fixture.api.message(chatRequest())
+        HttpClient(responseEngine(CODEX_FAILED_STREAM)) { providerHttpClientDefaults() }.use { client ->
+            val response = createApi(client).message(chatRequest())
 
             val error = assertIs<LLMResponse.Chat.Error>(response)
             assertEquals("terminal failure", error.message)
-        } finally {
-            fixture.client.close()
         }
     }
 
     @Test
-    fun `tool array properties include an item schema`() {
-        val request = invokeBuildResponsesRequest(
-            api = createApi(),
+    fun `tool array properties include an item schema`() = runTest {
+        val request = captureRequest(
             body = LLMRequest.Chat(
                 model = LLMModel.CodexGpt54.alias,
                 maxTokens = 256,
@@ -95,91 +86,75 @@ class CodexChatAPIRequestTest {
     }
 
     @Test
-    fun `function call output is typed without exposing its history payload as text`() {
-        val api = createApi()
-        val response = invokeBuildChatOkFromItems(
-            api = api,
-            items = listOf(
-                restJsonMapper.readTree(
-                    """
-                    {
-                      "type": "function_call",
-                      "call_id": "call_123",
-                      "name": "RunSkillCommand",
-                      "arguments": "{\"skillId\":\"InternetSearch\",\"arguments\":{\"query\":\"Kotlin coroutines\"}}"
-                    }
-                    """.trimIndent()
-                )
-            ),
-        )
+    fun `function call output is typed without exposing its history payload as text`() = runTest {
+        val engine = responseEngine(CODEX_TOOL_STREAM)
+        HttpClient(engine) { providerHttpClientDefaults() }.use { client ->
+            val api = createApi(client)
+            val response = assertIs<LLMResponse.Chat.Ok>(api.message(chatRequest()))
 
-        val choice = response.choices.single()
-        assertTrue(choice.message.content.isEmpty())
-        assertEquals("call_123", choice.message.functionsStateId)
-        assertEquals(
-            LLMResponse.FunctionCall(
-                name = "RunSkillCommand",
-                arguments = mapOf(
-                    "skillId" to "InternetSearch",
-                    "arguments" to mapOf("query" to "Kotlin coroutines"),
+            val choice = response.choices.single()
+            assertTrue(choice.message.content.isEmpty())
+            assertEquals("call_123", choice.message.functionsStateId)
+            assertEquals(
+                LLMResponse.FunctionCall(
+                    name = "RunSkillCommand",
+                    arguments = mapOf(
+                        "skillId" to "InternetSearch",
+                        "arguments" to mapOf("query" to "Kotlin coroutines"),
+                    ),
                 ),
-            ),
-            choice.message.functionCall,
-        )
+                choice.message.functionCall,
+            )
 
-        val historyMessage = assertNotNull(choice.toMessage())
-        assertEquals("call_123", historyMessage.functionsStateId)
-        assertTrue(historyMessage.content.isEmpty())
-        assertEquals("RunSkillCommand", historyMessage.functionCall?.name)
-        assertEquals(
-            restJsonMapper.readTree(
-                """{"skillId":"InternetSearch","arguments":{"query":"Kotlin coroutines"}}"""
-            ),
-            restJsonMapper.readTree(historyMessage.functionCall?.arguments),
-        )
+            val historyMessage = assertNotNull(choice.toMessage())
+            assertEquals("call_123", historyMessage.functionsStateId)
+            assertTrue(historyMessage.content.isEmpty())
+            assertEquals("RunSkillCommand", historyMessage.functionCall?.name)
+            assertEquals(
+                restJsonMapper.readTree(
+                    """{"skillId":"InternetSearch","arguments":{"query":"Kotlin coroutines"}}"""
+                ),
+                restJsonMapper.readTree(historyMessage.functionCall?.arguments),
+            )
 
-        val inputItem = invokeMapMessageToInputItem(api, historyMessage)
-        assertEquals("function_call", inputItem["type"])
-        assertEquals("call_123", inputItem["call_id"])
-        assertEquals("RunSkillCommand", inputItem["name"])
-        assertEquals(
-            restJsonMapper.readTree(
-                """{"skillId":"InternetSearch","arguments":{"query":"Kotlin coroutines"}}"""
-            ),
-            restJsonMapper.readTree(inputItem["arguments"] as String),
-        )
+            assertIs<LLMResponse.Chat.Ok>(api.message(chatRequest().copy(messages = listOf(historyMessage))))
+            val request = restJsonMapper.readValue<Map<String, Any?>>(engine.requestHistory.last().body.toByteArray())
+            @Suppress("UNCHECKED_CAST")
+            val inputItem = (request["input"] as List<Map<String, Any?>>).single()
+            assertEquals("function_call", inputItem["type"])
+            assertEquals("call_123", inputItem["call_id"])
+            assertEquals("RunSkillCommand", inputItem["name"])
+            assertEquals(
+                restJsonMapper.readTree(
+                    """{"skillId":"InternetSearch","arguments":{"query":"Kotlin coroutines"}}"""
+                ),
+                restJsonMapper.readTree(inputItem["arguments"] as String),
+            )
+        }
     }
 
-    private fun createApi(): CodexChatAPI {
-        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
-        every { settingsProvider.requestTimeoutMillis } returns 1_000L
-        return CodexChatAPI(
-            settingsProvider = settingsProvider,
-            oauthService = mockk<CodexOAuthService>(relaxed = true),
-            client = mockk<HttpClient>(),
-        )
-    }
-
-    private fun streamingFixture(streamBody: String): StreamingFixture {
+    private fun createApi(client: HttpClient): CodexChatAPI {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
         every { settingsProvider.codexAccountId } returns "account-id"
         val oauthService = mockk<CodexOAuthService>()
         coEvery { oauthService.refreshTokenIfNeeded() } returns "access-token"
-        val client = HttpClient(
-            MockEngine {
-                respond(
-                    content = streamBody,
-                    headers = headersOf(HttpHeaders.ContentType, ContentType.Text.EventStream.toString()),
-                )
-            }
-        ) {
-            providerHttpClientDefaults()
-        }
-        return StreamingFixture(
-            api = CodexChatAPI(settingsProvider, oauthService, client),
-            client = client,
+        return CodexChatAPI(settingsProvider, oauthService, client)
+    }
+
+    private fun responseEngine(streamBody: String) = MockEngine {
+        respond(
+            content = streamBody,
+            headers = headersOf(HttpHeaders.ContentType, ContentType.Text.EventStream.toString()),
         )
+    }
+
+    private suspend fun captureRequest(body: LLMRequest.Chat): Map<String, Any?> {
+        val engine = responseEngine(CODEX_COMPLETED_STREAM)
+        HttpClient(engine) { providerHttpClientDefaults() }.use { client ->
+            assertIs<LLMResponse.Chat.Ok>(createApi(client).message(body))
+        }
+        return restJsonMapper.readValue(engine.requestHistory.single().body.toByteArray())
     }
 
     private fun chatRequest() = LLMRequest.Chat(
@@ -187,55 +162,20 @@ class CodexChatAPIRequestTest {
         messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
     )
 
-    @Suppress("UNCHECKED_CAST")
-    private fun invokeBuildResponsesRequest(
-        api: CodexChatAPI,
-        body: LLMRequest.Chat,
-    ): Map<String, Any?> {
-        val method = CodexChatAPI::class.java.getDeclaredMethod(
-            "buildResponsesRequest",
-            LLMRequest.Chat::class.java,
-            Boolean::class.javaPrimitiveType,
-        )
-        method.isAccessible = true
-        return method.invoke(api, body, false) as Map<String, Any?>
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun invokeBuildChatOkFromItems(
-        api: CodexChatAPI,
-        items: List<JsonNode>,
-    ): LLMResponse.Chat.Ok {
-        val method = CodexChatAPI::class.java.getDeclaredMethod(
-            "buildChatOkFromItems",
-            List::class.java,
-            JsonNode::class.java,
-            String::class.java,
-            Long::class.javaPrimitiveType,
-        )
-        method.isAccessible = true
-        return method.invoke(api, items, null, LLMModel.CodexGpt54.alias, 123L) as LLMResponse.Chat.Ok
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun invokeMapMessageToInputItem(
-        api: CodexChatAPI,
-        message: LLMRequest.Message,
-    ): Map<String, Any?> {
-        val method = CodexChatAPI::class.java.getDeclaredMethod(
-            "mapMessageToInputItem",
-            LLMRequest.Message::class.java,
-        )
-        method.isAccessible = true
-        return method.invoke(api, message) as Map<String, Any?>
-    }
-
-    private data class StreamingFixture(
-        val api: CodexChatAPI,
-        val client: HttpClient,
-    )
-
     private companion object {
+        const val CODEX_COMPLETED_STREAM =
+            "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{}}\n\ndata: [DONE]\n\n"
+        val CODEX_TOOL_STREAM =
+            """
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_123","name":"RunSkillCommand","arguments":"{\"skillId\":\"InternetSearch\",\"arguments\":{\"query\":\"Kotlin coroutines\"}}"}}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{}}
+
+            data: [DONE]
+
+            """.trimIndent() + "\n\n"
         val CODEX_FAILED_STREAM =
             """
             event: response.output_item.done

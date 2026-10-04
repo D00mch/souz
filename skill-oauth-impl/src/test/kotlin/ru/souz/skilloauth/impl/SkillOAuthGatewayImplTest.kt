@@ -113,15 +113,6 @@ class SkillOAuthGatewayImplTest {
     }
 
     @Test
-    fun `ensureAuthorized requires authorization when no credential is stored`() = runTest {
-        val api = newApi()
-
-        val state = api.ensureAuthorized(userId = "user-1", provider = "yandex", requiredScopes = emptySet())
-
-        assertTrue(state is AuthorizationState.AuthorizationRequired)
-    }
-
-    @Test
     fun `ensureAuthorized reports connected once a credential covers the required scopes`() = runTest {
         val api = newApi(credentialRepository = connectedCredentialRepository(listOf("login:info")))
 
@@ -163,12 +154,15 @@ class SkillOAuthGatewayImplTest {
     fun `ensureAuthorized returns an authorize URL when not yet connected`() = runTest {
         val api = newApi()
 
-        val state = api.ensureAuthorized(userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info"))
-
-        assertTrue(state is AuthorizationState.AuthorizationRequired)
-        assertTrue(state.url.startsWith("https://oauth.yandex.ru/authorize?"))
-        assertTrue(state.url.contains("client_id=client-1"))
-        assertTrue(state.url.contains("scope=login%3Ainfo"))
+        listOf(emptySet(), setOf("login:info")).forEach { scopes ->
+            val state = assertIs<AuthorizationState.AuthorizationRequired>(
+                api.ensureAuthorized(userId = "user-1", provider = "yandex", requiredScopes = scopes),
+            )
+            assertTrue(state.url.startsWith("https://oauth.yandex.ru/authorize?"))
+            val parameters = Url(state.url).parameters
+            assertEquals("client-1", parameters["client_id"])
+            assertEquals(scopes, parameters["scope"]?.split(" ")?.toSet().orEmpty())
+        }
     }
 
     @Test

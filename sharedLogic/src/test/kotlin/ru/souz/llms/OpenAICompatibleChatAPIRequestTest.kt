@@ -1,17 +1,28 @@
 package ru.souz.llms
 
+import com.fasterxml.jackson.module.kotlin.readValue
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteArray
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.headersOf
 import io.mockk.every
 import io.mockk.mockk
-import io.ktor.client.HttpClient
-import ru.souz.db.SettingsProvider
-import ru.souz.llms.openai.OpenAICompatibleChatAPI
-import ru.souz.llms.openai.OpenAIEndpoint
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertNotEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.runTest
+import ru.souz.db.SettingsProvider
+import ru.souz.llms.http.providerHttpClientDefaults
+import ru.souz.llms.openai.OpenAICompatibleChatAPI
+import ru.souz.llms.openai.OpenAIEndpoint
 
 data class CompatibleProviderCase(
     val provider: LlmProvider,
@@ -25,27 +36,40 @@ data class CompatibleProviderCase(
 class OpenAICompatibleChatAPIRequestTest {
 
     @Test
-    fun `provider matrix applies compatible protocol differences`() {
+    fun `provider matrix applies compatible protocol differences`() = runTest {
         compatibleProviderCases.forEach { case ->
-            val api = createApi(provider = case.provider)
-            val chatRequest = invokeBuildChatRequest(
-                api = api,
-                body = LLMRequest.Chat(
-                    model = modelFor(case.provider),
-                    messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
-                    functions = listOf(function("get_horoscope")),
-                    temperature = 0.4f,
-                    maxTokens = 256,
-                    reasoningEffort = "low",
-                ),
-                stream = true,
-            )
-            val embeddingsRequest = invokeBuildEmbeddingsRequest(
-                api = api,
-                body = LLMRequest.Embeddings(model = "Embeddings", input = listOf("hello")),
-            )
+            val engine = MockEngine { request ->
+                val embeddings = request.url.encodedPath.endsWith("/embeddings")
+                respond(
+                    content = if (embeddings) EMBEDDINGS_REPLY else "data: $CHAT_REPLY\n\ndata: [DONE]\n\n",
+                    headers = headersOf(
+                        HttpHeaders.ContentType,
+                        (if (embeddings) ContentType.Application.Json else ContentType.Text.EventStream).toString(),
+                    ),
+                )
+            }
+            HttpClient(engine) { providerHttpClientDefaults() }.use { client ->
+                val api = createApi(client, provider = case.provider)
+                val responses = api.messageStream(
+                    LLMRequest.Chat(
+                        model = modelFor(case.provider),
+                        messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+                        functions = listOf(function("get_horoscope")),
+                        temperature = 0.4f,
+                        maxTokens = 256,
+                        reasoningEffort = "low",
+                    ),
+                ).toList()
+                assertIs<LLMResponse.Chat.Ok>(responses.single())
+                assertIs<LLMResponse.Embeddings.Ok>(
+                    api.embeddings(LLMRequest.Embeddings(model = "Embeddings", input = listOf("hello"))),
+                )
+            }
+            val chatRequest = restJsonMapper.readValue<Map<String, Any>>(engine.requestHistory[0].body.toByteArray())
+            val embeddingsRequest = restJsonMapper.readValue<Map<String, Any>>(engine.requestHistory[1].body.toByteArray())
 
-            assertEquals("${case.expectedBaseUrl}/chat/completions", invokeChatCompletionsUrl(api))
+            assertEquals("${case.expectedBaseUrl}/chat/completions", engine.requestHistory[0].url.toString())
+            assertEquals("${case.expectedBaseUrl}/embeddings", engine.requestHistory[1].url.toString())
             assertEquals(modelFor(case.provider), chatRequest["model"])
             assertEquals(256, chatRequest[case.expectedMaxTokensField])
             assertEquals(case.sendsTemperature, "temperature" in chatRequest)
@@ -57,18 +81,15 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `request overrides preserve configured output limit and structural fields`() {
-        val request = invokeBuildChatRequest(
-            api = createApi(
-                requestParameters =
-                    """{"model":"ignored","messages":[],"stream":true,"max_completion_tokens":512,"reasoning_effort":"low"}""",
-            ),
+    fun `request overrides preserve configured output limit and structural fields`() = runTest {
+        val request = captureChatRequest(
+            requestParameters =
+                """{"model":"ignored","messages":[],"stream":true,"max_completion_tokens":512,"reasoning_effort":"low"}""",
             body = LLMRequest.Chat(
                 model = "provider-summary-model",
                 messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
                 maxTokens = 0,
             ),
-            stream = false,
         )
 
         assertEquals("provider-summary-model", request["model"])
@@ -79,15 +100,13 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `zero max tokens omits generated output limit`() {
-        val request = invokeBuildChatRequest(
-            api = createApi(),
+    fun `zero max tokens omits generated output limit`() = runTest {
+        val request = captureChatRequest(
             body = LLMRequest.Chat(
                 model = LLMModel.OpenAIGpt5Mini.alias,
                 messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
                 maxTokens = 0,
             ),
-            stream = false,
         )
 
         assertTrue("max_completion_tokens" !in request)
@@ -96,14 +115,14 @@ class OpenAICompatibleChatAPIRequestTest {
     @Test
     fun `constructor rejects providers outside the compatible set`() {
         assertFailsWith<IllegalArgumentException> {
-            createApi(provider = LlmProvider.ANTHROPIC)
+            createApi(mockk<HttpClient>(), provider = LlmProvider.ANTHROPIC)
         }
     }
 
     @Test
-    fun `stream request omits usage option for custom compatible endpoints`() {
-        val request = invokeBuildChatRequest(
-            api = createApi(openaiBaseUrl = "https://example.test/openai/v1/"),
+    fun `stream request omits usage option for custom compatible endpoints`() = runTest {
+        val request = captureChatRequest(
+            openaiBaseUrl = "https://example.test/openai/v1/",
             body = LLMRequest.Chat(
                 model = LLMModel.OpenAICompatibleCustom.alias,
                 messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
@@ -115,10 +134,8 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `buildChatRequest includes tool choice`() {
-        val api = createApi()
-        val request = invokeBuildChatRequest(
-            api = api,
+    fun `chat request includes tool choice`() = runTest {
+        val request = captureChatRequest(
             body = LLMRequest.Chat(
                 model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
@@ -127,7 +144,6 @@ class OpenAICompatibleChatAPIRequestTest {
                 ),
                 functions = listOf(function("get_horoscope")),
             ),
-            stream = false,
         )
 
         assertEquals(LLMModel.OpenAIGpt5Mini.alias, request["model"])
@@ -159,10 +175,8 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `buildChatRequest maps tool response to role tool with call id`() {
-        val api = createApi()
-        val request = invokeBuildChatRequest(
-            api = api,
+    fun `chat request maps tool response to role tool with call id`() = runTest {
+        val request = captureChatRequest(
             body = LLMRequest.Chat(
                 model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
@@ -176,7 +190,6 @@ class OpenAICompatibleChatAPIRequestTest {
                 ),
                 functions = listOf(function("get_horoscope")),
             ),
-            stream = false,
         )
 
         @Suppress("UNCHECKED_CAST")
@@ -188,10 +201,8 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `buildChatRequest skips null placeholder assistant message between tool call and tool result`() {
-        val api = createApi()
-        val request = invokeBuildChatRequest(
-            api = api,
+    fun `chat request skips null placeholder assistant message between tool call and tool result`() = runTest {
+        val request = captureChatRequest(
             body = LLMRequest.Chat(
                 model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
@@ -214,7 +225,6 @@ class OpenAICompatibleChatAPIRequestTest {
                 ),
                 functions = listOf(function("get_horoscope")),
             ),
-            stream = false,
         )
 
         @Suppress("UNCHECKED_CAST")
@@ -227,10 +237,8 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `buildChatRequest moves regular assistant text after pending tool result`() {
-        val api = createApi()
-        val request = invokeBuildChatRequest(
-            api = api,
+    fun `chat request moves regular assistant text after pending tool result`() = runTest {
+        val request = captureChatRequest(
             body = LLMRequest.Chat(
                 model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
@@ -253,7 +261,6 @@ class OpenAICompatibleChatAPIRequestTest {
                 ),
                 functions = listOf(function("get_horoscope")),
             ),
-            stream = false,
         )
 
         @Suppress("UNCHECKED_CAST")
@@ -268,10 +275,8 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `buildChatRequest merges consecutive assistant tool calls into one OpenAI assistant message`() {
-        val api = createApi()
-        val request = invokeBuildChatRequest(
-            api = api,
+    fun `chat request merges consecutive assistant tool calls into one OpenAI assistant message`() = runTest {
+        val request = captureChatRequest(
             body = LLMRequest.Chat(
                 model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
@@ -301,7 +306,6 @@ class OpenAICompatibleChatAPIRequestTest {
                 ),
                 functions = listOf(function("tool_a"), function("tool_b")),
             ),
-            stream = false,
         )
 
         @Suppress("UNCHECKED_CAST")
@@ -318,11 +322,9 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `buildChatRequest serializes image attachments as multimodal content parts`() {
-        val api = createApi()
+    fun `chat request serializes image attachments as multimodal content parts`() = runTest {
         val imageDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
-        val request = invokeBuildChatRequest(
-            api = api,
+        val request = captureChatRequest(
             body = LLMRequest.Chat(
                 model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
@@ -334,7 +336,6 @@ class OpenAICompatibleChatAPIRequestTest {
                     ),
                 ),
             ),
-            stream = false,
         )
 
         @Suppress("UNCHECKED_CAST")
@@ -352,11 +353,9 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `buildChatRequest preserves https image attachments as multimodal content parts`() {
-        val api = createApi()
+    fun `chat request preserves https image attachments as multimodal content parts`() = runTest {
         val imageUrl = "https://example.com/image.png"
-        val request = invokeBuildChatRequest(
-            api = api,
+        val request = captureChatRequest(
             body = LLMRequest.Chat(
                 model = LLMModel.OpenAIGpt5Mini.alias,
                 messages = listOf(
@@ -367,7 +366,6 @@ class OpenAICompatibleChatAPIRequestTest {
                     ),
                 ),
             ),
-            stream = false,
         )
 
         @Suppress("UNCHECKED_CAST")
@@ -382,10 +380,8 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `buildChatRequest keeps later user message when assistant tool call cannot be resolved`() {
-        val api = createApi()
-        val request = invokeBuildChatRequest(
-            api = api,
+    fun `chat request keeps later user message when assistant tool call cannot be resolved`() = runTest {
+        val request = captureChatRequest(
             body = LLMRequest.Chat(
                 model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
@@ -402,7 +398,6 @@ class OpenAICompatibleChatAPIRequestTest {
                 ),
                 functions = listOf(function("get_horoscope")),
             ),
-            stream = false,
         )
 
         @Suppress("UNCHECKED_CAST")
@@ -416,10 +411,8 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `buildChatRequest maps repeated same-name function results to tool calls in order`() {
-        val api = createApi()
-        val request = invokeBuildChatRequest(
-            api = api,
+    fun `chat request maps repeated same-name function results to tool calls in order`() = runTest {
+        val request = captureChatRequest(
             body = LLMRequest.Chat(
                 model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
@@ -447,7 +440,6 @@ class OpenAICompatibleChatAPIRequestTest {
                 ),
                 functions = listOf(function("get_weather")),
             ),
-            stream = false,
         )
 
         @Suppress("UNCHECKED_CAST")
@@ -461,10 +453,8 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `parseCompletionsResponse ignores null content for tool calls`() {
-        val api = createApi()
-        val response = invokeParseCompletionsResponse(
-            api = api,
+    fun `chat response ignores null content for tool calls`() = runTest {
+        val response = completionResponse(
             text = """
                 {
                   "created": 1739900000,
@@ -506,9 +496,9 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `parseCompletionsResponse accepts compatible usage names and finish reasons`() {
-        val response = invokeParseCompletionsResponse(
-            api = createApi(provider = LlmProvider.QWEN),
+    fun `chat response accepts compatible usage names and finish reasons`() = runTest {
+        val response = completionResponse(
+            provider = LlmProvider.QWEN,
             text = """
                 {
                   "created": 1739900000,
@@ -535,25 +525,24 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `buildEmbeddingsRequest includes float encoding format`() {
-        val api = createApi()
-        val request = invokeBuildEmbeddingsRequest(
-            api = api,
-            body = LLMRequest.Embeddings(
-                model = "Embeddings",
-                input = listOf("hello"),
-            ),
-        )
+    fun `embeddings request includes float encoding format`() = runTest {
+        val engine = MockEngine {
+            respond(EMBEDDINGS_REPLY, headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+        }
+        HttpClient(engine) { providerHttpClientDefaults() }.use { client ->
+            assertIs<LLMResponse.Embeddings.Ok>(
+                createApi(client).embeddings(LLMRequest.Embeddings(model = "Embeddings", input = listOf("hello"))),
+            )
+        }
+        val request = restJsonMapper.readValue<Map<String, Any>>(engine.requestHistory.single().body.toByteArray())
 
         assertEquals("float", request["encoding_format"])
         assertEquals("text-embedding-3-small", request["model"])
     }
 
     @Test
-    fun `buildChatRequest includes items schema for array properties`() {
-        val api = createApi()
-        val request = invokeBuildChatRequest(
-            api = api,
+    fun `chat request includes items schema for array properties`() = runTest {
+        val request = captureChatRequest(
             body = LLMRequest.Chat(
                 model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
@@ -577,7 +566,6 @@ class OpenAICompatibleChatAPIRequestTest {
                     )
                 ),
             ),
-            stream = false,
         )
 
         @Suppress("UNCHECKED_CAST")
@@ -595,16 +583,8 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `stream accumulator emits distinct indexes for multiple tool calls in one choice`() {
-        val classLoader = OpenAICompatibleChatAPI::class.java.classLoader
-        val clazz = Class.forName("ru.souz.llms.openai.OpenAiStreamAccumulator", true, classLoader)
-        val ctor = clazz.getDeclaredConstructor()
-        ctor.isAccessible = true
-        val accumulator = ctor.newInstance()
-        val processChunk = clazz.getDeclaredMethod("processChunk", com.fasterxml.jackson.databind.JsonNode::class.java)
-        processChunk.isAccessible = true
-
-        val node = restJsonMapper.readTree(
+    fun `stream emits distinct indexes for multiple tool calls in one choice`() = runTest {
+        val chunk =
             """
                 {
                   "choices": [
@@ -636,20 +616,31 @@ class OpenAICompatibleChatAPIRequestTest {
                   ]
                 }
             """.trimIndent()
-        )
-
-        @Suppress("UNCHECKED_CAST")
-        val choices = processChunk.invoke(accumulator, node) as List<LLMResponse.Choice>
-        val toolChoices = choices.filter { it.message.functionCall != null }
-        assertEquals(2, toolChoices.size)
-        assertNotEquals(toolChoices[0].index, toolChoices[1].index)
-        assertEquals(setOf("call_a", "call_b"), toolChoices.mapNotNull { it.message.functionsStateId }.toSet())
+        val engine = MockEngine {
+            respond(
+                content = "data: ${restJsonMapper.readTree(chunk)}\n\ndata: [DONE]\n\n",
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Text.EventStream.toString()),
+            )
+        }
+        HttpClient(engine) { providerHttpClientDefaults() }.use { client ->
+            val responses = createApi(client).messageStream(
+                LLMRequest.Chat(
+                    model = LLMModel.OpenAIGpt5Mini.alias,
+                    messages = listOf(LLMRequest.Message(LLMMessageRole.user, "run tools")),
+                ),
+            ).toList()
+            val choices = assertIs<LLMResponse.Chat.Ok>(responses.single()).choices
+            val toolChoices = choices.filter { it.message.functionCall != null }
+            assertEquals(2, toolChoices.size)
+            assertNotEquals(toolChoices[0].index, toolChoices[1].index)
+            assertEquals(setOf("call_a", "call_b"), toolChoices.mapNotNull { it.message.functionsStateId }.toSet())
+        }
     }
 
     private fun createApi(
+        client: HttpClient,
         provider: LlmProvider = LlmProvider.OPENAI,
         openaiBaseUrl: String? = null,
-        baseUrl: String? = null,
         requestParameters: String? = null,
     ): OpenAICompatibleChatAPI {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
@@ -658,63 +649,51 @@ class OpenAICompatibleChatAPIRequestTest {
         every { settingsProvider.qwenChatKey } returns "test-key"
         every { settingsProvider.openaiBaseUrl } returns openaiBaseUrl
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
-        every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Mini
 
         return OpenAICompatibleChatAPI(
             provider = provider,
             settingsProvider = settingsProvider,
-            client = mockk<HttpClient>(),
-            baseUrl = baseUrl,
+            client = client,
             requestParameters = requestParameters,
         )
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun invokeBuildChatRequest(
-        api: OpenAICompatibleChatAPI,
+    private suspend fun captureChatRequest(
         body: LLMRequest.Chat,
-        stream: Boolean,
+        stream: Boolean = false,
+        openaiBaseUrl: String? = null,
+        requestParameters: String? = null,
     ): Map<String, Any> {
-        val method = OpenAICompatibleChatAPI::class.java.getDeclaredMethod(
-            "buildChatRequest",
-            LLMRequest.Chat::class.java,
-            Boolean::class.javaPrimitiveType,
-        )
-        method.isAccessible = true
-        return method.invoke(api, body, stream) as Map<String, Any>
+        val engine = MockEngine {
+            respond(
+                content = if (stream) "data: $CHAT_REPLY\n\ndata: [DONE]\n\n" else CHAT_REPLY,
+                headers = headersOf(
+                    HttpHeaders.ContentType,
+                    (if (stream) ContentType.Text.EventStream else ContentType.Application.Json).toString(),
+                ),
+            )
+        }
+        HttpClient(engine) { providerHttpClientDefaults() }.use { client ->
+            val api = createApi(client, openaiBaseUrl = openaiBaseUrl, requestParameters = requestParameters)
+            val response = if (stream) api.messageStream(body).toList().single() else api.message(body)
+            assertIs<LLMResponse.Chat.Ok>(response)
+        }
+        return restJsonMapper.readValue(engine.requestHistory.single().body.toByteArray())
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun invokeBuildEmbeddingsRequest(
-        api: OpenAICompatibleChatAPI,
-        body: LLMRequest.Embeddings,
-    ): Map<String, Any> {
-        val method = OpenAICompatibleChatAPI::class.java.getDeclaredMethod(
-            "buildEmbeddingsRequest",
-            LLMRequest.Embeddings::class.java,
-        )
-        method.isAccessible = true
-        return method.invoke(api, body) as Map<String, Any>
-    }
-
-    private fun invokeParseCompletionsResponse(
-        api: OpenAICompatibleChatAPI,
+    private suspend fun completionResponse(
         text: String,
         requestModel: String,
+        provider: LlmProvider = LlmProvider.OPENAI,
     ): LLMResponse.Chat {
-        val method = OpenAICompatibleChatAPI::class.java.getDeclaredMethod(
-            "parseCompletionsResponse",
-            String::class.java,
-            String::class.java,
-        )
-        method.isAccessible = true
-        return method.invoke(api, text, requestModel) as LLMResponse.Chat
-    }
-
-    private fun invokeChatCompletionsUrl(api: OpenAICompatibleChatAPI): String {
-        val method = OpenAICompatibleChatAPI::class.java.getDeclaredMethod("getChatCompletionsUrl")
-        method.isAccessible = true
-        return method.invoke(api) as String
+        val engine = MockEngine {
+            respond(text, headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+        }
+        return HttpClient(engine) { providerHttpClientDefaults() }.use { client ->
+            createApi(client, provider).message(
+                LLMRequest.Chat(requestModel, listOf(LLMRequest.Message(LLMMessageRole.user, "hello"))),
+            )
+        }
     }
 
     private fun modelFor(provider: LlmProvider): String = when (provider) {
@@ -737,6 +716,10 @@ class OpenAICompatibleChatAPIRequestTest {
     )
 
     private companion object {
+        const val CHAT_REPLY =
+            """{"choices":[{"index":0,"message":{"role":"assistant","content":"Hi"},"delta":{"content":"Hi"},"finish_reason":"stop"}],"created":1,"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"""
+        const val EMBEDDINGS_REPLY = """{"data":[{"embedding":[0.1],"index":0}],"model":"embeddings","object":"list"}"""
+
         val compatibleProviderCases = listOf(
             CompatibleProviderCase(
                 provider = LlmProvider.OPENAI,
