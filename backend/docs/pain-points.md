@@ -5,6 +5,7 @@ Read the topics relevant to the code you plan to change in `:backend`.
 ## Topics
 
 - [Workspace hooks](pain-points/hooks.md) — trusted ownership, admission, persistent call budgets, sequential dispatch and single-process recovery.
+- [Scheduled task scope](pain-points/scheduled-tasks.md) — Orion ownership, partial mutations, secret-safe live transport and deferred task-purpose classification.
 
 - [Trusted proxy](pain-points/trusted-proxy.md) — identity validation, provisioning, user scoping, and backend-safe tools.
 - [Execution, OpenAPI, and events](pain-points/execution-openapi-and-events.md) — runtime ownership, event durability, compatibility, and route documentation.

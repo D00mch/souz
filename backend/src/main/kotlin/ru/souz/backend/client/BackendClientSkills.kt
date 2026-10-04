@@ -37,6 +37,7 @@ internal class BackendClientSkills(
     private val now: () -> Instant = Instant::now,
     classLoader: ClassLoader = BackendClientSkills::class.java.classLoader,
 ) : AgentToolCatalog {
+    private val liveDispatcher = LiveClientToolDispatcher(registry, eventService, channelDeliveryService, now)
     private val definitionsById: Map<SkillId, ClientSkillDefinition> =
         loadClientSkillDefinitions(classLoader)
 
@@ -51,7 +52,7 @@ internal class BackendClientSkills(
                             registry = registry,
                             toolCallRepository = toolCallRepository,
                             eventService = eventService,
-                            channelDeliveryService = channelDeliveryService,
+                            liveDispatcher = liveDispatcher,
                             now = now,
                         )
                     },
@@ -65,7 +66,7 @@ private class ClientWebSocketSkill(
     private val registry: ClientThreadRuntimeRegistry,
     private val toolCallRepository: ToolCallRepository,
     private val eventService: AgentEventService,
-    private val channelDeliveryService: ChannelDeliveryService,
+    private val liveDispatcher: LiveClientToolDispatcher,
     private val now: () -> Instant,
 ) : LLMToolSetup {
     private val timeout = definition.timeout
@@ -151,32 +152,11 @@ private class ClientWebSocketSkill(
         val chatId = (functionCall.arguments["channelId"] as? String)
             ?.let { runCatching { UUID.fromString(it.trim()) }.getOrNull() }
             ?: return errorMessage(functionCall.name, "client_context_missing", "channelId must be a UUID.")
-        val chat = channelDeliveryService.resolveTarget(meta.userId, chatId)
-            ?.takeIf { it.clientType in supportedClientTypes }
-            ?: return errorMessage(functionCall.name, "client_context_missing", "Device channel not found.")
-        if (!eventService.hasLiveSubscriber(chat.userId, chat.id)) {
-            return errorMessage(functionCall.name, "client_context_missing", "No device is connected on that channel.")
-        }
-        val threadId = UUID.randomUUID()
-        val context = ToolCallContext(meta.userId, chatId.toString(), threadId.toString(), UUID.randomUUID().toString())
-        val deadlineAt = now().plus(timeout)
-        return registry.withChannelTool(context, deadlineAt) { pending ->
-            val published = eventService.publishClientToolCall(
-                userId = meta.userId,
-                chatId = chatId,
-                executionId = threadId,
-                payload = PublicToolCallStartedPayload(
-                    toolCallId = context.toolCallId,
-                    name = fn.name,
-                    arguments = restJsonMapper.valueToTree(functionCall.arguments - "channelId"),
-                    deadlineAt = deadlineAt.toString(),
-                ),
-            )
-            if (!published) return@withChannelTool errorMessage(
-                functionCall.name, "client_tool_busy", "Device command queues are full or disconnected.",
-            )
-            outcomeMessage(functionCall.name, pending.awaitResult(now()))
-        }
+        val chat = liveDispatcher.resolve(meta.userId, chatId, supportedClientTypes)
+            ?: return errorMessage(functionCall.name, "client_context_missing", "No device is connected on that channel.")
+        return outcomeMessage(functionCall.name, liveDispatcher.call(
+            chat, fn.name, functionCall.arguments - "channelId", timeout,
+        ))
     }
 
     private fun outcomeMessage(functionName: String, outcome: ClientToolOutcome): LLMRequest.Message =

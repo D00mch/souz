@@ -110,6 +110,8 @@ class AgentEventService(
         createdAt = Instant.now(),
     ))
 
+    fun liveChatIds(userId: String): List<UUID> = eventBus.liveChatIds(userId)
+
     suspend fun publishLive(
         userId: String,
         chatId: UUID,

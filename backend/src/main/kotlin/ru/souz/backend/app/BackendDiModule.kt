@@ -11,6 +11,11 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.backend.client.LiveClientToolDispatcher
+import ru.souz.backend.scheduler.OrionSchedulerClient
+import ru.souz.backend.scheduler.ScheduledHookFiles
+import ru.souz.backend.scheduler.ScheduledTaskService
+import ru.souz.backend.scheduler.ScheduledTaskTools
 import ru.souz.backend.hooks.HookDefinitions
 import ru.souz.backend.hooks.HookService
 import ru.souz.backend.hooks.HookStore
@@ -464,8 +469,13 @@ fun backendDiModule(
     bindSingleton { ToolListActiveChannels(registry = instance()) }
     bindSingleton { ToolSendMessageToChannel(registry = instance()) }
     bindSingleton { BackendChannelToolCatalog(instance(), instance()) }
+    bindSingleton { LiveClientToolDispatcher(instance(), instance(), instance()) }
+    bindSingleton { OrionSchedulerClient(instance()) }
+    bindSingleton { ScheduledHookFiles(instance(), appConfig.hooks, instance(), instance()) }
+    bindSingleton { ScheduledTaskService(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton { ScheduledTaskTools { instance() } }
     bindSingleton<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG) {
-        composeToolCatalogs(instance<RuntimeToolsFactory>(), instance<BackendChannelToolCatalog>())
+        composeToolCatalogs(instance<RuntimeToolsFactory>(), instance<BackendChannelToolCatalog>(), instance<ScheduledTaskTools>())
     }
     bindSingleton {
         OptionService(

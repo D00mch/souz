@@ -98,6 +98,10 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("excel|таблиц|spreadsheet|xlsx|эксель"), 2.0)
         )
 
+        ToolCategory.SCHEDULING -> listOf(
+            WeightedRegex(Regex("напомни|по расписанию|запланированн.*задач|scheduled task|remind me"), 2.0),
+        )
+
         ToolCategory.CALENDAR -> listOf(
             WeightedRegex(Regex("календар|calendar|расписани|schedule"), 2.0),
             WeightedRegex(Regex("событи|event|встреч|meeting|напоминани|reminder|созвон|call"), 2.0),
