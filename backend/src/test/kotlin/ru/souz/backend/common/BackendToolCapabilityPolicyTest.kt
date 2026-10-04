@@ -2,10 +2,9 @@ package ru.souz.backend.common
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import kotlin.test.assertFalse
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.testutil.TestToolCatalog
-import ru.souz.tool.LLM_BACKED_TOOL_NAMES
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.web.ToolWebImageSearch
 
@@ -14,10 +13,9 @@ class BackendToolCapabilityPolicyTest {
     fun `advertised names exclude unsafe tools and match default execution selection`() {
         val names = BackendToolCapabilityPolicy.advertisedToolNames(processCatalog())
 
-        assertTrue(ToolCategory.WEB_SEARCH in BackendToolCapabilityPolicy.safeCategories)
+        assertFalse(ToolCategory.WEB_SEARCH in BackendToolCapabilityPolicy.safeCategories)
         assertEquals(
-            setOf("ReadFile", "WebPageText", "ListActiveChannels", "SendMessageToChannel") +
-                LLM_BACKED_TOOL_NAMES,
+            setOf("ReadFile", "ListActiveChannels", "SendMessageToChannel", "ViewImage", "GenerateImage"),
             names,
         )
         assertEquals(names, executionToolNames(enabledToolNames = null))
@@ -35,35 +33,29 @@ class BackendToolCapabilityPolicyTest {
     }
 
     @Test
-    fun `client search replaces InternetSearch with default and explicit selections`() {
-        val advertised = BackendToolCapabilityPolicy.advertisedToolNames(processCatalog())
-        val webTools = setOf("InternetSearch", "InternetResearch", "WebPageText")
-        listOf(null to advertised, webTools to webTools, emptySet<String>() to emptySet()).forEach { (enabled, expected) ->
-            assertEquals(expected, executionToolNames(enabledToolNames = enabled), "enabled=$enabled")
-            assertEquals(
-                expected - "InternetSearch",
-                executionToolNames(enabledToolNames = enabled, clientSearchEnabled = true),
-                "client search with enabled=$enabled",
-            )
+    fun `explicitly enabled compiled web skills remain unavailable`() {
+        val webTools = setOf("InternetSearch", "InternetResearch", "WebPageText", ToolWebImageSearch.NAME, "FutureWebTool")
+        for (enabled in listOf(webTools, webTools + "ReadFile", emptySet())) {
+            assertEquals(enabled intersect setOf("ReadFile"), executionToolNames(enabled), "enabled=$enabled")
         }
     }
 
     private fun executionToolNames(
         enabledToolNames: Set<String>?,
-        clientSearchEnabled: Boolean = false,
     ): Set<String> =
         BackendToolCapabilityPolicy.selectExecutionTools(
             processToolCatalog = processCatalog(),
             executionLlmToolCatalog = TestToolCatalog(
-                ToolCategory.WEB_SEARCH to BackendToolCapabilityPolicy.executionBoundToolNames.toList(),
+                ToolCategory.WEB_SEARCH to listOf("InternetSearch", "InternetResearch"),
+                ToolCategory.IMAGE to listOf("ViewImage"),
+                ToolCategory.IMAGE_GENERATION to listOf("GenerateImage"),
             ),
             enabledToolNames = enabledToolNames,
-            clientSearchEnabled = clientSearchEnabled,
         ).toolNames()
 
     private fun processCatalog(): AgentToolCatalog = TestToolCatalog(
         ToolCategory.FILES to listOf("ReadFile"),
-        ToolCategory.WEB_SEARCH to listOf("WebPageText", ToolWebImageSearch.NAME),
+        ToolCategory.WEB_SEARCH to listOf("WebPageText", ToolWebImageSearch.NAME, "FutureWebTool"),
         ToolCategory.CHANNEL_MESSAGING to listOf("ListActiveChannels", "SendMessageToChannel"),
         ToolCategory.BROWSER to listOf("ControlBrowser"),
     )

@@ -157,7 +157,6 @@ internal class BackendConversationRuntimeFactory(
             executionLlmToolCatalog = executionLlmToolCatalog,
             enabledCompiledToolNames = request.enabledTools,
             clientToolCatalog = clientToolCatalog,
-            clientSearchEnabled = request.clientToolsEnabled,
             includeFewShotExamples = settingsProvider.useFewShotExamples,
         )
         val requestToolsFilter = RuntimePassThroughToolsFilter

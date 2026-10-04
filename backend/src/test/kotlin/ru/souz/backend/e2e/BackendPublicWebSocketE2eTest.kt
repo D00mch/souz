@@ -462,7 +462,7 @@ class BackendPublicWebSocketE2eTest {
         }
 
     @Test
-    fun `client web search replaces short search and returns documents without device capabilities`() =
+    fun `client web search is the only web skill and returns documents without device capabilities`() =
         backendE2eTest("e2e_ws_web_search", llm = E2eLlmApi().apply {
             requestSkill("web.search", mapOf("query" to "Когда открывается музей?"))
         }) {
@@ -497,9 +497,7 @@ class BackendPublicWebSocketE2eTest {
                 assertEquals("thread.completed", readJson(session)["type"].asText())
 
                 val inventory = llm.requests.first().messages.first { it.role == LLMMessageRole.system }.content
-                assertTrue(inventory.contains("web.search"))
-                assertFalse(inventory.contains("InternetSearch"))
-                assertTrue(inventory.contains("InternetResearch") && inventory.contains("WebPageText"))
+                assertEquals("- WEB_SEARCH: web.search", inventory.lineSequence().single { it.startsWith("- WEB_SEARCH:") })
                 val results = llm.requests.last().messages.filter { it.role == LLMMessageRole.function }
                 val discovered = json.readTree(results.single { it.name == "GetSkillByName" }.content)
                 assertEquals("web.search", discovered["skill"]["skillId"].asText())

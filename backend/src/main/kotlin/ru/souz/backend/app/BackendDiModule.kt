@@ -138,8 +138,7 @@ fun backendDiModule(
 
     import(runtimeCoreDiModule(bindSettingsProvider = false))
     import(
-        // BackendToolCapabilityPolicy denies WebImageSearch anyway; skipping construction keeps its
-        // downloader off the backend classpath instead of relying on the filter alone.
+        // Compiled web tools are excluded by policy; skip the image-search downloader's construction.
         runtimeToolsDiModule(
             includeWebImageSearch = false,
             scopeResolver = BackendSandboxScopeResolver,
