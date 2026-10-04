@@ -42,6 +42,7 @@ kotlin {
                 implementation(libs.jackson)
                 implementation(libs.ktor.serializationJackson)
                 implementation(libs.bundles.ktorClient)
+                implementation(libs.ktor.clientOkhttp)
                 implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
                 implementation(libs.java.diffUtils)
                 implementation(libs.jsoup)
@@ -82,6 +83,8 @@ kotlin {
                 implementation(libs.kotlinx.coroutinesTest)
                 implementation(libs.mockk)
                 implementation("io.ktor:ktor-client-mock:${libs.versions.ktor.get()}")
+                implementation("com.squareup.okhttp3:mockwebserver3:5.3.2")
+                implementation("com.squareup.okhttp3:okhttp-tls:5.3.2")
             }
         }
     }

@@ -13,19 +13,21 @@ class ProviderHttpClientsTest {
     fun `provider resources close each distinct client exactly once`() {
         val standard = mockk<HttpClient>(relaxed = true)
         val openAi = mockk<HttpClient>(relaxed = true)
-        val clients = ProviderHttpClients(standard = standard, openAi = openAi)
+        val jev = mockk<HttpClient>(relaxed = true)
+        val clients = ProviderHttpClients(standard, openAi, jev)
 
         clients.close()
         clients.close()
 
         verify(exactly = 1) { standard.close() }
         verify(exactly = 1) { openAi.close() }
+        verify(exactly = 1) { jev.close() }
     }
 
     @Test
     fun `same client instance is not closed twice`() {
         val client = mockk<HttpClient>(relaxed = true)
-        val clients = ProviderHttpClients(standard = client, openAi = client)
+        val clients = ProviderHttpClients(client, client, client)
 
         clients.close()
 
@@ -38,9 +40,10 @@ class ProviderHttpClientsTest {
         val openAiFailure = IllegalArgumentException("openAi close failed")
         val standard = mockk<HttpClient>(relaxed = true)
         val openAi = mockk<HttpClient>(relaxed = true)
+        val jev = mockk<HttpClient>(relaxed = true)
         every { standard.close() } throws standardFailure
         every { openAi.close() } throws openAiFailure
-        val clients = ProviderHttpClients(standard = standard, openAi = openAi)
+        val clients = ProviderHttpClients(standard, openAi, jev)
 
         val thrown = assertFailsWith<IllegalStateException> { clients.close() }
 
@@ -48,6 +51,7 @@ class ProviderHttpClientsTest {
         assertSame(openAiFailure, thrown.suppressed.single())
         verify(exactly = 1) { standard.close() }
         verify(exactly = 1) { openAi.close() }
+        verify(exactly = 1) { jev.close() }
     }
 
     @Test
