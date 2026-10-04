@@ -6,12 +6,12 @@ Before editing a module, open its index below and read only the topics related t
 
 ## Module indexes
 
-- [`:agent`](../agent/docs/pain-points.md) — includes [subagent lifecycle and isolation](../agent/docs/pain-points/subagents.md).
+- [`:agent`](../agent/docs/pain-points.md) — includes [Skill discovery and approval](../agent/docs/pain-points/skill-activation.md) and [subagent lifecycle and isolation](../agent/docs/pain-points/subagents.md).
 - [`:graph-engine`](../graph-engine/docs/pain-points.md)
 - [`:llms`](../llms/docs/pain-points.md)
 - [`:native`](../native/docs/pain-points.md)
 - [`:ambientAgent`](../ambientAgent/docs/pain-points.md)
-- [`:sharedLogic`](../sharedLogic/docs/pain-points.md) — includes [sandbox and composite Skill execution](../sharedLogic/docs/pain-points/runtime-sandbox-and-skills.md).
+- [`:sharedLogic`](../sharedLogic/docs/pain-points.md) — includes [sandbox and composite Skill execution](../sharedLogic/docs/pain-points/runtime-sandbox-and-skills.md) and [provider/classifier HTTP lifecycle](../sharedLogic/docs/pain-points/provider-http-lifecycle.md).
 - [`:sharedUI`](../sharedUI/docs/pain-points.md)
 - [`:skill-oauth-api`](../skill-oauth-api/docs/pain-points.md)
 - [`:skill-oauth-impl`](../skill-oauth-impl/docs/pain-points.md)

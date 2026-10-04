@@ -1,6 +1,7 @@
 package ru.souz.agent.skills.bundle
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.exc.MismatchedInputException
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
@@ -25,7 +26,7 @@ object SkillBundleParser {
     fun parse(markdown: String): ParsedSkillMarkdown {
         val normalized = markdown.replace("\r\n", "\n")
         val secondDelimiterIndex = closingDelimiterIndex(normalized)
-        val frontmatter = normalized.substring(4, secondDelimiterIndex).trim()
+        val frontmatter = normalized.substring(4, secondDelimiterIndex)
         val body = normalized.substring(secondDelimiterIndex + "\n---\n".length).trim()
         return ParsedSkillMarkdown(
             manifest = parseManifestFrontmatter(frontmatter),
@@ -36,7 +37,7 @@ object SkillBundleParser {
     fun parseManifest(markdown: String): SkillManifest {
         val normalized = markdown.replace("\r\n", "\n")
         val secondDelimiterIndex = closingDelimiterIndex(normalized)
-        val frontmatter = normalized.substring(4, secondDelimiterIndex).trim()
+        val frontmatter = normalized.substring(4, secondDelimiterIndex)
         return parseManifestFrontmatter(frontmatter)
     }
 
@@ -56,7 +57,10 @@ object SkillBundleParser {
         val raw = try {
             yamlMapper.readValue(frontmatter, RawManifest::class.java) ?: RawManifest()
         } catch (e: MismatchedInputException) {
-            throw SkillBundleException("SKILL.md frontmatter field '${e.path.lastOrNull()?.fieldName}' has the wrong shape: ${e.originalMessage}", e)
+            val field = e.path.mapNotNull { it.fieldName }.joinToString(".").ifEmpty { "frontmatter" }
+            throw SkillBundleException("SKILL.md frontmatter field '$field' has the wrong shape${location(e)}: ${e.originalMessage}", e)
+        } catch (e: JsonProcessingException) {
+            throw SkillBundleException("SKILL.md frontmatter is not valid YAML${location(e)}: ${e.originalMessage}", e)
         } catch (e: Exception) {
             throw SkillBundleException("SKILL.md frontmatter is not valid YAML: ${e.message}", e)
         }
@@ -77,9 +81,13 @@ object SkillBundleParser {
             oauthScopes = raw.oauthScopes.orEmpty(),
             metadata = raw.metadata.orEmpty(),
             commands = raw.commands,
-            rawFrontmatter = frontmatter,
+            rawFrontmatter = frontmatter.trim(),
         )
     }
+
+    private fun location(error: JsonProcessingException): String = error.location?.let {
+        " at line ${it.lineNr + 1}, column ${it.columnNr}"
+    }.orEmpty()
 
     data class ParsedSkillMarkdown(
         val manifest: SkillManifest,

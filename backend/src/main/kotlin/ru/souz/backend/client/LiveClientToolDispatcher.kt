@@ -22,8 +22,7 @@ internal class LiveClientToolDispatcher(
             it.clientType in types && events.hasLiveSubscriber(userId, chatId)
         }
 
-    suspend fun schedulerChannel(userId: String, explicit: UUID?, preferred: UUID?, sourceThread: UUID?): Chat? {
-        sourceThread?.let { registry.awaitAcceptedInputAcks(it) }
+    suspend fun schedulerChannel(userId: String, explicit: UUID?, preferred: UUID?): Chat? {
         val types = setOf("backend")
         if (explicit != null) return resolve(userId, explicit, types)
         if (preferred != null) resolve(userId, preferred, types)?.let { return it }

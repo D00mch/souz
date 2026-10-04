@@ -11,17 +11,16 @@ import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.websocket.Frame
 import java.io.IOException
 import java.time.Clock
 import java.time.Instant
+import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -37,7 +36,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
-import ru.souz.backend.memory.hindsight.DIALOGUE_MEMORY_STRATEGY
 import ru.souz.backend.memory.hindsight.HISTORY_MEMORY_MAX_CHARS
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.llms.LLMMessageRole
@@ -152,10 +150,12 @@ class BackendHistoryMemoryE2eTest {
             assertEquals(HttpStatusCode.OK, submitted.status)
             val retained = eventually("oversized completed turn") { hindsight.items.singleOrNull() }
             assertEquals(owner, retained.bank)
+            assertEquals(COMPLETED_TURN_FIELDS, retained.item.fieldSet())
+            assertEquals(listOf("/v1/default/banks/$owner/memories"), hindsight.paths)
             assertEquals(listOf("chat:$chat"), retained.item["tags"].map(JsonNode::asText))
             assertTrue(retained.item["document_id"].asText().startsWith("souz-turn-"))
             val records = retained.item["content"].asText().lines().map {
-                assertTrue(it.length + 2 <= HISTORY_MEMORY_MAX_CHARS, "Serialized record must fit in one Hindsight chunk")
+                assertTrue(it.length + 2 <= HISTORY_MEMORY_MAX_CHARS, "Serialized record must fit in one memory document")
                 json.readTree(it)
             }
             assertEquals(listOf("user", "assistant"), records.map { it["role"].asText() }.distinct())
@@ -170,6 +170,41 @@ class BackendHistoryMemoryE2eTest {
                     offset += part.length
                 }
                 assertEquals(expected.trim(), parts.joinToString("") { it["text"].asText() })
+            }
+        }
+    }
+
+    @Test
+    fun `memory timestamps preserve receipt times in the latest conversation zone`() {
+        backendE2eTest("memory_time_zone", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
+            val owner = UUID.randomUUID().toString()
+            val chat = createPublicChat(owner)
+            withPublicSocket(chat) { socket ->
+                for (zone in listOf(null, "Europe/Moscow", "America/New_York")) {
+                    if (zone != null) {
+                        val before = hindsight.items.size
+                        socket.send(Frame.Text(messageFrame(chat, owner, "turn-$zone", timeZone = zone)))
+                        assertEquals("accepted", readJson(socket)["status"].asText())
+                        assertEquals("thread.status", readJson(socket)["type"].asText())
+                        assertEquals("thread.completed", readJson(socket)["type"].asText())
+                        val turn = eventually("completed-turn timestamp") { hindsight.items.getOrNull(before) }
+                        assertEquals(clock.instant().atZone(ZoneId.of(zone)).toOffsetDateTime(),
+                            OffsetDateTime.parse(turn.item["timestamp"].asText()))
+                    }
+                    appendHistory(socket, chat, "history-$zone", "user", "My flight is tomorrow")
+                    val stored = client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(owner) }.jsonBody()["items"]
+                        .associate { it["id"].asText() to Instant.parse(it["createdAt"].asText()) }
+                    clock.advance(31)
+                    assertTrue(backend.captureHistoryMemory())
+                    val item = hindsight.historyItems.last().item
+                    val records = item["content"].asText().lines().filter { it.startsWith("{") }.map { json.readTree(it) }
+                    for (record in records) {
+                        val timestamp = OffsetDateTime.parse(record["timestamp"].asText())
+                        assertEquals(stored[record["source"].asText()], timestamp.toInstant())
+                        assertEquals(ZoneId.of(zone ?: "UTC").rules.getOffset(timestamp.toInstant()), timestamp.offset)
+                    }
+                    assertEquals(records.last()["timestamp"], item["timestamp"])
+                }
             }
         }
     }
@@ -235,6 +270,7 @@ class BackendHistoryMemoryE2eTest {
             }
             val retained = hindsight.historyItems.single()
             assertEquals(owner, retained.bank)
+            assertEquals(HISTORY_FIELDS, retained.item.fieldSet())
             assertEquals(listOf("chat:$chat"), retained.item["tags"].map(JsonNode::asText))
             val content = retained.item["content"].asText()
             assertTrue(content.indexOf("Recommend a train trip") < content.indexOf("I propose Kazan"))
@@ -264,16 +300,14 @@ class BackendHistoryMemoryE2eTest {
                 it.role == LLMMessageRole.function && it.content.contains("tool-sentinel")
             })
             assertEquals(2, hindsight.historyItems.size)
-            assertEquals(1, hindsight.configPatches.size)
-            assertEquals("unrelated", hindsight.configs.values.single()["retain_default_strategy"].asText())
+            assertTrue(hindsight.paths.all { it == "/v1/default/banks/$owner/memories" })
             assertTrue(hindsight.recalls.isEmpty())
         }
     }
 
     @Test
-    fun `configuration failure and lost retain response recover after restart with frozen documents`() {
+    fun `lost retain response recovers after restart with frozen documents`() {
         val schema = newPostgresSchema("history_memory_restart")
-        hindsight.applyStrategy = false
         hindsight.failAfterRetain = true
         var chat = ""
         backendE2eTest("restart_first", schema = schema, hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
@@ -281,16 +315,14 @@ class BackendHistoryMemoryE2eTest {
             withPublicSocket(chat) { appendHistory(it, chat, "one", "user", "I prefer quiet trains") }
             clock.advance(31)
             assertTrue(backend.captureHistoryMemory())
-            assertTrue(hindsight.items.isEmpty())
-            hindsight.applyStrategy = true
-            clock.advance(6)
-            assertTrue(backend.captureHistoryMemory())
-            assertTrue(hindsight.configs.values.single()["retain_strategies"].has("unrelated"))
+            assertEquals(1, hindsight.items.size)
             assertFalse(backend.captureHistoryMemory())
         }
         val original = hindsight.items.single()
+        assertNotNull(original.operationId)
+        UUID.fromString(original.operationId)
         hindsight.failAfterRetain = false
-        clock.advance(11)
+        clock.advance(6)
         backendE2eTest("restart_second", schema = schema, hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
             withPublicSocket(chat) { appendHistory(it, chat, "two", "assistant", "I suggest a sleeper train") }
             assertTrue(backend.captureHistoryMemory())
@@ -299,6 +331,70 @@ class BackendHistoryMemoryE2eTest {
             clock.advance(31)
             assertTrue(backend.captureHistoryMemory())
             assertNotEquals(original.item["document_id"], hindsight.items.last().item["document_id"])
+            assertNotEquals(original.operationId, hindsight.items.last().operationId)
+        }
+    }
+
+    @Test
+    fun `failed fragments stop at the retry boundary and release later history`() {
+        backendE2eTest("history_memory_retries", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
+            for ((status, permanent) in listOf(
+                HttpStatusCode.BadRequest to true, HttpStatusCode.OK to true,
+                HttpStatusCode.ServiceUnavailable to false, HttpStatusCode.RequestTimeout to false,
+                HttpStatusCode.TooManyRequests to false, null to false,
+            )) {
+                hindsight.rejection = status
+                hindsight.failAfterRetain = status == null
+                val chat = createPublicChat(UUID.randomUUID().toString())
+                val createdAt = clock.instant()
+                withPublicSocket(chat) { appendHistory(it, chat, "first", "user", "I prefer quiet trains") }
+                clock.advance(31)
+                // Resume persisted attempts just before the retry boundary.
+                sql { connection ->
+                    connection.prepareStatement("update history_memory_fragments set attempts = 10 where chat_id = ?::uuid").use {
+                        it.setString(1, chat)
+                        it.executeUpdate()
+                    }
+                }
+                withPublicSocket(chat) { appendHistory(it, chat, "next", "user", "I also like ferries") }
+                fun assertState(attempts: Int, failed: Boolean) = sql { connection ->
+                    connection.prepareStatement("select * from history_memory_fragments where chat_id = ?::uuid order by first_seq limit 1").use {
+                        it.setString(1, chat)
+                        it.executeQuery().use { rows ->
+                            assertTrue(rows.next())
+                            assertEquals(attempts, rows.getInt("attempts"))
+                            assertEquals(failed, rows.getObject("completed_at") != null)
+                            assertEquals(failed, rows.getObject("failed_at") != null)
+                            assertEquals(failed, rows.getString("payload") == null)
+                            assertNull(rows.getObject("lease_token"))
+                            assertNull(rows.getObject("lease_until"))
+                            if (failed) assertEquals(clock.instant(), rows.getTimestamp("failed_at").toInstant())
+                        }
+                    }
+                }
+                assertTrue(backend.captureHistoryMemory())
+                assertState(11, failed = false)
+                assertFalse(backend.captureHistoryMemory())
+                clock.advance(300)
+                assertTrue(backend.captureHistoryMemory())
+                assertState(12, failed = permanent)
+                if (!permanent) {
+                    clock.advance(java.time.Duration.between(clock.instant(), createdAt.plusSeconds(86_100)).seconds)
+                    assertTrue(backend.captureHistoryMemory())
+                    assertState(13, failed = false)
+                    clock.advance(300)
+                    assertTrue(backend.captureHistoryMemory())
+                    assertState(14, failed = true)
+                }
+                hindsight.rejection = null
+                hindsight.failAfterRetain = false
+                assertTrue(backend.captureHistoryMemory())
+                val content = hindsight.historyItems.last().item["content"].asText()
+                assertTrue(content.substringBefore("NEW dialogue records").contains("I prefer quiet trains"))
+                assertFalse(content.substringAfter("NEW dialogue records").contains("I prefer quiet trains"))
+                assertTrue(content.substringAfter("NEW dialogue records").contains("I also like ferries"))
+                assertFalse(backend.captureHistoryMemory())
+            }
         }
     }
 
@@ -319,6 +415,7 @@ class BackendHistoryMemoryE2eTest {
                 assertNotEquals(first.leaseToken, second.leaseToken)
                 assertEquals(documents, second.documents)
                 assertFalse(repository.complete(first))
+                assertFalse(repository.complete(first, failed = true))
                 assertFalse(repository.renew(first))
                 assertFalse(repository.retry(first))
                 clock.advance(181)
@@ -327,11 +424,12 @@ class BackendHistoryMemoryE2eTest {
             assertFalse(backend.captureHistoryMemory())
             assertEquals(1, hindsight.items.size)
             sql { connection ->
-                connection.prepareStatement("select payload, completed_at, source_ids from history_memory_fragments where id = ?").use { statement ->
+                connection.prepareStatement("select payload, completed_at, failed_at, source_ids from history_memory_fragments where id = ?").use { statement ->
                     statement.setObject(1, first.id)
                     statement.executeQuery().use { rows ->
                         assertTrue(rows.next())
                         assertNotNull(rows.getObject("completed_at"))
+                        assertNull(rows.getObject("failed_at"))
                         assertNull(rows.getString("payload"))
                         assertEquals(documents.flatMap { it.sourceIds }, (rows.getArray("source_ids").array as Array<*>).map { it.toString() })
                     }
@@ -407,7 +505,13 @@ class BackendHistoryMemoryE2eTest {
     }
 }
 
+private val COMPLETED_TURN_FIELDS = setOf("content", "timestamp", "tags", "document_id")
+private val HISTORY_FIELDS = setOf("content", "timestamp", "document_id", "tags", "observation_scopes", "metadata")
+
+private fun JsonNode.fieldSet(): Set<String> = fieldNames().asSequence().toSet()
+
 private fun assertCompletedDialogue(item: JsonNode, user: String, assistant: String) {
+    assertEquals(COMPLETED_TURN_FIELDS, item.fieldSet())
     val records = item["content"].asText().lines().map { jacksonObjectMapper().readTree(it) }
     assertEquals(listOf("user" to user, "assistant" to assistant), records.map { it["role"].asText() to it["text"].asText() })
 }
@@ -433,14 +537,13 @@ private class HistoryTestClock : Clock() {
 }
 
 private class HistoryHindsightStub {
-    data class Item(val bank: String, val item: JsonNode)
+    data class Item(val bank: String, val item: JsonNode, val operationId: String?)
     val items = CopyOnWriteArrayList<Item>()
     val recalls = CopyOnWriteArrayList<String>()
+    val paths = CopyOnWriteArrayList<String>()
     val historyItems get() = items.filter { it.item.path("metadata").path("source").asText() == "souz-history" }
-    val configs = ConcurrentHashMap<String, JsonNode>()
-    val configPatches = CopyOnWriteArrayList<JsonNode>()
-    var applyStrategy = true
     var failAfterRetain = false
+    var rejection: HttpStatusCode? = null
     var recalledText: String? = null
     var gate: CompletableDeferred<Unit>? = null
     val started = CompletableDeferred<Unit>()
@@ -449,39 +552,30 @@ private class HistoryHindsightStub {
         val mapper = jacksonObjectMapper()
         val client = HttpClient(MockEngine { request ->
             val path = request.url.encodedPath
+            paths += path
             val bank = path.substringAfter("/banks/").substringBefore('/')
+            var status = HttpStatusCode.OK
             val body = when {
-                path.endsWith("/config") -> {
-                    configs.putIfAbsent(bank, mapper.readTree("""{"retain_default_strategy":"unrelated","retain_strategies":{"unrelated":{"retain_extraction_mode":"verbose"}}}"""))
-                    if (request.method == HttpMethod.Patch) {
-                        val updates = mapper.readTree(request.body.toByteArray())["updates"]
-                        configPatches.add(updates)
-                        assertEquals(listOf("retain_strategies"), updates.fieldNames().asSequence().toList())
-                        val strategy = updates["retain_strategies"][DIALOGUE_MEMORY_STRATEGY]
-                        assertEquals("custom", strategy["retain_extraction_mode"].asText())
-                        assertTrue(strategy["retain_custom_instructions"].asText().isNotBlank())
-                        if (applyStrategy) (configs.getValue(bank) as ObjectNode).setAll<JsonNode>(updates as ObjectNode)
-                    }
-                    mapper.createObjectNode().set<JsonNode>("config", configs[bank]).toString()
-                }
                 path.endsWith("/recall") -> {
                     recalls += mapper.readTree(request.body.toByteArray())["query"].asText()
                     mapper.writeValueAsString(mapOf(
                         "results" to listOfNotNull(recalledText?.let { mapOf("id" to "stored-fact", "text" to it) }),
                     ))
                 }
-                else -> {
-                    val item = mapper.readTree(request.body.toByteArray())["items"].single()
-                    assertEquals(DIALOGUE_MEMORY_STRATEGY, item["strategy"]?.asText())
-                    assertNotNull(configs.getValue(bank)["retain_strategies"][DIALOGUE_MEMORY_STRATEGY])
-                    items += Item(bank, item)
+                path.endsWith("/memories") -> {
+                    val payload = mapper.readTree(request.body.toByteArray())
+                    assertTrue(payload["async"].asBoolean())
+                    items += Item(bank, payload["items"].single(), payload["operation_id"]?.asText())
                     started.complete(Unit)
                     gate?.await()
                     if (failAfterRetain) throw IOException("simulated lost response")
-                    """{"success":true,"async":false}"""
+                    status = rejection ?: HttpStatusCode.OK
+                    if (rejection != null) """{"success":false}"""
+                    else """{"success":true,"async":true,"operation_id":"op-${items.size}"}"""
                 }
+                else -> error("Unexpected Hindsight request ${request.method.value} $path")
             }
-            respond(body, headers = headersOf(HttpHeaders.ContentType, "application/json"))
+            respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
         }) { providerHttpClientDefaults() }
         return ProviderHttpClients(client, client)
     }

@@ -3,7 +3,8 @@
 Souz is a Kotlin Multiplatform AI assistant with desktop and backend hosts over shared agent and runtime modules.
 
 - Read and maintain this file and `docs/pain-points.md` before changing the repository.
-- Keep documentation concise and current-state only. Do not write change-history phrases such as “now we do”.
+- Keep runtime documentation and `docs/public-souz-contract/` concise and current-state only. Do not write change-history phrases such as “now we do”.
+- Keep pre-implementation client agreements under `docs/proposals/`, explicitly marked as proposed and not implemented; exclude them from the implemented public API schemas.
 
 ## UI architecture principles
 
@@ -24,10 +25,10 @@ Souz is a Kotlin Multiplatform AI assistant with desktop and backend hosts over 
 
 - `:graph-engine` — framework-free typed graph execution.
 - `:llms` — provider-agnostic LLM contracts and model identities.
-- `:agent` — graph-based agent and subagent execution, sessions, skills, and host SPIs.
+- `:agent` — graph-based agent and subagent execution, sessions, Skill discovery/approval, and host SPIs.
 - `:native` — local llama.cpp runtime and native bridge.
 - `:ambientAgent` — ambient transcription semantics and local task analysis.
-- `:sharedLogic` — shared JVM runtime logic, providers, tools, skills, memory, and sandboxes.
+- `:sharedLogic` — shared JVM runtime logic, providers, classifiers, tools, skills, memory, and sandboxes.
 - `:skill-oauth-api` — provider-neutral Skill OAuth contracts (`SkillOAuthGateway`) with no host or persistence dependencies.
 - `:skill-oauth-impl` — Postgres-backed `SkillOAuthGateway` implementation, provider token exchange, and the OAuth callback route, consumed only by `:backend`.
 - `:sharedUI` — shared desktop UI logic, ViewModels, host ports, and Compose UI.

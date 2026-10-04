@@ -269,7 +269,7 @@ components:
         requestId:
           $ref: "#/components/schemas/NonEmptyString"
     MessageSubmit:
-      description: Submits user input and selects, continues, or creates an execution thread. An accepted submit (including a retry) automatically restores live-only delivery if unsubscribed; a rejection does not subscribe.
+      description: Submits user input and selects, continues, or creates an execution thread. A newly accepted submit establishes or replaces the chat's retained destination device context for forwarded messages and cross-channel user.ask; rejected submits and idempotent retries do not replace it. An accepted submit (including a retry) automatically restores live-only delivery if unsubscribed; a rejection does not subscribe.
       type: object
       additionalProperties: false
       required: [kind, chatId, requestId, payload]
@@ -906,7 +906,8 @@ components:
         Live-only informational progress from an accepted LLM response containing tool calls.
         Each nonblank assistant text block produces a separate event in original block order,
         after complete response assembly and acceptance and before tool execution. The originating
-        request ACK precedes these events. No client ACK or tool.result is required, and tools
+        request ACK precedes these events on the submitting connection. Other connections proceed
+        independently. No client ACK or tool.result is required, and tools
         do not wait for receipt or speech synthesis. Events may be lost or suppressed when stale;
         they are never persisted or replayed and do not complete the thread. Reasoning, discarded
         attempts and final answers are excluded. No additional transcript rows are created.
@@ -932,13 +933,18 @@ components:
         createdAt:
           $ref: "#/components/schemas/DateTime"
     AssistantMessagePayload:
+      description: deviceId identifies the destination device; deviceType is optional and non-null when present.
       type: object
       additionalProperties: false
-      required: [content]
+      required: [content, deviceId]
       properties:
         content:
           $ref: "#/components/schemas/NonEmptyString"
           description: One complete nonblank assistant text block, preserving its original content.
+        deviceId:
+          $ref: "#/components/schemas/NonEmptyString"
+        deviceType:
+          $ref: "#/components/schemas/DeviceType"
     ToolCallStartedEvent:
       type: object
       additionalProperties: false
@@ -965,9 +971,29 @@ components:
         createdAt:
           $ref: "#/components/schemas/DateTime"
     ToolCallStartedPayload:
+      description: >-
+        For user.ask, deviceId is required and identifies the destination device;
+        deviceType is optional and non-null when present.
+        Cross-channel user.ask captures the device from the target chat's most recently accepted
+        new message.submit; this context survives thread completion and reconnects. Creation and
+        subscription alone do not establish it. If unavailable, return client_context_missing to
+        the calling tool without creating a pending question or target event.
+        Other calls have only an optional, nullable deviceId and retain their existing eligibility rules.
       type: object
       additionalProperties: false
       required: [toolCallId, name, arguments]
+      if:
+        properties:
+          name:
+            const: user.ask
+      then:
+        required: [deviceId]
+        properties:
+          deviceId:
+            $ref: "#/components/schemas/NonEmptyString"
+      else:
+        properties:
+          deviceType: false
       properties:
         toolCallId:
           $ref: "#/components/schemas/NonEmptyString"
@@ -975,6 +1001,8 @@ components:
           $ref: "#/components/schemas/NonEmptyString"
         deviceId:
           type: [string, "null"]
+        deviceType:
+          $ref: "#/components/schemas/DeviceType"
         arguments:
           $ref: "#/components/schemas/ArbitraryJson"
           description: Operation arguments; web.search uses the documented WebSearchArguments shape.
@@ -1004,12 +1032,17 @@ components:
         createdAt:
           $ref: "#/components/schemas/DateTime"
     ThreadCompletedPayload:
+      description: deviceId identifies the destination device; deviceType is optional and non-null when present. Replay preserves the original values and omission of deviceType.
       type: object
       additionalProperties: false
-      required: [response]
+      required: [response, deviceId]
       properties:
         response:
           type: string
+        deviceId:
+          $ref: "#/components/schemas/NonEmptyString"
+        deviceType:
+          $ref: "#/components/schemas/DeviceType"
     ThreadFailedEvent:
       type: object
       additionalProperties: false
@@ -1070,6 +1103,11 @@ components:
         Out-of-band push into this chat's history that did not originate from a thread this client
         started (e.g. a message forwarded here from another of the user's channels). threadId is
         null in that case; ordinary in-thread messages are not delivered on this stream.
+        The destination device is captured from the target chat's most recently accepted new
+        message.submit, with context retained after thread completion and reconnects. Creation
+        and subscription alone do not establish it. If unavailable, the forwarding tool returns
+        success:false with a reason explaining that destination device context is unavailable;
+        no target message or event is created.
       type: object
       additionalProperties: false
       required: [kind, seq, type, chatId, threadId, payload, createdAt]
@@ -1093,9 +1131,10 @@ components:
         createdAt:
           $ref: "#/components/schemas/DateTime"
     MessageCreatedPayload:
+      description: deviceId identifies the destination device; deviceType is optional and non-null when present. Replay preserves the original values and omission of deviceType.
       type: object
       additionalProperties: false
-      required: [messageId, seq, role, content]
+      required: [messageId, seq, role, content, deviceId]
       properties:
         messageId:
           $ref: "#/components/schemas/UUID"
@@ -1105,6 +1144,10 @@ components:
           type: string
         content:
           type: string
+        deviceId:
+          $ref: "#/components/schemas/NonEmptyString"
+        deviceType:
+          $ref: "#/components/schemas/DeviceType"
         clientMessageId:
           type: [string, "null"]
     ErrorCode:

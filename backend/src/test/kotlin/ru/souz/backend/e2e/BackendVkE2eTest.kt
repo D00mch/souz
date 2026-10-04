@@ -13,6 +13,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.withTimeout
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.vk.VkBotApi
@@ -28,6 +31,54 @@ import ru.souz.backend.vk.VkUser
 import ru.souz.llms.LLMMessageRole
 
 class BackendVkE2eTest {
+    @Test
+    fun `VK progress survives failed sends and cancels blocked sends before the final reply`() {
+        val vk = ScriptedVkApi()
+        val delivered = CompletableDeferred<Unit>()
+        val blocked = CompletableDeferred<Unit>()
+        val stopped = CompletableDeferred<Unit>()
+        vk.onSend = { text ->
+            if (text == "Failed") throw IOException("Progress unavailable")
+            if (text == "Checking two") delivered.complete(Unit)
+            if (text == "Blocked") {
+                blocked.complete(Unit)
+                try { awaitCancellation() } finally { stopped.complete(Unit) }
+            }
+        }
+        backendE2eTest("vk_progress", featureFlags = BackendFeatureFlags(wsEvents = true, vkBot = true), vkApi = vk,
+            llm = E2eLlmApi { request ->
+                val blocks = if (request.conversationPrompt() == "blocked") listOf("Blocked")
+                    else listOf("Failed", "Checking one", "Checking two")
+                assertTrue("Перед каждым вызовом инструментов" in request.messages.first().content)
+                if (request.messages.last().role == LLMMessageRole.function) {
+                    if (blocks == listOf("Blocked")) blocked.await() else delivered.await()
+                    reply(request, "Done")
+                } else toolCallReply(request, "GetSkillByName", mapOf("skillId" to "ListActiveChannels"), blocks)
+            },
+        ) {
+            val user = UUID.randomUUID().toString()
+            val chat = createPublicChat(user)
+            client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted(user); jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","narrateSteps":true,"locale":"ru-RU"}""")
+            }
+            val secret = bind(user, chat).jsonBody()["pendingLinkCommand"].asText()
+            vk.responses.add(VkLongPollResponse("2", listOf(update(1, secret))))
+            backend.pollVkOnce()
+            for ((index, prompt) in listOf("delivered", "blocked").withIndex()) {
+                vk.sent.clear()
+                vk.responses.add(VkLongPollResponse((index + 3).toString(), listOf(update(index + 2L, prompt))))
+                withTimeout(20_000) { backend.pollVkOnce() }
+                assertEquals(if (prompt == "blocked") listOf("Done") else listOf("Checking one", "Checking two", "Done"),
+                    vk.sent.map { it.second })
+            }
+            assertTrue(stopped.isCompleted)
+            val messages = client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(user) }.jsonBody()["items"]
+            assertEquals(listOf("delivered", "Done", "blocked", "Done"), messages.map { it["content"].asText() })
+            val events = client.get(BackendHttpRoutes.chatEvents(chat)) { trusted(user) }.jsonBody()["items"]
+            assertFalse(events.any { it["type"].asText() == "assistant.message" })
+        }
+    }
+
     @Test
     fun `binding API links only a private account and replays turns without repeating execution`() {
         val vk = ScriptedVkApi()
@@ -208,6 +259,7 @@ private class ScriptedVkApi : VkBotApi {
     var negotiations = 0
     var failSend = false
     var onPoll: (suspend () -> Unit)? = null
+    var onSend: suspend (String) -> Unit = {}
     override suspend fun getGroupInfo(groupToken: String): VkGroup {
         if (groupToken == "invalid") throw VkBotApiException(5)
         return VkGroup(123, "Test group")
@@ -224,6 +276,7 @@ private class ScriptedVkApi : VkBotApi {
     }
     override suspend fun sendMessage(groupToken: String, peerId: Long, text: String, format: List<VkFormatItem>) {
         if (failSend) { failSend = false; throw IOException("Failed send") }
+        onSend(text)
         sent += peerId to text
         formats += format
     }

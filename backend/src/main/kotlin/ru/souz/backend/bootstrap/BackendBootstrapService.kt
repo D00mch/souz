@@ -4,6 +4,7 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.http.toDto
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.llm.hasCompleteCodexOAuthCredentials
 import ru.souz.backend.security.RequestIdentity
@@ -67,20 +68,7 @@ class BackendBootstrapService(
                     BootstrapToolCapability(name = toolName, enabled = true)
                 },
             ),
-            settings = BootstrapSettings(
-                defaultModel = effectiveSettings.defaultModel.alias,
-                contextSize = effectiveSettings.contextSize,
-                temperature = effectiveSettings.temperature,
-                locale = effectiveSettings.locale.toLanguageTag(),
-                timeZone = effectiveSettings.timeZone.id,
-                systemPrompt = effectiveSettings.systemPrompt,
-                enabledTools = effectiveSettings.enabledTools.toList(),
-                showToolEvents = effectiveSettings.showToolEvents,
-                streamingMessages = effectiveSettings.streamingMessages,
-                interfaceLanguage = effectiveSettings.interfaceLanguage,
-                requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
-                useFewShotExamples = effectiveSettings.useFewShotExamples,
-            ),
+            settings = effectiveSettings.toDto(),
         )
     }
 

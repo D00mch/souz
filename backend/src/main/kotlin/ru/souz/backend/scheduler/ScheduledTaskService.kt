@@ -35,7 +35,7 @@ internal class ScheduledTaskService(
         try {
             val input = parseInput(operation, arguments)
             result.id = input.id
-            val channel = dispatcher.schedulerChannel(meta.userId, input.channelId, meta.conversationId.uuidOrNull(), meta.requestId.uuidOrNull())
+            val channel = dispatcher.schedulerChannel(meta.userId, input.channelId, meta.conversationId.uuidOrNull())
                 ?: throw TaskFailure("scheduler_unavailable")
             when (operation) {
                 "get" -> {

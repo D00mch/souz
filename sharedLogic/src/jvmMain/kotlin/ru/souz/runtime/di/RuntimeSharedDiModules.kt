@@ -7,6 +7,9 @@ import org.kodein.di.instance
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl
+import ru.souz.jev.JevClient
+import ru.souz.agent.skills.SkillClassifier
+import ru.souz.llms.runtime.JevClassifier
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.SessionTokenLogging
@@ -129,6 +132,13 @@ fun runtimeLlmDiModule(
 /** Process-owned remote transports that are safe for backend and interactive hosts. */
 fun runtimeProviderHttpDiModule(): DI.Module = DI.Module("runtimeProviderHttp") {
     bindSingleton { ProviderHttpClients() }
+    bindSingleton { JevClient(instance<ProviderHttpClients>().standard) }
+    bindSingleton<SkillClassifier> {
+        SkillClassifier { request, descriptions ->
+            JevClassifier(instance<JevClient>(), System.getenv("JEV_THRESHOLD")?.trim()?.toDouble() ?: 0.5)
+                .selectSkills(request, descriptions)
+        }
+    }
     bindSingleton {
         CodexOAuthService(
             settingsProvider = instance(),

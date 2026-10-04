@@ -7,7 +7,7 @@ import kotlinx.coroutines.channels.Channel
 import ru.souz.backend.events.model.AgentEventEnvelope
 
 class AgentEventBus {
-    private class Subscriber {
+    private class Subscriber(val acceptsClientCommands: Boolean) {
         val events = Channel<AgentEventEnvelope>(AgentEventLimits.LIVE_BUFFER_SIZE, BufferOverflow.DROP_OLDEST)
         val commands = Channel<AgentEventEnvelope>(AgentEventLimits.LIVE_BUFFER_SIZE)
     }
@@ -16,14 +16,14 @@ class AgentEventBus {
         ConcurrentHashMap<AgentEventStreamKey, MutableSet<Subscriber>>()
 
     fun hasSubscriber(userId: String, chatId: UUID): Boolean =
-        subscribers[AgentEventStreamKey(userId, chatId)]?.isNotEmpty() == true
+        subscribers[AgentEventStreamKey(userId, chatId)]?.any { it.acceptsClientCommands } == true
 
     fun liveChatIds(userId: String): List<UUID> =
-        subscribers.keys.filter { it.userId == userId }.map { it.chatId }
+        subscribers.keys.filter { it.userId == userId && hasSubscriber(userId, it.chatId) }.map { it.chatId }
 
-    suspend fun subscribe(userId: String, chatId: UUID): AgentEventSubscription {
+    suspend fun subscribe(userId: String, chatId: UUID, acceptsClientCommands: Boolean = true): AgentEventSubscription {
         val key = AgentEventStreamKey(userId = userId, chatId = chatId)
-        val subscriber = Subscriber()
+        val subscriber = Subscriber(acceptsClientCommands)
         subscribers.compute(key) { _, existing ->
             (existing ?: ConcurrentHashMap.newKeySet()).apply {
                 add(subscriber)
@@ -46,7 +46,7 @@ class AgentEventBus {
     fun publishCommand(event: AgentEventEnvelope): Boolean {
         val targets = subscribers[AgentEventStreamKey(event.userId, event.chatId)] ?: return false
         var accepted = false
-        targets.forEach { if (it.commands.trySend(event).isSuccess) accepted = true }
+        targets.forEach { if (it.acceptsClientCommands && it.commands.trySend(event).isSuccess) accepted = true }
         return accepted
     }
 

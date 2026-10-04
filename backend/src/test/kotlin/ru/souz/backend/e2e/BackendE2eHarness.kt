@@ -1,5 +1,7 @@
 package ru.souz.backend.e2e
 
+import ru.souz.agent.skills.SkillClassifier
+
 import ru.souz.backend.execution.service.AgentExecutionLauncher
 import ru.souz.backend.hooks.HookConfig
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
@@ -33,6 +35,11 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 import kotlin.test.assertEquals
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
@@ -47,6 +54,7 @@ import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.backend.app.BackendApplicationScope
 import ru.souz.backend.app.BackendRuntimeResources
 import ru.souz.backend.app.backendDiModule
+import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.config.BackendConfigSource
@@ -86,6 +94,7 @@ internal fun messageFrame(
     threadId: String? = null,
     text: String = "execute this",
     deviceId: String = "history-device",
+    timeZone: String = "Europe/Moscow",
 ): String =
     """
     {
@@ -108,7 +117,7 @@ internal fun messageFrame(
         "meta": {
           "model": "${E2E_LOCAL_MODEL.alias}",
           "locale": "ru-RU",
-          "timeZone": "Europe/Moscow"
+          "timeZone": "$timeZone"
         }
       }
     }
@@ -226,6 +235,34 @@ internal class BackendE2eScope(
     fun <T> sql(block: (Connection) -> T): T =
         backend.sql(block)
 
+    // Real database barriers make commit and shutdown races deterministic.
+    suspend fun withTableLocked(table: String, mode: String, block: suspend CoroutineScope.() -> Unit) = coroutineScope {
+        val locked = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val lock = launch(Dispatchers.IO) {
+            sql { connection ->
+                connection.autoCommit = false
+                connection.createStatement().use { it.execute("lock table $table in $mode mode") }
+                locked.complete(Unit)
+                try { runBlocking { release.await() } } finally { connection.rollback() }
+            }
+        }
+        locked.await()
+        try { block() } finally {
+            release.complete(Unit)
+            lock.join()
+        }
+    }
+
+    suspend fun awaitLockWait(table: String) {
+        eventually("database wait on $table") {
+            sql { connection -> connection.createStatement().use { statement ->
+                statement.executeQuery("select count(*) from pg_locks where not granted and relation = '$table'::regclass")
+                    .use { rows -> rows.next() && rows.getInt(1) > 0 }
+            } }.takeIf { it }
+        }
+    }
+
     suspend fun <T> withPeerBackend(
         llm: E2eLlmApi = E2eLlmApi(),
         providerClients: ProviderHttpClients? = null,
@@ -286,6 +323,7 @@ internal class BackendE2eBackend(
             )
         )
         bindSingleton<LocalProviderAvailability>(overrides = true) { localAvailability }
+        bindSingleton<SkillClassifier>(overrides = true) { SkillClassifier { _, _ -> emptySet() } }
         bindSingleton<LocalLlamaRuntime>(overrides = true) { localRuntime }
         bindSingleton<LocalChatAPI>(overrides = true) { localChatApi }
         bindSingleton<Clock>(overrides = true) { clock }
@@ -338,6 +376,12 @@ internal class BackendE2eBackend(
 
     private val vkSessions = mutableMapOf<UUID, VkBotPollingService.PollSession>()
 
+    suspend fun pollTelegramOnce() {
+        for (binding in di.direct.instance<ru.souz.backend.telegram.TelegramBotBindingRepository>().listEnabled()) {
+            di.direct.instance<TelegramBotPollingService>().pollBinding(binding.id)
+        }
+    }
+
     suspend fun pollVkOnce() {
         val bindings = di.direct.instance<PostgresVkBotBindingRepository>().listEnabled()
         vkSessions.keys.retainAll(bindings.map { it.id }.toSet())
@@ -356,6 +400,16 @@ internal class BackendE2eBackend(
     val historyMemoryRepository: PostgresHistoryMemoryRepository get() = di.direct.instance()
 
     val toolCallRepository: ToolCallRepository get() = di.direct.instance()
+
+    val executionRepository: ru.souz.backend.execution.repository.AgentExecutionRepository get() = di.direct.instance()
+
+    suspend fun recoverClientThreads() = di.direct.instance<ClientThreadRecoveryService>().recover()
+
+    val applicationScope: BackendApplicationScope get() = di.direct.instance()
+
+    val clientThreadRegistry: ClientThreadRuntimeRegistry get() = di.direct.instance()
+
+    suspend fun shutdown() = resources.shutdown()
 
     suspend fun captureHistoryMemory(): Boolean = di.direct.instanceOrNull<HistoryMemoryWorker>()?.processNext() ?: false
 

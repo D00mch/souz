@@ -3,9 +3,16 @@ package ru.souz.backend.execution.service
 import io.ktor.http.HttpStatusCode
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import org.slf4j.LoggerFactory
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
@@ -14,10 +21,10 @@ import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.SendMessageResult
-import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.hooks.HookConfig
 import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.AssistantMessagePayload
 import ru.souz.backend.events.model.ChoiceAnsweredPayload
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
@@ -46,11 +53,11 @@ class AgentExecutionService internal constructor(
     private val requestFactory: AgentExecutionRequestFactory,
     private val finalizer: AgentExecutionFinalizer,
     private val launcher: AgentExecutionLauncher,
-    private val clientThreadRegistry: ClientThreadRuntimeRegistry,
     private val optionsEnabled: Boolean,
     private val hookStore: HookStore,
     private val hookConfig: HookConfig,
 ) {
+    private val logger = LoggerFactory.getLogger(AgentExecutionService::class.java)
     private val hookSlots = Semaphore(hookConfig.concurrentExecutions)
 
     suspend fun executeChatTurn(
@@ -104,9 +111,7 @@ class AgentExecutionService internal constructor(
             throw e
         } catch (e: Exception) {
             finalizer.markFailed(
-                executionId = prepared.execution.id,
-                userId = userId,
-                chatId = chatId,
+                execution = prepared.execution,
                 errorCode = "agent_execution_failed",
                 errorMessage = e.message ?: "Agent execution failed.",
                 usage = prepared.execution.usage,
@@ -186,23 +191,39 @@ class AgentExecutionService internal constructor(
         content: String,
         clientMessageId: String? = null,
         requestOverrides: UserSettingsOverrides = UserSettingsOverrides(),
-    ): SendMessageResult {
-        val started = executeChatTurn(
-            userId = userId,
-            chatId = chatId,
-            content = content,
-            clientMessageId = clientMessageId,
-            requestOverrides = requestOverrides,
-        )
-        launcher.join(started.execution.id)
-        val finishedExecution = executionRepository.getByChat(userId, chatId, started.execution.id)
-            ?: started.execution
-        val assistantMessage = finishedExecution.assistantMessageId
-            ?.let { messageRepository.getById(userId, chatId, it) }
-        return started.copy(
-            assistantMessage = assistantMessage,
-            execution = finishedExecution,
-        )
+        onProgress: suspend (String) -> Unit,
+    ): SendMessageResult = coroutineScope {
+        // Subscribe before execution can publish its first block; no replay or device commands.
+        val subscription = eventService.observeLive(userId, chatId)
+        var sender: Job? = null
+        try {
+            val started = executeChatTurn(userId, chatId, content, clientMessageId, requestOverrides)
+            sender = launch {
+                for (event in subscription.events) {
+                    if (event.executionId != started.execution.id) continue
+                    val progress = event.payload as? AssistantMessagePayload ?: continue
+                    try {
+                        onProgress(progress.content)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        logger.warn("Progress delivery failed for execution {}", started.execution.id)
+                    }
+                }
+            }
+            launcher.join(started.execution.id)
+            val finished = executionRepository.getByChat(userId, chatId, started.execution.id) ?: started.execution
+            started.copy(
+                assistantMessage = finished.assistantMessageId?.let { messageRepository.getById(userId, chatId, it) },
+                execution = finished,
+            )
+        } finally {
+            // Stop even a blocked send before the caller delivers the final reply.
+            withContext(NonCancellable) {
+                sender?.cancelAndJoin()
+                subscription.close()
+            }
+        }
     }
 
     private suspend fun launchExecution(
@@ -216,9 +237,7 @@ class AgentExecutionService internal constructor(
             execution = execution,
             onCancelled = {
                 finalizer.finalizeCancelledExecutionIfNeeded(
-                    executionId = execution.id,
-                    userId = execution.userId,
-                    chatId = execution.chatId,
+                    execution = execution,
                     eventSink = eventSink,
                 )
             },
@@ -236,20 +255,14 @@ class AgentExecutionService internal constructor(
     }
 
     suspend fun resumeOption(option: Option): AgentExecution {
+        launcher.join(option.executionId)
         val currentExecution = finalizer.currentExecution(option.executionId, option.userId, option.chatId)
         if (currentExecution.status != AgentExecutionStatus.WAITING_OPTION) {
             throw invalidV1Request("Execution is not waiting for an option.")
         }
         requireOwnedChat(option.userId, option.chatId)
-        val runningExecution = executionRepository.update(
-            currentExecution.copy(
-                status = AgentExecutionStatus.RUNNING,
-                finishedAt = null,
-                cancelRequested = false,
-                errorCode = null,
-                errorMessage = null,
-            )
-        )
+        val runningExecution = executionRepository.transitionIfCurrent(currentExecution, AgentExecutionStatus.RUNNING)
+            ?: throw invalidV1Request("Execution is not waiting for an option.")
         eventService.appendDurable(
             userId = option.userId,
             chatId = option.chatId,
@@ -300,29 +313,17 @@ class AgentExecutionService internal constructor(
         return CancelExecutionResult(cancelExecutionInternal(execution))
     }
 
-    // Public startup failures defer events until their input acknowledgement has been sent.
-    internal suspend fun finalizeInterruptedExecution(started: AgentExecution, emitEvent: Boolean = true): AgentExecution? {
+    internal suspend fun finalizeInterruptedExecution(started: AgentExecution): AgentExecution? {
         val execution = executionRepository.getByChat(started.userId, started.chatId, started.id) ?: return null
         if (execution.status == AgentExecutionStatus.WAITING_OPTION) return execution
         val finished = if (!execution.status.isActive()) execution else finalizer.markFailed(
-            executionId = execution.id,
-            userId = execution.userId,
-            chatId = execution.chatId,
+            execution = started,
             errorCode = "agent_execution_failed",
             errorMessage = "Agent execution was interrupted.",
             usage = execution.usage,
         )
-        if (!emitEvent) return finished
         val sink = createEventSink(finished)
-        // Repair interrupted event writes through the same sink as live executions; storage deduplicates them.
-        when (finished.status) {
-            AgentExecutionStatus.FAILED -> sink.emitExecutionFailed(
-                finished.errorCode ?: "agent_execution_failed", finished.errorMessage ?: "Agent execution was interrupted.",
-            )
-            AgentExecutionStatus.CANCELLED -> sink.emitExecutionCancelled()
-            AgentExecutionStatus.COMPLETED -> sink.emitExecutionFinished(finished)
-            else -> Unit
-        }
+        sink.emitTerminal(finished)
         return finished
     }
 
@@ -330,45 +331,22 @@ class AgentExecutionService internal constructor(
         BackendAgentRuntimeEventSink(
             userId = execution.userId, chatId = execution.chatId, executionId = execution.id,
             messageRepository = messageRepository, optionRepository = optionRepository,
-            executionRepository = executionRepository, eventService = eventService, toolCallRepository = toolCallRepository,
+            eventService = eventService, toolCallRepository = toolCallRepository,
             streamingMessagesEnabled = streaming, toolEventsEnabled = toolEvents, optionsEnabled = optionsEnabled,
             assistantMessageId = execution.assistantMessageId,
-            beforePublicEvent = { clientThreadRegistry.awaitAcceptedInputAcks(execution.id) },
             publicClientThread = execution.runtimeOwner != null,
+            narrateSteps = execution.metadata[METADATA_NARRATE_STEPS] == "true",
         )
 
-    private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution {
-        return finalizer.withTerminalTransition(execution.id) {
-            val currentExecution = executionRepository.getByChat(execution.userId, execution.chatId, execution.id)
-                ?: throw BackendV1Exception(
-                    status = HttpStatusCode.NotFound,
-                    code = "execution_not_found",
-                    message = "Execution not found.",
-                )
-            if (!currentExecution.status.isActive()) {
-                throw invalidV1Request("Execution is not active.")
-            }
-            val cancellingExecution = executionRepository.update(
-                currentExecution.copy(
-                    status = AgentExecutionStatus.CANCELLING,
-                    cancelRequested = true,
-                )
-            )
-            propagateCancellation(cancellingExecution)
-        }
+    private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution = withContext(NonCancellable) {
+        val cancelling = finalizer.transition(execution, AgentExecutionStatus.CANCELLING, usage = null)
+        if (!cancelling.status.isActive()) throw invalidV1Request("Execution is not active.")
+        propagateCancellation(cancelling)
     }
 
     internal suspend fun propagateCancellation(execution: AgentExecution): AgentExecution =
-        if (launcher.cancel(execution.id)) {
-            execution
-        } else {
-            finalizer.persistCancelled(
-                executionId = execution.id,
-                userId = execution.userId,
-                chatId = execution.chatId,
-                usage = execution.usage,
-            )
-        }
+        if (launcher.cancel(execution.id)) execution else
+            finalizer.finalizeCancelledExecutionIfNeeded(execution, createEventSink(execution)) ?: execution
 
     private suspend fun requireOwnedChat(userId: String, chatId: UUID): Chat =
         chatRepository.get(userId, chatId)

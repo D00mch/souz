@@ -33,8 +33,12 @@ class BackendPublicWebSocketE2eTest {
     private data class SocketReply(val acknowledgement: JsonNode, val status: JsonNode?)
 
     @Test
-    fun `public socket acknowledges before status and terminal event and replays durable terminal`() =
-        backendE2eTest("e2e_ws_ordering") {
+    fun `public socket suppresses default progress and orders acknowledgements and durable terminal`() =
+        backendE2eTest("e2e_ws_ordering", llm = E2eLlmApi { request ->
+            assertFalse("Перед каждым вызовом инструментов" in request.messages.first().content)
+            if (request.messages.any { it.role == LLMMessageRole.function }) reply(request, "Done")
+            else toolCallReply(request, "GetSkillByName", mapOf("skillId" to "ListActiveChannels"), listOf("Checking"))
+        }) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
             val wsClient = webSocketClient()

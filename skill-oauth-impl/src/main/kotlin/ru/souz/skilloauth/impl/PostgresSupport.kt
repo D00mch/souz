@@ -11,26 +11,24 @@ import javax.sql.DataSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-internal suspend fun <T> DataSource.read(block: (Connection) -> T): T =
+internal suspend fun <T> DataSource.withConnection(block: (Connection) -> T): T =
     withContext(Dispatchers.IO) {
         connection.use(block)
     }
 
-internal suspend fun <T> DataSource.write(block: (Connection) -> T): T =
-    withContext(Dispatchers.IO) {
-        connection.use { connection ->
-            val previousAutoCommit = connection.autoCommit
-            connection.autoCommit = false
-            try {
-                val result = block(connection)
-                connection.commit()
-                result
-            } catch (t: Throwable) {
-                runCatching { connection.rollback() }
-                throw t
-            } finally {
-                connection.autoCommit = previousAutoCommit
-            }
+internal suspend fun <T> DataSource.withTransaction(block: (Connection) -> T): T =
+    withConnection { connection ->
+        val previousAutoCommit = connection.autoCommit
+        connection.autoCommit = false
+        try {
+            val result = block(connection)
+            connection.commit()
+            result
+        } catch (t: Throwable) {
+            runCatching { connection.rollback() }
+            throw t
+        } finally {
+            connection.autoCommit = previousAutoCommit
         }
     }
 

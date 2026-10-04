@@ -1,6 +1,6 @@
 # Client-Souz Contract
 
-Draft contract for Souz Cloud. Exact fields are in [OpenAPI](openapi.yaml); [happy-path.jsonl](examples/happy-path.jsonl) shows two users' chats, a creation retry, history before and during execution, continued and new threads, client tools, unsubscribe and resubscribe with replay per chat. Each line is a complete WebSocket frame: Souz sends `ack`, `status` and `event`; the client sends the other kinds. Local setup: [Postman](postman/) / [Bruno](bruno/).
+Draft contract for Souz Cloud. Exact fields are in [OpenAPI](openapi.yaml); [happy-path.jsonl](examples/happy-path.jsonl) shows two users' chats, a creation retry, history before and during execution, continued and new threads, client tools, a forwarded message, unsubscribe and resubscribe with replay per chat. Each line is a complete WebSocket frame: Souz sends `ack`, `status` and `event`; the client sends the other kinds. Local setup: [Postman](postman/) / [Bruno](bruno/).
 
 ## Connection
 
@@ -31,7 +31,8 @@ With `HINDSIGHT_API_URL` configured and `SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL
 Every public `tool.call.started` requests client execution and omits `target`. Return `tool.result`, respecting `deadlineAt` when present. The example covers `user.ask`, `device.media.open` and `web.search`; argument/result shapes are documented in the schemas and trace.
 
 Cross-channel client Skills accept `channelId` from `ListActiveChannels`. The target must be an owned,
-unarchived device channel with a live subscription on the caller's backend process. Souz removes
+unarchived device channel with a live subscription on the caller's backend process. Cross-channel
+`user.ask` also requires the [destination device context](#destination-device) described below. Souz removes
 `channelId` from the device arguments. These `tool.call.started` events have `seq:null` and are never
 replayed. Their `threadId` is a correlation UUID, not a persisted target thread: echo it in `tool.result`,
 but do not query or cancel it as a thread. The target can run its own thread concurrently.
@@ -49,11 +50,29 @@ An unrecognized command can return an ordinary apology in `reply`; transport err
 
 Active-thread submit/tool/cancel operations must reach the runtime owner in multi-replica deployments. Durable replay and thread status can be read from any process.
 
+## Destination device
+
+`assistant.message`, `thread.completed`, `message.created`, and `tool.call.started` with `payload.name:"user.ask"` require non-null `payload.deviceId`, a nonblank string identifying the device that should receive the user-facing content or question. `payload.deviceType` is optional; when present, it must be non-null and one of `tv_box`, `smart_speaker`, `smartphone`, or `unknown`.
+
+For forwarded `message.created` and cross-channel `user.ask`, the destination is the device from the target chat's most recently accepted new `message.submit`, captured when the event is created. This context is retained after thread completion and reconnects. Rejected submissions and idempotent retries do not replace it. Chat creation, subscription and `history.append` do not establish device context; a chat that has never accepted a submit is ineligible for these operations, even when listed by `ListActiveChannels` or subscribed.
+
+If the target has no device context, fail the originating operation before creating a target message, pending question or event. Cross-channel `user.ask` returns `client_context_missing` to its caller; message forwarding returns `success:false` with a `reason` explaining that destination device context is unavailable. These are caller-side tool results, not frames sent to the target socket. Do not substitute the source device or a fabricated ID. Other cross-channel tools retain their existing eligibility rules.
+
+| Target chat state | Forwarded message or cross-channel `user.ask` |
+| --- | --- |
+| Created and subscribed, no accepted submit | Fail without a target message or event. |
+| Accepted a submit from device A; its thread has finished | Use device A, subject to the operation's other delivery requirements. |
+| Later accepted a new submit from device B | Use device B for new events; replay preserves device A on earlier events. |
+
+Durable replay preserves the event's original device values, including omission of `deviceType`. Other tool calls retain an optional, nullable `payload.deviceId` and have no `deviceType` field.
+
 ## Intermediate assistant messages
 
-`assistant.message` carries one complete, nonblank assistant text block in `payload:{"content":"Let me check."}`. An accepted LLM response containing tool calls can produce several such events, in the original block order, before those tools execute. Separate blocks stay separate, including repeated text. Streaming providers assemble the full response and pass the agent's acceptance check first; stream chunks are not messages. Reasoning, discarded attempts and final answers do not produce these events.
+Progress is opt-in through the trusted settings API: `PATCH /v1/settings` with `{"narrateSteps":true}`. Settings responses expose the effective value, defaulting to `false`. The preference controls the additive RU/EN prompt instruction and live WebSocket, Telegram, and VK delivery independently of `streamingMessages` and `showToolEvents`. Each execution snapshots it, including option continuations; settings changes affect subsequent executions.
 
-The envelope has `kind:"event"`, `type:"assistant.message"`, `seq:null`, `chatId`, the active `threadId`, and `createdAt`. The originating client request's ACK precedes its assistant events. These events are informational: send neither an ACK nor `tool.result`. Tool execution does not wait for receipt or speech synthesis. Continue waiting for `thread.completed`, `thread.failed`, or `thread.cancelled`; the final answer is only in `thread.completed.payload.response`.
+`assistant.message` carries one complete, nonblank assistant text block in `payload:{"content":"Let me check.","deviceId":"device-tv-456","deviceType":"tv_box"}`. An accepted LLM response containing tool calls can produce several such events, in the original block order, before those tools execute. Separate blocks stay separate, including repeated text. Streaming providers assemble the full response and pass the agent's acceptance check first; stream chunks are not messages. Reasoning, discarded attempts and final answers do not produce these events.
+
+The envelope has `kind:"event"`, `type:"assistant.message"`, `seq:null`, `chatId`, the active `threadId`, and `createdAt`. On the submitting connection, the originating client request's ACK precedes its assistant events. These events are informational: send neither an ACK nor `tool.result`. Tool execution does not wait for receipt or speech synthesis. Continue waiting for `thread.completed`, `thread.failed`, or `thread.cancelled`; the final answer is only in `thread.completed.payload.response`.
 
 Progress is live-only and best-effort. Current subscribers may receive it; disconnects, bounded-queue overflow, or durable catch-up overtaking queued progress can discard it. Souz never stores or replays these events, and does not add separate chat transcript rows. Intermediate text remains in the agent's existing conversation history. `seq:null` does not advance `afterSeq` and cannot be deduplicated by `(chatId, seq)`; do not collapse separate blocks with identical content.
 
@@ -94,7 +113,7 @@ Events saved during disconnection or recovery remain available. Reopening the so
 
 ## Delivery and retries
 
-Souz sends an `ack` before events caused by a command and before subscription replay. Accepted submit/cancel also receive live `thread.status` feedback after the ACK. ACKs and status are not replayed.
+On the connection processing a command, Souz sends its `ack` and any submit/cancel `thread.status` feedback before subsequent events. An explicit subscription ACK precedes its replay. Other connections, cross-channel commands, and reconnect replay proceed independently and may precede a retried ACK. Execution and durable event storage continue after disconnect without waiting for an ACK retry. Retries return the stored receipt with `duplicate:true`; ACKs and status are not replayed.
 
 Durable public events are same-thread `tool.call.started`, `thread.completed|failed|cancelled`, and out-of-band `message.created` with `threadId:null`. Ordinary in-thread transcript events are excluded. Durable events are sequenced within each chat; chats may interleave, and filtered internal events leave valid sequence gaps. Live-only assistant blocks preserve their relative order when delivered, but stale blocks may be dropped during durable catch-up.
 

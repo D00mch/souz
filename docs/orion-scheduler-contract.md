@@ -4,7 +4,7 @@ The [Souz task tools](scheduled-tasks.md) coordinate ordinary workspace hooks an
 
 ## Transport and ownership
 
-Internal `scheduler.*` commands use the [public WebSocket transport](public-souz-contract/README.md): `tool.call.started` with `seq:null`, an independent correlation `threadId`, and a 30-second deadline. They use the bounded command queue, not the droppable notification queue. The source input ACK precedes publication; an on-time result reserves receipt before its ACK completes the waiting call.
+Internal `scheduler.*` commands use the [public WebSocket transport](public-souz-contract/README.md): `tool.call.started` with `seq:null`, an independent correlation `threadId`, and a 30-second deadline. They use the bounded command queue, not the droppable notification queue. The submitting WebSocket connection delivers commands after its input ACK; publication and delivery to other connections do not wait for that ACK. An on-time result reserves receipt before its ACK completes the waiting call.
 
 These calls never create a target execution or durable tool-call/event record. In particular, `scheduler.create` carries a raw Bearer credential that must not enter history, logs or LLM context. Results omit credentials and target details. Reconnect and restart do not replay these commands.
 

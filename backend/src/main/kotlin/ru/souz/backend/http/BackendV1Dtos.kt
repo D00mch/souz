@@ -49,6 +49,7 @@ internal data class BackendV1SettingsPatchRequest(
     val enabledTools: List<String>? = null,
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,
+    val narrateSteps: Boolean? = null,
     val interfaceLanguage: String? = null,
     val requestTimeoutMillis: Long? = null,
     val useFewShotExamples: Boolean? = null,
@@ -61,12 +62,13 @@ internal data class BackendV1OnboardingCompleteRequest(
     val enabledTools: List<String>? = null,
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,
+    val narrateSteps: Boolean? = null,
     val interfaceLanguage: String? = null,
     val requestTimeoutMillis: Long? = null,
     val useFewShotExamples: Boolean? = null,
 )
 
-internal data class BackendV1SettingsDto(
+data class BackendV1SettingsDto(
     val defaultModel: String,
     val contextSize: Int,
     val temperature: Float,
@@ -76,6 +78,7 @@ internal data class BackendV1SettingsDto(
     val enabledTools: List<String>,
     val showToolEvents: Boolean,
     val streamingMessages: Boolean,
+    val narrateSteps: Boolean,
     val interfaceLanguage: String,
     val requestTimeoutMillis: Long,
     val useFewShotExamples: Boolean,
@@ -287,6 +290,7 @@ internal fun EffectiveUserSettings.toDto(): BackendV1SettingsDto =
         enabledTools = enabledTools.toList(),
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
+        narrateSteps = narrateSteps,
         interfaceLanguage = interfaceLanguage,
         requestTimeoutMillis = requestTimeoutMillis,
         useFewShotExamples = useFewShotExamples,

@@ -6,8 +6,6 @@ import java.util.UUID
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.repository.ChatRepository
@@ -16,6 +14,7 @@ import ru.souz.backend.common.normalizePositiveLimit
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.events.bus.AgentEventStream
+import ru.souz.backend.events.bus.AgentEventSubscription
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
@@ -29,7 +28,6 @@ class AgentEventService(
     private val eventRepository: AgentEventRepository,
     private val eventBus: AgentEventBus,
 ) {
-    private val terminalMutex = Mutex()
     private val logger = LoggerFactory.getLogger(AgentEventService::class.java)
 
     suspend fun appendDurable(
@@ -42,12 +40,6 @@ class AgentEventService(
         createdAt: Instant = Instant.now(),
     ): AgentEvent {
         require(type != AgentEventType.ASSISTANT_MESSAGE) { "Assistant messages are live-only" }
-        if (type.isPublicTerminal() && executionId != null) {
-            return terminalMutex.withLock {
-                eventRepository.findTerminal(executionId)?.let { return@withLock it }
-                appendAndPublish(userId, chatId, executionId, type, payload, id, createdAt)
-            }
-        }
         return appendAndPublish(userId, chatId, executionId, type, payload, id, createdAt)
     }
 
@@ -160,6 +152,11 @@ class AgentEventService(
         )
     }
 
+    internal suspend fun observeLive(userId: String, chatId: UUID): AgentEventSubscription {
+        requireOwnedChat(userId, chatId)
+        return eventBus.subscribe(userId, chatId, acceptsClientCommands = false)
+    }
+
     suspend fun openPublicStream(
         userId: String,
         chatId: UUID,
@@ -206,11 +203,6 @@ class AgentEventService(
         }
     }
 }
-
-private fun AgentEventType.isPublicTerminal(): Boolean =
-    this == AgentEventType.THREAD_COMPLETED ||
-        this == AgentEventType.THREAD_FAILED ||
-        this == AgentEventType.THREAD_CANCELLED
 
 private fun AgentEvent.isPublicClientDiagnosticEvent(): Boolean = when (type) {
     AgentEventType.THREAD_COMPLETED, AgentEventType.THREAD_FAILED, AgentEventType.THREAD_CANCELLED -> true

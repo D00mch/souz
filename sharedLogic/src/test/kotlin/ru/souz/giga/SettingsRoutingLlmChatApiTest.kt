@@ -47,7 +47,7 @@ class SettingsRoutingLlmChatApiTest {
             val request = LLMRequest.Chat(model = "Arbitrary/ID", provider = provider, messages = emptyList())
             assertEquals(request.model, assertIs<LLMResponse.Chat.Ok>(router.message(request)).model)
             assertEquals(request.model, assertIs<LLMResponse.Chat.Ok>(router.messageStream(request).toList().single()).model)
-            assertEquals(listOf(ToolCategory.FILES), ApiClassifier(router).classify(request).categories)
+            assertEquals(listOf(ToolCategory.FILES), ApiClassifier(router).classify(request, emptyMap()).categories)
         }
     }
 

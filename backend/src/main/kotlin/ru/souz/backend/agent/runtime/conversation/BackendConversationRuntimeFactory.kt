@@ -9,16 +9,19 @@ import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillBundleProvider
+import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
+import ru.souz.backend.agent.model.chatId
 import ru.souz.backend.agent.runtime.BackendAgentErrorMessages
 import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
 import ru.souz.backend.agent.runtime.BackendNoopAgentDesktopInfoRepository
 import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
-import ru.souz.backend.agent.session.AgentSessionRepository
+import ru.souz.backend.agent.session.AgentStateRepository
+import ru.souz.backend.agent.session.toConversationSession
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.common.backendLogContext
@@ -62,13 +65,14 @@ internal class BackendConversationRuntimeFactory(
     private val providerHttpClients: ProviderHttpClients,
     private val localChatApi: LocalChatAPI,
     private val codexOAuthService: CodexOAuthService,
-    private val sessionRepository: AgentSessionRepository,
+    private val agentStateRepository: AgentStateRepository,
     private val messageRepository: MessageRepository,
     private val logObjectMapper: ObjectMapper,
     private val systemPrompt: String,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     private val clientToolCatalog: AgentToolCatalog,
     private val skillBundleProvider: SkillBundleProvider,
+    private val skillClassifier: SkillClassifier,
     private val commandExecutor: SkillCommandExecutor,
     private val filesToolUtil: FilesToolUtil,
     private val webResearchClient: WebResearchClient,
@@ -88,7 +92,7 @@ internal class BackendConversationRuntimeFactory(
         request: BackendConversationTurnRequest,
         initialUsage: LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0),
     ): BackendConversationRuntime {
-        val persistedSession = sessionRepository.load(key)
+        val persistedSession = agentStateRepository.get(key.userId, key.chatId())?.toConversationSession()
         val settingsProvider = BackendConversationSettingsProvider(
             delegate = baseSettingsProvider,
             defaultSystemPrompt = request.systemPrompt ?: systemPrompt,
@@ -213,6 +217,7 @@ internal class BackendConversationRuntimeFactory(
             telemetry = AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,
             llmApi = executionApi,
+            skillClassifier = skillClassifier,
             memoryRuntime = memoryRuntime,
             automaticMemoryRecall = automaticMemoryRecall,
             captureScope = agentBackgroundScope + backendLogContext(
@@ -223,7 +228,6 @@ internal class BackendConversationRuntimeFactory(
         ).create()
         return BackendConversationRuntime(
             key = key,
-            sessionRepository = sessionRepository,
             settingsProvider = settingsProvider,
             contextFactory = kernel.contextFactory,
             executor = kernel.executor,
