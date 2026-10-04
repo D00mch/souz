@@ -5,13 +5,18 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Url
 import io.ktor.http.headersOf
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.test.assertFailsWith
 import kotlinx.coroutines.test.runTest
@@ -21,20 +26,28 @@ import ru.souz.skilloauth.ApiCallResponse
 import ru.souz.skilloauth.AuthorizationState
 import ru.souz.skilloauth.SkillOAuthException
 
-/**
- * Covers the parts of [SkillOAuthGatewayImpl] that do not require a live network call
- * (ensureAuthorized uses no HTTP; `buildAuthorizeUrl` is a pure string builder).
- * Token-exchange/refresh paths (which call the real Yandex endpoints) are not covered
- * here — see the plan's noted gap around HTTP-mocked provider tests.
- */
+/** Gateway decisions and delegation; PostgreSQL tests own durable pending-state rules. */
 class SkillOAuthGatewayImplTest {
     private val fixedClock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC)
     private val testCryptoKey = java.util.Base64.getEncoder().encodeToString(ByteArray(32))
     private val testCrypto = SkillOAuthTokenCrypto(testCryptoKey)
+    private val pendingStates = mockk<SkillOAuthPendingStateRepository> {
+        coEvery { beginAuthorization(any(), any(), any(), any(), any(), any(), any(), any(), any()) } coAnswers {
+            SkillOAuthPendingState(
+                state = firstArg(),
+                userId = secondArg(),
+                skillId = thirdArg(),
+                provider = arg(3),
+                requestedScopes = arg(4),
+                generation = 1,
+                expiresAt = arg(7),
+            )
+        }
+    }
 
     private fun newApi(
         credentialRepository: SkillOAuthCredentialRepository = InMemorySkillOAuthCredentialRepository(),
-        pendingStateRepository: SkillOAuthPendingStateRepository = InMemorySkillOAuthPendingStateRepository(),
+        pendingStateRepository: SkillOAuthPendingStateRepository = pendingStates,
         httpClient: HttpClient = defaultSkillOAuthHttpClient(),
         providers: Map<String, OAuthProviderClient> = mapOf(
             "yandex" to AuthorizationCodeOAuthClient(
@@ -159,108 +172,39 @@ class SkillOAuthGatewayImplTest {
     }
 
     @Test
-    fun `ensureAuthorized reuses a still-live pending link instead of minting a new one`() = runTest {
-        // D00mch: ensureAuthorized is documented as idempotent, so a retry or an overlapping call
-        // asking for scopes an already-issued, unconsumed link already covers must not invalidate
-        // that link — the user could already have it open in a browser tab.
-        val pendingStateRepository = InMemorySkillOAuthPendingStateRepository()
-        val api = newApi(pendingStateRepository = pendingStateRepository)
-
-        val first = api.ensureAuthorized(userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info"))
-        val second = api.ensureAuthorized(userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info"))
-
-        check(first is AuthorizationState.AuthorizationRequired)
-        check(second is AuthorizationState.AuthorizationRequired)
-        assertEquals(first.url, second.url)
-        val firstState = first.url.substringAfter("state=").substringBefore("&")
-        // Still consumable — reuse must not have superseded (or otherwise touched) the live state.
-        assertTrue(pendingStateRepository.consume(firstState, fixedClock.instant()) != null)
-    }
-
-    @Test
-    fun `ensureAuthorized reuse does not require an exact scope match, only coverage`() = runTest {
-        val pendingStateRepository = InMemorySkillOAuthPendingStateRepository()
-        val api = newApi(pendingStateRepository = pendingStateRepository)
-
-        val first = api.ensureAuthorized(
-            userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info", "iot:control"),
+    fun `ensureAuthorized delegates reuse policy and builds the URL from the stored pending state`() = runTest {
+        val pending = SkillOAuthPendingState(
+            state = "stored-state", userId = "user-1", skillId = "", provider = "yandex",
+            requestedScopes = listOf("login:info", "iot:control", "other-caller:scope"),
+            generation = 7, expiresAt = fixedClock.instant().plusSeconds(600),
         )
-        val second = api.ensureAuthorized(userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info"))
+        coEvery { pendingStates.beginAuthorization(any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns pending
 
-        check(first is AuthorizationState.AuthorizationRequired)
-        check(second is AuthorizationState.AuthorizationRequired)
-        assertEquals(first.url, second.url)
-    }
-
-    @Test
-    fun `ensureAuthorized force always mints a fresh link even when a covering one is still live`() = runTest {
-        val pendingStateRepository = InMemorySkillOAuthPendingStateRepository()
-        val api = newApi(pendingStateRepository = pendingStateRepository)
-
-        val first = api.ensureAuthorized(userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info"))
-        val second = api.ensureAuthorized(
-            userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info"), force = true,
-        )
-
-        check(first is AuthorizationState.AuthorizationRequired)
-        check(second is AuthorizationState.AuthorizationRequired)
-        assertTrue(first.url != second.url)
-        val firstState = first.url.substringAfter("state=").substringBefore("&")
-        assertTrue(pendingStateRepository.consume(firstState, fixedClock.instant()) == null)
-    }
-
-    @Test
-    fun `ensureAuthorized supersedes an existing pending state for the same user and provider`() = runTest {
-        // Regression test: without superseding, two overlapping ConnectOAuthProvider calls for the
-        // same (userId, provider) would leave two live `state` tokens. The scope-union itself is
-        // covered by beginAuthorization's own dedicated tests (Postgres repository test file); this
-        // test just checks the old link is invalidated.
-        val pendingStateRepository = InMemorySkillOAuthPendingStateRepository()
-        val api = newApi(pendingStateRepository = pendingStateRepository)
-
-        val first = api.ensureAuthorized(userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info"))
-        val second = api.ensureAuthorized(userId = "user-1", provider = "yandex", requiredScopes = setOf("iot:control"))
-
-        check(first is AuthorizationState.AuthorizationRequired)
-        check(second is AuthorizationState.AuthorizationRequired)
-        val firstState = first.url.substringAfter("state=").substringBefore("&")
-        assertTrue(pendingStateRepository.consume(firstState, fixedClock.instant()) == null)
-        val secondScopeParam = second.url.substringAfter("scope=").substringBefore("&")
-        assertEquals("login:info iot:control", java.net.URLDecoder.decode(secondScopeParam, "UTF-8"))
-    }
-
-    @Test
-    fun `ensureAuthorized widens its request even after an earlier flow's pending state was already consumed`() = runTest {
-        // The maintainer's own finding: superseding only helps while a prior flow is still
-        // *pending*. Once a callback consumes its own pending state (the first thing
-        // handleCallback does), a second, unrelated ensureAuthorized call for the same
-        // (userId, provider) has nothing left to supersede *in pending_states* — but the durable
-        // requested-scope tracking survives past that, so this call still sees and widens on top
-        // of the first one's request instead of only asking for its own scope.
-        val pendingStateRepository = InMemorySkillOAuthPendingStateRepository()
-        val api = newApi(pendingStateRepository = pendingStateRepository)
-
-        val authA = api.ensureAuthorized(userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info"))
-        check(authA is AuthorizationState.AuthorizationRequired)
-        val stateA = authA.url.substringAfter("state=").substringBefore("&")
-        // Simulates "callback A already consumed its own pending state, mid-exchange".
-        pendingStateRepository.consume(stateA, fixedClock.instant())
-
-        val authB = api.ensureAuthorized(userId = "user-1", provider = "yandex", requiredScopes = setOf("iot:control"))
-        check(authB is AuthorizationState.AuthorizationRequired)
-
-        val scopeParam = authB.url.substringAfter("scope=").substringBefore("&")
-        assertEquals(
-            setOf("login:info", "iot:control"),
-            java.net.URLDecoder.decode(scopeParam, "UTF-8").split(" ").toSet(),
-        )
+        for (force in listOf(false, true)) {
+            // Force must bypass the connected credential even when it already covers the request.
+            val requiredScopes = setOf(if (force) "login:info" else "iot:control")
+            newApi(credentialRepository = connectedCredentialRepository()).use { api ->
+                val result = assertIs<AuthorizationState.AuthorizationRequired>(
+                    api.ensureAuthorized("user-1", "yandex", requiredScopes, force),
+                )
+                val query = Url(result.url).parameters
+                assertEquals(pending.state, query["state"])
+                assertEquals(pending.requestedScopes.joinToString(" "), query["scope"])
+                coVerify(exactly = 1) {
+                    pendingStates.beginAuthorization(
+                        state = any(), userId = "user-1", skillId = "", provider = "yandex",
+                        scopes = (setOf("login:info") + requiredScopes).toList(),
+                        now = fixedClock.instant(), activeSince = fixedClock.instant().minusSeconds(600),
+                        expiresAt = fixedClock.instant().plusSeconds(600), reuseExisting = !force,
+                    )
+                }
+            }
+        }
     }
 
     @Test
     fun `a stale callback cannot overwrite a fresher credential for the same user and provider`() = runTest {
-        // Complements the widening test above: even if a stale callback's network exchange finishes
-        // after a fresher, independent authorization has already saved its own credential, the stale
-        // one's older generation must not clobber it.
+        // A callback carries the generation supplied by the pending-state repository into its write.
         val credentialRepository = InMemorySkillOAuthCredentialRepository()
         credentialRepository.upsert(
             SkillOAuthCredential(
@@ -280,26 +224,20 @@ class SkillOAuthGatewayImplTest {
                 "stale-code" to OAuthTokenResult("stale-token", null, null, listOf("login:info")),
             ),
         )
-        val pendingStateRepository = InMemorySkillOAuthPendingStateRepository()
-        pendingStateRepository.beginAuthorization(
-            state = "stale-state",
-            userId = "user-1",
-            skillId = "skill-1",
-            provider = "yandex",
-            scopes = listOf("login:info"),
-            now = fixedClock.instant(),
-            activeSince = fixedClock.instant().minusSeconds(600),
-            expiresAt = fixedClock.instant().plusSeconds(600),
-        )
-        // Generation from beginAuthorization above is 1 — older than the already-saved
-        // credential's generation=5, which is exactly the scenario under test.
+        val pendingStateRepository = mockk<SkillOAuthPendingStateRepository> {
+            coEvery { consume("stale-state", fixedClock.instant()) } returns SkillOAuthPendingState(
+                state = "stale-state", userId = "user-1", skillId = "skill-1", provider = "yandex",
+                requestedScopes = listOf("login:info"), generation = 1,
+                expiresAt = fixedClock.instant().plusSeconds(600),
+            )
+        }
         val api = newApi(
             credentialRepository = credentialRepository,
             pendingStateRepository = pendingStateRepository,
             providers = mapOf("yandex" to provider),
         )
 
-        api.handleCallback(code = "stale-code", state = "stale-state")
+        assertEquals(CallbackResult.Connected("yandex"), api.handleCallback(code = "stale-code", state = "stale-state"))
 
         val stored = credentialRepository.find("user-1", "yandex")
         assertEquals("fresh-token", testCrypto.decrypt(stored!!.accessTokenEncrypted))
@@ -616,24 +554,30 @@ class SkillOAuthGatewayImplTest {
     }
 
     @Test
-    fun `two overlapping calls needing reconnect for the same provider get the same authorize link`() = runTest {
-        // D00mch: without reuse, two API calls racing to reconnect for the same (userId, provider)
-        // would each mint (and invalidate) their own link — a link already relayed to the user from
-        // the first call would silently stop working the moment the second call's link is issued.
-        val api = newApi()
-
-        val first = api.call(
-            userId = "user-1", provider = "yandex", requiredScopes = emptySet(),
-            request = ApiCallRequest(method = "GET", url = "https://login.yandex.ru/info"),
+    fun `call delegates reconnect reuse and returns the stored authorization link`() = runTest {
+        val pending = SkillOAuthPendingState(
+            state = "existing-state", userId = "user-1", skillId = "", provider = "yandex",
+            requestedScopes = listOf("login:info", "other-caller:scope"),
+            generation = 7, expiresAt = fixedClock.instant().plusSeconds(600),
         )
-        val second = api.call(
-            userId = "user-1", provider = "yandex", requiredScopes = emptySet(),
-            request = ApiCallRequest(method = "GET", url = "https://login.yandex.ru/info"),
-        )
-
-        check(first is ApiCallReconnectRequired)
-        check(second is ApiCallReconnectRequired)
-        assertEquals(first.authorizationUrl, second.authorizationUrl)
+        coEvery { pendingStates.beginAuthorization(any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns pending
+        newApi().use { api ->
+            val result = assertIs<ApiCallReconnectRequired>(api.call(
+                userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info"),
+                request = ApiCallRequest(method = "GET", url = "https://login.yandex.ru/info"),
+            ))
+            val query = Url(result.authorizationUrl).parameters
+            assertEquals(pending.state, query["state"])
+            assertEquals(pending.requestedScopes.joinToString(" "), query["scope"])
+            coVerify(exactly = 1) {
+                pendingStates.beginAuthorization(
+                    state = any(), userId = "user-1", skillId = "", provider = "yandex",
+                    scopes = listOf("login:info"), now = fixedClock.instant(),
+                    activeSince = fixedClock.instant().minusSeconds(600),
+                    expiresAt = fixedClock.instant().plusSeconds(600), reuseExisting = true,
+                )
+            }
+        }
     }
 
     @Test

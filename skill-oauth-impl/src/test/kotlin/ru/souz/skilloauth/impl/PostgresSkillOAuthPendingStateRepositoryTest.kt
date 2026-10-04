@@ -204,28 +204,29 @@ class PostgresSkillOAuthPendingStateRepositoryTest {
                 userId = "user-1",
                 skillId = "skill-1",
                 provider = "yandex",
-                scopes = listOf("login:info"),
+                scopes = listOf("login:info", "iot:control"),
                 now = now,
                 activeSince = activeSince,
                 expiresAt = now.plusSeconds(600),
             )
 
-            val second = repository.beginAuthorization(
-                state = "state-second",
-                userId = "user-1",
-                skillId = "skill-2",
-                provider = "yandex",
-                scopes = listOf("login:info"),
-                now = now,
-                activeSince = activeSince,
-                expiresAt = now.plusSeconds(600),
-            )
+            val later = now.plusSeconds(60)
+            for (scopes in listOf(first.requestedScopes, listOf("login:info"))) {
+                val reused = repository.beginAuthorization(
+                    state = "state-second",
+                    userId = "user-1",
+                    skillId = "skill-2",
+                    provider = "yandex",
+                    scopes = scopes,
+                    now = later,
+                    activeSince = activeSince,
+                    expiresAt = later.plusSeconds(600),
+                )
 
-            // Handed back completely unchanged — same state and generation, not "state-second".
-            assertEquals(first.state, second.state)
-            assertEquals(first.generation, second.generation)
-            // still consumable under its original state — reuse must not have superseded it.
-            assertEquals(first.state, repository.consume(first.state, now)?.state)
+                // Exact and subset requests retain the original scope grant, state, generation and expiry.
+                assertEquals(first, reused)
+            }
+            assertEquals(first, repository.consume(first.state, later))
         }
     }
 
