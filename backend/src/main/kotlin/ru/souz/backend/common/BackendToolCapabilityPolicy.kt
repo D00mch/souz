@@ -1,12 +1,11 @@
 package ru.souz.backend.common
 
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.tool.LLM_BACKED_TOOL_NAMES
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.composeToolCatalogs
+import ru.souz.tool.files.ToolGenerateImage
+import ru.souz.tool.files.ToolViewImage
 import ru.souz.tool.immutableToolCatalogSnapshot
-import ru.souz.tool.web.ToolInternetSearch
-import ru.souz.tool.web.ToolWebImageSearch
 
 /**
  * The backend's only answer to which tools it may host, advertise, and execute.
@@ -20,7 +19,6 @@ object BackendToolCapabilityPolicy {
         ToolCategory.FILES,
         ToolCategory.IMAGE,
         ToolCategory.IMAGE_GENERATION,
-        ToolCategory.WEB_SEARCH,
         ToolCategory.DATA_ANALYTICS,
         ToolCategory.CALCULATOR,
         ToolCategory.CHANNEL_MESSAGING,
@@ -28,10 +26,7 @@ object BackendToolCapabilityPolicy {
     )
 
     /** Advertised tools whose LLM dependency is bound per execution, so no process catalog holds them. */
-    val executionBoundToolNames: Set<String> = LLM_BACKED_TOOL_NAMES
-
-    /** Tools that sit in a safe category yet are neither advertised nor executable on the backend. */
-    val deniedToolNames: Set<String> = setOf(ToolWebImageSearch.NAME)
+    val executionBoundToolNames: Set<String> = setOf(ToolViewImage.NAME, ToolGenerateImage.NAME)
 
     /** Names the backend advertises and accepts in a user's `enabledTools`, in stable order. */
     fun advertisedToolNames(processToolCatalog: AgentToolCatalog): Set<String> =
@@ -40,29 +35,25 @@ object BackendToolCapabilityPolicy {
 
     /**
      * Compiled tools one execution may call: the hostable process tools plus the execution-bound
-     * LLM tools, narrowed to [enabledToolNames]; client search replaces compiled short search.
+     * LLM tools, narrowed to [enabledToolNames]. Web search belongs to the client Skill catalog.
      */
     fun selectExecutionTools(
         processToolCatalog: AgentToolCatalog,
         executionLlmToolCatalog: AgentToolCatalog,
         enabledToolNames: Set<String>?,
-        clientSearchEnabled: Boolean = false,
     ): AgentToolCatalog {
-        val isEnabled = { toolName: String ->
-            (enabledToolNames == null || toolName in enabledToolNames) &&
-                (!clientSearchEnabled || toolName != ToolInternetSearch.NAME)
-        }
+        val isEnabled = { toolName: String -> enabledToolNames == null || toolName in enabledToolNames }
         return composeToolCatalogs(
             hostableTools(processToolCatalog, isEnabled),
             hostableTools(executionLlmToolCatalog) { it in executionBoundToolNames && isEnabled(it) },
         )
     }
 
-    /** The hostable view of a process catalog: safe categories only, denied names removed. */
+    /** The hostable view of a compiled catalog: safe categories only. */
     private fun hostableTools(catalog: AgentToolCatalog, allow: (String) -> Boolean = { true }): AgentToolCatalog =
         immutableToolCatalogSnapshot(
             catalog.toolsByCategory
                 .filterKeys { category -> category in safeCategories }
-                .mapValues { (_, tools) -> tools.filterKeys { it !in deniedToolNames && allow(it) } }
+                .mapValues { (_, tools) -> tools.filterKeys(allow) }
         )
 }

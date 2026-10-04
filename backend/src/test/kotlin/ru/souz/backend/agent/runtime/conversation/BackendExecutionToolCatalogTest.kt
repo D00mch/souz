@@ -3,27 +3,25 @@ package ru.souz.backend.agent.runtime.conversation
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.testutil.TestToolCatalog
 import ru.souz.backend.testutil.TestToolSetup
 import ru.souz.llms.LLMRequest
-import ru.souz.tool.LLM_BACKED_TOOL_NAMES
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.web.ToolWebImageSearch
 
 class BackendExecutionToolCatalogTest {
     @Test
-    fun `catalog filters compiled tools preserves client tools and selects the search provider`() {
+    fun `catalog exposes only client web search for every compiled tool selection`() {
         val selections = mapOf(
-            null to (setOf("ReadFile", "WebPageText") + LLM_BACKED_TOOL_NAMES),
+            null to setOf("ReadFile", "ViewImage", "GenerateImage"),
             setOf("ReadFile") to setOf("ReadFile"),
-            setOf("InternetSearch") to setOf("InternetSearch"),
+            setOf("InternetSearch", "InternetResearch", "WebPageText", "FutureWebTool") to emptySet(),
+            emptySet<String>() to emptySet(),
         )
         for ((enabled, compiled) in selections) {
-            for (clientSearch in listOf(false, true)) {
-                val expected = (if (clientSearch) compiled - "InternetSearch" else compiled) + setOf("ClientAsk", "web.search")
-                assertEquals(expected, toolNames(executionCatalog(enabled, clientSearch)), "enabled=$enabled, clientSearch=$clientSearch")
-            }
+            val catalog = executionCatalog(enabled)
+            assertEquals(compiled + setOf("ClientAsk", "web.search"), toolNames(catalog), "enabled=$enabled")
+            assertEquals(setOf("web.search"), catalog.toolsByCategory.getValue(ToolCategory.WEB_SEARCH).keys)
         }
     }
 
@@ -74,15 +72,17 @@ class BackendExecutionToolCatalogTest {
         )
     }
 
-    private fun executionCatalog(enabledCompiledToolNames: Set<String>?, clientSearch: Boolean): AgentToolCatalog =
+    private fun executionCatalog(enabledCompiledToolNames: Set<String>?): AgentToolCatalog =
         backendExecutionToolCatalog(
             compiledToolCatalog = TestToolCatalog(
                 ToolCategory.FILES to listOf("ReadFile"),
-                ToolCategory.WEB_SEARCH to listOf("WebPageText", ToolWebImageSearch.NAME),
+                ToolCategory.WEB_SEARCH to listOf("WebPageText", ToolWebImageSearch.NAME, "FutureWebTool"),
                 ToolCategory.BROWSER to listOf("ControlBrowser"),
             ),
             executionLlmToolCatalog = TestToolCatalog(
-                ToolCategory.WEB_SEARCH to BackendToolCapabilityPolicy.executionBoundToolNames.toList(),
+                ToolCategory.WEB_SEARCH to listOf("InternetSearch", "InternetResearch"),
+                ToolCategory.IMAGE to listOf("ViewImage"),
+                ToolCategory.IMAGE_GENERATION to listOf("GenerateImage"),
             ),
             enabledCompiledToolNames = enabledCompiledToolNames,
             clientToolCatalog = TestToolCatalog(
@@ -90,7 +90,6 @@ class BackendExecutionToolCatalogTest {
                 ToolCategory.WEB_SEARCH to listOf("web.search"),
             ),
             includeFewShotExamples = true,
-            clientSearchEnabled = clientSearch,
         )
 
     private fun toolNames(catalog: AgentToolCatalog): Set<String> =

@@ -230,7 +230,7 @@ class BackendSubagentE2eTest {
         }
 
     @Test
-    fun `child selection obeys client search exclusion and returns failure to parent`() =
+    fun `proxy child selection excludes compiled web search and returns failure to parent`() =
         backendE2eTest("e2e_subagent_policy", llm = E2eLlmApi { request ->
             if (request.messages.any { it.name == "SpawnSubagent" }) reply(request, "parent recovered")
             else toolCallReply(request, "SpawnSubagent", mapOf(
@@ -242,23 +242,23 @@ class BackendSubagentE2eTest {
             val chatId = createPublicChat(userId)
             val settings = client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId)
-                jsonBody("""{"enabledTools":["InternetSearch"]}""")
+                jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","enabledTools":["InternetSearch"]}""")
             }
             assertEquals(HttpStatusCode.OK, settings.status)
-            withPublicSocket(chatId) { session ->
-                session.send(Frame.Text(messageFrame(chatId, userId, "delegate-search")))
-                assertEquals("accepted", readJson(session)["status"].asText())
-                assertEquals("thread.status", readJson(session)["type"].asText())
-                assertEquals("thread.completed", readJson(session)["type"].asText())
+            assertEquals(0, settings.jsonBody()["settings"]["enabledTools"].size())
+            assertEquals(HttpStatusCode.OK, client.post(BackendHttpRoutes.chatMessages(chatId)) {
+                trusted(userId); jsonBody("""{"content":"Delegate search"}""")
+            }.status)
+            val messages = eventually("parent recovery from unavailable server search") {
+                client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
+                    .takeIf { it.last()["content"].asText() == "parent recovered" }
             }
 
             assertEquals(2, llm.requests.size)
             val inventory = llm.requests.first().messages.first().content
-            assertTrue("web.search" in inventory)
-            assertFalse("InternetSearch" in inventory)
+            assertEquals("- WEB_SEARCH: web.search", inventory.lineSequence().single { it.startsWith("- WEB_SEARCH:") })
             val toolResult = llm.requests.last().messages.single { it.name == "SpawnSubagent" }
             assertEquals("skill_not_found", json.readTree(toolResult.content)["error"]["code"].asText())
-            val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
             assertEquals("parent recovered", messages.last()["content"].asText())
         }
 }

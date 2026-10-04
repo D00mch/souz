@@ -256,6 +256,9 @@ class BackendCompositionE2eTest {
 
             assertEquals(HttpStatusCode.OK, bootstrap.status)
             assertEquals(userId, bootstrap.jsonBody()["user"]["id"].asText())
+            val toolNames = bootstrap.jsonBody()["capabilities"]["tools"].map { it["name"].asText() }.toSet()
+            assertTrue(toolNames.containsAll(setOf("ViewImage", "GenerateImage")))
+            assertTrue((toolNames intersect setOf("InternetSearch", "InternetResearch", "WebPageText", "WebImageSearch")).isEmpty())
             val models = bootstrap.jsonBody()["capabilities"]["models"]
             assertTrue(models.any { model ->
                 model["model"].asText() == E2E_LOCAL_MODEL.alias && model["serverManagedKey"].asBoolean()
