@@ -5,6 +5,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngineConfig
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
@@ -14,6 +15,9 @@ import io.ktor.client.plugins.sse.SSE
 import io.ktor.http.HttpHeaders
 import io.ktor.serialization.jackson.jackson
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.TimeUnit
+import okhttp3.ConnectionPool
+import okhttp3.Protocol
 import kotlin.time.Duration.Companion.seconds
 import org.slf4j.LoggerFactory
 import ru.souz.llms.openai.openAiTlsDefaults
@@ -22,10 +26,11 @@ import ru.souz.llms.openai.openAiTlsDefaults
 class ProviderHttpClients(
     val standard: HttpClient,
     val openAi: HttpClient,
+    val jev: HttpClient = standard,
 ) : AutoCloseable {
-    constructor() : this(createProviderHttpClientPair())
+    constructor() : this(createProviderHttpClients())
 
-    private constructor(pair: ProviderHttpClientPair) : this(pair.standard, pair.openAi)
+    private constructor(clients: List<HttpClient>) : this(clients[0], clients[1], clients[2])
 
     private val closed = AtomicBoolean(false)
 
@@ -33,19 +38,14 @@ class ProviderHttpClients(
         if (!closed.compareAndSet(false, true)) return
 
         var failure: Throwable? = null
-        try {
-            standard.close()
-        } catch (standardFailure: Throwable) {
-            failure = standardFailure
-        }
-        if (openAi !== standard) {
+        for (client in listOf(standard, openAi, jev).distinct()) {
             try {
-                openAi.close()
-            } catch (openAiFailure: Throwable) {
+                client.close()
+            } catch (closeFailure: Throwable) {
                 if (failure == null) {
-                    failure = openAiFailure
+                    failure = closeFailure
                 } else {
-                    failure.addSuppressed(openAiFailure)
+                    failure.addSuppressed(closeFailure)
                 }
             }
         }
@@ -53,22 +53,17 @@ class ProviderHttpClients(
     }
 }
 
-private data class ProviderHttpClientPair(
-    val standard: HttpClient,
-    val openAi: HttpClient,
-)
-
-private fun createProviderHttpClientPair(): ProviderHttpClientPair {
-    val standard = createStandardProviderHttpClient()
-    return try {
-        ProviderHttpClientPair(
-            standard = standard,
-            openAi = createOpenAiProviderHttpClient(),
-        )
+private fun createProviderHttpClients(): List<HttpClient> {
+    val clients = mutableListOf<HttpClient>()
+    try {
+        clients += createStandardProviderHttpClient()
+        clients += createOpenAiProviderHttpClient()
+        clients += createOkHttpProviderHttpClient()
+        return clients
     } catch (failure: Throwable) {
-        runCatching { standard.close() }
-            .exceptionOrNull()
-            ?.let(failure::addSuppressed)
+        clients.forEach { client ->
+            runCatching { client.close() }.exceptionOrNull()?.let(failure::addSuppressed)
+        }
         throw failure
     }
 }
@@ -77,6 +72,19 @@ fun createStandardProviderHttpClient(): HttpClient =
     HttpClient(CIO) {
         providerHttpClientDefaults()
     }
+
+/** Fixed OkHttp HTTP/1.1 transport; the host owns its pool and lifecycle. */
+fun createOkHttpProviderHttpClient(): HttpClient = HttpClient(OkHttp) {
+    providerHttpClientDefaults()
+    engine {
+        val pool = ConnectionPool(5, 60, TimeUnit.SECONDS)
+        config {
+            connectionPool(pool)
+            protocols(listOf(Protocol.HTTP_1_1))
+            retryOnConnectionFailure(false)
+        }
+    }
+}
 
 fun createOpenAiProviderHttpClient(): HttpClient =
     HttpClient(CIO) {

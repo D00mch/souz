@@ -8,6 +8,9 @@ Shared provider clients, settings and memory contracts, sandbox contracts, skill
 
 `ru.souz.jev.JevClient` evaluates named yes/no questions through the [hosted TypeSafe API](https://api.typesafe.ai/docs)
 and returns their probabilities. Shared runtime DI binds it lazily using the host-owned HTTP client.
+Jev's fixed transport is OkHttp HTTP/1.1 with a shared pool, 60-second idle retention, and automatic
+connection-failure retries disabled. Backend shutdown closes it after application work stops.
+The measurement reference is [PR #852](https://github.com/D00mch/souz/pull/852).
 The classic `GraphBasedAgent` can select multiple tool categories with Jev independently of its conversational
 model. The skills graph, including backend conversations, selects relevant file-backed Skill descriptions with Jev and execution-LLM fallback; it does not classify tool categories. Inventory keeps every exact ID and adds only selected descriptions as bounded, escaped metadata. Full instructions and supporting files load on demand with approval where enabled.
 

@@ -23,6 +23,9 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.job
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.direct
@@ -204,6 +207,7 @@ class BackendDiModuleTest {
         val appConfig = testAppConfig()
         val dataSource = HikariDataSource()
         val di = testDi(appConfig, dataSource)
+        val clients = di.direct.instance<ProviderHttpClients>()
 
         try {
             assertIs<HikariDataSource>(di.direct.instance<HikariDataSource>())
@@ -222,7 +226,8 @@ class BackendDiModuleTest {
             assertIs<BackendSettingsProvider>(di.direct.instance<ru.souz.db.SettingsProvider>())
             assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
             assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
-            assertIs<ProviderHttpClients>(di.direct.instance<ProviderHttpClients>())
+            assertSame(clients, di.direct.instance<ProviderHttpClients>())
+            assertEquals("OkHttpEngine", clients.jev.engine.javaClass.simpleName)
             assertNull(di.direct.instanceOrNull<GigaHttpClientResource>())
             assertNull(di.direct.instanceOrNull<GigaAuth>())
             assertNull(di.direct.instanceOrNull<GigaRestChatAPI>())
@@ -249,6 +254,7 @@ class BackendDiModuleTest {
             assertNull(httpDependencies.vkBotBindingService)
         } finally {
             di.direct.instance<BackendRuntimeResources>().close()
+            runBlocking { withTimeout(5_000) { clients.jev.engine.coroutineContext.job.join() } }
         }
     }
 
