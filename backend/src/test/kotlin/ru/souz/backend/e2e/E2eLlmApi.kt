@@ -32,7 +32,6 @@ internal class E2eLlmApi(
     val streamedChunks = CopyOnWriteArrayList<String>()
     private val gates = LinkedHashMap<String, CompletableDeferred<Unit>>()
     private val mutex = Mutex()
-    private var failMessage: String? = null
     private var hang = false
     private var cancellationGate: CompletableDeferred<Unit>? = null
     private var releaseGate: CompletableDeferred<Unit>? = null
@@ -99,7 +98,6 @@ internal class E2eLlmApi(
         requests += body
         val prompt = body.conversationPrompt()
         signal(prompt).complete(Unit)
-        failMessage?.let { error(it) }
         if (hang) {
             try {
                 awaitCancellation()
@@ -119,7 +117,6 @@ internal class E2eLlmApi(
         requests += body
         val prompt = body.conversationPrompt()
         signal(prompt).complete(Unit)
-        failMessage?.let { error(it) }
         releaseGate?.await()
         promptReleaseGates[prompt]?.await()
         response?.let {
