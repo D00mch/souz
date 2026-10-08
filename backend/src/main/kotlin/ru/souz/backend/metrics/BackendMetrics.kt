@@ -19,8 +19,11 @@ import ru.souz.agent.spi.AgentToolExecutionEvent
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.ToolCategory
 
 /** Backend-owned meters with bounded labels and no request payloads. */
@@ -73,13 +76,35 @@ class BackendMetrics(nanoTime: () -> Long = System::nanoTime) : AutoCloseable {
         registry.counter("souz.ws.events.dropped", "reason", reason).increment(count)
     }
 
-    internal fun toolTelemetry(clientToolNames: Set<String>): AgentTelemetry = object : AgentTelemetry {
+    internal fun instrumentTool(tool: LLMToolSetup, category: ToolCategory): LLMToolSetup = object : LLMToolSetup by tool {
+        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
+            invoke(functionCall, ToolInvocationMeta.localDefault())
+
+        // Record the delegated failure before Skill helpers turn it into a result message.
+        @Suppress("SuspendFunSwallowedCancellation")
+        override suspend fun invoke(functionCall: LLMResponse.FunctionCall, meta: ToolInvocationMeta): LLMRequest.Message {
+            val startedAt = System.nanoTime()
+            var outcome = "success"
+            toolStarted()
+            try {
+                return tool.invoke(functionCall, meta)
+            } catch (failure: Throwable) {
+                outcome = failure.metricOutcome()
+                throw failure
+            } finally {
+                toolFinished()
+                toolOutcome(category.name.lowercase(), outcome, System.nanoTime() - startedAt)
+            }
+        }
+    }
+
+    internal fun toolTelemetry(excludedToolNames: Set<String>): AgentTelemetry = object : AgentTelemetry {
         override fun toolExecutionStarted(functionName: String) {
-            if (functionName !in clientToolNames) toolStarted()
+            if (functionName !in excludedToolNames) toolStarted()
         }
 
         override fun recordToolExecution(event: AgentToolExecutionEvent) {
-            if (event.functionName in clientToolNames) return // The transport records its typed outcome.
+            if (event.functionName in excludedToolNames) return // Catalog tools record at their invocation boundary.
             toolFinished()
             val category = ToolCategory.entries.firstOrNull { it.name == event.toolCategory }?.name?.lowercase() ?: "other"
             toolOutcome(category, event.failure?.metricOutcome() ?: "success", event.durationMs * 1_000_000)

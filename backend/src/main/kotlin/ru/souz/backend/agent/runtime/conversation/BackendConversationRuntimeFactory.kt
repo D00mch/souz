@@ -89,9 +89,6 @@ internal class BackendConversationRuntimeFactory(
     private val metrics: BackendMetrics? = null,
     private val testLlmApiFactory: (suspend (SettingsProvider) -> LLMChatAPI)? = null,
 ) {
-    private val toolTelemetry = metrics?.toolTelemetry(clientToolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet())
-        ?: AgentTelemetry.NONE
-
     internal suspend fun create(
         key: AgentConversationKey,
         request: BackendConversationTurnRequest,
@@ -164,7 +161,10 @@ internal class BackendConversationRuntimeFactory(
             enabledCompiledToolNames = request.enabledTools,
             clientToolCatalog = clientToolCatalog,
             includeFewShotExamples = settingsProvider.useFewShotExamples,
+            metrics = metrics,
         )
+        val toolTelemetry = metrics?.toolTelemetry(executionToolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet())
+            ?: AgentTelemetry.NONE
         val requestToolsFilter = RuntimePassThroughToolsFilter
         val getSkillByNameTool = ToolGetSkillByName(
             toolCatalog = executionToolCatalog,

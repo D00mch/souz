@@ -2,6 +2,7 @@ package ru.souz.backend.agent.runtime.conversation
 
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.common.BackendToolCapabilityPolicy
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.tool.composeToolCatalogs
 import ru.souz.tool.immutableToolCatalogSnapshot
 import ru.souz.tool.withoutFewShotExamples
@@ -13,6 +14,7 @@ internal fun backendExecutionToolCatalog(
     enabledCompiledToolNames: Set<String>?,
     clientToolCatalog: AgentToolCatalog,
     includeFewShotExamples: Boolean,
+    metrics: BackendMetrics? = null,
 ): AgentToolCatalog {
     val selectedCompiledTools = BackendToolCapabilityPolicy.selectExecutionTools(
         processToolCatalog = compiledToolCatalog,
@@ -22,7 +24,11 @@ internal fun backendExecutionToolCatalog(
 
     // Client tools intentionally win name collisions because the live client owns their execution boundary.
     val mergedTools = composeToolCatalogs(
-        selectedCompiledTools,
+        if (metrics == null) selectedCompiledTools else immutableToolCatalogSnapshot(
+            selectedCompiledTools.toolsByCategory.mapValues { (category, tools) ->
+                tools.mapValues { (_, tool) -> metrics.instrumentTool(tool, category) }
+            }
+        ),
         clientToolCatalog,
         allowLaterSourceOverrides = true,
     )

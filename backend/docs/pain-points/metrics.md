@@ -4,7 +4,7 @@ Repository commits own execution outcomes. Observe successful active-to-terminal
 
 One backend registry owns process counters, JVM binders and pool instrumentation. Configure Hikari's tracker before constructing its datasource, and close meters after application work and storage. Active execution gauges read shared PostgreSQL state; aggregate replicas with `max`. Other counters and work gauges belong to one instance.
 
-Keep timing monotonic and process-local. Exclude the union of client-result waits and option waits from processing, retaining a separate option clock through concurrent client waits. Preserve stream usage high-water marks across empty/repeated/decreasing snapshots. Finish tool accounting in `finally`; typed client outcomes belong to their transport rather than generic helper telemetry.
+Keep timing monotonic and process-local. Exclude the union of client-result waits and option waits from processing, retaining a separate option clock through concurrent client waits. Preserve stream usage high-water marks across empty/repeated/decreasing snapshots. Finish tool accounting in `finally`. Wrap compiled catalog tools before Skill helpers can convert failures into result messages; exclude catalog tools from kernel telemetry to avoid counting direct subagent calls twice. Typed client outcomes belong to their transport.
 
 Keep channel eviction atomic through `DROP_OLDEST` and its undelivered callback. Only actual public live events count as losses; replay/control events and bot observers do not. Bound model, route, category and exception labels as described in the [metric reference](../metrics.md).
 
