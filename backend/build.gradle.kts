@@ -1,6 +1,7 @@
     import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.bundling.AbstractArchiveTask
+import org.gradle.api.tasks.bundling.Jar
 
 plugins {
     alias(libs.plugins.kotlinJvm)
@@ -83,4 +84,8 @@ tasks.withType<Sync>().configureEach {
 
 tasks.withType<AbstractArchiveTask>().configureEach {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.named<Jar>("shadowJar") {
+    isZip64 = true
 }
