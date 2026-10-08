@@ -7,7 +7,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -60,6 +62,7 @@ class PostgresJobService internal constructor(dataSource: DataSource, private va
         }.also { worker = it }
     }
 
+    @Suppress("SuspendFunSwallowedCancellation") // ensureActive propagates worker cancellation; handler cancellation is retried.
     internal suspend fun processNext(handler: suspend (JobRun) -> Unit): Boolean {
         val claim = store.claim() ?: return false
         val job = claim.job
@@ -79,7 +82,8 @@ class PostgresJobService internal constructor(dataSource: DataSource, private va
                 }
             }
         } catch (cancelled: CancellationException) {
-            throw cancelled
+            currentCoroutineContext().ensureActive()
+            error = cancelled.message ?: cancelled.javaClass.simpleName
         } catch (_: JobLeaseLost) {
             return true
         } catch (failure: Exception) {

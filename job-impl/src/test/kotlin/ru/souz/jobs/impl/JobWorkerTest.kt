@@ -4,6 +4,7 @@ import java.sql.SQLException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -120,6 +121,34 @@ class JobWorkerTest {
             assertEquals(1, retrying.attempts)
             assertTrue(service.processNext { assertEquals(next.id, it.jobId) })
             assertEquals(JobStatus.SUCCEEDED, service.listJobs("owner").first { it.id == next.id }.status)
+        }
+    }
+
+    @Test
+    fun `handler timeout schedules retry and worker continues to the next job`() = runBlocking {
+        jobTestDataSource().use { db ->
+            val service = PostgresJobService(db, fastTiming)
+            val timedOut = service.create(title = "Timeout")
+            val next = service.create(title = "Success")
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            try {
+                val worker = service.startWorker(scope) { run ->
+                    if (run.jobId == timedOut.id) {
+                        withTimeout(50) { awaitCancellation() }
+                    } else {
+                        assertEquals(next.id, run.jobId)
+                    }
+                }
+                awaitStatus(service, next.id, JobStatus.SUCCEEDED)
+                val retrying = service.listJobs("owner").first { it.id == timedOut.id }
+                assertEquals(JobStatus.PENDING, retrying.status)
+                assertEquals(1, retrying.attempts)
+                assertNotNull(retrying.lastError)
+                assertNotNull(retrying.lastFinishedAt)
+                assertTrue(worker.isActive)
+            } finally {
+                scope.coroutineContext[Job]!!.cancelAndJoin()
+            }
         }
     }
 
