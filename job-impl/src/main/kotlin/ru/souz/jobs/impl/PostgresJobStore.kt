@@ -2,6 +2,7 @@ package ru.souz.jobs.impl
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.sql.Connection
+import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -144,16 +145,14 @@ private fun Connection.now(): Instant = query("select clock_timestamp()") {
 }
 
 private fun <T> Connection.query(sql: String, vararg values: Any?, read: ResultSet.() -> T): T =
+    statement(sql, values) { executeQuery().use(read) }
+
+private fun Connection.update(sql: String, vararg values: Any?): Int = statement(sql, values) { executeUpdate() }
+
+private fun <T> Connection.statement(sql: String, values: Array<out Any?>, block: PreparedStatement.() -> T): T =
     prepareStatement(sql).use { statement ->
         values.forEachIndexed { index, value ->
             statement.setObject(index + 1, if (value is Instant) value.atOffset(ZoneOffset.UTC) else value)
         }
-        statement.executeQuery().use(read)
+        block(statement)
     }
-
-private fun Connection.update(sql: String, vararg values: Any?): Int = prepareStatement(sql).use { statement ->
-    values.forEachIndexed { index, value ->
-        statement.setObject(index + 1, if (value is Instant) value.atOffset(ZoneOffset.UTC) else value)
-    }
-    statement.executeUpdate()
-}

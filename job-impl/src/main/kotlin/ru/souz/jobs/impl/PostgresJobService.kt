@@ -66,8 +66,7 @@ class PostgresJobService internal constructor(dataSource: DataSource, private va
     internal suspend fun processNext(handler: suspend (JobRun) -> Unit): Boolean {
         val claim = store.claim() ?: return false
         val job = claim.job
-        var error: String? = null
-        try {
+        val error = try {
             coroutineScope {
                 val heartbeat = launch {
                     while (isActive) {
@@ -81,13 +80,14 @@ class PostgresJobService internal constructor(dataSource: DataSource, private va
                     heartbeat.cancelAndJoin()
                 }
             }
+            null
         } catch (cancelled: CancellationException) {
             currentCoroutineContext().ensureActive()
-            error = cancelled.message ?: cancelled.javaClass.simpleName
+            cancelled.message ?: cancelled.javaClass.simpleName
         } catch (_: JobLeaseLost) {
             return true
         } catch (failure: Exception) {
-            error = failure.message ?: failure.javaClass.simpleName
+            failure.message ?: failure.javaClass.simpleName
         }
         if (!store.finish(claim, error)) logger.info("Job ownership lost jobId={} attempt={}", job.id, job.attempts)
         return true

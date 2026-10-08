@@ -11,6 +11,10 @@ import java.time.OffsetDateTime
 import java.util.Properties
 import java.util.UUID
 import javax.sql.DataSource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.runBlocking
 import org.testcontainers.DockerClientFactory
 import org.testcontainers.containers.PostgreSQLContainer
 import ru.souz.jobs.CreateJobRequest
@@ -27,7 +31,7 @@ private object JobTestPostgres {
     }
 }
 
-internal fun jobTestDataSource(): HikariDataSource {
+private fun jobTestDataSource(): HikariDataSource {
     val postgres = JobTestPostgres.container
     val schema = "jobs_${UUID.randomUUID().toString().replace("-", "")}"
     DriverManager.getConnection(postgres.jdbcUrl, Properties().apply {
@@ -49,6 +53,21 @@ internal fun jobTestDataSource(): HikariDataSource {
 }
 
 internal val jobTestMapper = jacksonObjectMapper()
+
+internal fun jobTest(
+    timing: JobWorkerTiming = JobWorkerTiming(),
+    test: suspend CoroutineScope.(HikariDataSource, PostgresJobService) -> Unit,
+) = runBlocking {
+    jobTestDataSource().use { db ->
+        coroutineScope {
+            try {
+                test(db, PostgresJobService(db, timing))
+            } finally {
+                coroutineContext.cancelChildren()
+            }
+        }
+    }
+}
 
 internal suspend fun PostgresJobService.create(
     title: String = "Test job",

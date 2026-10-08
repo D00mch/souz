@@ -20,3 +20,5 @@ Lease recovery can run an occurrence more than once. Fencing protects queue stat
 ## Verification
 
 Run `./gradlew :job-impl:test` with Docker available. Cover competing claims, expired final attempts, stale renewals and outcomes, cancellation races, retry identity, recurrence, and interrupted shutdown.
+
+Database tests share the `jobTest` fixture, which cancels and joins worker coroutines before closing the connection pool.
