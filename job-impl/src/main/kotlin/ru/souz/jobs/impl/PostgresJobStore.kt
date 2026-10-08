@@ -55,10 +55,13 @@ internal class PostgresJobStore(private val dataSource: DataSource, private val 
     suspend fun claim(): JobClaim? = connection { connection ->
         connection.update(
             """
-            update jobs set status = 'FAILED', available_at = null, lease_token = null, lease_until = null,
-              last_finished_at = clock_timestamp(), last_error = 'Worker lease expired.'
+            update jobs set status = case when attempts >= 3 then 'FAILED' else 'PENDING' end,
+              available_at = case when attempts >= 3 then null else available_at end,
+              lease_token = null, lease_until = null,
+              last_finished_at = case when attempts >= 3 then clock_timestamp() else last_finished_at end,
+              last_error = 'Worker lease expired.'
             where id in (select id from jobs
-              where status = 'RUNNING' and lease_until <= clock_timestamp() and attempts >= 3
+              where status = 'RUNNING' and lease_until <= statement_timestamp()
               for update skip locked)
             """.trimIndent(),
         )
@@ -66,12 +69,10 @@ internal class PostgresJobStore(private val dataSource: DataSource, private val 
         connection.query(
             """
             update jobs set status = 'RUNNING', attempts = attempts + 1,
-              last_error = case when status = 'RUNNING' then 'Worker lease expired.' else last_error end,
               lease_token = ?, lease_until = clock_timestamp() + ? * interval '1 second'
             where id = (
-              select id from jobs where attempts < 3 and
-                ((status = 'PENDING' and available_at <= clock_timestamp())
-                  or (status = 'RUNNING' and lease_until <= clock_timestamp()))
+              select id from jobs
+              where status = 'PENDING' and available_at <= statement_timestamp() and attempts < 3
               order by available_at, id limit 1 for update skip locked
             ) returning *
             """.trimIndent(), token, timing.leaseSeconds,

@@ -21,7 +21,7 @@ import ru.souz.jobs.JobStatus
 
 class PostgresJobStoreTest {
     @Test
-    fun `claim skips future jobs and locked rows then takes oldest available`() = jobTest { db, service ->
+    fun `claim orders pending and recovered jobs while skipping future jobs and locked rows`() = jobTest { db, service ->
         service.create(schedule = JobSchedule.Once(Instant.parse("2035-01-01T00:00:00Z")))
         val oldest = service.create(schedule = JobSchedule.Once(Instant.parse("2020-01-01T00:00:00Z")))
         val later = service.create(schedule = JobSchedule.Once(Instant.parse("2020-01-02T00:00:00Z")))
@@ -34,7 +34,11 @@ class PostgresJobStoreTest {
             assertEquals(later.id, service.store.claim()?.job?.id)
             lock.rollback()
         }
+        db.execute("update jobs set lease_until = clock_timestamp() - interval '1 second' where id = ?", later.id)
         assertEquals(oldest.id, service.store.claim()?.job?.id)
+        val recovered = assertNotNull(service.store.claim())
+        assertEquals(later.id, recovered.job.id)
+        assertEquals(2, recovered.job.attempts)
         assertNull(service.store.claim())
     }
 
