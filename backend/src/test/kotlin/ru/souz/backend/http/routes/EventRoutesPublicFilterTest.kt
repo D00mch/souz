@@ -9,6 +9,7 @@ import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.MessageCreatedPayload
 import ru.souz.backend.events.model.MessageDeltaPayload
+import ru.souz.backend.events.model.isPublicClientEvent
 
 class EventRoutesPublicFilterTest {
     private fun messageCreatedEvent(executionId: UUID?): AgentEvent = AgentEvent(

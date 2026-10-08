@@ -59,12 +59,12 @@ internal suspend fun <T> DataSource.read(block: (Connection) -> T): T =
         connection.use(block)
     }
 
-internal suspend fun <T> DataSource.write(block: (Connection) -> T): T =
+internal suspend fun <T> DataSource.write(afterCommit: (T) -> Unit = {}, block: (Connection) -> T): T =
     withContext(Dispatchers.IO) {
         connection.use { connection ->
             val previousAutoCommit = connection.autoCommit
             connection.autoCommit = false
-            try {
+            val result = try {
                 val result = block(connection)
                 connection.commit()
                 result
@@ -74,6 +74,9 @@ internal suspend fun <T> DataSource.write(block: (Connection) -> T): T =
             } finally {
                 connection.autoCommit = previousAutoCommit
             }
+            // Stay on the JDBC dispatcher so cancellation after commit cannot lose the observation.
+            afterCommit(result)
+            result
         }
     }
 

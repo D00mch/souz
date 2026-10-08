@@ -14,11 +14,14 @@ import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
+import io.ktor.server.metrics.micrometer.MicrometerMetrics
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.plugins.swagger.swaggerUI
 import io.ktor.server.request.path
+import io.ktor.server.request.httpMethod
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import io.ktor.server.routing.routingRoot
@@ -27,6 +30,8 @@ import io.ktor.server.routing.openapi.registerApiKeySecurityScheme
 import io.ktor.server.websocket.WebSockets
 import java.net.InetSocketAddress
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.routes.v1Routes
@@ -96,6 +101,20 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
             disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
         }
     }
+    install(MicrometerMetrics) {
+        registry = dependencies.metrics.registry
+        meterBinders = emptyList() // Backend resources own the JVM binders and their shutdown.
+        registerDistributionStatisticConfig = false
+        distinctNotRegisteredRoutes = false
+        filter { it.request.path() != BackendHttpRoutes.HEALTH && it.request.path() != BackendHttpRoutes.METRICS }
+        timers { call, cause ->
+            tag("address", "backend")
+            tag("throwable", if (cause == null) "none" else "error")
+            tag("method", call.request.httpMethod.value.takeIf {
+                it in setOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "CONNECT")
+            } ?: "OTHER")
+        }
+    }
     install(WebSockets)
     install(StatusPages) {
         exception<BackendV1Exception> { call, cause ->
@@ -150,6 +169,23 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
     )
 
     routing {
+        get(BackendHttpRoutes.METRICS) {
+            val exposition = withContext(Dispatchers.IO) { dependencies.metrics.scrape() }
+            call.respondText(exposition, ContentType.parse("text/plain; version=0.0.4; charset=utf-8"))
+        }.describePublic(
+            operationId = "getMetrics",
+            tag = BackendOpenApiTags.SYSTEM,
+            summary = "Scrape Prometheus metrics",
+            description = "Trusted-network system route; restrict access at ingress. No end-user identity is required.",
+        ) {
+            responses {
+                response(200) {
+                    description = "Prometheus text exposition."
+                    ContentType.Text.Plain { schema = io.ktor.openapi.JsonSchema(type = io.ktor.openapi.JsonType.STRING) }
+                }
+            }
+        }
+
         get(BackendHttpRoutes.ROOT) {
             call.respondBackend(logger) {
                 RootResponse(
@@ -209,6 +245,7 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
 private fun rootEndpoints(featureFlags: BackendFeatureFlags): List<String> =
     buildList {
         add("GET ${BackendHttpRoutes.HEALTH}")
+        add("GET ${BackendHttpRoutes.METRICS}")
         add("GET ${BackendHttpRoutes.DOCS}")
         add("GET ${BackendHttpRoutes.BOOTSTRAP}")
         add("GET ${BackendHttpRoutes.ONBOARDING_STATE}")
