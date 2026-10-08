@@ -47,7 +47,7 @@ class BackendMetrics(nanoTime: () -> Long = System::nanoTime) : AutoCloseable {
         Gauge.builder("souz.ws.connections.active", sockets) { it.get().toDouble() }.register(registry)
         Gauge.builder("souz.pending.tool.calls", tools) { it.get().toDouble() }.register(registry)
         listOf("completed", "failed", "cancelled").forEach { registry.counter("souz.executions", "outcome", it) }
-        listOf("undelivered", "disconnect", "send_failure", "overtaken").forEach { dropped(it, 0.0) }
+        listOf("queue_full", "undelivered", "disconnect", "send_failure", "overtaken").forEach { dropped(it, 0.0) }
     }
 
     internal val executions = ExecutionMetrics(this, nanoTime)

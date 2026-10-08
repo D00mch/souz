@@ -52,7 +52,13 @@ class AgentEventBus(private val metrics: BackendMetrics? = null) {
     fun publishCommand(event: AgentEventEnvelope): Boolean {
         val targets = subscribers[AgentEventStreamKey(event.userId, event.chatId)] ?: return false
         var accepted = false
-        targets.forEach { if (it.acceptsClientCommands && it.commands.trySend(event).isSuccess) accepted = true }
+        targets.forEach { subscriber ->
+            if (subscriber.acceptsClientCommands) {
+                val result = subscriber.commands.trySend(event)
+                if (result.isSuccess) accepted = true
+                else subscriber.dropped(event, if (result.isClosed) "disconnect" else "queue_full")
+            }
+        }
         return accepted
     }
 
