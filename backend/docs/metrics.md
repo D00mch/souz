@@ -47,14 +47,15 @@ Open [targets](http://127.0.0.1:9090/targets) and the
 `SOUZ_PROMETHEUS_HOST_PORT` overrides port 9090. The backend is scraped through
 the Docker network at `backend:8080`.
 
-With a real provider configured, run the bounded workload using Node 22+:
+With server-managed Codex OAuth configured, run the bounded workload using Node 22+:
 
 ```sh
-SOUZ_URL=http://127.0.0.1:8080 SOUZ_MODEL=gpt-5.2 node tools/metrics-workload.mjs
+SOUZ_URL=http://127.0.0.1:8080 node tools/metrics-workload.mjs
 ```
 
-This creates four chats for a fresh synthetic user and incurs real provider
-usage. It checks a plain reply with an idempotent submit retry, a successful
+The default is Souz's `gpt-5.4` Codex model; `SOUZ_MODEL` overrides it. This creates
+four chats for a fresh synthetic user and incurs real provider usage. It checks
+a plain reply with an idempotent submit retry, a successful
 `user.ask` result, an emulated client timeout, and cancellation during a client
 wait. Two scenarios run concurrently; client waits last ten seconds so scrapes
 can capture active gauges. Each scenario has a three-minute deadline and no

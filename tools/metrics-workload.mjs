@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const base = process.env.SOUZ_URL ?? 'http://127.0.0.1:8080';
-const model = process.env.SOUZ_MODEL ?? 'gpt-5.2';
+const model = process.env.SOUZ_MODEL ?? 'gpt-5.4';
 const userId = randomUUID();
 const waitMs = 10_000; // Two Prometheus scrapes while a client tool is pending.
 console.log(JSON.stringify({ userId, base, model }));
@@ -23,7 +23,7 @@ async function run(scenario) {
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   const socket = new WebSocket(url);
   const started = Date.now();
-  let threadId, terminal, duplicate = false, toolCalls = 0;
+  let threadId, terminal, reply, duplicate = false, toolCalls = 0;
   const timers = new Set();
   const send = frame => socket.send(JSON.stringify({ chatId, ...frame }));
   const submit = {
@@ -73,15 +73,19 @@ async function run(scenario) {
           }
           if (['thread.completed', 'thread.failed', 'thread.cancelled'].includes(frame.type)) {
             terminal = frame.type;
+            reply = frame.payload?.response;
             resolve();
           }
         } catch (error) { reject(error); }
       });
     });
+    console.log(JSON.stringify({ scenario, chatId, threadId, terminal, toolCalls, duplicate, reply, seconds: (Date.now() - started) / 1000 }));
     assert.equal(terminal, scenario === 'cancel' ? 'thread.cancelled' : 'thread.completed');
     assert.equal(toolCalls, scenario === 'reply' ? 0 : 1);
-    if (scenario === 'reply') assert.ok(duplicate, 'Idempotent retry acknowledgement missing');
-    console.log(JSON.stringify({ scenario, chatId, threadId, terminal, toolCalls, duplicate, seconds: (Date.now() - started) / 1000 }));
+    if (scenario === 'reply') {
+      assert.equal(reply?.trim(), 'Metrics workload ready.', 'A completed thread must contain the requested model reply');
+      assert.ok(duplicate, 'Idempotent retry acknowledgement missing');
+    }
   } finally {
     for (const timer of timers) clearTimeout(timer);
     if (!terminal && threadId && socket.readyState === WebSocket.OPEN) {
