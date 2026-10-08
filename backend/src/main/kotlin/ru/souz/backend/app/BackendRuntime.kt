@@ -5,11 +5,14 @@ import org.kodein.di.direct
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Job
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.vk.VkBotPollingService
 import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
+import ru.souz.jobs.JobRun
+import ru.souz.jobs.impl.PostgresJobService
 
 /** Process-wide backend runtime container with shared services and LLM resources. */
 class BackendRuntime private constructor(
@@ -25,6 +28,10 @@ class BackendRuntime private constructor(
     private val resources: BackendRuntimeResources by lazy { di.direct.instance() }
     private val applicationScope: BackendApplicationScope by lazy { di.direct.instance() }
     private val clientThreadRecoveryService: ClientThreadRecoveryService by lazy { di.direct.instance() }
+
+    /** Job execution starts only when the host supplies its handler. */
+    suspend fun startJobWorker(handler: suspend (JobRun) -> Unit): Job =
+        di.direct.instance<PostgresJobService>().startWorker(applicationScope, handler)
 
     fun startBackgroundServices() {
         runBlocking { httpDependencies.hookService.start(applicationScope) }

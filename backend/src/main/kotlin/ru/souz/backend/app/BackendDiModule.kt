@@ -109,6 +109,8 @@ import ru.souz.backend.vk.VkBotBindingService
 import ru.souz.backend.vk.VkBotPollingService
 import ru.souz.backend.vk.VkBotTokenCrypto
 import ru.souz.skilloauth.impl.SkillOAuthGatewayImpl
+import ru.souz.jobs.JobService
+import ru.souz.jobs.impl.PostgresJobService
 import ru.souz.tool.RuntimeToolsFactory
 import ru.souz.tool.composeToolCatalogs
 import ru.souz.tool.runtimeToolsDiModule
@@ -157,6 +159,8 @@ fun backendDiModule(
     bindSingleton<HikariDataSource> {
         dataSourceFactory(appConfig.postgres)
     }
+    bindSingleton { PostgresJobService(instance<HikariDataSource>()) }
+    bindSingleton<JobService> { instance<PostgresJobService>() }
     bindSingleton<BackendServerPreferenceStore> {
         PostgresBackendServerPreferenceStore(
             dataSource = instance(),

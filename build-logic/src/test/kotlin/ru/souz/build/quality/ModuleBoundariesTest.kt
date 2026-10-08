@@ -32,6 +32,27 @@ class ModuleBoundariesTest {
     }
 
     @Test
+    fun `job implementation depends on its API and backend composes both`() {
+        val projects = listOf(":job-api", ":job-impl", ":backend").map { path ->
+            val directory = path.removePrefix(":")
+            ProjectDescriptor(path, directory, "$directory/build.gradle.kts")
+        }
+        fun edge(source: String, target: String) = DependencyEdge(
+            source, "implementation", "main", target, "${source.removePrefix(":")}/build.gradle.kts",
+        )
+        val allowed = listOf(
+            edge(":job-impl", ":job-api"),
+            edge(":backend", ":job-api"),
+            edge(":backend", ":job-impl"),
+        )
+
+        assertEquals(emptyList<QualityDiagnostic>(), ModuleBoundaries.check(projects, allowed))
+        assertEquals(2, ModuleBoundaries.check(projects, listOf(
+            edge(":job-api", ":job-impl"), edge(":job-impl", ":backend"),
+        )).size)
+    }
+
+    @Test
     fun `recognizes production source sets without treating tests as production`() {
         assertEquals("main", dependencySourceSet("implementation"))
         assertEquals("main", dependencySourceSet("compileOnlyApi"))

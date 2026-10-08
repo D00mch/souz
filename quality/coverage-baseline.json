@@ -8,6 +8,8 @@
     ":backend": 87.0506,
     ":desktopApp": 37.6907,
     ":graph-engine": 73.75,
+    ":job-api": 0,
+    ":job-impl": 99.1803,
     ":llms": 37.8022,
     ":native": 77.2606,
     ":sharedLogic": 53.4602,

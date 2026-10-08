@@ -8,6 +8,8 @@ internal object ModuleBoundaries {
         ModuleScope(":native", "main") to setOf(":llms"),
         ModuleScope(":skill-oauth-api", "main") to emptySet(),
         ModuleScope(":skill-oauth-impl", "main") to setOf(":skill-oauth-api"),
+        ModuleScope(":job-api", "main") to emptySet(),
+        ModuleScope(":job-impl", "main") to setOf(":job-api"),
         ModuleScope(":sharedLogic", "commonJvmMain") to setOf(":agent", ":llms", ":skill-oauth-api"),
         ModuleScope(":sharedLogic", "jvmMain") to setOf(":native"),
         ModuleScope(":ambientAgent", "jvmMain") to setOf(":sharedLogic"),
@@ -20,6 +22,8 @@ internal object ModuleBoundaries {
             ":sharedLogic",
             ":skill-oauth-api",
             ":skill-oauth-impl",
+            ":job-api",
+            ":job-impl",
         ),
         ModuleScope(":desktopApp", "main") to setOf(
             ":ambientAgent",
