@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.zaxxer.hikari.HikariDataSource
+import com.zaxxer.hikari.metrics.micrometer.MicrometerMetricsTrackerFactory
 import java.time.Clock
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
@@ -159,7 +160,7 @@ fun backendDiModule(
     bindSingleton<HikariDataSource> {
         dataSourceFactory(appConfig.postgres).apply {
             val metrics = instance<BackendMetrics>()
-            metricsTrackerFactory = com.zaxxer.hikari.metrics.micrometer.MicrometerMetricsTrackerFactory(metrics.registry)
+            metricsTrackerFactory = MicrometerMetricsTrackerFactory(metrics.registry)
             metrics.executions.bindDatabase(this)
         }
     }
