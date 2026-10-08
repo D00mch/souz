@@ -86,6 +86,8 @@ import ru.souz.tool.knowledge.ToolGetKnowledge
 import ru.souz.tool.knowledge.ToolSearchKnowledge
 import ru.souz.tool.memory.ToolSearchMemory
 import ru.souz.tool.skills.SkillCommandExecutor
+import ru.souz.jobs.JobService
+import ru.souz.jobs.impl.PostgresJobService
 
 class BackendDiModuleTest {
     @Test
@@ -220,6 +222,8 @@ class BackendDiModuleTest {
             assertIs<PostgresUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
             assertIs<PostgresTelegramBotBindingRepository>(di.direct.instance<TelegramBotBindingRepository>())
             assertIs<PostgresVkBotBindingRepository>(di.direct.instance<PostgresVkBotBindingRepository>())
+            assertIs<PostgresJobService>(di.direct.instance<JobService>())
+            assertSame(di.direct.instance<JobService>(), di.direct.instance<PostgresJobService>())
             assertIs<PostgresBackendServerPreferenceStore>(di.direct.instance<BackendServerPreferenceStore>())
             assertIs<BackendSettingsProvider>(di.direct.instance<ru.souz.db.SettingsProvider>())
             assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())

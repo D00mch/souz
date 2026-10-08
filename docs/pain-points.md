@@ -15,6 +15,8 @@ Before editing a module, open its index below and read only the topics related t
 - [`:sharedUI`](../sharedUI/docs/pain-points.md)
 - [`:skill-oauth-api`](../skill-oauth-api/docs/pain-points.md)
 - [`:skill-oauth-impl`](../skill-oauth-impl/docs/pain-points.md)
+- [`:job-api`](../job-api/docs/pain-points.md)
+- [`:job-impl`](../job-impl/docs/pain-points.md)
 - [`:desktopApp`](../desktopApp/docs/pain-points.md)
 - [`:backend`](../backend/docs/pain-points.md)
 

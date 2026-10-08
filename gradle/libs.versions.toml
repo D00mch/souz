@@ -2,6 +2,7 @@
 androidx-lifecycle = "2.9.5"
 commonmark = "0.30.0"
 commonsCsv = "1.10.0"
+cronUtils = "9.2.1"
 composeHotReload = "1.0.0-rc04"
 composeMultiplatform = "1.9.3"
 jackson = "2.21.3"
@@ -43,7 +44,9 @@ androidx-lifecycle-viewmodelCompose = { module = "org.jetbrains.androidx.lifecyc
 androidx-lifecycle-runtimeCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
 commonmark = { module = "org.commonmark:commonmark", version.ref = "commonmark" }
 commons-csv = { module = "org.apache.commons:commons-csv", version.ref = "commonsCsv" }
+cron-utils = { module = "com.cronutils:cron-utils", version.ref = "cronUtils" }
 jackson = { module = "com.fasterxml.jackson.module:jackson-module-kotlin", version.ref = "jackson" }
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
 jackson-dataformat-yaml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml", version.ref = "jackson" }
 jnativehook = { module = "com.github.kwhat:jnativehook", version.ref = "jnativehook" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }

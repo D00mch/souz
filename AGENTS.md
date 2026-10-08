@@ -31,6 +31,8 @@ Souz is a Kotlin Multiplatform AI assistant with desktop and backend hosts over 
 - `:sharedLogic` — shared JVM runtime logic, providers, classifiers, tools, skills, memory, and sandboxes.
 - `:skill-oauth-api` — provider-neutral Skill OAuth contracts (`SkillOAuthGateway`) with no host or persistence dependencies.
 - `:skill-oauth-impl` — Postgres-backed `SkillOAuthGateway` implementation, provider token exchange, and the OAuth callback route, consumed only by `:backend`.
+- `:job-api` — owner-scoped job management and execution contracts.
+- `:job-impl` — PostgreSQL job persistence, scheduling, leased workers, and retries, composed by `:backend`.
 - `:sharedUI` — shared desktop UI logic, ViewModels, host ports, and Compose UI.
 - `:desktopApp` — desktop composition root, OS integrations, persistence, and packaging.
 - `:backend` — trusted-proxy HTTP host and PostgreSQL-backed conversation runtime.
@@ -45,10 +47,12 @@ Only these direct production project dependencies are allowed. Standard test-sou
 - `:native` `main` → `:llms`.
 - `:skill-oauth-api` `main` → none.
 - `:skill-oauth-impl` `main` → `:skill-oauth-api`.
+- `:job-api` `main` → none.
+- `:job-impl` `main` → `:job-api`.
 - `:sharedLogic` `commonJvmMain` → `:agent`, `:llms`, `:skill-oauth-api`; `jvmMain` → `:native`.
 - `:ambientAgent` `jvmMain` → `:sharedLogic`.
 - `:sharedUI` `commonJvmMain` → `:ambientAgent`, `:sharedLogic`, `:agent`, `:llms`; `jvmMain` → `:native`.
-- `:backend` `main` → `:agent`, `:llms`, `:native`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`.
+- `:backend` `main` → `:agent`, `:llms`, `:native`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`, `:job-api`, `:job-impl`.
 - `:desktopApp` `main` → `:ambientAgent`, `:sharedLogic`, `:sharedUI`, `:agent`, `:llms`, `:native`.
 
 ## Verification

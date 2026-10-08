@@ -24,6 +24,8 @@ dependencies {
     implementation(project(":sharedLogic"))
     implementation(project(":skill-oauth-api"))
     implementation(project(":skill-oauth-impl"))
+    implementation(project(":job-api"))
+    implementation(project(":job-impl"))
     implementation(kotlin("stdlib"))
     implementation(libs.kotlinx.coroutines)
     implementation(libs.kotlinx.coroutinesSlf4j)
