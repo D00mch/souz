@@ -77,14 +77,14 @@ internal class PostgresJobStore(private val dataSource: DataSource, private val 
         ) { if (next()) JobClaim(jobInfo(), token) else null }
     }
 
-    suspend fun renew(claim: JobClaim): Boolean = connection { connection ->
+    suspend fun renew(claim: JobClaim): Boolean = lockedConnection(claim.job.id) { connection ->
         connection.update(
             "update jobs set lease_until = clock_timestamp() + ? * interval '1 second' where $OWNED",
             timing.leaseSeconds, claim.job.id, claim.token,
         ) == 1
     }
 
-    suspend fun finish(claim: JobClaim, error: String? = null): Boolean = connection { connection ->
+    suspend fun finish(claim: JobClaim, error: String? = null): Boolean = lockedConnection(claim.job.id) { connection ->
         val now = connection.now()
         val cron = claim.job.schedule as? JobSchedule.Cron
         val next = if (error == null && cron != null) nextCronTime(cron.expression, cron.timeZone, now) else null
@@ -102,6 +102,18 @@ internal class PostgresJobStore(private val dataSource: DataSource, private val 
             """.trimIndent(), status.name, next, next ?: now.plusSeconds(timing.retrySeconds).takeIf { retry },
             if (next != null) 0 else claim.job.attempts, now, error, claim.job.id, claim.token,
         ) == 1
+    }
+
+    private suspend fun lockedConnection(jobId: UUID, block: (Connection) -> Boolean): Boolean = connection { connection ->
+        connection.autoCommit = false
+        try {
+            // Acquire the lock before checking ownership: the wait itself can outlast the lease.
+            connection.query("select id from jobs where id = ? for update", jobId) { next() }
+            block(connection).also { connection.commit() }
+        } catch (error: Throwable) {
+            connection.rollback()
+            throw error
+        }
     }
 
     private suspend fun <T> connection(block: (Connection) -> T): T = withContext(Dispatchers.IO) {

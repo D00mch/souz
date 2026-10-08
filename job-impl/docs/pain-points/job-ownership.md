@@ -2,7 +2,7 @@
 
 ## Invariant
 
-Claim the earliest eligible job atomically with `FOR UPDATE SKIP LOCKED` and commit before running its handler. PostgreSQL time governs eligibility and lease validity. Renewals and outcome writes require the matching token, running status, and an unexpired lease.
+Claim the earliest eligible job atomically with `FOR UPDATE SKIP LOCKED` and commit before running its handler. PostgreSQL time governs eligibility and lease validity. Renewals and outcome writes lock the row before validating the matching token, running status, and lease against current database time in the same transaction.
 
 One row represents a logical job. Its scheduled occurrence timestamp stays unchanged across retries and changes only when successful recurrence advances. A failed or abandoned claim consumes an attempt; exhausted recurring jobs stop. Recurrence skips missed timestamps after completion.
 

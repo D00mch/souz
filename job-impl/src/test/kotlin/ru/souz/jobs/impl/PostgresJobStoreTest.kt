@@ -1,6 +1,7 @@
 package ru.souz.jobs.impl
 
 import java.time.Instant
+import java.time.OffsetDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -13,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import ru.souz.jobs.JobSchedule
@@ -76,6 +78,66 @@ class PostgresJobStoreTest {
             assertFalse(service.store.finish(first, "stale failure"))
             assertTrue(service.store.finish(second))
             assertEquals(JobStatus.SUCCEEDED, service.listJobs("owner").single().status)
+        }
+    }
+
+    @Test
+    fun `renew rejects lease that expires while waiting for an unchanged locked row`() = runBlocking {
+        assertLeaseExpiryWhileLocked { renew(it) }
+    }
+
+    @Test
+    fun `finish rejects lease that expires while waiting for an unchanged locked row`() = runBlocking {
+        assertLeaseExpiryWhileLocked { finish(it) }
+    }
+
+    private suspend fun assertLeaseExpiryWhileLocked(update: suspend PostgresJobStore.(JobClaim) -> Boolean) {
+        jobTestDataSource().use { db ->
+            val service = PostgresJobService(db, JobWorkerTiming(leaseSeconds = 3))
+            service.create()
+            val claim = assertNotNull(service.store.claim())
+            db.connection.use { lock ->
+                lock.autoCommit = false
+                val (expiresAt, blocker) = lock.prepareStatement(
+                    "select lease_until, pg_backend_pid() from jobs where id = ? for update",
+                ).use { statement ->
+                    statement.setObject(1, claim.job.id)
+                    statement.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        rows.getObject(1, OffsetDateTime::class.java).toInstant() to rows.getInt(2)
+                    }
+                }
+                coroutineScope {
+                    val pending = async(Dispatchers.IO) { service.store.update(claim) }
+                    try {
+                        withTimeout(2_000) {
+                            db.connection.use { observer ->
+                                observer.prepareStatement(
+                                    "select exists (select 1 from pg_stat_activity where ? = any(pg_blocking_pids(pid)))",
+                                ).use { statement ->
+                                    statement.setInt(1, blocker)
+                                    while (!statement.executeQuery().use { it.next(); it.getBoolean(1) }) delay(10)
+                                }
+                            }
+                        }
+                        assertTrue(db.databaseNow() < expiresAt, "The operation must block before lease expiry")
+                        withTimeout(5_000) {
+                            while (db.databaseNow() <= expiresAt) delay(10)
+                        }
+                        assertFalse(pending.isCompleted)
+                    } finally {
+                        lock.rollback()
+                    }
+                    assertFalse(withTimeout(5_000) { pending.await() })
+                }
+            }
+            assertEquals(claim.job, service.listJobs("owner").single())
+            val recovered = assertNotNull(service.store.claim())
+            assertEquals(claim.job.id, recovered.job.id)
+            assertEquals(claim.job.scheduledAt, recovered.job.scheduledAt)
+            assertEquals(2, recovered.job.attempts)
+            assertNotEquals(claim.token, recovered.token)
+            assertTrue(service.store.finish(recovered))
         }
     }
 
