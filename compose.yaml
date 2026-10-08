@@ -63,9 +63,28 @@ services:
     networks:
       - souz-local
 
+  prometheus:
+    image: prom/prometheus:v3.13.4
+    profiles: [monitoring]
+    depends_on:
+      backend:
+        condition: service_healthy
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    ports:
+      - "127.0.0.1:${SOUZ_PROMETHEUS_HOST_PORT:-9090}:9090"
+    volumes:
+      - ./backend/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - souz-local
+
 volumes:
   postgres-data:
   backend-state:
+  prometheus-data:
 
 networks:
   souz-local:

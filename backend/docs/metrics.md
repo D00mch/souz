@@ -33,6 +33,44 @@ it does not start work or change conversations. Scrape failures and database
 availability can be monitored with Prometheus `up`. `/health` and `/metrics`,
 including requests with query parameters, are excluded from HTTP traffic meters.
 
+## Local Docker workload
+
+The Compose `monitoring` profile adds Prometheus with five-second scrapes and a
+persistent volume retaining seven days of samples:
+
+```sh
+docker compose --profile monitoring up -d --build
+```
+
+Open [targets](http://127.0.0.1:9090/targets) and the
+[query console](http://127.0.0.1:9090/query). The UI binds to loopback;
+`SOUZ_PROMETHEUS_HOST_PORT` overrides port 9090. The backend is scraped through
+the Docker network at `backend:8080`.
+
+With a real provider configured, run the bounded workload using Node 22+:
+
+```sh
+SOUZ_URL=http://127.0.0.1:8080 SOUZ_MODEL=gpt-5.2 node tools/metrics-workload.mjs
+```
+
+This creates four chats for a fresh synthetic user and incurs real provider
+usage. It checks a plain reply with an idempotent submit retry, a successful
+`user.ask` result, an emulated client timeout, and cancellation during a client
+wait. Two scenarios run concurrently; client waits last ten seconds so scrapes
+can capture active gauges. Each scenario has a three-minute deadline and no
+automatic retry. Chat/thread IDs are printed for inspection; chats remain in
+the database. Provider behavior is nondeterministic, so a missing requested
+tool call fails the workload rather than claiming tool coverage.
+
+Compare `souz_executions_total`, `souz_llm_requests_total`,
+`souz_llm_tokens_total`, `souz_tool_calls_total` and
+`souz_execution_wait_duration_seconds_count` before and after. Expected execution
+deltas are three completed and one cancelled; the duplicate submit adds no
+execution. Client timeouts count as tool timeouts, even when the agent completes
+its reply. After the next scrape, pending calls, active executions and connected
+WebSockets should return to their pre-workload levels. Use `max_over_time` on
+the gauges to inspect their peaks.
+
 ## Application families
 
 Post-commit counters are in-process observations, so a crash before recording

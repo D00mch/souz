@@ -1,6 +1,8 @@
 .git
 .gradle
 **/build
+!build-logic/src/**
+!build-logic/detekt-rules/src/**
 **/.idea
 **/.DS_Store
 data
