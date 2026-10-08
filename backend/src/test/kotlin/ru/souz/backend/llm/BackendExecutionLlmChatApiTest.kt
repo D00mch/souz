@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.hooks.HookAuth
@@ -64,36 +65,50 @@ class BackendExecutionLlmChatApiTest {
     fun `raw routes preserve IDs across providers retries and stream accounting`() = runTest {
         val requests = mutableListOf<Pair<LlmProvider, LLMRequest.Chat>>()
         val delays = mutableListOf<Long>()
-        facadeFixture(
-            initialUsage = usage(10, 5, 15, 2),
-            retryPolicy = BackendProviderRetryPolicy(max429Retries = 1, backoffBaseMs = 5, backoffMaxMs = 100),
-            delayMillis = { delays += it },
-            providerApiOverride = { provider ->
-                var attempts = 0
-                StubChatApi(
-                    message = { body ->
-                        requests += provider to body
-                        if (attempts++ == 0) LLMResponse.Chat.Error(429, "retry-after=17") else ok(body.model, usage(3, 2, 5, 1))
-                    },
-                    stream = { body ->
-                        requests += provider to body
-                        flowOf(ok(body.model, usage(2, 0, 2, 0)), ok(body.model, usage(2, 3, 5, 0)))
-                    },
-                )
-            },
-        ).use { fixture ->
-            listOf(LlmProvider.OPENAI, LlmProvider.ANTHROPIC, LlmProvider.CODEX).forEach { provider ->
-                val request = chat("Custom/Deployment").copy(provider = provider)
-                assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
-                assertEquals(2, fixture.api.messageStream(request).toList().size)
-                assertEquals(List(3) { provider to request }, requests.takeLast(3))
+        BackendMetrics().use { meters ->
+            facadeFixture(
+                metrics = meters,
+                initialUsage = usage(10, 5, 15, 2),
+                retryPolicy = BackendProviderRetryPolicy(max429Retries = 1, backoffBaseMs = 5, backoffMaxMs = 100),
+                delayMillis = { delays += it },
+                providerApiOverride = { provider ->
+                    var attempts = 0
+                    StubChatApi(
+                        message = { body ->
+                            requests += provider to body
+                            if (attempts++ == 0) LLMResponse.Chat.Error(429, "retry-after=17") else ok(body.model, usage(3, 2, 5, 1))
+                        },
+                        stream = { body ->
+                            requests += provider to body
+                            flowOf(ok(body.model, usage(2, 0, 2, 0)), ok(body.model, usage(0, 0, 0, 0)),
+                                ok(body.model, usage(2, 3, 5, 0)), ok(body.model, usage(2, 3, 5, 0)))
+                        },
+                    )
+                },
+            ).use { fixture ->
+                listOf(LlmProvider.OPENAI, LlmProvider.ANTHROPIC, LlmProvider.CODEX).forEach { provider ->
+                    val request = chat("Custom/Deployment").copy(provider = provider)
+                    assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
+                    assertEquals(4, fixture.api.messageStream(request).toList().size)
+                    assertEquals(List(3) { provider to request }, requests.takeLast(3))
+                    val tags = arrayOf("provider", provider.name.lowercase(), "model", "other")
+                    assertEquals(1.0, meters.registry.get("souz.llm.requests").tags(*tags, "outcome", "error").counter().count())
+                    assertEquals(2.0, meters.registry.get("souz.llm.requests").tags(*tags, "outcome", "success").counter().count())
+                    for (direction in listOf("input", "output")) {
+                        assertEquals(5.0, meters.registry.get("souz.llm.tokens").tags(*tags, "direction", direction).counter().count())
+                    }
+                }
+                assertEquals(listOf(17L, 17L, 17L), delays)
+                assertEquals(usage(25, 20, 45, 5), fixture.api.cumulativeUsage())
+                val rejected = chat("Custom/Deployment").copy(provider = LlmProvider.GIGA)
+                assertIs<LLMResponse.Chat.Error>(fixture.api.message(rejected))
+                assertIs<LLMResponse.Chat.Error>(fixture.api.messageStream(rejected).toList().single())
+                assertEquals(9, requests.size)
+                val registered = meters.registry.meters.count { it.id.name.startsWith("souz.llm.") }
+                repeat(5) { fixture.api.message(chat("arbitrary-$it").copy(provider = LlmProvider.OPENAI)) }
+                assertEquals(registered, meters.registry.meters.count { it.id.name.startsWith("souz.llm.") })
+                assertTrue(!meters.registry.scrape().contains("Custom/Deployment"))
             }
-            assertEquals(listOf(17L, 17L, 17L), delays)
-            assertEquals(usage(25, 20, 45, 5), fixture.api.cumulativeUsage())
-            val rejected = chat("Custom/Deployment").copy(provider = LlmProvider.GIGA)
-            assertIs<LLMResponse.Chat.Error>(fixture.api.message(rejected))
-            assertIs<LLMResponse.Chat.Error>(fixture.api.messageStream(rejected).toList().single())
-            assertEquals(9, requests.size)
         }
     }
 
@@ -380,22 +395,44 @@ class BackendExecutionLlmChatApiTest {
                 }
             }
         )
-        facadeFixture(
-            retryPolicy = BackendProviderRetryPolicy(max429Retries = 1, backoffBaseMs = 1, backoffMaxMs = 1),
-            providerApiOverride = { providerApi },
-        ).use { fixture ->
-            var collected = 0
-            val failure = assertFailsWith<CancellationException> {
-                fixture.api.messageStream(chat(LLMModel.QwenMax.alias)).collect { response ->
-                    assertIs<LLMResponse.Chat.Ok>(response)
-                    if (++collected == 2) throw CancellationException("stop")
+        BackendMetrics().use { meters ->
+            facadeFixture(
+                metrics = meters,
+                retryPolicy = BackendProviderRetryPolicy(max429Retries = 1, backoffBaseMs = 1, backoffMaxMs = 1),
+                providerApiOverride = { providerApi },
+            ).use { fixture ->
+                var collected = 0
+                val failure = assertFailsWith<CancellationException> {
+                    fixture.api.messageStream(chat(LLMModel.QwenMax.alias)).collect { response ->
+                        assertIs<LLMResponse.Chat.Ok>(response)
+                        if (++collected == 2) throw CancellationException("stop")
+                    }
+                }
+                assertEquals(2, streamRequests)
+                assertEquals(1, completedUpstreamEmits, "The facade consumed the upstream stream ahead of its collector.")
+                assertTrue(upstreamCancelled)
+                assertEquals("stop", failure.message)
+                assertEquals(usage(5, 3, 8, 2), fixture.api.cumulativeUsage())
+                val tags = arrayOf("provider", "qwen", "model", LLMModel.QwenMax.alias)
+                for (outcome in listOf("error", "cancelled")) {
+                    assertEquals(1.0, meters.registry.get("souz.llm.requests").tags(*tags, "outcome", outcome).counter().count())
                 }
             }
-            assertEquals(2, streamRequests)
-            assertEquals(1, completedUpstreamEmits, "The facade consumed the upstream stream ahead of its collector.")
-            assertTrue(upstreamCancelled)
-            assertEquals("stop", failure.message)
-            assertEquals(usage(5, 3, 8, 2), fixture.api.cumulativeUsage())
+        }
+    }
+
+    @Test
+    fun `provider timeout is counted and propagated`() = runTest {
+        BackendMetrics().use { meters ->
+            facadeFixture(metrics = meters, providerApiOverride = {
+                StubChatApi(message = { kotlinx.coroutines.withTimeout(1) { awaitCancellation() } })
+            }).use { fixture ->
+                assertFailsWith<kotlinx.coroutines.TimeoutCancellationException> {
+                    fixture.api.message(chat("timeout-model").copy(provider = LlmProvider.OPENAI))
+                }
+                assertEquals(1.0, meters.registry.get("souz.llm.requests")
+                    .tags("provider", "openai", "model", "other", "outcome", "timeout").counter().count())
+            }
         }
     }
 }
@@ -439,6 +476,7 @@ private fun facadeFixture(
     delayMillis: suspend (Long) -> Unit = {},
     providerApiOverride: ((LlmProvider) -> LLMChatAPI)? = { StubChatApi() },
     hookBudget: HookLlmBudget? = null,
+    metrics: BackendMetrics? = null,
     client: HttpClient = HttpClient(MockEngine { respondOk() }) {
         providerHttpClientDefaults()
     },
@@ -456,6 +494,7 @@ private fun facadeFixture(
         delayMillis = delayMillis,
         providerApiOverride = providerApiOverride,
         hookBudget = hookBudget,
+        metrics = metrics,
     )
     return FacadeFixture(api, credentialResolver, clients)
 }

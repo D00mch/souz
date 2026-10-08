@@ -56,6 +56,7 @@ class BackendExecutionE2eTest {
             assertEquals("assistant reply to stream me", messages.last()["content"].asText())
             assertTrue(events.all { it["executionId"].asText() == executionId })
             assertFalse(events.any { it["type"].asText() == "message.delta" })
+            assertExecutionMeters(backend, "completed")
             assertEquals(
                 listOf(
                     "message.created",
@@ -102,6 +103,7 @@ class BackendExecutionE2eTest {
             assertEquals(listOf("user"), messages.map { it["role"].asText() })
             assertEquals(listOf("partial ", "assistant"), llm.streamedChunks)
             assertEquals("agent_execution_failed", events.last()["payload"]["errorCode"].asText())
+            assertExecutionMeters(backend, "failed")
         }
 
     @Test
@@ -150,6 +152,7 @@ class BackendExecutionE2eTest {
                 }
             }
             assertEquals("execution.cancelled", events.last()["type"].asText())
+            assertExecutionMeters(backend, "cancelled")
             val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) {
                 trusted(userId)
             }.jsonBody()["items"]
@@ -219,4 +222,13 @@ class BackendExecutionE2eTest {
             assertEquals("true", delivered["metadata"]["crossChannel"].asText())
         }
     }
+}
+
+internal suspend fun assertExecutionMeters(backend: BackendE2eBackend, outcome: String) {
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { backend.dependencies.metrics.scrape() }
+    val registry = backend.dependencies.metrics.registry
+    assertEquals(1.0, registry.get("souz.executions").tag("outcome", outcome).counter().count())
+    assertEquals(1L, registry.get("souz.execution.duration").timer().count())
+    assertTrue(registry.find("souz.executions.active").gauges().all { it.value() == 0.0 })
+    assertEquals(0.0, registry.get("souz.pending.tool.calls").gauge().value())
 }

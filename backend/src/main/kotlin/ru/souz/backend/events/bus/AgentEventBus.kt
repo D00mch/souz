@@ -5,11 +5,18 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import ru.souz.backend.events.model.AgentEventEnvelope
+import ru.souz.backend.events.model.isPublicClientEvent
+import ru.souz.backend.metrics.BackendMetrics
 
-class AgentEventBus {
-    private class Subscriber(val acceptsClientCommands: Boolean) {
-        val events = Channel<AgentEventEnvelope>(AgentEventLimits.LIVE_BUFFER_SIZE, BufferOverflow.DROP_OLDEST)
-        val commands = Channel<AgentEventEnvelope>(AgentEventLimits.LIVE_BUFFER_SIZE)
+class AgentEventBus(private val metrics: BackendMetrics? = null) {
+    private class Subscriber(val acceptsClientCommands: Boolean, private val metrics: BackendMetrics?) {
+        private val undelivered: (AgentEventEnvelope) -> Unit = { dropped(it, "undelivered") }
+        val events = Channel(AgentEventLimits.LIVE_BUFFER_SIZE, BufferOverflow.DROP_OLDEST, undelivered)
+        val commands = Channel(AgentEventLimits.LIVE_BUFFER_SIZE, onUndeliveredElement = undelivered)
+
+        fun dropped(event: AgentEventEnvelope, reason: String) {
+            if (acceptsClientCommands && !event.durable && event.isPublicClientEvent()) metrics?.dropped(reason)
+        }
     }
 
     private val subscribers =
@@ -20,7 +27,7 @@ class AgentEventBus {
 
     suspend fun subscribe(userId: String, chatId: UUID, acceptsClientCommands: Boolean = true): AgentEventSubscription {
         val key = AgentEventStreamKey(userId = userId, chatId = chatId)
-        val subscriber = Subscriber(acceptsClientCommands)
+        val subscriber = Subscriber(acceptsClientCommands, metrics)
         subscribers.compute(key) { _, existing ->
             (existing ?: ConcurrentHashMap.newKeySet()).apply {
                 add(subscriber)
@@ -34,8 +41,8 @@ class AgentEventBus {
                     existing.remove(subscriber)
                     existing.takeUnless { it.isEmpty() }
                 }
-                subscriber.events.close()
-                subscriber.commands.close()
+                subscriber.events.cancel()
+                subscriber.commands.cancel()
             },
         )
     }
@@ -54,6 +61,7 @@ class AgentEventBus {
         val closedTargets = ArrayList<Subscriber>()
         targets.forEach { subscriber ->
             if (subscriber.events.trySend(event).isFailure) {
+                subscriber.dropped(event, "disconnect")
                 closedTargets += subscriber
             }
         }

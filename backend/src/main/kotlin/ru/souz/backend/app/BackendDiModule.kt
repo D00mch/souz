@@ -10,6 +10,7 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.backend.hooks.HookDefinitions
 import ru.souz.backend.hooks.HookService
@@ -154,8 +155,13 @@ fun backendDiModule(
     bindSingleton { BackendApplicationScope() }
     bindSingleton<Clock> { Clock.systemUTC() }
     bindSingleton<BackendFeatureFlags> { appConfig.featureFlags }
+    bindSingleton { BackendMetrics() }
     bindSingleton<HikariDataSource> {
-        dataSourceFactory(appConfig.postgres)
+        dataSourceFactory(appConfig.postgres).apply {
+            val metrics = instance<BackendMetrics>()
+            metricsTrackerFactory = com.zaxxer.hikari.metrics.micrometer.MicrometerMetricsTrackerFactory(metrics.registry)
+            metrics.executions.bindDatabase(this)
+        }
     }
     bindSingleton<BackendServerPreferenceStore> {
         PostgresBackendServerPreferenceStore(
@@ -173,11 +179,11 @@ fun backendDiModule(
     bindSingleton<ChatRepository> { PostgresChatRepository(instance()) }
     bindSingleton<ConversationKnowledgeStore> { PostgresConversationKnowledgeStore(instance<HikariDataSource>()) }
     bindSingleton<ClientRequestRepository> {
-        PostgresClientRequestRepository(instance(), appConfig.hindsightApiUrl != null, instance())
+        PostgresClientRequestRepository(instance(), appConfig.hindsightApiUrl != null, instance(), instance())
     }
     bindSingleton<MessageRepository> { PostgresMessageRepository(instance()) }
     bindSingleton<AgentStateRepository> { PostgresAgentStateRepository(instance()) }
-    bindSingleton<AgentExecutionRepository> { PostgresAgentExecutionRepository(instance()) }
+    bindSingleton<AgentExecutionRepository> { PostgresAgentExecutionRepository(instance(), instance()) }
     bindSingleton<OptionRepository> { PostgresOptionRepository(instance()) }
     bindSingleton<AgentEventRepository> { PostgresAgentEventRepository(instance()) }
     bindSingleton<ToolCallRepository> { PostgresToolCallRepository(instance()) }
@@ -200,10 +206,13 @@ fun backendDiModule(
                 skillOAuthConfig?.providers?.values.orEmpty().filterIsInstance<AutoCloseable>().forEach { it.close() }
                 instanceOrNull<SkillOAuthGatewayImpl>()?.close()
             },
-            closeDataSource = { instance<HikariDataSource>().close() },
+            closeDataSource = {
+                instance<HikariDataSource>().close()
+                instance<BackendMetrics>().close()
+            },
         )
     }
-    bindSingleton { AgentEventBus() }
+    bindSingleton { AgentEventBus(instance<BackendMetrics>()) }
     bindSingleton { ClientThreadRuntimeRegistry() }
     bindSingleton {
         UserProviderKeyService(
@@ -264,6 +273,7 @@ fun backendDiModule(
             toolCallRepository = instance(),
             eventService = instance(),
             channelDeliveryService = instance(),
+            metrics = instance(),
         )
     }
     bindSingleton<ConversationMemoryRuntime> {
@@ -314,6 +324,7 @@ fun backendDiModule(
             automaticMemoryRecall = appConfig.featureFlags.wsAutomaticMemoryRecall,
             hookStore = instance(),
             executionQuotas = instance(),
+            metrics = instance(),
         )
     }
     bindSingleton {
@@ -514,6 +525,7 @@ fun backendDiModule(
         val userRepository = instance<UserRepository>()
         BackendHttpDependencies(
             bootstrapService = instance(),
+            metrics = instance(),
             skillOAuthGatewayImpl = if (skillOAuthConfig != null) instance() else null,
             onboardingService = instance(),
             userSettingsService = instance(),

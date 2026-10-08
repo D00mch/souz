@@ -1,5 +1,6 @@
 package ru.souz.backend.http.routes
 
+import ru.souz.backend.events.model.isPublicClientEvent
 import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.server.websocket.DefaultWebSocketServerSession
 import io.ktor.websocket.CloseReason
@@ -260,7 +261,7 @@ internal class PublicClientConnection(
             start = CoroutineStart.UNDISPATCHED,
         ) {
             try {
-                stream.forwardPublicEvents(replayDone) { event ->
+                stream.forwardPublicEvents(replayDone, onDrop = { deps.metrics.dropped(it) }) { event ->
                     withBackendLogContext(
                         "threadId" to event.executionId, "seq" to event.seq, "type" to event.type.value,
                         "toolCallId" to (event.payload as? PublicToolCallStartedPayload)?.toolCallId,
@@ -336,8 +337,11 @@ internal class PublicClientConnection(
     }
 }
 
+// Loss accounting also covers cancellation/failure while replaying ahead of a received live event.
+@Suppress("SuspendFunSwallowedCancellation")
 internal suspend fun AgentEventStream.forwardPublicEvents(
     replayDone: CompletableDeferred<Unit>,
+    onDrop: (String) -> Unit = {},
     send: suspend (AgentEventEnvelope) -> Unit,
 ) {
     var lastSeq = initialSeq
@@ -357,11 +361,19 @@ internal suspend fun AgentEventStream.forwardPublicEvents(
     }
     while (true) {
         val event = receiveLive() ?: break
-        val seq = event.seq
-        if (seq == null || seq > lastSeq) sendDurableEvents(replayAfter(lastSeq))
-        val discardAfterSeq = (event as? AgentLiveEvent)?.discardAfterSeq
-        if (discardAfterSeq != null && lastSeq > discardAfterSeq) continue
-        if (!event.durable && event.isPublicClientEvent()) send(event)
+        try {
+            val seq = event.seq
+            if (seq == null || seq > lastSeq) sendDurableEvents(replayAfter(lastSeq))
+            val discardAfterSeq = (event as? AgentLiveEvent)?.discardAfterSeq
+            if (discardAfterSeq != null && lastSeq > discardAfterSeq) {
+                if (event.isPublicClientEvent()) onDrop("overtaken")
+            } else if (!event.durable && event.isPublicClientEvent()) send(event)
+        } catch (failure: Throwable) {
+            if (!event.durable && event.isPublicClientEvent()) {
+                onDrop(if (failure is CancellationException) "disconnect" else "send_failure")
+            }
+            throw failure
+        }
     }
 }
 

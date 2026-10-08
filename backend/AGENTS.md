@@ -4,6 +4,8 @@
 
 Before changing this module, read the [pain-point index](docs/pain-points.md) and the topics relevant to the area.
 
+Prometheus `/metrics` is a trusted-network system endpoint without end-user authentication; restrict ingress and follow the [metric reference](docs/metrics.md).
+
 ## Boundaries
 
 - Treat proxy-provided identity as the authority for proxy routes. The public Client-Souz boundary accepts trusted UUID user identity in `POST /v1/chats`, `chat.create.payload.userId`, and `message.submit.payload.device.userId` and must keep those values equal for chat ownership.

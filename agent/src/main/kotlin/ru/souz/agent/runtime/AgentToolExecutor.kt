@@ -12,7 +12,6 @@ import ru.souz.agent.spi.AgentToolExecutionEvent
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 
 class AgentToolExecutor(
@@ -22,6 +21,8 @@ class AgentToolExecutor(
 
     val toolInvocations: Flow<LLMResponse.FunctionCall> = _toolInvocations.asSharedFlow()
 
+    // Accounting runs even if cancellation prevents the failure event from being delivered.
+    @Suppress("SuspendFunSwallowedCancellation")
     suspend fun execute(
         settings: AgentSettings,
         functionCall: LLMResponse.FunctionCall,
@@ -35,71 +36,24 @@ class AgentToolExecutor(
         val toolCategoryName = settings.tools.categoryByName[functionCall.name]?.name
         val logContext = currentCoroutineContext()[AgentExecutionLogContext.Element]?.value
         logContext?.incrementToolExecutionCount()
-        eventSink.emit(
-            AgentRuntimeEvent.ToolCallStarted(
-                toolCallId = runtimeToolCallId,
-                name = functionCall.name,
-                arguments = functionCall.arguments,
-            )
-        )
-        val fn: LLMToolSetup = settings.tools.byName[functionCall.name] ?: return LLMRequest.Message(
-            role = LLMMessageRole.function,
-            content = """{"result":"no such function ${functionCall.name}"}""",
-        ).also {
-            val error = UnknownTool("UnknownTool")
-            eventSink.emit(
-                AgentRuntimeEvent.ToolCallFailed(
-                    toolCallId = runtimeToolCallId,
-                    name = functionCall.name,
-                    error = error,
-                    durationMs = durationMsSince(startedAtNanos),
-                )
-            )
-            recordToolExecution(
-                functionCall = functionCall,
-                toolCategoryName = toolCategoryName,
-                startedAtNanos = startedAtNanos,
-                logContext = logContext,
-                success = false,
-                errorType = error::class.simpleName,
-            )
-        }
-        return try {
-            fn.invoke(functionCall, meta).also {
-                eventSink.emit(
-                    AgentRuntimeEvent.ToolCallFinished(
-                        toolCallId = runtimeToolCallId,
-                        name = functionCall.name,
-                        result = it.content,
-                        durationMs = durationMsSince(startedAtNanos),
-                    )
-                )
-                recordToolExecution(
-                    functionCall = functionCall,
-                    toolCategoryName = toolCategoryName,
-                    startedAtNanos = startedAtNanos,
-                    logContext = logContext,
-                    success = true,
-                )
+        telemetry.toolExecutionStarted(functionCall.name)
+        var failure: Throwable? = null
+        try {
+            eventSink.emit(AgentRuntimeEvent.ToolCallStarted(runtimeToolCallId, functionCall.name, functionCall.arguments))
+            val fn = settings.tools.byName[functionCall.name] ?: throw UnknownTool("UnknownTool")
+            return fn.invoke(functionCall, meta).also {
+                eventSink.emit(AgentRuntimeEvent.ToolCallFinished(runtimeToolCallId, functionCall.name, it.content, durationMsSince(startedAtNanos)))
             }
-        } catch (e: Exception) {
-            eventSink.emit(
-                AgentRuntimeEvent.ToolCallFailed(
-                    toolCallId = runtimeToolCallId,
-                    name = functionCall.name,
-                    error = e,
-                    durationMs = durationMsSince(startedAtNanos),
-                )
+        } catch (error: Throwable) {
+            failure = error
+            eventSink.emit(AgentRuntimeEvent.ToolCallFailed(runtimeToolCallId, functionCall.name, error, durationMsSince(startedAtNanos)))
+            if (error is UnknownTool) return LLMRequest.Message(
+                role = LLMMessageRole.function,
+                content = """{"result":"no such function ${functionCall.name}"}""",
             )
-            recordToolExecution(
-                functionCall = functionCall,
-                toolCategoryName = toolCategoryName,
-                startedAtNanos = startedAtNanos,
-                logContext = logContext,
-                success = false,
-                errorType = e::class.simpleName ?: e::class.qualifiedName?.substringAfterLast('.'),
-            )
-            throw e
+            throw error
+        } finally {
+            recordToolExecution(functionCall, toolCategoryName, startedAtNanos, logContext, failure)
         }
     }
 
@@ -108,8 +62,7 @@ class AgentToolExecutor(
         toolCategoryName: String?,
         startedAtNanos: Long,
         logContext: AgentExecutionLogContext?,
-        success: Boolean,
-        errorType: String? = null,
+        failure: Throwable?,
     ) {
         telemetry.recordToolExecution(
             AgentToolExecutionEvent(
@@ -123,8 +76,7 @@ class AgentToolExecutor(
                 toolCategory = toolCategoryName,
                 argumentKeys = functionCall.arguments.keys.sorted(),
                 durationMs = durationMsSince(startedAtNanos),
-                success = success,
-                errorType = errorType,
+                failure = failure,
             )
         )
     }

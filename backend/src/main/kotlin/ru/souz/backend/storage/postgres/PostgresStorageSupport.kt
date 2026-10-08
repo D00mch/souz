@@ -59,7 +59,7 @@ internal suspend fun <T> DataSource.read(block: (Connection) -> T): T =
         connection.use(block)
     }
 
-internal suspend fun <T> DataSource.write(block: (Connection) -> T): T =
+internal suspend fun <T> DataSource.write(afterCommit: (T) -> Unit = {}, block: (Connection) -> T): T =
     withContext(Dispatchers.IO) {
         connection.use { connection ->
             val previousAutoCommit = connection.autoCommit
@@ -67,6 +67,7 @@ internal suspend fun <T> DataSource.write(block: (Connection) -> T): T =
             try {
                 val result = block(connection)
                 connection.commit()
+                afterCommit(result)
                 result
             } catch (t: Throwable) {
                 runCatching { connection.rollback() }

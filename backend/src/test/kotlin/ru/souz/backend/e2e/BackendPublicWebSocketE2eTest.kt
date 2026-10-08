@@ -429,7 +429,14 @@ class BackendPublicWebSocketE2eTest {
 
                 withPublicSocket(chatId) { replay ->
                     assertEquals(started, readJson(replay))
+                    assertEquals(2.0, backend.dependencies.metrics.registry.get("souz.ws.connections.active").gauge().value())
                 }
+                eventually("replay connection cleanup") {
+                    backend.dependencies.metrics.registry.get("souz.ws.connections.active").gauge().value().takeIf { it == 1.0 }
+                }
+                client.get(BackendHttpRoutes.METRICS)
+                assertEquals(1.0, backend.dependencies.metrics.registry.get("souz.executions.active").tag("state", "running").gauge().value())
+                assertTrue(backend.dependencies.metrics.registry.get("souz.pending.tool.calls").gauge().value() > 0)
 
                 val httpEvent = client.get(BackendHttpRoutes.chatEvents(chatId)) {
                     trusted(userId)
@@ -522,6 +529,8 @@ class BackendPublicWebSocketE2eTest {
                 val started = readJson(session)
                 val threadId = messageAck["thread"]["id"].asText()
                 val toolCallId = started["payload"]["toolCallId"].asText()
+                assertTrue(backend.dependencies.metrics.registry.get("souz.pending.tool.calls").gauge().value() > 0)
+                assertEquals(1.0, backend.dependencies.metrics.registry.get("souz.ws.connections.active").gauge().value())
                 val timeoutFrame =
                     """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"timed_out","error":{"code":"client_tool_timed_out","message":"Device deadline expired."}}"""
 
@@ -537,6 +546,12 @@ class BackendPublicWebSocketE2eTest {
                 assertEquals("accepted", duplicate["status"].asText())
                 assertTrue(duplicate["duplicate"].asBoolean())
             }
+            eventually("socket gauge cleanup") {
+                backend.dependencies.metrics.registry.get("souz.ws.connections.active").gauge().value().takeIf { it == 0.0 }
+            }
+            assertExecutionMeters(backend, "completed")
+            assertEquals(1.0, backend.dependencies.metrics.registry.get("souz.tool.calls").tags("category", "chat", "outcome", "timeout").counter().count())
+            assertEquals(1L, backend.dependencies.metrics.registry.get("souz.execution.wait.duration").tag("reason", "client_tool").timer().count())
         }
 
     @Test

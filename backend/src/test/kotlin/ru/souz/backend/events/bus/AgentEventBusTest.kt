@@ -4,8 +4,12 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -14,6 +18,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventEnvelope
 import ru.souz.backend.events.model.AgentEventType
@@ -26,6 +31,47 @@ import ru.souz.backend.http.routes.forwardPublicEvents
 import ru.souz.llms.restJsonMapper
 
 class AgentEventBusTest {
+    @Test
+    fun `metrics count evicted and disconnected live deliveries without durable signal or absent subscriber drops`() = runTest {
+        BackendMetrics().use { meters ->
+            val bus = AgentEventBus(meters)
+            val chat = UUID.randomUUID()
+            val progress = AgentLiveEvent(UUID.randomUUID(), "user", chat, null,
+                AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload("progress"), Instant.EPOCH)
+            bus.publish(progress) // There is no promised delivery without a subscriber.
+            val subscription = bus.subscribe("user", chat)
+            repeat(AgentEventLimits.LIVE_BUFFER_SIZE + 3) { bus.publish(progress) }
+            assertEquals(3.0, meters.registry.get("souz.ws.events.dropped").tag("reason", "undelivered").counter().count())
+            subscription.close()
+            assertEquals((AgentEventLimits.LIVE_BUFFER_SIZE + 3).toDouble(),
+                meters.registry.get("souz.ws.events.dropped").tag("reason", "undelivered").counter().count())
+            val next = bus.subscribe("user", chat)
+            repeat(AgentEventLimits.LIVE_BUFFER_SIZE + 3) { bus.publish(durableEvent("user", chat, it.toLong() + 1)) }
+            repeat(AgentEventLimits.LIVE_BUFFER_SIZE + 3) { bus.publish(progress.copy(type = AgentEventType.MESSAGE_DELTA)) }
+            next.close()
+            assertEquals((AgentEventLimits.LIVE_BUFFER_SIZE + 3).toDouble(),
+                meters.registry.get("souz.ws.events.dropped").tag("reason", "undelivered").counter().count())
+        }
+    }
+
+    @Test
+    fun `cancelled receive counts an undelivered event once`() = runTest {
+        BackendMetrics().use { meters ->
+            val bus = AgentEventBus(meters)
+            val progress = AgentLiveEvent(UUID.randomUUID(), "user", UUID.randomUUID(), null,
+                AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload("progress"), Instant.EPOCH)
+            val subscription = bus.subscribe(progress.userId, progress.chatId)
+            val receiving = launch(start = CoroutineStart.UNDISPATCHED) {
+                subscription.events.receive()
+                error("Cancelled receiver must not consume progress")
+            }
+            bus.publish(progress)
+            receiving.cancelAndJoin()
+            subscription.close()
+            assertEquals(1.0, meters.registry.get("souz.ws.events.dropped").tag("reason", "undelivered").counter().count())
+        }
+    }
+
     @Test
     fun `observers receive progress without advertising or accepting device commands`() = runTest {
         val bus = AgentEventBus()
@@ -69,13 +115,35 @@ class AgentEventBusTest {
             val stream = AgentEventStream(stored, live, Channel(), {}, { after -> stored.filter { it.seq > after } }, 5)
             val ready = CompletableDeferred<Unit>()
             val sent = mutableListOf<AgentEventEnvelope>()
-            val forwarding = async { stream.forwardPublicEvents(ready) { sent += it } }
+            val dropped = mutableListOf<String>()
+            val forwarding = async { stream.forwardPublicEvents(ready, dropped::add) { sent += it } }
             ready.await()
             stored = listOf(durable)
             listOf(progress, durable, current, command).forEach { live.send(it) }
             live.close()
             forwarding.await()
             assertEquals(listOf(durable, current, command), sent)
+            assertEquals(listOf("overtaken"), dropped)
+        }
+    }
+
+    @Test
+    fun `received live event is counted when replay or forwarding fails`() = runTest {
+        for (duringReplay in listOf(false, true)) {
+            val progress = AgentLiveEvent(UUID.randomUUID(), "user", UUID.randomUUID(), null,
+                AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload("progress"), Instant.EPOCH)
+            val live = Channel<AgentEventEnvelope>(1)
+            live.send(progress)
+            var replayReads = 0
+            val stream = AgentEventStream(emptyList(), live, Channel(), {}, {
+                if (++replayReads > 1 && duringReplay) error("replay failed")
+                emptyList()
+            }, 0)
+            val dropped = mutableListOf<String>()
+            assertFailsWith<IllegalStateException> {
+                stream.forwardPublicEvents(CompletableDeferred(), dropped::add) { error("send failed") }
+            }
+            assertEquals(listOf("send_failure"), dropped)
         }
     }
 

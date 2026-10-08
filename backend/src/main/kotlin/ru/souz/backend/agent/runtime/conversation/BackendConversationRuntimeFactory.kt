@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.plus
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
@@ -85,8 +86,12 @@ internal class BackendConversationRuntimeFactory(
     private val automaticMemoryRecall: Boolean,
     private val hookStore: HookStore,
     private val executionQuotas: ExecutionQuotaManager,
+    private val metrics: BackendMetrics? = null,
     private val testLlmApiFactory: (suspend (SettingsProvider) -> LLMChatAPI)? = null,
 ) {
+    private val toolTelemetry = metrics?.toolTelemetry(clientToolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet())
+        ?: AgentTelemetry.NONE
+
     internal suspend fun create(
         key: AgentConversationKey,
         request: BackendConversationTurnRequest,
@@ -128,6 +133,7 @@ internal class BackendConversationRuntimeFactory(
             initialUsage = initialUsage,
             providerApiOverride = testApi?.let { api -> { api } },
             hookBudget = hookBudget,
+            metrics = metrics,
         )
         val visionGateway = LLMCapabilityResolver(
             settingsProvider = settingsProvider,
@@ -183,7 +189,7 @@ internal class BackendConversationRuntimeFactory(
         )
         val subagentTools = SubagentToolFactory(
             createAgent = { maxTurns ->
-                ToolLoopGraphBasedAgent(executionApi, settingsProvider, maxTurns = maxTurns, logObjectMapper = logObjectMapper)
+                ToolLoopGraphBasedAgent(executionApi, settingsProvider, maxTurns = maxTurns, logObjectMapper = logObjectMapper, telemetry = toolTelemetry)
             },
             toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
@@ -213,7 +219,7 @@ internal class BackendConversationRuntimeFactory(
                 spawnSubagent = subagentTools::create,
             ),
             knowledgeStore = knowledgeStore,
-            telemetry = AgentTelemetry.NONE,
+            telemetry = toolTelemetry,
             errorMessages = BackendAgentErrorMessages,
             llmApi = executionApi,
             skillClassifier = skillClassifier,
