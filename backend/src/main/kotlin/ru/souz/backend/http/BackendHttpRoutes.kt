@@ -2,6 +2,7 @@ package ru.souz.backend.http
 
 internal object BackendHttpRoutes {
     const val ROOT = "/"
+    const val METRICS = "/metrics"
     const val HEALTH = "/health"
     const val DOCS = "/docs"
     const val OPENAPI_DOCUMENT = "$DOCS/openapi.json"

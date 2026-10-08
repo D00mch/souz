@@ -18,6 +18,7 @@ import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.plugins.swagger.swaggerUI
 import io.ktor.server.request.path
+import io.ktor.server.response.respondText
 import io.ktor.server.response.respond
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
@@ -96,6 +97,22 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
             disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
         }
     }
+    install(io.ktor.server.metrics.micrometer.MicrometerMetrics) {
+        registry = dependencies.metrics.registry
+        meterBinders = emptyList() // Process-owned binders close with backend resources.
+        registerDistributionStatisticConfig = false
+        distinctNotRegisteredRoutes = false
+        filter { it.request.path() !in setOf(BackendHttpRoutes.HEALTH, BackendHttpRoutes.METRICS) }
+        timers { _, cause ->
+            // A Host header and exception details must not expand the label set.
+            tag("address", "backend")
+            tag("throwable", if (cause == null) "none" else "error")
+            publishPercentileHistogram()
+            minimumExpectedValue(java.time.Duration.ofMillis(10))
+            maximumExpectedValue(java.time.Duration.ofMinutes(15))
+            serviceLevelObjectives(*ru.souz.backend.metrics.BackendMetrics.DURATION_BUCKETS)
+        }
+    }
     install(WebSockets)
     install(StatusPages) {
         exception<BackendV1Exception> { call, cause ->
@@ -150,6 +167,22 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
     )
 
     routing {
+        get(BackendHttpRoutes.METRICS) {
+            call.respondText(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { dependencies.metrics.scrape() }, ContentType.parse("text/plain; version=0.0.4; charset=utf-8"))
+        }.describePublic(
+            operationId = "getMetrics",
+            tag = BackendOpenApiTags.SYSTEM,
+            summary = "Scrape backend Prometheus metrics",
+            description = "Process-owned metrics for a trusted-network scraper. Restrict this route at ingress; no end-user identity is required.",
+        ) {
+            responses {
+                response(200) {
+                    description = "Prometheus text exposition, version 0.0.4."
+                    ContentType.Text.Plain { schema = io.ktor.openapi.JsonSchema(type = io.ktor.openapi.JsonType.STRING) }
+                }
+            }
+        }
+
         get(BackendHttpRoutes.ROOT) {
             call.respondBackend(logger) {
                 RootResponse(
@@ -209,6 +242,7 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
 private fun rootEndpoints(featureFlags: BackendFeatureFlags): List<String> =
     buildList {
         add("GET ${BackendHttpRoutes.HEALTH}")
+        add("GET ${BackendHttpRoutes.METRICS}")
         add("GET ${BackendHttpRoutes.DOCS}")
         add("GET ${BackendHttpRoutes.BOOTSTRAP}")
         add("GET ${BackendHttpRoutes.ONBOARDING_STATE}")

@@ -4,9 +4,6 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
-import ru.souz.backend.events.model.AgentEventEnvelope
-import ru.souz.backend.events.model.AgentEventType
-import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.http.BackendEventOpenApiSchemas
@@ -69,17 +66,3 @@ internal fun Route.eventRoutes(deps: BackendHttpDependencies) {
     publicClientSocket(BackendHttpRoutes.CHAT_WS_PATTERN, deps, singleChat = true)
     publicClientSocket(BackendHttpRoutes.WS, deps, singleChat = false)
 }
-
-internal fun AgentEventEnvelope.isPublicClientEvent(): Boolean =
-    when (type) {
-        AgentEventType.ASSISTANT_MESSAGE -> !durable
-        AgentEventType.TOOL_CALL_STARTED -> payload is PublicToolCallStartedPayload
-        AgentEventType.THREAD_COMPLETED,
-        AgentEventType.THREAD_FAILED,
-        AgentEventType.THREAD_CANCELLED -> true
-        // Out-of-band cross-channel push (ru.souz.backend.channels), never part of any thread this
-        // client started — ordinary in-thread messages always carry a non-null executionId and
-        // stay filtered out here, exactly as before.
-        AgentEventType.MESSAGE_CREATED -> executionId == null
-        else -> false
-    }

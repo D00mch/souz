@@ -61,6 +61,68 @@ import kotlin.time.Duration.Companion.milliseconds
 
 class BackendExecutionLlmChatApiTest {
     @Test
+    fun `metrics count actual retries and streaming deltas without persisted usage or dynamic labels`() = runTest {
+        ru.souz.backend.metrics.BackendMetrics().use { meters ->
+            var unary = 0
+            var streaming = 0
+            facadeFixture(
+                metrics = meters,
+                initialUsage = usage(100, 200, 300, 0),
+                retryPolicy = BackendProviderRetryPolicy(max429Retries = 1),
+                providerApiOverride = {
+                    StubChatApi(
+                        message = { body -> if (unary++ == 0) LLMResponse.Chat.Error(429, "retry") else ok(body.model, usage(3, 2, 5, 0)) },
+                        stream = { body ->
+                            if (streaming++ == 0) flowOf(LLMResponse.Chat.Error(429, "retry"))
+                            else flowOf(ok(body.model, usage(2, 0, 2, 0)), ok(body.model, usage(0, 0, 0, 0)), ok(body.model, usage(2, 3, 5, 0)), ok(body.model, usage(2, 3, 5, 0)))
+                        },
+                    )
+                },
+            ).use { fixture ->
+                val request = chat("dynamic-model-user-secret").copy(provider = LlmProvider.OPENAI)
+                fixture.api.message(request)
+                fixture.api.messageStream(request).toList()
+                fun count(outcome: String) = meters.registry.get("souz.llm.requests")
+                    .tags("provider", "openai", "model", "other", "outcome", outcome).counter().count()
+                assertEquals(2.0, count("error"))
+                assertEquals(2.0, count("success"))
+                for (direction in listOf("input", "output")) {
+                    assertEquals(5.0, meters.registry.get("souz.llm.tokens")
+                        .tags("provider", "openai", "model", "other", "direction", direction).counter().count())
+                }
+                val registered = meters.registry.meters.count { it.id.name.startsWith("souz.llm.") }
+                repeat(10) { fixture.api.message(request.copy(model = "arbitrary-$it")) }
+                assertEquals(registered, meters.registry.meters.count { it.id.name.startsWith("souz.llm.") })
+                assertTrue(!meters.registry.scrape().contains("dynamic-model-user-secret"))
+            }
+        }
+    }
+
+    @Test
+    fun `metrics distinguish provider timeouts and cancellation`() = runTest {
+        ru.souz.backend.metrics.BackendMetrics().use { meters ->
+            facadeFixture(metrics = meters, providerApiOverride = {
+                StubChatApi(message = { kotlinx.coroutines.withTimeout(1) { awaitCancellation() } })
+            }).use { fixture ->
+                assertFailsWith<kotlinx.coroutines.TimeoutCancellationException> {
+                    fixture.api.message(chat("timeout-model").copy(provider = LlmProvider.OPENAI))
+                }
+            }
+            facadeFixture(metrics = meters, providerApiOverride = {
+                StubChatApi(stream = { flow { throw CancellationException("cancelled") } })
+            }).use { fixture ->
+                assertFailsWith<CancellationException> {
+                    fixture.api.messageStream(chat("cancel-model").copy(provider = LlmProvider.OPENAI)).toList()
+                }
+            }
+            for (outcome in listOf("timeout", "cancelled")) {
+                assertEquals(1.0, meters.registry.get("souz.llm.requests")
+                    .tags("provider", "openai", "model", "other", "outcome", outcome).counter().count())
+            }
+        }
+    }
+
+    @Test
     fun `raw routes preserve IDs across providers retries and stream accounting`() = runTest {
         val requests = mutableListOf<Pair<LlmProvider, LLMRequest.Chat>>()
         val delays = mutableListOf<Long>()
@@ -322,34 +384,39 @@ class BackendExecutionLlmChatApiTest {
                         LLMResponse.UploadFile(0, 0, file.name, "uploaded-image", "file", "vision", "private")
                     },
                 )
-                facadeFixture(
-                    settingsProvider = LlmSettingsStub().apply { gigaModel = model },
-                    providerApiOverride = { assertEquals(model.provider, it); provider },
-                    hookBudget = budget,
-                ).use { fixture ->
-                    suspend fun call() {
-                        val request = chat("test-model").copy(provider = LlmProvider.OPENAI)
-                        when (kind) {
-                            "chat" -> assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
-                            "stream" -> assertIs<LLMResponse.Chat.Ok>(fixture.api.messageStream(request).toList().single())
-                            "embeddings" -> assertIs<LLMResponse.Embeddings.Ok>(fixture.api.embeddings(embeddings(EmbeddingsModel.OpenAITextEmbedding3Small.name)))
-                            "upload" -> assertEquals("uploaded-image", fixture.api.uploadFile(File("image.png")).id)
+                ru.souz.backend.metrics.BackendMetrics().use { meters ->
+                    facadeFixture(
+                        settingsProvider = LlmSettingsStub().apply { gigaModel = model },
+                        providerApiOverride = { assertEquals(model.provider, it); provider },
+                        hookBudget = budget,
+                        metrics = meters,
+                    ).use { fixture ->
+                        suspend fun call() {
+                            val request = chat("test-model").copy(provider = LlmProvider.OPENAI)
+                            when (kind) {
+                                "chat" -> assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
+                                "stream" -> assertIs<LLMResponse.Chat.Ok>(fixture.api.messageStream(request).toList().single())
+                                "embeddings" -> assertIs<LLMResponse.Embeddings.Ok>(fixture.api.embeddings(embeddings(EmbeddingsModel.OpenAITextEmbedding3Small.name)))
+                                "upload" -> assertEquals("uploaded-image", fixture.api.uploadFile(File("image.png")).id)
+                            }
                         }
+                        val running = async { call() }
+                        try {
+                            entered.await()
+                            assertFailsWith<QuotaExceededException> { quotas.withProviderPermit(model.provider) {} }
+                            assertEquals("global_provider_concurrency_exceeded", assertFailsWith<QuotaExceededException> {
+                                call()
+                            }.code)
+                            assertEquals(1, store.find("user-a", receiptId)?.llmCalls)
+                        } finally {
+                            running.cancelAndJoin()
+                        }
+                        call()
+                        assertEquals(2, store.find("user-a", receiptId)?.llmCalls)
+                        assertEquals("hook_execution_llm_limit", assertFailsWith<BackendV1Exception> { call() }.code)
+                        assertEquals(if (kind == "upload") 0.0 else 2.0,
+                            meters.registry.find("souz.llm.requests").counters().sumOf { it.count() })
                     }
-                    val running = async { call() }
-                    try {
-                        entered.await()
-                        assertFailsWith<QuotaExceededException> { quotas.withProviderPermit(model.provider) {} }
-                        assertEquals("global_provider_concurrency_exceeded", assertFailsWith<QuotaExceededException> {
-                            call()
-                        }.code)
-                        assertEquals(1, store.find("user-a", receiptId)?.llmCalls)
-                    } finally {
-                        running.cancelAndJoin()
-                    }
-                    call()
-                    assertEquals(2, store.find("user-a", receiptId)?.llmCalls)
-                    assertEquals("hook_execution_llm_limit", assertFailsWith<BackendV1Exception> { call() }.code)
                 }
             }
         }
@@ -439,6 +506,7 @@ private fun facadeFixture(
     delayMillis: suspend (Long) -> Unit = {},
     providerApiOverride: ((LlmProvider) -> LLMChatAPI)? = { StubChatApi() },
     hookBudget: HookLlmBudget? = null,
+    metrics: ru.souz.backend.metrics.BackendMetrics? = null,
     client: HttpClient = HttpClient(MockEngine { respondOk() }) {
         providerHttpClientDefaults()
     },
@@ -456,6 +524,7 @@ private fun facadeFixture(
         delayMillis = delayMillis,
         providerApiOverride = providerApiOverride,
         hookBudget = hookBudget,
+        metrics = metrics,
     )
     return FacadeFixture(api, credentialResolver, clients)
 }

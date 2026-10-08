@@ -104,6 +104,9 @@ class BackendOptionsE2eTest {
                 }.let { messages ->
                     assertTrue(messages.any { it["content"].asText() == "continued after choosing Alpha" })
                 }
+                backend.awaitExecution(UUID.fromString(executionId))
+                assertExecutionMeters(backend, "completed")
+                assertEquals(1L, backend.dependencies.metrics.registry.get("souz.execution.wait.duration").tag("reason", "user_option").timer().count())
                 assertEquals(listOf(effort, effort), runner.reasoningEfforts.toList())
                 assertEquals(listOf(narrate, narrate), runner.narrationPreferences.toList())
                 val events = client.get(BackendHttpRoutes.chatEvents(chatId)) {
