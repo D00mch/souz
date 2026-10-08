@@ -434,6 +434,8 @@ class BackendPublicWebSocketE2eTest {
                 eventually("replay connection cleanup") {
                     backend.dependencies.metrics.registry.get("souz.ws.connections.active").gauge().value().takeIf { it == 1.0 }
                 }
+                client.get(BackendHttpRoutes.METRICS)
+                assertEquals(1.0, backend.dependencies.metrics.registry.get("souz.executions.active").tag("state", "running").gauge().value())
                 assertTrue(backend.dependencies.metrics.registry.get("souz.pending.tool.calls").gauge().value() > 0)
 
                 val httpEvent = client.get(BackendHttpRoutes.chatEvents(chatId)) {

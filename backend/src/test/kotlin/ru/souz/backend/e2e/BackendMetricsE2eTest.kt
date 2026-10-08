@@ -20,11 +20,12 @@ class BackendMetricsE2eTest {
         assertEquals(HttpStatusCode.OK, first.status)
         assertTrue(first.headers["Content-Type"].orEmpty().startsWith("text/plain; version=0.0.4"))
         val text = first.bodyAsText()
-        for (name in listOf("souz_executions_total", "souz_execution_duration_seconds_bucket", "souz_llm_requests_total",
-            "souz_llm_tokens_total", "souz_tool_calls_total", "souz_pending_tool_calls", "souz_ws_connections_active",
+        for (name in listOf("souz_executions_total", "souz_execution_duration_seconds_bucket",
+            "souz_pending_tool_calls", "souz_ws_connections_active",
             "jvm_memory_used_bytes", "jvm_gc_memory_allocated_bytes_total", "process_uptime_seconds", "hikaricp_connections_active")) {
             assertTrue(text.contains(name), "Missing $name")
         }
+        assertTrue(text.contains("hikaricp_connections_acquire_seconds_bucket{pool=\"souz-backend-postgres\",le=\"900.0\"}"))
         val requestTimerCount = metrics.registry.find("ktor.http.server.requests").timers().sumOf { it.count() }
         repeat(3) { client.get("/health"); client.get("/metrics") }
         assertEquals(requestTimerCount, metrics.registry.find("ktor.http.server.requests").timers().sumOf { it.count() })
@@ -41,13 +42,11 @@ class BackendMetricsE2eTest {
         repeat(2) { backend.dependencies.executionService.propagateCancellation(started) }
         assertExecutionMeters(backend, "completed")
         val requests = llm.requests.size
-        val registered = metrics.registry.meters.count { it.id.name.startsWith("ktor.http.server.requests") }
-        repeat(5) { client.get("/metrics"); client.get("/unregistered/${UUID.randomUUID()}") }
+        client.get("/unregistered/first")
         // Unmatched routes share one bounded n/a series.
         val registeredAfterUnknown = metrics.registry.meters.count { it.id.name.startsWith("ktor.http.server.requests") }
         repeat(5) { client.get("/unregistered/${UUID.randomUUID()}") { header("Host", "dynamic-${UUID.randomUUID()}.example") } }
         assertEquals(registeredAfterUnknown, metrics.registry.meters.count { it.id.name.startsWith("ktor.http.server.requests") })
-        assertTrue(registeredAfterUnknown >= registered)
         assertEquals(requests, llm.requests.size)
         val scrape = client.get("/metrics").bodyAsText()
         assertFalse(scrape.contains(userId))

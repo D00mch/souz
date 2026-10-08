@@ -5,6 +5,7 @@ import java.sql.ResultSet
 import java.time.Clock
 import java.util.UUID
 import javax.sql.DataSource
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
@@ -22,7 +23,7 @@ class PostgresClientRequestRepository(
     private val dataSource: DataSource,
     private val captureHistoryMemory: Boolean = false,
     clock: Clock = Clock.systemUTC(),
-    private val onAcceptedExecution: (AgentExecution) -> Unit = {},
+    private val metrics: BackendMetrics? = null,
 ) : ClientRequestRepository {
     private val executionWriter = PostgresAgentExecutionRepository(dataSource)
     private val messageWriter = PostgresMessageRepository(dataSource)
@@ -149,7 +150,7 @@ class PostgresClientRequestRepository(
         key: ClientRequestKey,
         mutation: Connection.() -> ClientRequestResult,
     ): ClientRequestResult = dataSource.write(afterCommit = { result ->
-        if (result is ClientRequestResult.Accepted) onAcceptedExecution(result.execution)
+        if (result is ClientRequestResult.Accepted) metrics?.executions?.committed(result.execution)
     }) { connection ->
         connection.lockChat(userId, key.chatId)
         connection.findClientRequest(key.chatId, key.requestId)?.replay(key) ?: connection.mutation()

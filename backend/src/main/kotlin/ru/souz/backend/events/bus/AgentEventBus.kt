@@ -3,11 +3,12 @@ package ru.souz.backend.events.bus
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.channels.Channel
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.events.model.isPublicClientEvent
 import ru.souz.backend.events.model.AgentEventEnvelope
 
-class AgentEventBus(private val metrics: ru.souz.backend.metrics.BackendMetrics? = null) {
-    private class Subscriber(val acceptsClientCommands: Boolean, metrics: ru.souz.backend.metrics.BackendMetrics?) {
+class AgentEventBus(private val metrics: BackendMetrics? = null) {
+    private class Subscriber(val acceptsClientCommands: Boolean, metrics: BackendMetrics?) {
         val events = Channel<AgentEventEnvelope>(AgentEventLimits.LIVE_BUFFER_SIZE, onUndeliveredElement = {
             if (!it.durable && it.isPublicClientEvent() && acceptsClientCommands) metrics?.dropped("disconnect")
         })

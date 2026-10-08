@@ -224,7 +224,8 @@ class BackendExecutionE2eTest {
     }
 }
 
-internal fun assertExecutionMeters(backend: BackendE2eBackend, outcome: String) {
+internal suspend fun assertExecutionMeters(backend: BackendE2eBackend, outcome: String) {
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { backend.dependencies.metrics.scrape() }
     val registry = backend.dependencies.metrics.registry
     assertEquals(1.0, registry.get("souz.executions").tag("outcome", outcome).counter().count())
     assertEquals(1L, registry.get("souz.execution.duration").timer().count())

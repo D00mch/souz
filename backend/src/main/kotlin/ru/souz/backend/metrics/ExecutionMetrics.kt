@@ -16,20 +16,14 @@ internal class ExecutionMetrics(private val meters: BackendMetrics, private val 
 
     fun bindDatabase(source: javax.sql.DataSource) { dataSource = source }
 
-    private val activeCounts = ConcurrentHashMap<AgentExecutionStatus, Long>()
-
-    // Active state is shared database state; timing samples never define ownership/load.
-    private fun activeCount(state: AgentExecutionStatus): Double = if (dataSource != null) {
-        activeCounts[state]?.toDouble() ?: 0.0
-    } else samples.values.count { it.state == state }.toDouble()
+    @Volatile private var activeCounts: Map<String, Long> = emptyMap()
 
     fun prepareScrape() {
         val source = dataSource ?: return
         source.connection.use { connection ->
-            val counts = connection.prepareStatement("select status, count(*) from agent_executions where status in ('queued', 'running', 'waiting_option', 'cancelling') group by status").use { statement ->
+            activeCounts = connection.prepareStatement("select status, count(*) from agent_executions where status in ('queued', 'running', 'waiting_option', 'cancelling') group by status").use { statement ->
                 statement.executeQuery().use { rows -> buildMap<String, Long> { while (rows.next()) put(rows.getString(1), rows.getLong(2)) } }
             }
-            AgentExecutionStatus.entries.filter { it.isActive() }.forEach { activeCounts[it] = counts[it.value] ?: 0 }
             val ids = samples.keys.toTypedArray()
             if (ids.isEmpty()) return
             val array = connection.createArrayOf("uuid", ids)
@@ -46,7 +40,7 @@ internal class ExecutionMetrics(private val meters: BackendMetrics, private val 
 
     init {
         AgentExecutionStatus.entries.filter { it.isActive() }.forEach { state ->
-            Gauge.builder("souz.executions.active", this) { it.activeCount(state) }
+            Gauge.builder("souz.executions.active", this) { (it.activeCounts[state.value] ?: 0L).toDouble() }
                 .tag("state", state.value).register(meters.registry)
         }
     }
@@ -58,11 +52,12 @@ internal class ExecutionMetrics(private val meters: BackendMetrics, private val 
             samples.remove(execution.id)?.let { sample ->
                 val now = nanoTime()
                 endOptionWait(sample, now)
-                meters.timer("souz.execution.duration").record(processingAt(sample, now), TimeUnit.NANOSECONDS)
+                meters.registry.timer("souz.execution.duration").record(processingAt(sample, now), TimeUnit.NANOSECONDS)
             }
             return
         }
         samples.compute(execution.id) { _, sample ->
+            if (sample?.state == execution.status) return@compute sample
             val now = nanoTime()
             if (sample?.state == AgentExecutionStatus.WAITING_OPTION && execution.status != sample.state) endOptionWait(sample, now)
             Sample(execution.status, now, sample?.let { processingAt(it, now) } ?: 0, sample?.clientWaits ?: 0)
@@ -76,7 +71,7 @@ internal class ExecutionMetrics(private val meters: BackendMetrics, private val 
         }
         return AutoCloseable {
             val ended = nanoTime()
-            meters.timer("souz.execution.wait.duration", "reason", "client_tool").record(ended - started, TimeUnit.NANOSECONDS)
+            meters.registry.timer("souz.execution.wait.duration", "reason", "client_tool").record(ended - started, TimeUnit.NANOSECONDS)
             samples.computeIfPresent(executionId) { _, sample ->
                 sample.copy(since = ended, clientWaits = (sample.clientWaits - 1).coerceAtLeast(0))
             }
@@ -88,7 +83,7 @@ internal class ExecutionMetrics(private val meters: BackendMetrics, private val 
 
     private fun endOptionWait(sample: Sample, now: Long) {
         if (sample.state == AgentExecutionStatus.WAITING_OPTION) {
-            meters.timer("souz.execution.wait.duration", "reason", "user_option").record(now - sample.since, TimeUnit.NANOSECONDS)
+            meters.registry.timer("souz.execution.wait.duration", "reason", "user_option").record(now - sample.since, TimeUnit.NANOSECONDS)
         }
     }
 

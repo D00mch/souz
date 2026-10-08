@@ -14,6 +14,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventEnvelope
 import ru.souz.backend.events.model.AgentEventType
@@ -28,7 +29,7 @@ import ru.souz.llms.restJsonMapper
 class AgentEventBusTest {
     @Test
     fun `metrics count evicted and disconnected live deliveries without durable signal or absent subscriber drops`() = runTest {
-        ru.souz.backend.metrics.BackendMetrics().use { meters ->
+        BackendMetrics().use { meters ->
             val bus = AgentEventBus(meters)
             val chat = UUID.randomUUID()
             val progress = AgentLiveEvent(UUID.randomUUID(), "user", chat, null,

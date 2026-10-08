@@ -14,6 +14,7 @@ import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
+import io.ktor.server.metrics.micrometer.MicrometerMetrics
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.plugins.swagger.swaggerUI
@@ -97,7 +98,7 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
             disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
         }
     }
-    install(io.ktor.server.metrics.micrometer.MicrometerMetrics) {
+    install(MicrometerMetrics) {
         registry = dependencies.metrics.registry
         meterBinders = emptyList() // Process-owned binders close with backend resources.
         registerDistributionStatisticConfig = false
@@ -107,10 +108,6 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
             // A Host header and exception details must not expand the label set.
             tag("address", "backend")
             tag("throwable", if (cause == null) "none" else "error")
-            publishPercentileHistogram()
-            minimumExpectedValue(java.time.Duration.ofMillis(10))
-            maximumExpectedValue(java.time.Duration.ofMinutes(15))
-            serviceLevelObjectives(*ru.souz.backend.metrics.BackendMetrics.DURATION_BUCKETS)
         }
     }
     install(WebSockets)

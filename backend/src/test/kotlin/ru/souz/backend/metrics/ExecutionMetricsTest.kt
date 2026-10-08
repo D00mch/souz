@@ -29,6 +29,8 @@ class ExecutionMetricsTest {
             second.close()
             seconds = 45
             timing.committed(queued.copy(status = AgentExecutionStatus.WAITING_OPTION), AgentExecutionStatus.RUNNING)
+            seconds = 75
+            timing.committed(queued.copy(status = AgentExecutionStatus.WAITING_OPTION)) // Idempotent request replay.
             seconds = 105
             timing.committed(queued.copy(status = AgentExecutionStatus.RUNNING), AgentExecutionStatus.WAITING_OPTION)
             seconds = 115

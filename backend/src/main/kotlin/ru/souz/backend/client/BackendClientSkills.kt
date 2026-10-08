@@ -9,6 +9,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillFile
@@ -35,7 +36,7 @@ internal class BackendClientSkills(
     private val eventService: AgentEventService,
     private val channelDeliveryService: ChannelDeliveryService,
     private val now: () -> Instant = Instant::now,
-    private val metrics: ru.souz.backend.metrics.BackendMetrics? = null,
+    private val metrics: BackendMetrics? = null,
     classLoader: ClassLoader = BackendClientSkills::class.java.classLoader,
 ) : AgentToolCatalog {
     private val definitionsById: Map<SkillId, ClientSkillDefinition> =
@@ -71,7 +72,7 @@ private class ClientWebSocketSkill(
     private val eventService: AgentEventService,
     private val channelDeliveryService: ChannelDeliveryService,
     private val now: () -> Instant,
-    private val metrics: ru.souz.backend.metrics.BackendMetrics?,
+    private val metrics: BackendMetrics?,
 ) : LLMToolSetup {
     private val timeout = definition.timeout
     private val metricCategory = definition.category.name.lowercase()
@@ -94,12 +95,15 @@ private class ClientWebSocketSkill(
         val started = System.nanoTime()
         var outcome = "error"
         metrics?.toolStarted()
+        val wait = meta.requestId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+            ?.let { metrics?.executions?.beginClientWait(it) }
         try {
             return invokeClient(functionCall, meta) { outcome = it }
         } catch (cancelled: CancellationException) {
             outcome = if (cancelled is kotlinx.coroutines.TimeoutCancellationException) "timeout" else "cancelled"
             throw cancelled
         } finally {
+            wait?.close()
             metrics?.toolFinished()
             metrics?.toolOutcome(metricCategory, outcome, System.nanoTime() - started)
         }
@@ -124,7 +128,6 @@ private class ClientWebSocketSkill(
         val deadlineAt = startedAt.plus(timeout)
         val arguments = restJsonMapper.valueToTree<JsonNode>(functionCall.arguments)
         val context = ToolCallContext(meta.userId, chatId.toString(), threadId.toString(), toolCallId)
-        val wait = metrics?.executions?.beginClientWait(threadId)
         var clientCallStarted = false
         try {
             toolCallRepository.startClientCall(
@@ -164,7 +167,6 @@ private class ClientWebSocketSkill(
             }
             return errorMessage(functionCall.name, "client_tool_failed", error.message ?: "Client tool failed.")
         } finally {
-            wait?.close()
             registry.clearTool(threadId, toolCallId)
         }
     }
@@ -186,27 +188,23 @@ private class ClientWebSocketSkill(
         val threadId = UUID.randomUUID()
         val context = ToolCallContext(meta.userId, chatId.toString(), threadId.toString(), UUID.randomUUID().toString())
         val deadlineAt = now().plus(timeout)
-        val executionId = meta.requestId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
-        val wait = executionId?.let { metrics?.executions?.beginClientWait(it) }
-        try {
-            return registry.withChannelTool(context, deadlineAt) { pending ->
-                val published = eventService.publishClientToolCall(
-                    userId = meta.userId,
-                    chatId = chatId,
-                    executionId = threadId,
-                    payload = PublicToolCallStartedPayload(
-                        toolCallId = context.toolCallId,
-                        name = fn.name,
-                        arguments = restJsonMapper.valueToTree(functionCall.arguments - "channelId"),
-                        deadlineAt = deadlineAt.toString(),
-                    ),
-                )
-                if (!published) return@withChannelTool errorMessage(
-                    functionCall.name, "client_tool_busy", "Device command queues are full or disconnected.",
-                )
-                outcomeMessage(functionCall.name, pending.awaitResult(now()), onOutcome)
-            }
-        } finally { wait?.close() }
+        return registry.withChannelTool(context, deadlineAt) { pending ->
+            val published = eventService.publishClientToolCall(
+                userId = meta.userId,
+                chatId = chatId,
+                executionId = threadId,
+                payload = PublicToolCallStartedPayload(
+                    toolCallId = context.toolCallId,
+                    name = fn.name,
+                    arguments = restJsonMapper.valueToTree(functionCall.arguments - "channelId"),
+                    deadlineAt = deadlineAt.toString(),
+                ),
+            )
+            if (!published) return@withChannelTool errorMessage(
+                functionCall.name, "client_tool_busy", "Device command queues are full or disconnected.",
+            )
+            outcomeMessage(functionCall.name, pending.awaitResult(now()), onOutcome)
+        }
     }
 
     private fun outcomeMessage(functionName: String, outcome: ClientToolOutcome, onOutcome: (String) -> Unit): LLMRequest.Message {

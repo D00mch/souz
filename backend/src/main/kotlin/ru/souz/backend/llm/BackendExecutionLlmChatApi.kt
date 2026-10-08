@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.hooks.HookLlmBudget
@@ -42,7 +43,7 @@ internal class BackendExecutionLlmChatApi(
     private val delayMillis: suspend (Long) -> Unit = { delay(it) },
     private val providerApiOverride: ((LlmProvider) -> LLMChatAPI)? = null,
     private val hookBudget: HookLlmBudget? = null,
-    private val metrics: ru.souz.backend.metrics.BackendMetrics? = null,
+    private val metrics: BackendMetrics? = null,
 ) : LLMChatAPI {
     private val providerStateMutex = Mutex()
     private val credentials = mutableMapOf<LlmProvider, String?>()
@@ -222,8 +223,6 @@ internal class BackendExecutionLlmChatApi(
         }
     }
 
-    // Synchronous accounting precedes rethrow; cancellation is never converted to a result.
-    @Suppress("SuspendFunSwallowedCancellation")
     private fun retryingStream(provider: LlmProvider, api: LLMChatAPI, body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
         val request = hookBudget?.limitRequest(body) ?: body
         var attempt = 0
@@ -233,8 +232,7 @@ internal class BackendExecutionLlmChatApi(
                 var previousUsage = ZERO_USAGE
                 withProviderCall(hookBudget, provider) {
                     var outcome = "success"
-                    val started = System.nanoTime()
-                    try {
+                    measureAttempt(provider, request.model, { _: Unit -> outcome }) {
                         api.messageStream(request).collect { response ->
                             if (response is LLMResponse.Chat.Error) outcome = responseOutcome(response)
                             if (!emitted && response is LLMResponse.Chat.Error && response.status == TOO_MANY_REQUESTS &&
@@ -244,11 +242,6 @@ internal class BackendExecutionLlmChatApi(
                             previousUsage = emitAndRecordStreamingUsage(response, previousUsage, provider, request.model)
                             emitted = true
                         }
-                    } catch (error: Throwable) {
-                        outcome = exceptionOutcome(error)
-                        throw error
-                    } finally {
-                        metrics?.llmAttempt(provider, request.model, outcome, System.nanoTime() - started)
                     }
                 }
                 return@flow

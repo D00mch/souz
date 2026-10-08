@@ -10,6 +10,7 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.backend.hooks.HookDefinitions
 import ru.souz.backend.hooks.HookService
@@ -154,10 +155,10 @@ fun backendDiModule(
     bindSingleton { BackendApplicationScope() }
     bindSingleton<Clock> { Clock.systemUTC() }
     bindSingleton<BackendFeatureFlags> { appConfig.featureFlags }
-    bindSingleton { ru.souz.backend.metrics.BackendMetrics() }
+    bindSingleton { BackendMetrics() }
     bindSingleton<HikariDataSource> {
         dataSourceFactory(appConfig.postgres).apply {
-            val metrics = instance<ru.souz.backend.metrics.BackendMetrics>()
+            val metrics = instance<BackendMetrics>()
             metricsTrackerFactory = com.zaxxer.hikari.metrics.micrometer.MicrometerMetricsTrackerFactory(metrics.registry)
             metrics.executions.bindDatabase(this)
         }
@@ -178,12 +179,11 @@ fun backendDiModule(
     bindSingleton<ChatRepository> { PostgresChatRepository(instance()) }
     bindSingleton<ConversationKnowledgeStore> { PostgresConversationKnowledgeStore(instance<HikariDataSource>()) }
     bindSingleton<ClientRequestRepository> {
-        PostgresClientRequestRepository(instance(), appConfig.hindsightApiUrl != null, instance(),
-            onAcceptedExecution = { instance<ru.souz.backend.metrics.BackendMetrics>().executions.committed(it) })
+        PostgresClientRequestRepository(instance(), appConfig.hindsightApiUrl != null, instance(), instance())
     }
     bindSingleton<MessageRepository> { PostgresMessageRepository(instance()) }
     bindSingleton<AgentStateRepository> { PostgresAgentStateRepository(instance()) }
-    bindSingleton<AgentExecutionRepository> { PostgresAgentExecutionRepository(instance(), instance<ru.souz.backend.metrics.BackendMetrics>().executions::committed) }
+    bindSingleton<AgentExecutionRepository> { PostgresAgentExecutionRepository(instance(), instance()) }
     bindSingleton<OptionRepository> { PostgresOptionRepository(instance()) }
     bindSingleton<AgentEventRepository> { PostgresAgentEventRepository(instance()) }
     bindSingleton<ToolCallRepository> { PostgresToolCallRepository(instance()) }
@@ -208,11 +208,11 @@ fun backendDiModule(
             },
             closeDataSource = {
                 instance<HikariDataSource>().close()
-                instance<ru.souz.backend.metrics.BackendMetrics>().close()
+                instance<BackendMetrics>().close()
             },
         )
     }
-    bindSingleton { AgentEventBus(instance<ru.souz.backend.metrics.BackendMetrics>()) }
+    bindSingleton { AgentEventBus(instance<BackendMetrics>()) }
     bindSingleton { ClientThreadRuntimeRegistry() }
     bindSingleton {
         UserProviderKeyService(
