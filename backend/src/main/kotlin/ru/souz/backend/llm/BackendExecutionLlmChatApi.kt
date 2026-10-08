@@ -2,6 +2,8 @@ package ru.souz.backend.llm
 
 import java.io.File
 import kotlin.math.min
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -40,6 +42,7 @@ internal class BackendExecutionLlmChatApi(
     private val delayMillis: suspend (Long) -> Unit = { delay(it) },
     private val providerApiOverride: ((LlmProvider) -> LLMChatAPI)? = null,
     private val hookBudget: HookLlmBudget? = null,
+    private val metrics: ru.souz.backend.metrics.BackendMetrics? = null,
 ) : LLMChatAPI {
     private val providerStateMutex = Mutex()
     private val credentials = mutableMapOf<LlmProvider, String?>()
@@ -60,13 +63,13 @@ internal class BackendExecutionLlmChatApi(
                 requestParameters = settingsProvider.openaiSummarizationParameters,
             )
             val request = body.copy(model = summarizationModel, provider = LlmProvider.OPENAI, maxTokens = 0)
-            return retryChat { callProvider(LlmProvider.OPENAI, request, api) }.also { recordUsage(it) }
+            return retryChat { callProvider(LlmProvider.OPENAI, request, api) }
         }
         val (provider, request) = when (val route = chatRoute(body)) {
             is ChatRoute.Ready -> route
             is ChatRoute.Rejected -> return route.error
         }
-        return retryChat { callProvider(provider, request, apiFor(provider)) }.also { recordUsage(it) }
+        return retryChat { callProvider(provider, request, apiFor(provider)) }
     }
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> {
@@ -95,7 +98,14 @@ internal class BackendExecutionLlmChatApi(
         }
         val api = apiFor(model.provider)
         val request = body.copy(model = model.alias)
-        return withProviderCall(hookBudget, model.provider) { api.embeddings(request) }
+        return withProviderCall(hookBudget, model.provider) {
+            measureAttempt(model.provider, request.model, { response: LLMResponse.Embeddings ->
+                when (response) {
+                    is LLMResponse.Embeddings.Ok -> "success"
+                    is LLMResponse.Embeddings.Error -> if (response.status in setOf(408, 504)) "timeout" else "error"
+                }
+            }) { api.embeddings(request) }
+        }
     }
 
     override suspend fun uploadFile(file: File): LLMResponse.UploadFile {
@@ -204,9 +214,16 @@ internal class BackendExecutionLlmChatApi(
 
     private suspend fun callProvider(provider: LlmProvider, body: LLMRequest.Chat, api: LLMChatAPI): LLMResponse.Chat {
         val request = hookBudget?.limitRequest(body) ?: body
-        return withProviderCall(hookBudget, provider) { api.message(request) }
+        return withProviderCall(hookBudget, provider) {
+            val response = measureAttempt(provider, request.model, ::responseOutcome) { api.message(request) }
+            if (response is LLMResponse.Chat.Ok) metrics?.llmUsage(provider, request.model, response.usage)
+            recordUsage(response)
+            response
+        }
     }
 
+    // Synchronous accounting precedes rethrow; cancellation is never converted to a result.
+    @Suppress("SuspendFunSwallowedCancellation")
     private fun retryingStream(provider: LlmProvider, api: LLMChatAPI, body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
         val request = hookBudget?.limitRequest(body) ?: body
         var attempt = 0
@@ -215,17 +232,23 @@ internal class BackendExecutionLlmChatApi(
                 var emitted = false
                 var previousUsage = ZERO_USAGE
                 withProviderCall(hookBudget, provider) {
-                    api.messageStream(request).collect { response ->
-                        if (
-                            !emitted &&
-                            response is LLMResponse.Chat.Error &&
-                            response.status == TOO_MANY_REQUESTS &&
-                            attempt < retryPolicy.max429Retries
-                        ) {
-                            throw RetryFirstStreaming429(response)
+                    var outcome = "success"
+                    val started = System.nanoTime()
+                    try {
+                        api.messageStream(request).collect { response ->
+                            if (response is LLMResponse.Chat.Error) outcome = responseOutcome(response)
+                            if (!emitted && response is LLMResponse.Chat.Error && response.status == TOO_MANY_REQUESTS &&
+                                attempt < retryPolicy.max429Retries) {
+                                throw RetryFirstStreaming429(response)
+                            }
+                            previousUsage = emitAndRecordStreamingUsage(response, previousUsage, provider, request.model)
+                            emitted = true
                         }
-                        previousUsage = emitAndRecordStreamingUsage(response, previousUsage)
-                        emitted = true
+                    } catch (error: Throwable) {
+                        outcome = exceptionOutcome(error)
+                        throw error
+                    } finally {
+                        metrics?.llmAttempt(provider, request.model, outcome, System.nanoTime() - started)
                     }
                 }
                 return@flow
@@ -239,13 +262,22 @@ internal class BackendExecutionLlmChatApi(
     private suspend fun kotlinx.coroutines.flow.FlowCollector<LLMResponse.Chat>.emitAndRecordStreamingUsage(
         response: LLMResponse.Chat,
         previousUsage: LLMResponse.Usage,
+        provider: LlmProvider,
+        model: String,
     ): LLMResponse.Usage {
         if (response is LLMResponse.Chat.Ok) {
             val delta = response.usage.deltaFrom(previousUsage)
+            metrics?.llmUsage(provider, model, delta)
             usageMutex.withLock { usage = usage.plus(delta) }
             hookBudget?.recordUsage(delta.totalTokens)
             emit(response)
-            return response.usage
+            // Empty/missing or out-of-order usage snapshots must not reset the high-water mark.
+            return LLMResponse.Usage(
+                maxOf(previousUsage.promptTokens, response.usage.promptTokens),
+                maxOf(previousUsage.completionTokens, response.usage.completionTokens),
+                maxOf(previousUsage.totalTokens, response.usage.totalTokens),
+                maxOf(previousUsage.precachedTokens, response.usage.precachedTokens),
+            )
         }
         emit(response)
         return previousUsage
@@ -255,6 +287,37 @@ internal class BackendExecutionLlmChatApi(
         if (response !is LLMResponse.Chat.Ok) return
         usageMutex.withLock { usage = usage.plus(response.usage) }
         hookBudget?.recordUsage(response.usage.totalTokens)
+    }
+
+    // Synchronous accounting precedes rethrow; cancellation is never converted to a result.
+    @Suppress("SuspendFunSwallowedCancellation")
+    private suspend fun <T> measureAttempt(
+        provider: LlmProvider,
+        model: String,
+        responseOutcome: (T) -> String,
+        call: suspend () -> T,
+    ): T {
+        val started = System.nanoTime()
+        var outcome = "error"
+        try {
+            return call().also { outcome = responseOutcome(it) }
+        } catch (error: Throwable) {
+            outcome = exceptionOutcome(error)
+            throw error
+        } finally {
+            metrics?.llmAttempt(provider, model, outcome, System.nanoTime() - started)
+        }
+    }
+
+    private fun responseOutcome(response: LLMResponse.Chat): String = when (response) {
+        is LLMResponse.Chat.Ok -> "success"
+        is LLMResponse.Chat.Error -> if (response.status in setOf(408, 504)) "timeout" else "error"
+    }
+
+    private fun exceptionOutcome(error: Throwable): String = when {
+        error is TimeoutCancellationException || error::class.simpleName in setOf("HttpRequestTimeoutException", "SocketTimeoutException", "ConnectTimeoutException") -> "timeout"
+        error is CancellationException -> "cancelled"
+        else -> "error"
     }
 
     private fun backoffForAttempt(attempt: Int, message: String): Long {

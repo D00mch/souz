@@ -3,6 +3,9 @@ package ru.souz.agent.spi
 fun interface AgentTelemetry {
     fun recordToolExecution(event: AgentToolExecutionEvent)
 
+    fun toolExecutionStarted(functionName: String) = Unit
+    fun toolExecutionFinished(functionName: String) = Unit
+
     companion object {
         val NONE = AgentTelemetry { }
     }

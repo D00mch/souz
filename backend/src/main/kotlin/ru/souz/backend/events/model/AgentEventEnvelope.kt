@@ -14,3 +14,15 @@ sealed interface AgentEventEnvelope {
     val createdAt: Instant
     val durable: Boolean
 }
+
+internal fun AgentEventEnvelope.isPublicClientEvent(): Boolean =
+    when (type) {
+        AgentEventType.ASSISTANT_MESSAGE -> !durable
+        AgentEventType.TOOL_CALL_STARTED -> payload is PublicToolCallStartedPayload
+        AgentEventType.THREAD_COMPLETED,
+        AgentEventType.THREAD_FAILED,
+        AgentEventType.THREAD_CANCELLED -> true
+        // Out-of-band channel pushes are public; ordinary in-thread message rows are not.
+        AgentEventType.MESSAGE_CREATED -> executionId == null
+        else -> false
+    }

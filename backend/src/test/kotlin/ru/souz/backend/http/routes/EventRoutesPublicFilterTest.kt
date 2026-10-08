@@ -1,5 +1,6 @@
 package ru.souz.backend.http.routes
 
+import ru.souz.backend.events.model.isPublicClientEvent
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test

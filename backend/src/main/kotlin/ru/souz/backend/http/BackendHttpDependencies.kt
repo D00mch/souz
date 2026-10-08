@@ -18,6 +18,7 @@ import ru.souz.skilloauth.impl.SkillOAuthGatewayImpl
 
 internal data class BackendHttpDependencies(
     val bootstrapService: BackendBootstrapService,
+    val metrics: ru.souz.backend.metrics.BackendMetrics,
     val selectedModel: () -> String,
     val onboardingService: BackendOnboardingService,
     val userSettingsService: UserSettingsService,

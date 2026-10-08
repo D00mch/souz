@@ -2,14 +2,18 @@ package ru.souz.backend.events.bus
 
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import ru.souz.backend.events.model.isPublicClientEvent
 import ru.souz.backend.events.model.AgentEventEnvelope
 
-class AgentEventBus {
-    private class Subscriber(val acceptsClientCommands: Boolean) {
-        val events = Channel<AgentEventEnvelope>(AgentEventLimits.LIVE_BUFFER_SIZE, BufferOverflow.DROP_OLDEST)
-        val commands = Channel<AgentEventEnvelope>(AgentEventLimits.LIVE_BUFFER_SIZE)
+class AgentEventBus(private val metrics: ru.souz.backend.metrics.BackendMetrics? = null) {
+    private class Subscriber(val acceptsClientCommands: Boolean, metrics: ru.souz.backend.metrics.BackendMetrics?) {
+        val events = Channel<AgentEventEnvelope>(AgentEventLimits.LIVE_BUFFER_SIZE, onUndeliveredElement = {
+            if (!it.durable && it.isPublicClientEvent() && acceptsClientCommands) metrics?.dropped("disconnect")
+        })
+        val commands = Channel<AgentEventEnvelope>(AgentEventLimits.LIVE_BUFFER_SIZE, onUndeliveredElement = {
+            if (acceptsClientCommands && it.isPublicClientEvent()) metrics?.dropped("disconnect")
+        })
     }
 
     private val subscribers =
@@ -20,7 +24,7 @@ class AgentEventBus {
 
     suspend fun subscribe(userId: String, chatId: UUID, acceptsClientCommands: Boolean = true): AgentEventSubscription {
         val key = AgentEventStreamKey(userId = userId, chatId = chatId)
-        val subscriber = Subscriber(acceptsClientCommands)
+        val subscriber = Subscriber(acceptsClientCommands, metrics)
         subscribers.compute(key) { _, existing ->
             (existing ?: ConcurrentHashMap.newKeySet()).apply {
                 add(subscriber)
@@ -34,8 +38,8 @@ class AgentEventBus {
                     existing.remove(subscriber)
                     existing.takeUnless { it.isEmpty() }
                 }
-                subscriber.events.close()
-                subscriber.commands.close()
+                subscriber.events.cancel()
+                subscriber.commands.cancel()
             },
         )
     }
@@ -53,8 +57,19 @@ class AgentEventBus {
         val targets = subscribers[key] ?: return
         val closedTargets = ArrayList<Subscriber>()
         targets.forEach { subscriber ->
-            if (subscriber.events.trySend(event).isFailure) {
+            val sent = subscriber.events.trySend(event)
+            if (sent.isClosed) {
+                if (!event.durable && event.isPublicClientEvent() && subscriber.acceptsClientCommands) metrics?.dropped("disconnect")
                 closedTargets += subscriber
+            } else if (sent.isFailure) {
+                // Preserve DROP_OLDEST behavior while counting actual evictions of live events.
+                subscriber.events.tryReceive().getOrNull()?.let {
+                    if (!it.durable && it.isPublicClientEvent() && subscriber.acceptsClientCommands) metrics?.dropped("queue_overflow")
+                }
+                val retry = subscriber.events.trySend(event)
+                if (retry.isFailure && !event.durable && event.isPublicClientEvent() && subscriber.acceptsClientCommands) {
+                    metrics?.dropped(if (retry.isClosed) "disconnect" else "queue_overflow")
+                }
             }
         }
         if (closedTargets.isEmpty()) {

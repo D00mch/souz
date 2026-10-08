@@ -21,6 +21,39 @@ import kotlin.test.assertTrue
 
 class AgentToolExecutorTest {
     @Test
+    @Suppress("SuspendFunSwallowedCancellation") // The test asserts intentionally thrown cancellation.
+    fun `tool telemetry lifecycle releases pending work on success failure timeout and cancellation`() = runTest {
+        var pending = 0
+        val events = mutableListOf<AgentToolExecutionEvent>()
+        val executor = AgentToolExecutor(object : AgentTelemetry {
+            override fun toolExecutionStarted(functionName: String) { pending++ }
+            override fun toolExecutionFinished(functionName: String) { pending-- }
+            override fun recordToolExecution(event: AgentToolExecutionEvent) { events += event }
+        })
+        for (outcome in listOf("success", "error", "timeout", "cancelled")) {
+            val settings = settingsWithFileTool {
+                assertEquals(1, pending)
+                when (outcome) {
+                    "error" -> throw IllegalStateException("failure")
+                    "timeout" -> kotlinx.coroutines.withTimeout(1) { kotlinx.coroutines.awaitCancellation() }
+                    "cancelled" -> throw kotlinx.coroutines.CancellationException("cancelled")
+                    else -> LLMRequest.Message(role = LLMMessageRole.function, content = "done")
+                }
+            }
+            try {
+                executor.execute(settings, LLMResponse.FunctionCall("tool.read_file", emptyMap()))
+                assertEquals("success", outcome)
+            } catch (error: Exception) {
+                assertTrue(outcome != "success")
+            }
+            assertEquals(0, pending)
+        }
+        assertEquals(listOf(true, false, false, false), events.map { it.success })
+        assertEquals("TimeoutCancellationException", events[2].errorType)
+        assertEquals("CancellationException", events[3].errorType)
+    }
+
+    @Test
     fun `reports successful tool execution through injected telemetry sink`() = runTest {
         val events = mutableListOf<AgentToolExecutionEvent>()
         val runtimeEvents = mutableListOf<AgentRuntimeEvent>()

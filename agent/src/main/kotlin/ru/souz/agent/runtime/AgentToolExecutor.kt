@@ -29,6 +29,23 @@ class AgentToolExecutor(
         toolCallId: String? = null,
         eventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
     ): LLMRequest.Message {
+        telemetry.toolExecutionStarted(functionCall.name)
+        try {
+            return executeInvocation(settings, functionCall, meta, toolCallId, eventSink)
+        } finally {
+            telemetry.toolExecutionFinished(functionCall.name)
+        }
+    }
+
+    // Preserve failure events and synchronous accounting; cancellation is always rethrown.
+    @Suppress("SuspendFunSwallowedCancellation")
+    private suspend fun executeInvocation(
+        settings: AgentSettings,
+        functionCall: LLMResponse.FunctionCall,
+        meta: ToolInvocationMeta,
+        toolCallId: String?,
+        eventSink: AgentRuntimeEventSink,
+    ): LLMRequest.Message {
         _toolInvocations.tryEmit(functionCall)
         val startedAtNanos = System.nanoTime()
         val runtimeToolCallId = toolCallId ?: UUID.randomUUID().toString()
@@ -83,22 +100,25 @@ class AgentToolExecutor(
                 )
             }
         } catch (e: Exception) {
-            eventSink.emit(
-                AgentRuntimeEvent.ToolCallFailed(
-                    toolCallId = runtimeToolCallId,
-                    name = functionCall.name,
-                    error = e,
-                    durationMs = durationMsSince(startedAtNanos),
+            try {
+                eventSink.emit(
+                    AgentRuntimeEvent.ToolCallFailed(
+                        toolCallId = runtimeToolCallId,
+                        name = functionCall.name,
+                        error = e,
+                        durationMs = durationMsSince(startedAtNanos),
+                    )
                 )
-            )
-            recordToolExecution(
-                functionCall = functionCall,
-                toolCategoryName = toolCategoryName,
-                startedAtNanos = startedAtNanos,
-                logContext = logContext,
-                success = false,
-                errorType = e::class.simpleName ?: e::class.qualifiedName?.substringAfterLast('.'),
-            )
+            } finally {
+                recordToolExecution(
+                    functionCall = functionCall,
+                    toolCategoryName = toolCategoryName,
+                    startedAtNanos = startedAtNanos,
+                    logContext = logContext,
+                    success = false,
+                    errorType = e::class.simpleName ?: e::class.qualifiedName?.substringAfterLast('.'),
+                )
+            }
             throw e
         }
     }

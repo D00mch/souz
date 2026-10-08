@@ -1,5 +1,6 @@
 package ru.souz.backend.http.routes
 
+import ru.souz.backend.events.model.isPublicClientEvent
 import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.server.websocket.DefaultWebSocketServerSession
 import io.ktor.websocket.CloseReason
@@ -252,6 +253,8 @@ internal class PublicClientConnection(
         return true
     }
 
+    // Socket cancellation only records a synchronous drop before it is rethrown.
+    @Suppress("SuspendFunSwallowedCancellation")
     private fun subscribe(scope: CoroutineScope, chat: Chat, stream: AgentEventStream): CompletableDeferred<Unit> {
         val replayDone = CompletableDeferred<Unit>()
         // Enter the cleanup block even if the connection is cancelled before the first dispatch.
@@ -260,7 +263,7 @@ internal class PublicClientConnection(
             start = CoroutineStart.UNDISPATCHED,
         ) {
             try {
-                stream.forwardPublicEvents(replayDone) { event ->
+                stream.forwardPublicEvents(replayDone, onDrop = { deps.metrics.dropped("overtaken") }) { event ->
                     withBackendLogContext(
                         "threadId" to event.executionId, "seq" to event.seq, "type" to event.type.value,
                         "toolCallId" to (event.payload as? PublicToolCallStartedPayload)?.toolCallId,
@@ -269,8 +272,10 @@ internal class PublicClientConnection(
                             sendMutex.withLock { socket.sendClient(event.toPublicDto()) }
                             socketLogger.info("WebSocket event sent")
                         } catch (cancelled: CancellationException) {
+                            if (!event.durable) deps.metrics.dropped("disconnect")
                             throw cancelled
                         } catch (failure: Throwable) {
+                            if (!event.durable) deps.metrics.dropped("send_failure")
                             socketLogger.error("WebSocket event send failed", failure)
                             throw failure
                         }
@@ -338,6 +343,7 @@ internal class PublicClientConnection(
 
 internal suspend fun AgentEventStream.forwardPublicEvents(
     replayDone: CompletableDeferred<Unit>,
+    onDrop: () -> Unit = {},
     send: suspend (AgentEventEnvelope) -> Unit,
 ) {
     var lastSeq = initialSeq
@@ -360,7 +366,10 @@ internal suspend fun AgentEventStream.forwardPublicEvents(
         val seq = event.seq
         if (seq == null || seq > lastSeq) sendDurableEvents(replayAfter(lastSeq))
         val discardAfterSeq = (event as? AgentLiveEvent)?.discardAfterSeq
-        if (discardAfterSeq != null && lastSeq > discardAfterSeq) continue
+        if (discardAfterSeq != null && lastSeq > discardAfterSeq) {
+            if (event.isPublicClientEvent()) onDrop()
+            continue
+        }
         if (!event.durable && event.isPublicClientEvent()) send(event)
     }
 }

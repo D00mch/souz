@@ -85,6 +85,7 @@ internal class BackendConversationRuntimeFactory(
     private val automaticMemoryRecall: Boolean,
     private val hookStore: HookStore,
     private val executionQuotas: ExecutionQuotaManager,
+    private val metrics: ru.souz.backend.metrics.BackendMetrics? = null,
     private val testLlmApiFactory: (suspend (SettingsProvider) -> LLMChatAPI)? = null,
 ) {
     internal suspend fun create(
@@ -128,6 +129,7 @@ internal class BackendConversationRuntimeFactory(
             initialUsage = initialUsage,
             providerApiOverride = testApi?.let { api -> { api } },
             hookBudget = hookBudget,
+            metrics = metrics,
         )
         val visionGateway = LLMCapabilityResolver(
             settingsProvider = settingsProvider,
@@ -183,7 +185,7 @@ internal class BackendConversationRuntimeFactory(
         )
         val subagentTools = SubagentToolFactory(
             createAgent = { maxTurns ->
-                ToolLoopGraphBasedAgent(executionApi, settingsProvider, maxTurns = maxTurns, logObjectMapper = logObjectMapper)
+                ToolLoopGraphBasedAgent(executionApi, settingsProvider, maxTurns = maxTurns, logObjectMapper = logObjectMapper, telemetry = metrics?.toolTelemetry ?: AgentTelemetry.NONE)
             },
             toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
@@ -213,7 +215,7 @@ internal class BackendConversationRuntimeFactory(
                 spawnSubagent = subagentTools::create,
             ),
             knowledgeStore = knowledgeStore,
-            telemetry = AgentTelemetry.NONE,
+            telemetry = metrics?.toolTelemetry ?: AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,
             llmApi = executionApi,
             skillClassifier = skillClassifier,

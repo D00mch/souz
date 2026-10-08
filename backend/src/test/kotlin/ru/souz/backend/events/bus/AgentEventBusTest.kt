@@ -27,6 +27,30 @@ import ru.souz.llms.restJsonMapper
 
 class AgentEventBusTest {
     @Test
+    fun `metrics count evicted and disconnected live deliveries without durable signal or absent subscriber drops`() = runTest {
+        ru.souz.backend.metrics.BackendMetrics().use { meters ->
+            val bus = AgentEventBus(meters)
+            val chat = UUID.randomUUID()
+            val progress = AgentLiveEvent(UUID.randomUUID(), "user", chat, null,
+                AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload("progress"), Instant.EPOCH)
+            bus.publish(progress) // There is no promised delivery without a subscriber.
+            val subscription = bus.subscribe("user", chat)
+            repeat(AgentEventLimits.LIVE_BUFFER_SIZE + 3) { bus.publish(progress) }
+            assertEquals(3.0, meters.registry.get("souz.ws.events.dropped").tag("reason", "queue_overflow").counter().count())
+            subscription.close()
+            assertEquals(AgentEventLimits.LIVE_BUFFER_SIZE.toDouble(),
+                meters.registry.get("souz.ws.events.dropped").tag("reason", "disconnect").counter().count())
+            val next = bus.subscribe("user", chat)
+            repeat(AgentEventLimits.LIVE_BUFFER_SIZE + 3) { bus.publish(durableEvent("user", chat, it.toLong() + 1)) }
+            repeat(AgentEventLimits.LIVE_BUFFER_SIZE + 3) { bus.publish(progress.copy(type = AgentEventType.MESSAGE_DELTA)) }
+            next.close()
+            assertEquals(3.0, meters.registry.get("souz.ws.events.dropped").tag("reason", "queue_overflow").counter().count())
+            assertEquals(AgentEventLimits.LIVE_BUFFER_SIZE.toDouble(),
+                meters.registry.get("souz.ws.events.dropped").tag("reason", "disconnect").counter().count())
+        }
+    }
+
+    @Test
     fun `observers receive progress without advertising or accepting device commands`() = runTest {
         val bus = AgentEventBus()
         val chat = UUID.randomUUID()

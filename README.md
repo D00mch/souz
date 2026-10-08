@@ -416,6 +416,7 @@ Ambient mode is a local-first proactive-help flow. It listens only after the use
 | Route | Purpose |
 |---|---|
 | `GET /` | Public backend route index |
+| `GET /metrics` | Trusted-network Prometheus scrape; [metric reference](backend/docs/metrics.md) |
 | `GET /health` | Process and selected-model status |
 | `GET /docs` | Public Swagger UI |
 | `GET /docs/openapi.json` | Public OpenAPI 3.1 document |
