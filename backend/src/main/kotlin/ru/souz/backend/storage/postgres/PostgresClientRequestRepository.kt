@@ -17,11 +17,13 @@ import ru.souz.backend.client.repository.ClientRequestResult
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.model.acceptsInput
+import ru.souz.backend.metrics.BackendMetrics
 
 class PostgresClientRequestRepository(
     private val dataSource: DataSource,
     private val captureHistoryMemory: Boolean = false,
     clock: Clock = Clock.systemUTC(),
+    private val metrics: BackendMetrics? = null,
 ) : ClientRequestRepository {
     private val executionWriter = PostgresAgentExecutionRepository(dataSource)
     private val messageWriter = PostgresMessageRepository(dataSource)
@@ -147,7 +149,9 @@ class PostgresClientRequestRepository(
         userId: String,
         key: ClientRequestKey,
         mutation: Connection.() -> ClientRequestResult,
-    ): ClientRequestResult = dataSource.write { connection ->
+    ): ClientRequestResult = dataSource.write(afterCommit = { result ->
+        if (result is ClientRequestResult.Accepted) metrics?.executions?.committed(result.execution)
+    }) { connection ->
         connection.lockChat(userId, key.chatId)
         connection.findClientRequest(key.chatId, key.requestId)?.replay(key) ?: connection.mutation()
     }

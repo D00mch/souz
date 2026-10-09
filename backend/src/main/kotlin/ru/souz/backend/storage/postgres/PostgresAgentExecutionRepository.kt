@@ -16,11 +16,15 @@ import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.ActiveAgentExecutionConflictException
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.repository.CommittedAgentTurn
+import ru.souz.backend.metrics.BackendMetrics
 
 class PostgresAgentExecutionRepository(
     private val dataSource: DataSource,
+    private val metrics: BackendMetrics? = null,
 ) : AgentExecutionRepository {
-    override suspend fun create(execution: AgentExecution): AgentExecution = dataSource.write { connection ->
+    override suspend fun create(execution: AgentExecution): AgentExecution = dataSource.write(afterCommit = {
+        metrics?.executions?.committed(it)
+    }) { connection ->
         connection.lockChat(execution.userId, execution.chatId)
         insert(connection, execution)
     }
@@ -56,7 +60,9 @@ class PostgresAgentExecutionRepository(
         errorCode: String?,
         errorMessage: String?,
         usage: AgentExecutionUsage?,
-    ): AgentExecution? = dataSource.write { connection ->
+    ): AgentExecution? = dataSource.write(afterCommit = {
+        it?.let { stored -> metrics?.executions?.committed(stored, expected.status) }
+    }) { connection ->
         connection.lockChat(expected.userId, expected.chatId)
         transition(connection, expected, status, errorCode, errorMessage, usage)
     }
@@ -70,7 +76,9 @@ class PostgresAgentExecutionRepository(
     ): CommittedAgentTurn? {
         require(state.userId == expected.userId && state.chatId == expected.chatId)
         val context = currentCoroutineContext()
-        return dataSource.write { connection ->
+        return dataSource.write(afterCommit = {
+            it?.let { turn -> metrics?.executions?.committed(turn.execution, expected.status) }
+        }) { connection ->
             connection.lockChat(expected.userId, expected.chatId)
             val current = connection.findExecution(expected.userId, expected.chatId, expected.id)
                 ?: return@write null
@@ -157,7 +165,9 @@ class PostgresAgentExecutionRepository(
         }
 
     override suspend fun start(execution: AgentExecution, userMessageId: UUID): AgentExecution? =
-        dataSource.write { connection ->
+        dataSource.write(afterCommit = {
+            it?.let { stored -> metrics?.executions?.committed(stored, AgentExecutionStatus.QUEUED) }
+        }) { connection ->
             connection.prepareStatement(
                 """
                 update agent_executions
@@ -251,7 +261,9 @@ class PostgresAgentExecutionRepository(
         }
     }
 
-    override suspend fun failInterruptedClientThreads(now: Instant): List<AgentExecution> = dataSource.write { connection ->
+    override suspend fun failInterruptedClientThreads(now: Instant): List<AgentExecution> = dataSource.write(afterCommit = { rows ->
+        rows.forEach { metrics?.executions?.committed(it, AgentExecutionStatus.RUNNING) }
+    }) { connection ->
         connection.prepareStatement(
             """
             update agent_executions execution

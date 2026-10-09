@@ -12,6 +12,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.toolcall.model.ToolCallStatus
@@ -56,6 +58,7 @@ class BackendExecutionE2eTest {
             assertEquals("assistant reply to stream me", messages.last()["content"].asText())
             assertTrue(events.all { it["executionId"].asText() == executionId })
             assertFalse(events.any { it["type"].asText() == "message.delta" })
+            assertExecutionMetrics(backend, "completed")
             assertEquals(
                 listOf(
                     "message.created",
@@ -102,6 +105,7 @@ class BackendExecutionE2eTest {
             assertEquals(listOf("user"), messages.map { it["role"].asText() })
             assertEquals(listOf("partial ", "assistant"), llm.streamedChunks)
             assertEquals("agent_execution_failed", events.last()["payload"]["errorCode"].asText())
+            assertExecutionMetrics(backend, "failed")
         }
 
     @Test
@@ -150,6 +154,7 @@ class BackendExecutionE2eTest {
                 }
             }
             assertEquals("execution.cancelled", events.last()["type"].asText())
+            assertExecutionMetrics(backend, "cancelled")
             val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) {
                 trusted(userId)
             }.jsonBody()["items"]
@@ -219,4 +224,12 @@ class BackendExecutionE2eTest {
             assertEquals("true", delivered["metadata"]["crossChannel"].asText())
         }
     }
+}
+
+internal suspend fun assertExecutionMetrics(backend: BackendE2eBackend, outcome: String) {
+    val metrics = backend.dependencies.metrics
+    withContext(Dispatchers.IO) { metrics.scrape() }
+    assertEquals(1.0, metrics.registry.get("souz.executions").tag("outcome", outcome).counter().count())
+    assertEquals(1L, metrics.registry.get("souz.execution.duration").timer().count())
+    assertTrue(metrics.registry.find("souz.executions.active").gauges().all { it.value() == 0.0 })
 }

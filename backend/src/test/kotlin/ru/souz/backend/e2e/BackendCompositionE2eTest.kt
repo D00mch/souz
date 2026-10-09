@@ -355,6 +355,7 @@ class BackendCompositionE2eTest {
         val expectedWithoutTelegram = linkedMapOf(
             "/" to setOf("get"),
             "/health" to setOf("get"),
+            "/metrics" to setOf("get"),
             "/hooks/{hookId}" to setOf("post"),
             "/v1/hooks/reload" to setOf("post"),
             "/v1/hooks/receipts/{receiptId}" to setOf("get"),
@@ -407,7 +408,7 @@ class BackendCompositionE2eTest {
                         .filter { it.key in methods }
                         .forEach { (method, operation) ->
                             val publicOperation =
-                                path == "/" || path == "/health" ||
+                                path == "/" || path == "/health" || path == "/metrics" ||
                                     (path == "/v1/chats" && method == "post") ||
                                     (path == "/v1/chats/{chatId}/threads/{threadId}" && method == "get")
                             if (path == "/hooks/{hookId}") {

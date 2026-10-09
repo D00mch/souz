@@ -41,6 +41,7 @@ import ru.souz.backend.hooks.LoadedHook
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.llm.quota.QuotaExceededException
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
 import ru.souz.backend.storage.postgres.PostgresUserRepository
 import ru.souz.backend.storage.postgres.newPostgresSchema
@@ -87,6 +88,13 @@ class BackendExecutionLlmChatApiTest {
                 assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
                 assertEquals(2, fixture.api.messageStream(request).toList().size)
                 assertEquals(List(3) { provider to request }, requests.takeLast(3))
+                val tags = arrayOf("provider", provider.name.lowercase(), "model", "other")
+                val registry = fixture.metrics.registry
+                assertEquals(1.0, registry.get("souz.llm.requests").tags(*tags, "outcome", "error").counter().count())
+                assertEquals(2.0, registry.get("souz.llm.requests").tags(*tags, "outcome", "success").counter().count())
+                assertEquals(if (provider == LlmProvider.ANTHROPIC) 6.0 else 5.0,
+                    registry.get("souz.llm.tokens").tags(*tags, "direction", "input").counter().count())
+                assertEquals(5.0, registry.get("souz.llm.tokens").tags(*tags, "direction", "output").counter().count())
             }
             assertEquals(listOf(17L, 17L, 17L), delays)
             assertEquals(usage(25, 20, 45, 5), fixture.api.cumulativeUsage())
@@ -149,6 +157,8 @@ class BackendExecutionLlmChatApiTest {
             assertEquals(512, outbound.body["max_completion_tokens"].asInt())
             assertEquals(0, fixture.credentialResolver.calls.get())
             assertEquals(usage(1, 1, 2, 0), fixture.api.cumulativeUsage())
+            assertEquals(1.0, fixture.metrics.registry.get("souz.llm.requests")
+                .tags("provider", "openai", "model", "other", "outcome", "success").counter().count())
         }
     }
 
@@ -368,7 +378,10 @@ class BackendExecutionLlmChatApiTest {
                 } else {
                     flow {
                         try {
-                            for (tokens in listOf(usage(2, 1, 3, 1), usage(5, 3, 8, 2))) {
+                            for (tokens in listOf(
+                                usage(2, 1, 3, 1), usage(0, 0, 0, 0), usage(1, 1, 2, 0),
+                                usage(5, 3, 8, 2), usage(5, 3, 8, 2),
+                            )) {
                                 emit(ok(body.model, tokens))
                                 completedUpstreamEmits += 1
                             }
@@ -388,14 +401,19 @@ class BackendExecutionLlmChatApiTest {
             val failure = assertFailsWith<CancellationException> {
                 fixture.api.messageStream(chat(LLMModel.QwenMax.alias)).collect { response ->
                     assertIs<LLMResponse.Chat.Ok>(response)
-                    if (++collected == 2) throw CancellationException("stop")
+                    if (++collected == 5) throw CancellationException("stop")
                 }
             }
             assertEquals(2, streamRequests)
-            assertEquals(1, completedUpstreamEmits, "The facade consumed the upstream stream ahead of its collector.")
+            assertEquals(4, completedUpstreamEmits, "The facade consumed the upstream stream ahead of its collector.")
             assertTrue(upstreamCancelled)
             assertEquals("stop", failure.message)
             assertEquals(usage(5, 3, 8, 2), fixture.api.cumulativeUsage())
+            val registry = fixture.metrics.registry
+            val tags = arrayOf("provider", "qwen", "model", LLMModel.QwenMax.alias)
+            assertEquals(1.0, registry.get("souz.llm.requests").tags(*tags, "outcome", "error").counter().count())
+            assertEquals(1.0, registry.get("souz.llm.requests").tags(*tags, "outcome", "cancelled").counter().count())
+            assertEquals(5.0, registry.get("souz.llm.tokens").tags(*tags, "direction", "input").counter().count())
         }
     }
 }
@@ -404,8 +422,12 @@ private class FacadeFixture(
     val api: BackendExecutionLlmChatApi,
     val credentialResolver: CountingCredentialResolver,
     private val clients: ProviderHttpClients,
+    val metrics: BackendMetrics,
 ) : AutoCloseable {
-    override fun close() = clients.close()
+    override fun close() {
+        clients.close()
+        metrics.close()
+    }
 }
 
 private data class CapturedRequest(
@@ -444,6 +466,7 @@ private fun facadeFixture(
     },
 ): FacadeFixture {
     val clients = ProviderHttpClients(standard = client, openAi = client)
+    val metrics = BackendMetrics()
     val api = BackendExecutionLlmChatApi(
         userId = "user-a",
         settingsProvider = settingsProvider,
@@ -456,8 +479,9 @@ private fun facadeFixture(
         delayMillis = delayMillis,
         providerApiOverride = providerApiOverride,
         hookBudget = hookBudget,
+        metrics = metrics,
     )
-    return FacadeFixture(api, credentialResolver, clients)
+    return FacadeFixture(api, credentialResolver, clients, metrics)
 }
 
 private class CountingCredentialResolver(

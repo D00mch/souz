@@ -48,6 +48,7 @@ import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventEnvelope
 import ru.souz.backend.events.model.AgentLiveEvent
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
+import ru.souz.backend.events.model.isPublicClientEvent
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.InvalidClientFrameException
@@ -260,7 +261,7 @@ internal class PublicClientConnection(
             start = CoroutineStart.UNDISPATCHED,
         ) {
             try {
-                stream.forwardPublicEvents(replayDone) { event ->
+                stream.forwardPublicEvents(replayDone, onDrop = { deps.metrics.dropped(it) }) { event ->
                     withBackendLogContext(
                         "threadId" to event.executionId, "seq" to event.seq, "type" to event.type.value,
                         "toolCallId" to (event.payload as? PublicToolCallStartedPayload)?.toolCallId,
@@ -336,8 +337,11 @@ internal class PublicClientConnection(
     }
 }
 
+// Drop accounting is synchronous; cancellation and send failures immediately propagate.
+@Suppress("SuspendFunSwallowedCancellation")
 internal suspend fun AgentEventStream.forwardPublicEvents(
     replayDone: CompletableDeferred<Unit>,
+    onDrop: (String) -> Unit = {},
     send: suspend (AgentEventEnvelope) -> Unit,
 ) {
     var lastSeq = initialSeq
@@ -357,11 +361,19 @@ internal suspend fun AgentEventStream.forwardPublicEvents(
     }
     while (true) {
         val event = receiveLive() ?: break
-        val seq = event.seq
-        if (seq == null || seq > lastSeq) sendDurableEvents(replayAfter(lastSeq))
-        val discardAfterSeq = (event as? AgentLiveEvent)?.discardAfterSeq
-        if (discardAfterSeq != null && lastSeq > discardAfterSeq) continue
-        if (!event.durable && event.isPublicClientEvent()) send(event)
+        try {
+            val seq = event.seq
+            if (seq == null || seq > lastSeq) sendDurableEvents(replayAfter(lastSeq))
+            val discardAfterSeq = (event as? AgentLiveEvent)?.discardAfterSeq
+            if (discardAfterSeq != null && lastSeq > discardAfterSeq) {
+                if (event.isPublicClientEvent()) onDrop("overtaken")
+            } else if (!event.durable && event.isPublicClientEvent()) send(event)
+        } catch (failure: Throwable) {
+            if (!event.durable && event.isPublicClientEvent()) {
+                onDrop(if (failure is CancellationException) "disconnect" else "send_failure")
+            }
+            throw failure
+        }
     }
 }
 

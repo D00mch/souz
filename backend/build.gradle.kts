@@ -1,6 +1,7 @@
     import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.bundling.AbstractArchiveTask
+import org.gradle.api.tasks.bundling.Jar
 
 plugins {
     alias(libs.plugins.kotlinJvm)
@@ -35,6 +36,8 @@ dependencies {
     implementation(libs.flyway.core)
     implementation(libs.flyway.database.postgresql)
     implementation(libs.hikari.cp)
+    implementation("io.ktor:ktor-server-metrics-micrometer:${libs.versions.ktor.get()}")
+    implementation("io.micrometer:micrometer-registry-prometheus:1.16.3")
     implementation(libs.ktor.openapiSchemaReflect)
     implementation(libs.ktor.clientCore)
     implementation(libs.ktor.serializationJackson)
@@ -81,4 +84,8 @@ tasks.withType<Sync>().configureEach {
 
 tasks.withType<AbstractArchiveTask>().configureEach {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.named<Jar>("shadowJar") {
+    isZip64 = true
 }

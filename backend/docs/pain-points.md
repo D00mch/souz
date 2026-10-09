@@ -4,6 +4,8 @@ Read the topics relevant to the code you plan to change in `:backend`.
 
 ## Topics
 
+- [Metrics accounting](pain-points/metrics.md) — commit boundaries, bounded labels, waiting time and replica ownership.
+
 - [Workspace hooks](pain-points/hooks.md) — trusted ownership, admission, persistent call budgets, sequential dispatch and single-process recovery.
 
 - [Trusted proxy](pain-points/trusted-proxy.md) — identity validation, provisioning, user scoping, and backend-safe tools.

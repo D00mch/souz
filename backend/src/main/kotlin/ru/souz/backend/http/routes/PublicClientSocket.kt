@@ -30,6 +30,7 @@ internal fun Route.publicClientSocket(path: String, deps: BackendHttpDependencie
         val clientType = call.request.queryParameters["clientType"]
         withContext(backendLogContext("socketId" to socketId, "clientType" to clientType)) {
             socketLogger.info("WebSocket connected route={}", path)
+            deps.metrics.socketOpened()
             try {
                 if (!deps.featureFlags.wsEvents) {
                     socketLogger.warn("WebSocket rejected closeCode=1013 reason=feature_disabled")
@@ -57,6 +58,7 @@ internal fun Route.publicClientSocket(path: String, deps: BackendHttpDependencie
                 socketLogger.error("WebSocket failed route=$path", failure)
                 throw failure
             } finally {
+                deps.metrics.socketClosed()
                 val reason = if (closeReason.isCompleted) runCatching { closeReason.getCompleted() }.getOrNull() else null
                 socketLogger.info("WebSocket ended closeCode={} active={}", reason?.code, isActive)
             }
