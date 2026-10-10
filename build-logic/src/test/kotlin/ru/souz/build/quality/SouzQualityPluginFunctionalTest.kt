@@ -14,20 +14,6 @@ class SouzQualityPluginFunctionalTest {
     private val mapper = ObjectMapper()
 
     @Test
-    fun `module documentation sections write a passing report`(@TempDir root: Path) {
-        val fixture = FixtureProject(root).apply {
-            create()
-            commit()
-        }
-
-        fixture.build("souzGateFast")
-        val report = report(fixture)
-
-        assertEquals("pass", report.path("status").asText())
-        assertEquals(setOf("pass"), report.path("checks").map { it.path("status").asText() }.toSet())
-    }
-
-    @Test
     fun `an orphaned module topic fails with its policy location`(@TempDir root: Path) {
         val fixture = FixtureProject(root).apply {
             create()
@@ -46,7 +32,7 @@ class SouzQualityPluginFunctionalTest {
     }
 
     @Test
-    fun `configuration cache is stored and reused`(@TempDir root: Path) {
+    fun `passing gate writes a report and reuses configuration cache`(@TempDir root: Path) {
         val fixture = FixtureProject(root).apply {
             create()
             commit()
@@ -58,6 +44,11 @@ class SouzQualityPluginFunctionalTest {
         )
 
         val first = fixture.build(*arguments)
+        val report = report(fixture)
+
+        assertEquals("pass", report.path("status").asText())
+        assertEquals(setOf("pass"), report.path("checks").map { it.path("status").asText() }.toSet())
+
         val second = fixture.build(*arguments)
 
         assertTrue(first.output.contains("Configuration cache entry stored."))
