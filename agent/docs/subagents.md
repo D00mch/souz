@@ -25,4 +25,4 @@ Reusing a parent agent cancels its active job. Reusing its LLM nodes or tool exe
 
 Run `./gradlew :agent:test :sharedLogic:jvmTest :backend:test :desktopApp:test`. Cover waiting/resumption, queued input, cancellation, exact tool lookup, bundle restrictions, model selection, turn limits, stream isolation, backend client identity, and usage accounting.
 
-See [usage and Skill instructions](../../../docs/subagents.md).
+See [usage and Skill instructions](../../docs/subagents.md).
