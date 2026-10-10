@@ -14,24 +14,6 @@ class SouzQualityPluginFunctionalTest {
     private val mapper = ObjectMapper()
 
     @Test
-    fun `an orphaned module topic fails with its policy location`(@TempDir root: Path) {
-        val fixture = FixtureProject(root).apply {
-            create()
-            write("sharedUI/docs/orphan.md", "# Unindexed constraint\n")
-            commit()
-        }
-
-        fixture.buildAndFail("souzGateFast")
-        val result = check(report(fixture), "repository-contracts")
-        val diagnostic = result.path("diagnostics").single()
-
-        assertEquals("fail", result.path("status").asText())
-        assertEquals("sharedUI/AGENTS.md", diagnostic.path("path").asText())
-        assertEquals(3, diagnostic.path("line").asInt())
-        assertTrue(diagnostic.path("message").asText().contains("sharedUI/docs/orphan.md"))
-    }
-
-    @Test
     fun `passing gate writes a report and reuses configuration cache`(@TempDir root: Path) {
         val fixture = FixtureProject(root).apply {
             create()
@@ -56,20 +38,30 @@ class SouzQualityPluginFunctionalTest {
     }
 
     @Test
-    fun `broken documentation link fails after writing both reports and check results`(@TempDir root: Path) {
+    fun `broken links and orphaned topics fail after writing both reports`(@TempDir root: Path) {
         val fixture = FixtureProject(root).apply {
             create()
             append("sharedUI/docs/runtime.md", "[Broken](missing.md)\n")
+            write("sharedUI/docs/orphan.md", "# Unindexed constraint\n")
             commit()
         }
 
         fixture.buildAndFail("souzGateFast")
         val report = report(fixture)
+        val result = check(report, "repository-contracts")
+        val diagnostics = result.path("diagnostics")
+        val orphan = diagnostics.single { it.path("path").asText() == "sharedUI/AGENTS.md" }
 
         assertEquals("fail", report.path("status").asText())
-        assertEquals("fail", check(report, "repository-contracts").path("status").asText())
+        assertEquals("fail", result.path("status").asText())
         assertEquals("pass", check(report, "module-boundaries").path("status").asText())
-        assertTrue(check(report, "repository-contracts").toString().contains("sharedUI/docs/runtime.md"))
+        assertEquals(2, diagnostics.size())
+        assertEquals(3, orphan.path("line").asInt())
+        assertTrue(orphan.path("message").asText().contains("sharedUI/docs/orphan.md"))
+        assertTrue(diagnostics.any {
+            it.path("path").asText() == "sharedUI/docs/runtime.md" &&
+                it.path("message").asText().contains("does not resolve")
+        })
         assertTrue(Files.isRegularFile(root.resolve("build/reports/souz-quality/fast/gate-summary.md")))
     }
 
