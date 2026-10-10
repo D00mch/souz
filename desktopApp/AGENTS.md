@@ -2,7 +2,7 @@
 
 `:desktopApp` is the runnable Compose Desktop host. It owns process lifecycle and DI composition, OS integrations, desktop-only tools and services, desktop persistence adapters, and packaging resources.
 
-Before changing this module, read the [pain-point index](docs/pain-points.md) and the topics relevant to the area.
+Before changing this module, read the relevant pain-point topics below.
 
 ## Boundaries
 
@@ -11,6 +11,13 @@ Before changing this module, read the [pain-point index](docs/pain-points.md) an
 - OS-bound browser, mail, calendar, automation, audio, native-key, indexing, and Telegram integrations belong here.
 - Desktop-only persistence belongs here when shared layers depend only on its contracts.
 - Preserve the build's native-resource preparation, signing, and distribution boundaries when changing packaged resources.
+
+## Pain points
+
+- [Telegram runtime and tool safety](docs/telegram-runtime-and-tool-safety.md) — authorization readiness, cache semantics, selection UX, attachments, and SafeMode.
+- [Process shutdown](docs/process-shutdown.md) — cancel-and-join ordering, shared completion, and resource failure aggregation.
+
+Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.
 
 ## Verification
 

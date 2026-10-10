@@ -1,6 +1,6 @@
 # Native local runtime
 
-Before changing this module, read its [pain-point index](docs/pain-points.md) and the topics relevant to the change.
+Before changing this module, read the relevant pain-point topics below.
 
 ## Purpose and boundaries
 
@@ -14,6 +14,13 @@ Before changing this module, read its [pain-point index](docs/pain-points.md) an
 - Treat the main model, linked embeddings model, and any required multimodal projector as one readiness/download set.
 - Cap configured context by the selected profile and reserve completion space from actual token counts; multimodal requests must use the `mtmd` prompt/image count.
 - Keep Metal residency disabled by default on macOS; opt back in only through the documented debugging override.
+
+## Pain points
+
+- [Bridge build and packaging](docs/bridge-build-and-packaging.md) — vendor sources, local patches, ABI synchronization, packaged binaries, and Metal defaults.
+- [Model assets and context budget](docs/model-assets-and-context-budget.md) — linked downloads, projector resolution, embeddings formatting, and multimodal token accounting.
+
+Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.
 
 ## Verification
 

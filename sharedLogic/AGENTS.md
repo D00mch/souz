@@ -1,6 +1,6 @@
 # Shared Logic
 
-`:sharedLogic` is the Kotlin Multiplatform runtime layer shared by JVM hosts. Read the [module pain-point index](docs/pain-points.md) and every topic relevant to the code being changed.
+`:sharedLogic` is the Kotlin Multiplatform runtime layer shared by JVM hosts. Read the relevant pain-point topics below before changing this module.
 
 ## Source-set boundaries
 
@@ -18,6 +18,16 @@ Keep this module UI-free. Compose resources and UI adapters belong in `:sharedUI
 - Keep the skill registry and `RunSkillCommand` on the same single-user bundle layout so activation and execution resolve the same bundle.
 - Composite Skill steps use the invoking tool's filtered catalog snapshot; child snapshots contain only explicitly selected capabilities.
 - Use sandbox filesystem abstractions for tool and skill IO whenever they are available.
+
+## Pain points
+
+- [Runtime sandbox and skills](docs/runtime-sandbox-and-skills.md) — invocation scope, storage layouts, platform runtimes, and Docker fixtures.
+- [Web tools](docs/web-tools.md) — evidence handling, citations, provider behavior, sandboxed output, and URL limitations.
+- [Observability](docs/observability.md) — request bookkeeping, structured events, and host-owned logging sinks.
+- [Provider HTTP lifecycle](docs/provider-http-lifecycle.md) — client ownership, request-local credentials, and host shutdown.
+- [Tool catalog composition](docs/tool-catalog-composition.md) — LLM-backed ownership, duplicate rejection, source precedence, and immutable execution snapshots.
+
+Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.
 
 ## Verification
 

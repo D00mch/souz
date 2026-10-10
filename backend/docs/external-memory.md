@@ -33,7 +33,7 @@ Omitting recall tags exposes one conversation's transient memory in another. Fin
 ## Safe-change guidance
 
 - Preserve owner-derived bank isolation and global-plus-current-conversation recall.
-- Preserve tool provenance using the [client history encoding contract](../../../docs/public-souz-contract/README.md#commands).
+- Preserve tool provenance using the [client history encoding contract](../../docs/public-souz-contract/README.md#commands).
 - Supply deterministic document identity for completed turns.
 - Commit imported-history enqueueing with the receipt, freeze payloads before retain, and complete after acceptance or exhausted retries. Clear frozen payloads on completion; keep source IDs for preceding-context reconstruction. Never reuse a fragment for later appends after it has been claimed.
 - Keep an explicit `role` and source IDs on every sent record. Send retain items without `strategy` and leave extraction instructions and chunk size to the memory service. Keep source references visible in recall and `SearchMemory`.

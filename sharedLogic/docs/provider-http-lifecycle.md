@@ -29,4 +29,4 @@ Each Ktor client owns an engine, connection pool, plugins, and coroutine lifecyc
 
 Run `./gradlew :sharedLogic:jvmTest`. Cover concurrent credential and timeout isolation, shared-client reuse, Giga token invalidation, and exactly-once host shutdown.
 
-Jev live verification is opt-in with `SOUZ_TEST_JEV=1` and `JEV_TOKEN`; see [setup and usage](../../README.md#jev-classification).
+Jev live verification is opt-in with `SOUZ_TEST_JEV=1` and `JEV_TOKEN`; see [setup and usage](../README.md#jev-classification).

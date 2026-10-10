@@ -1,6 +1,6 @@
 # Ambient Agent
 
-Before changing this module, read its [pain-point index](docs/pain-points.md) and the topics relevant to the change.
+Before changing this module, read the relevant pain-point topics below.
 
 ## Purpose and boundaries
 
@@ -14,6 +14,12 @@ Before changing this module, read its [pain-point index](docs/pain-points.md) an
 - Live hypotheses are cumulative and may be non-final; batch fallback emits independent final windows. Preserve source and finality semantics when building blocks.
 - Local analysis proposes at most one bounded task using the `EMPTY` / `TASK:` protocol. It must never dispatch or execute work.
 - Preserve coroutine cancellation and bounded transcript buffering; consumers must tolerate dropped or superseded hypotheses.
+
+## Pain points
+
+- [Transcription and analysis](docs/transcription-and-analysis.md) — PCM input, live/batch transcript semantics, block construction, and confirmation ownership.
+
+Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.
 
 ## Verification
 

@@ -1,7 +1,7 @@
 # Build logic
 
 Before changing this included build, read its [README](README.md) and the
-[quality-gate documentation](../docs/quality-gates.md).
+relevant pain-point topics below.
 
 ## Purpose and boundaries
 
@@ -11,6 +11,10 @@ Before changing this included build, read its [README](README.md) and the
 - Treat unclassified project-dependency scopes as failures. Exclude a test scope only when it does not feed a production configuration.
 - Keep check IDs and report contracts stable. Internal checker failures are `error`, and reports are written before the task fails.
 - Reports must be deterministic and repository-relative, without source bodies, secrets, or absolute user paths.
+
+## Pain points
+
+- [Quality gates](../docs/quality-gates.md) — repository contracts, module boundaries, coroutine analysis, baselines, and reports.
 
 ## Verification
 
