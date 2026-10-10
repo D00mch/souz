@@ -7,6 +7,9 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import org.junit.jupiter.params.provider.ValueSource
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -65,65 +68,52 @@ class SouzQualityPluginFunctionalTest {
         assertTrue(Files.isRegularFile(root.resolve("build/reports/souz-quality/fast/gate-summary.md")))
     }
 
-    @Test
-    fun `forbidden production edge fails with an actionable diagnostic`(@TempDir root: Path) {
+    @ParameterizedTest
+    @ValueSource(strings = ["implementation", "compileOnlyApi"])
+    fun `forbidden production edge fails with an actionable diagnostic`(configuration: String, @TempDir root: Path) {
         val fixture = FixtureProject(root).apply {
             create()
             write(
                 "graph-engine/build.gradle.kts",
                 """
                 plugins { `java-library` }
-                dependencies { implementation(project(":llms")) }
+                dependencies { $configuration(project(":llms")) }
                 """.trimIndent() + "\n",
             )
             commit()
         }
 
         fixture.buildAndFail("souzGateFast")
-        val report = report(fixture)
-        val boundaryResult = check(report, "module-boundaries")
+        val boundaryResult = check(report(fixture), "module-boundaries")
 
         assertEquals("fail", boundaryResult.path("status").asText())
         assertTrue(boundaryResult.toString().contains("graph-engine/build.gradle.kts"))
         assertTrue(boundaryResult.toString().contains(":graph-engine main must not depend on :llms"))
+        assertTrue(boundaryResult.toString().contains(configuration))
     }
 
-    @Test
-    fun `compileOnlyApi project edge cannot bypass the boundary gate`(@TempDir root: Path) {
+    @ParameterizedTest
+    @CsvSource(
+        "internalDependencies, unclassified configuration internalDependencies",
+        "sharedTestImplementation, :graph-engine main must not depend on :llms",
+    )
+    fun `configuration inherited by production cannot bypass the boundary gate`(
+        configuration: String,
+        expectedMessage: String,
+        @TempDir root: Path,
+    ) {
         val fixture = FixtureProject(root).apply {
             create()
             write(
                 "graph-engine/build.gradle.kts",
                 """
                 plugins { `java-library` }
-                dependencies { compileOnlyApi(project(":llms")) }
-                """.trimIndent() + "\n",
-            )
-            commit()
-        }
-
-        fixture.buildAndFail("souzGateFast")
-        val boundaryResult = check(report(fixture), "module-boundaries")
-
-        assertEquals("fail", boundaryResult.path("status").asText())
-        assertTrue(boundaryResult.toString().contains(":graph-engine main must not depend on :llms"))
-        assertTrue(boundaryResult.toString().contains("compileOnlyApi"))
-    }
-
-    @Test
-    fun `custom configuration feeding production fails closed`(@TempDir root: Path) {
-        val fixture = FixtureProject(root).apply {
-            create()
-            write(
-                "graph-engine/build.gradle.kts",
-                """
-                plugins { `java-library` }
-                val internalDependencies by configurations.creating
+                val $configuration by configurations.creating
                 configurations.named("implementation") {
-                    extendsFrom(internalDependencies)
+                    extendsFrom($configuration)
                 }
                 dependencies {
-                    add(internalDependencies.name, project(":llms"))
+                    add($configuration.name, project(":llms"))
                 }
                 """.trimIndent() + "\n",
             )
@@ -134,35 +124,8 @@ class SouzQualityPluginFunctionalTest {
         val boundaryResult = check(report(fixture), "module-boundaries")
 
         assertEquals("fail", boundaryResult.path("status").asText())
-        assertTrue(boundaryResult.toString().contains("unclassified configuration internalDependencies"))
-    }
-
-    @Test
-    fun `test named configuration inherited by production is not excluded`(@TempDir root: Path) {
-        val fixture = FixtureProject(root).apply {
-            create()
-            write(
-                "graph-engine/build.gradle.kts",
-                """
-                plugins { `java-library` }
-                val sharedTestImplementation by configurations.creating
-                configurations.named("implementation") {
-                    extendsFrom(sharedTestImplementation)
-                }
-                dependencies {
-                    add(sharedTestImplementation.name, project(":llms"))
-                }
-                """.trimIndent() + "\n",
-            )
-            commit()
-        }
-
-        fixture.buildAndFail("souzGateFast")
-        val boundaryResult = check(report(fixture), "module-boundaries")
-
-        assertEquals("fail", boundaryResult.path("status").asText())
-        assertTrue(boundaryResult.toString().contains(":graph-engine main must not depend on :llms"))
-        assertTrue(boundaryResult.toString().contains("sharedTestImplementation"))
+        assertTrue(boundaryResult.toString().contains(expectedMessage))
+        assertTrue(boundaryResult.toString().contains(configuration))
     }
 
     @Test
