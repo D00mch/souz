@@ -21,14 +21,6 @@ class RepositoryContractsTest {
             """.trimIndent() + "\n",
         )
         write(
-            repository.resolve("docs/pain-points.md"),
-            """
-            # Pain points
-
-            - [Agent](../agent/docs/pain-points.md)
-            """.trimIndent() + "\n",
-        )
-        write(
             repository.resolve("agent/AGENTS.md"),
             """
             # Agent
@@ -72,21 +64,17 @@ class RepositoryContractsTest {
             - `:agent` — policy is owned at the root.
             """.trimIndent() + "\n",
         )
-        write(repository.resolve("docs/pain-points.md"), "# Pain points\n")
-
         val diagnostics = RepositoryContracts.check(
             repositoryDirectory = repository.toFile(),
             projects = listOf(ProjectDescriptor(":agent", "agent", "agent/build.gradle.kts")),
             policyFiles = setOf(
                 repository.resolve("AGENTS.md").toFile(),
-                repository.resolve("docs/pain-points.md").toFile(),
             ),
             registeredChecks = SouzQualityChecks.fast,
         )
 
-        assertEquals(2, diagnostics.size)
+        assertEquals(1, diagnostics.size)
         assertTrue(diagnostics.any { it.message.contains("needs a module pain-point index") })
-        assertTrue(diagnostics.any { it.message.contains("root pain-point index must link") })
         assertTrue(diagnostics.none { it.message.contains("needs an AGENTS.md policy") })
     }
 
@@ -101,10 +89,6 @@ class RepositoryContractsTest {
 
             - `:agent` — agent module.
             """.trimIndent() + "\n",
-        )
-        write(
-            repository.resolve("docs/pain-points.md"),
-            "# Pain points\n\n[Agent](../agent/docs/pain-points.md)\n",
         )
         write(repository.resolve("agent/AGENTS.md"), "# Agent\n\n![Pain points](docs/pain-points.md)\n")
         write(repository.resolve("agent/docs/pain-points.md"), "# Pain points\n")

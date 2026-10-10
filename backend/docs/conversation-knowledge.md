@@ -4,7 +4,7 @@
 
 - Backend writers, `GetKnowledge`, and `SearchKnowledge` share `PostgresConversationKnowledgeStore` and the existing datasource/Flyway schema. Knowledge never resolves a sandbox or falls back to files; file-backed Skills still require a filesystem.
 - Every access uses exact user/chat ownership. Writes lock the owned chat through commit and publish references only afterward. They never create chats or overwrite UUID records, including on collision. Cleanup is scoped and idempotent; chat/user deletion cascades, while archiving retains records. There is no TTL, startup cleanup, or sandbox import.
-- Preserve desktop compatibility through `KnowledgeRecordCodec` and the [shared retention/search contract](../../../sharedLogic/docs/pain-points/runtime-sandbox-and-skills.md). Store serialized JSON as text: PostgreSQL `jsonb` rejects NUL.
+- Preserve desktop compatibility through `KnowledgeRecordCodec` and the [shared retention/search contract](../../sharedLogic/docs/pain-points/runtime-sandbox-and-skills.md). Store serialized JSON as text: PostgreSQL `jsonb` rejects NUL.
 - Missing/invalid scope is unavailable; foreign/nonexistent chats reject writes, and missing/cross-scope records return `knowledge_not_found`. Database/corrupt-record reads return `storage_failure`; failed writes retain the original result inline. Cancellation propagates. Test commit failures as well as connection failures.
 
 ## Deployment

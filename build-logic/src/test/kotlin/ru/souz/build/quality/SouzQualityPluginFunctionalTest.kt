@@ -14,7 +14,7 @@ class SouzQualityPluginFunctionalTest {
     private val mapper = ObjectMapper()
 
     @Test
-    fun `passing fixture writes a passing report`(@TempDir root: Path) {
+    fun `mixed module documentation layouts write a passing report`(@TempDir root: Path) {
         val fixture = FixtureProject(root).apply {
             create()
             commit()
@@ -50,7 +50,7 @@ class SouzQualityPluginFunctionalTest {
     fun `broken documentation link fails after writing both reports and check results`(@TempDir root: Path) {
         val fixture = FixtureProject(root).apply {
             create()
-            append("agent/AGENTS.md", "[Broken](docs/missing.md)\n")
+            append("sharedUI/docs/runtime.md", "[Broken](missing.md)\n")
             commit()
         }
 
@@ -60,7 +60,7 @@ class SouzQualityPluginFunctionalTest {
         assertEquals("fail", report.path("status").asText())
         assertEquals("fail", check(report, "repository-contracts").path("status").asText())
         assertEquals("pass", check(report, "module-boundaries").path("status").asText())
-        assertTrue(check(report, "repository-contracts").toString().contains("agent/AGENTS.md"))
+        assertTrue(check(report, "repository-contracts").toString().contains("sharedUI/docs/runtime.md"))
         assertTrue(Files.isRegularFile(root.resolve("build/reports/souz-quality/fast/gate-summary.md")))
     }
 

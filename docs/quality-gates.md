@@ -39,6 +39,11 @@ gate can exclude them explicitly.
 Local-link checks validate filesystem targets. Markdown fragment identifiers
 are not part of the version 1 repository contract.
 
+The root Module Map indexes module policies. Each module indexes pain-point
+topics in a `Pain points` section of `AGENTS.md` or a linked
+`docs/pain-points.md`. Link checks cover `AGENTS.md`, Markdown files directly
+under `docs/`, and nested `docs/pain-points/` topics.
+
 ## Coroutine analysis
 
 Detekt runs one type-resolved analysis task for every JVM production and test

@@ -35,18 +35,13 @@ internal object RepositoryContracts {
         val repository = repositoryDirectory.toPath().toAbsolutePath().normalize()
         val diagnostics = mutableListOf<QualityDiagnostic>()
         val rootAgents = repository.resolve("AGENTS.md")
-        val rootPainPoints = repository.resolve("docs/pain-points.md")
 
         if (Files.notExists(rootAgents)) {
             diagnostics += missingFile("AGENTS.md", "Root policy file is missing.")
         }
-        if (Files.notExists(rootPainPoints)) {
-            diagnostics += missingFile("docs/pain-points.md", "Root pain-point index is missing.")
-        }
 
         val expectedPolicyPaths = buildSet {
             add(rootAgents)
-            add(rootPainPoints)
             projects.forEach { project ->
                 val moduleDirectory = repository.resolve(project.directory).normalize()
                 add(moduleDirectory.resolve("AGENTS.md"))
@@ -75,7 +70,6 @@ internal object RepositoryContracts {
             projects = projects,
             exemptions = exemptionPaths,
             documents = documents,
-            rootPainPoints = rootPainPoints,
             diagnostics = diagnostics,
         )
         checkRegisteredPolicies(repository, registeredChecks, diagnostics)
@@ -158,16 +152,14 @@ internal object RepositoryContracts {
         projects: List<ProjectDescriptor>,
         exemptions: Set<String>,
         documents: Map<Path, Node>,
-        rootPainPoints: Path,
         diagnostics: MutableList<QualityDiagnostic>,
     ) {
-        val rootPainTargets = documents[rootPainPoints]
-            ?.let { localTargets(repository, rootPainPoints, it) }
-            .orEmpty()
-
         projects.forEach { project ->
             val moduleDirectory = repository.resolve(project.directory).normalize()
             val agentsPath = moduleDirectory.resolve("AGENTS.md")
+            if (documents[agentsPath]?.let { modulesUnderHeading(it, "Pain points").found } == true) {
+                return@forEach
+            }
             val painPointsPath = moduleDirectory.resolve("docs/pain-points.md")
             val agentsRelative = relativePath(repository, agentsPath)
             val painPointsRelative = relativePath(repository, painPointsPath)
@@ -197,13 +189,6 @@ internal object RepositoryContracts {
                         message = "${project.path} AGENTS.md must link to its docs/pain-points.md index.",
                     )
                 }
-            }
-            if (documents.containsKey(rootPainPoints) && painPointsPath !in rootPainTargets) {
-                diagnostics += QualityDiagnostic(
-                    path = "docs/pain-points.md",
-                    line = null,
-                    message = "The root pain-point index must link to $painPointsRelative.",
-                )
             }
         }
     }

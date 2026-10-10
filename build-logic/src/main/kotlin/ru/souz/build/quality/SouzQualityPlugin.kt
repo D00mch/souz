@@ -35,8 +35,7 @@ class SouzQualityPlugin : Plugin<Project> {
 
         val policyFiles = project.fileTree(repository) {
             include("**/AGENTS.md")
-            include("docs/pain-points.md")
-            include("**/docs/pain-points.md")
+            include("**/docs/*.md")
             include("**/docs/pain-points/**/*.md")
             exclude(".git/**")
             exclude(".gradle/**")
