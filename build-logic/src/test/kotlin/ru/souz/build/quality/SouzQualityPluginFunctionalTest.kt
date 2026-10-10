@@ -14,7 +14,7 @@ class SouzQualityPluginFunctionalTest {
     private val mapper = ObjectMapper()
 
     @Test
-    fun `mixed module documentation layouts write a passing report`(@TempDir root: Path) {
+    fun `module documentation sections write a passing report`(@TempDir root: Path) {
         val fixture = FixtureProject(root).apply {
             create()
             commit()
@@ -25,6 +25,24 @@ class SouzQualityPluginFunctionalTest {
 
         assertEquals("pass", report.path("status").asText())
         assertEquals(setOf("pass"), report.path("checks").map { it.path("status").asText() }.toSet())
+    }
+
+    @Test
+    fun `an orphaned module topic fails with its policy location`(@TempDir root: Path) {
+        val fixture = FixtureProject(root).apply {
+            create()
+            write("sharedUI/docs/orphan.md", "# Unindexed constraint\n")
+            commit()
+        }
+
+        fixture.buildAndFail("souzGateFast")
+        val result = check(report(fixture), "repository-contracts")
+        val diagnostic = result.path("diagnostics").single()
+
+        assertEquals("fail", result.path("status").asText())
+        assertEquals("sharedUI/AGENTS.md", diagnostic.path("path").asText())
+        assertEquals(3, diagnostic.path("line").asInt())
+        assertTrue(diagnostic.path("message").asText().contains("sharedUI/docs/orphan.md"))
     }
 
     @Test

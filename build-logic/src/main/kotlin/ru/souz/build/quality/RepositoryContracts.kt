@@ -54,9 +54,9 @@ internal object RepositoryContracts {
             .associateWith { path -> parser.parse(Files.readString(path, StandardCharsets.UTF_8)) }
 
         val rootDocument = documents[rootAgents]
-        val moduleMap = rootDocument?.let { modulesUnderHeading(it, "Module Map") }
-        val exemptions = rootDocument?.let { modulesUnderHeading(it, "Module Policy Exemptions") }
-            ?: MarkdownModuleSection(found = false, headingLine = null, mentions = emptyList())
+        val moduleMap = rootDocument?.let { sectionUnderHeading(it, "Module Map") }
+        val exemptions = rootDocument?.let { sectionUnderHeading(it, "Module Policy Exemptions") }
+            ?: MarkdownSection(found = false, headingLine = null, mentions = emptyList())
         val exemptionPaths = exemptions.mentions.map(QualityModuleMention::path).toSet()
 
         if (rootDocument != null) {
@@ -79,7 +79,7 @@ internal object RepositoryContracts {
 
     private fun checkModuleMap(
         projects: List<ProjectDescriptor>,
-        section: MarkdownModuleSection,
+        section: MarkdownSection,
         diagnostics: MutableList<QualityDiagnostic>,
     ) {
         if (!section.found) {
@@ -120,7 +120,7 @@ internal object RepositoryContracts {
 
     private fun checkExemptions(
         projects: List<ProjectDescriptor>,
-        exemptions: MarkdownModuleSection,
+        exemptions: MarkdownSection,
         documents: Map<Path, Node>,
         repository: Path,
         diagnostics: MutableList<QualityDiagnostic>,
@@ -164,12 +164,27 @@ internal object RepositoryContracts {
                     agentsRelative,
                     "${project.path} needs an AGENTS.md policy or an explicit root policy exemption.",
                 )
-            } else if (document != null && !modulesUnderHeading(document, "Pain points").found) {
-                diagnostics += QualityDiagnostic(
-                    path = agentsRelative,
-                    line = null,
-                    message = "${project.path} AGENTS.md must contain a 'Pain points' level-two heading.",
-                )
+            } else if (document != null) {
+                val section = sectionUnderHeading(document, "Pain points")
+                if (!section.found) {
+                    diagnostics += QualityDiagnostic(
+                        path = agentsRelative,
+                        line = null,
+                        message = "${project.path} AGENTS.md must contain a 'Pain points' level-two heading.",
+                    )
+                } else {
+                    val targets = section.links.mapNotNull { link ->
+                        runCatching { resolveLocalTarget(repository, agentsPath, link.destination) }.getOrNull()
+                    }.toSet()
+                    documents.keys.filter { it.parent == moduleDirectory.resolve("docs") && it !in targets }
+                        .forEach { topic ->
+                            diagnostics += QualityDiagnostic(
+                                path = agentsRelative,
+                                line = section.headingLine,
+                                message = "${relativePath(repository, topic)} must be linked from this 'Pain points' section.",
+                            )
+                        }
+                }
             }
         }
     }
@@ -252,16 +267,17 @@ internal object RepositoryContracts {
         return links
     }
 
-    private fun modulesUnderHeading(document: Node, title: String): MarkdownModuleSection {
+    private fun sectionUnderHeading(document: Node, title: String): MarkdownSection {
         val mentions = mutableListOf<QualityModuleMention>()
+        val links = mutableListOf<MarkdownLink>()
         var inSection = false
         var found = false
         var headingLine: Int? = null
 
         document.accept(object : AbstractVisitor() {
             override fun visit(heading: Heading) {
-                if (heading.level == 2) {
-                    inSection = textOf(heading).trim().equals(title, ignoreCase = true)
+                if (heading.level <= 2) {
+                    inSection = heading.level == 2 && textOf(heading).trim().equals(title, ignoreCase = true)
                     if (inSection) {
                         found = true
                         headingLine = lineOf(heading)
@@ -286,9 +302,16 @@ internal object RepositoryContracts {
                 }
                 visitChildren(listItem)
             }
+
+            override fun visit(link: Link) {
+                if (inSection) {
+                    links += MarkdownLink(link.destination, lineOf(link))
+                }
+                visitChildren(link)
+            }
         })
 
-        return MarkdownModuleSection(found, headingLine, mentions)
+        return MarkdownSection(found, headingLine, mentions, links)
     }
 
     private fun textOf(node: Node): String = buildString {
@@ -318,10 +341,11 @@ internal object RepositoryContracts {
     private fun relativePath(repository: Path, path: Path): String =
         repository.relativize(path.toAbsolutePath().normalize()).invariantSeparatorsPathString
 
-    private data class MarkdownModuleSection(
+    private data class MarkdownSection(
         val found: Boolean,
         val headingLine: Int?,
         val mentions: List<QualityModuleMention>,
+        val links: List<MarkdownLink> = emptyList(),
     )
 
     private data class QualityModuleMention(val path: String, val line: Int?)

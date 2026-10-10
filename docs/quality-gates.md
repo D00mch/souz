@@ -41,8 +41,10 @@ are not part of the version 1 repository contract.
 
 The root Module Map indexes module policies. Each module policy indexes
 pain-point topics in a required `Pain points` section of `AGENTS.md`, with
-topic files directly under the module's `docs/`. Link checks cover `AGENTS.md`
-and Markdown files directly under `docs/`.
+topic files directly under the module's `docs/`. Every Markdown file directly
+under a module's `docs/` must have a link in that module policy's `Pain points`
+section; images and links in other sections do not satisfy this contract.
+Local-link checks cover `AGENTS.md` and Markdown files directly under `docs/`.
 
 ## Coroutine analysis
 

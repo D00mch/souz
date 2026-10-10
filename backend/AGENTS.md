@@ -23,7 +23,7 @@ Before changing this module, read the relevant pain-point topics below.
 
 ## Pain points
 
-- [Metrics accounting](docs/metrics-accounting.md) — commit boundaries, bounded labels, waiting time and replica ownership.
+- [Metrics accounting](docs/metrics-accounting.md) — commit boundaries, bounded labels, waiting time and replica ownership; see the [metric reference](docs/metrics.md).
 - [Workspace hooks](docs/hooks.md) — trusted ownership, admission, persistent call budgets, sequential dispatch and single-process recovery.
 - [Trusted proxy](docs/trusted-proxy.md) — identity validation, provisioning, user scoping, and backend-safe tools.
 - [Execution, OpenAPI, and events](docs/execution-openapi-and-events.md) — runtime ownership, event durability, compatibility, and route documentation.
