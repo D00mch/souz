@@ -17,7 +17,7 @@ summary and report artifacts even when a blocking check fails.
 | ID | Contract | Remediation |
 | --- | --- | --- |
 | `git-metadata` | The gate can identify the tested commit and worktree state. | Run the gate from the repository checkout and remove Git routing overrides that point outside it. |
-| `repository-contracts` | The Gradle project set, root Module Map, module policies, pain-point indexes, local policy links, and registered check policy paths agree. | Repair the reported repository-relative policy path or update the owning policy with the reviewed module change. |
+| `repository-contracts` | The Gradle project set, root Module Map, module policies, pain-point sections, local policy links, and registered check policy paths agree. | Repair the reported repository-relative policy path or update the owning policy with the reviewed module change. |
 | `module-boundaries` | Direct production `ProjectDependency` edges match the explicit module and KMP source-set allowlist. Test dependencies are excluded. | Remove the edge or update the owning module policy and allowlist together when the architecture change is intentional. |
 | `cancellation-propagation` | Suspend paths do not swallow `CancellationException`, including through `runCatching`. | Catch the expected exception type or rethrow cancellation immediately. |
 | `coroutine-thread-local` | Every JVM `ThreadLocal` state declaration is reviewed explicitly. | Move the state into coroutine context, or suppress the reviewed declaration and propagate coroutine access with `asContextElement`. |
@@ -39,10 +39,10 @@ gate can exclude them explicitly.
 Local-link checks validate filesystem targets. Markdown fragment identifiers
 are not part of the version 1 repository contract.
 
-The root Module Map indexes module policies. Each module indexes pain-point
-topics in a `Pain points` section of `AGENTS.md` or a linked
-`docs/pain-points.md`. Link checks cover `AGENTS.md`, Markdown files directly
-under `docs/`, and nested `docs/pain-points/` topics.
+The root Module Map indexes module policies. Each module policy indexes
+pain-point topics in a required `Pain points` section of `AGENTS.md`, with
+topic files directly under the module's `docs/`. Link checks cover `AGENTS.md`
+and Markdown files directly under `docs/`.
 
 ## Coroutine analysis
 

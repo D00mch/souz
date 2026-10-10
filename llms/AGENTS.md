@@ -1,6 +1,6 @@
 # LLMs
 
-Before changing this module, read its [pain-point index](docs/pain-points.md) and any relevant topics.
+Before changing this module, read the relevant pain-point topics below.
 
 ## Purpose and boundaries
 
@@ -14,6 +14,12 @@ Before changing this module, read its [pain-point index](docs/pain-points.md) an
 - Preserve provider neutrality in public contracts; provider-specific transport behavior belongs in the provider implementation.
 - Keep model-default and availability decisions in build profiles, with host capabilities supplied through narrow interfaces.
 - Preserve the shared Souz state-directory contract because multiple modules resolve persisted assets through it.
+
+## Pain points
+
+- [Model resolution](docs/model-resolution.md) — provider-neutral embedding defaults, normalized aliases, ambiguity, and unsupported providers.
+
+Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.
 
 ## Verification
 

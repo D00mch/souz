@@ -35,13 +35,8 @@ internal class FixtureProject(private val root: Path) {
 
         modules.forEach { module ->
             val directory = module.removePrefix(":")
-            if (module == ":sharedUI") {
-                write("$directory/AGENTS.md", "# $directory\n\n## Pain points\n\n[Runtime](docs/runtime.md)\n")
-                write("$directory/docs/runtime.md", "# Runtime\n")
-            } else {
-                write("$directory/AGENTS.md", "# $directory\n\n[Pain points](docs/pain-points.md)\n")
-                write("$directory/docs/pain-points.md", "# Pain points\n")
-            }
+            write("$directory/AGENTS.md", "# $directory\n\n## Pain points\n\n[Runtime](docs/runtime.md)\n")
+            write("$directory/docs/runtime.md", "# Runtime\n")
             write("$directory/build.gradle.kts", "plugins { `java-library` }\n")
         }
         write(

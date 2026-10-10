@@ -1,6 +1,6 @@
 # Agent
 
-Before changing this module, read its [pain-point index](docs/pain-points.md) and the topics relevant to the change.
+Before changing this module, read the relevant pain-point topics below.
 
 ## Purpose and boundaries
 
@@ -17,7 +17,16 @@ Before changing this module, read its [pain-point index](docs/pain-points.md) an
 - Skill discovery uses enabled tool-backed IDs and escaped file-backed IDs. The skills graph selects concise descriptions during inventory preparation using bounded conversation, an optional host classifier, and execution-LLM fallback. Full bundles load on demand through `GetSkillByName`, `RunSkillCommand`, and `SkillApprovalGate` where enabled.
 - Propagate coroutine cancellation. Error handling may degrade optional integrations, but must not convert cancellation into a normal result.
 - Agent settings carry an explicit provider and host-resolved model ID. Update them together when selecting a model and preserve them through child and classification requests. Classifiers accept typed chat requests and allowed category descriptions; JSON round trips discard internal routing metadata. Null classification confidence means the provider has already applied its selection policy; numeric confidence retains LLM/regex agreement handling.
-- `SubagentTool` constructs one isolated context from host-supplied `Setup` and awaits a fresh `Agent` from an injected factory in the caller's coroutine. `ToolLoopGraphBasedAgent` provides the default model/tool loop. Share host APIs and invocation identity, not agent instances, history, or event streams. See [subagent execution](docs/pain-points/subagents.md).
+- `SubagentTool` constructs one isolated context from host-supplied `Setup` and awaits a fresh `Agent` from an injected factory in the caller's coroutine. `ToolLoopGraphBasedAgent` provides the default model/tool loop. Share host APIs and invocation identity, not agent instances, history, or event streams. See [subagent execution](docs/subagents.md).
+
+## Pain points
+
+- [Execution lifecycle](docs/execution-lifecycle.md) — stateful facade execution, cancellation, session ownership, and request-scoped kernels.
+- [Subagent execution](docs/subagents.md) — parent suspension, capability isolation, and child lifecycle.
+- [Skill activation](docs/skill-activation.md) — turn ordering, bundle loading, validation caching, and command exposure.
+- [Skills-oriented graph](docs/skills-oriented-graph.md) — core-tool isolation, large-result offloading, and Knowledge lifetime.
+
+Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.
 
 ## Verification
 

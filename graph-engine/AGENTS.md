@@ -1,6 +1,6 @@
 # Graph Engine
 
-Before changing this module, read its [pain-point index](docs/pain-points.md) and any relevant topics.
+Before changing this module, read the relevant pain-point topics below.
 
 ## Purpose and boundaries
 
@@ -13,6 +13,12 @@ Before changing this module, read its [pain-point index](docs/pain-points.md) an
 - Static fan-out is processed FIFO; use dynamic routing when only one branch should continue.
 - Nested graphs share the active `GraphRuntime`, including step counting, retries, tracing, and cancellation state.
 - Never retry coroutine cancellation. Preserve the last successful context through `GraphCancellation`, terminate through `nodeFinish`, and retain the `maxSteps` loop guard.
+
+## Pain points
+
+No module-specific pain-point topics are currently recorded.
+
+Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.
 
 ## Verification
 

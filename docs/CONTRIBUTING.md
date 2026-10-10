@@ -22,7 +22,7 @@ Implementations overview:
 Use each documentation surface for one purpose:
 
 - [AGENTS.md](../AGENTS.md) files contain durable engineering instructions, ownership boundaries, and verification commands.
-- Pain-point topics live under their owning module's `docs/` and contain non-obvious invariants, failure modes, safe-change guidance, and focused verification. Index them in a `Pain points` section of `AGENTS.md` or a linked `docs/pain-points.md`.
+- Pain-point topics live directly under their owning module's `docs/` and contain non-obvious invariants, failure modes, safe-change guidance, and focused verification. Index them in the module's `Pain points` section of `AGENTS.md`.
 - README files contain human-facing architecture and usage descriptions.
 - Source code and generated API documentation are authoritative for exact routes, configuration keys, constants, and file inventories.
 

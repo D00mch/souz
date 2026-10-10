@@ -24,11 +24,12 @@ class RepositoryContractsTest {
             repository.resolve("agent/AGENTS.md"),
             """
             # Agent
-            [Pain points](docs/pain-points.md)
+
+            ## Pain points
+
             [Missing](docs/missing.md)
             """.trimIndent() + "\n",
         )
-        write(repository.resolve("agent/docs/pain-points.md"), "# Pain points\n")
 
         val diagnostics = RepositoryContracts.check(
             repositoryDirectory = repository.toFile(),
@@ -44,12 +45,12 @@ class RepositoryContractsTest {
 
         assertEquals(1, diagnostics.size)
         assertEquals("agent/AGENTS.md", diagnostics.single().path)
-        assertEquals(3, diagnostics.single().line)
+        assertEquals(5, diagnostics.single().line)
         assertTrue(diagnostics.single().message.contains("does not resolve"))
     }
 
     @Test
-    fun `module policy exemption does not exempt pain point contracts`(@TempDir repository: Path) {
+    fun `module policy exemption allows root-owned policy without a module index`(@TempDir repository: Path) {
         write(
             repository.resolve("AGENTS.md"),
             """
@@ -73,13 +74,11 @@ class RepositoryContractsTest {
             registeredChecks = SouzQualityChecks.fast,
         )
 
-        assertEquals(1, diagnostics.size)
-        assertTrue(diagnostics.any { it.message.contains("needs a module pain-point index") })
-        assertTrue(diagnostics.none { it.message.contains("needs an AGENTS.md policy") })
+        assertTrue(diagnostics.isEmpty())
     }
 
     @Test
-    fun `pain point image does not satisfy the policy link contract`(@TempDir repository: Path) {
+    fun `a linked topic without a level-two pain points heading fails`(@TempDir repository: Path) {
         write(
             repository.resolve("AGENTS.md"),
             """
@@ -90,8 +89,8 @@ class RepositoryContractsTest {
             - `:agent` — agent module.
             """.trimIndent() + "\n",
         )
-        write(repository.resolve("agent/AGENTS.md"), "# Agent\n\n![Pain points](docs/pain-points.md)\n")
-        write(repository.resolve("agent/docs/pain-points.md"), "# Pain points\n")
+        write(repository.resolve("agent/AGENTS.md"), "# Agent\n\n### Pain points\n\n[Runtime](docs/runtime.md)\n")
+        write(repository.resolve("agent/docs/runtime.md"), "# Runtime\n")
 
         val diagnostics = RepositoryContracts.check(
             repositoryDirectory = repository.toFile(),
@@ -106,7 +105,8 @@ class RepositoryContractsTest {
         )
 
         assertEquals(1, diagnostics.size)
-        assertTrue(diagnostics.single().message.contains("AGENTS.md must link"))
+        assertEquals("agent/AGENTS.md", diagnostics.single().path)
+        assertTrue(diagnostics.single().message.contains("'Pain points' level-two heading"))
     }
 
     private fun write(path: Path, content: String) {

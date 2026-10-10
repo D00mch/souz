@@ -4,7 +4,7 @@
 
 Backend storage is PostgreSQL-backed. Agent execution ownership is distributed-safe only for the Client-Souz public WebSocket thread path (`docs/public-souz-contract`). That path stores `runtime_owner` and a renewable `runtime_lease_until`, requires sticky routing for live active-thread frames, and has recovery that fails expired public thread leases and emits the required terminal `thread.failed` event.
 
-The separate [job service](../../job-impl/docs/pain-points/job-ownership.md) uses PostgreSQL claims and renewable leases across replicas. It executes host-supplied handlers at least once and starts only when a handler is explicitly supplied. Its lease does not confer distributed ownership on an agent execution that a handler might start.
+The separate [job service](../../job-impl/docs/job-ownership.md) uses PostgreSQL claims and renewable leases across replicas. It executes host-supplied handlers at least once and starts only when a handler is explicitly supplied. Its lease does not confer distributed ownership on an agent execution that a handler might start.
 
 Ordinary trusted-proxy HTTP executions and Telegram/VK-triggered executions run as process-local background jobs without a renewable runtime lease. Their durable `agent_executions` rows can remain active if the owning process exits while the job is running. `waiting_option` is durable user-wait state and must not be treated as a crashed runtime by lease recovery.
 

@@ -45,7 +45,6 @@ internal object RepositoryContracts {
             projects.forEach { project ->
                 val moduleDirectory = repository.resolve(project.directory).normalize()
                 add(moduleDirectory.resolve("AGENTS.md"))
-                add(moduleDirectory.resolve("docs/pain-points.md"))
             }
             policyFiles.forEach { add(it.toPath().toAbsolutePath().normalize()) }
         }
@@ -157,38 +156,20 @@ internal object RepositoryContracts {
         projects.forEach { project ->
             val moduleDirectory = repository.resolve(project.directory).normalize()
             val agentsPath = moduleDirectory.resolve("AGENTS.md")
-            if (documents[agentsPath]?.let { modulesUnderHeading(it, "Pain points").found } == true) {
-                return@forEach
-            }
-            val painPointsPath = moduleDirectory.resolve("docs/pain-points.md")
             val agentsRelative = relativePath(repository, agentsPath)
-            val painPointsRelative = relativePath(repository, painPointsPath)
+            val document = documents[agentsPath]
 
-            if (Files.notExists(painPointsPath)) {
+            if (document == null && project.path !in exemptions) {
                 diagnostics += missingFile(
-                    painPointsRelative,
-                    "${project.path} needs a module pain-point index.",
+                    agentsRelative,
+                    "${project.path} needs an AGENTS.md policy or an explicit root policy exemption.",
                 )
-            }
-
-            if (project.path !in exemptions) {
-                if (Files.notExists(agentsPath)) {
-                    diagnostics += missingFile(
-                        agentsRelative,
-                        "${project.path} needs an AGENTS.md policy or an explicit root policy exemption.",
-                    )
-                }
-
-                val moduleAgentsTargets = documents[agentsPath]
-                    ?.let { localTargets(repository, agentsPath, it) }
-                    .orEmpty()
-                if (documents.containsKey(agentsPath) && painPointsPath !in moduleAgentsTargets) {
-                    diagnostics += QualityDiagnostic(
-                        path = agentsRelative,
-                        line = null,
-                        message = "${project.path} AGENTS.md must link to its docs/pain-points.md index.",
-                    )
-                }
+            } else if (document != null && !modulesUnderHeading(document, "Pain points").found) {
+                diagnostics += QualityDiagnostic(
+                    path = agentsRelative,
+                    line = null,
+                    message = "${project.path} AGENTS.md must contain a 'Pain points' level-two heading.",
+                )
             }
         }
     }
@@ -217,7 +198,7 @@ internal object RepositoryContracts {
         diagnostics: MutableList<QualityDiagnostic>,
     ) {
         documents.toSortedMap(compareBy { it.toString() }).forEach { (source, document) ->
-            links(document, includeImages = true).forEach { link ->
+            links(document).forEach { link ->
                 val target = try {
                     resolveLocalTarget(repository, source, link.destination)
                 } catch (_: IllegalArgumentException) {
@@ -239,11 +220,6 @@ internal object RepositoryContracts {
         }
     }
 
-    private fun localTargets(repository: Path, source: Path, document: Node): Set<Path> =
-        links(document, includeImages = false).mapNotNull { link ->
-            runCatching { resolveLocalTarget(repository, source, link.destination) }.getOrNull()
-        }.toSet()
-
     private fun resolveLocalTarget(repository: Path, source: Path, destination: String): Path? {
         val trimmed = destination.trim()
         if (trimmed.isEmpty() || trimmed.startsWith("//") || trimmed.startsWith("/")) {
@@ -260,7 +236,7 @@ internal object RepositoryContracts {
         return target
     }
 
-    private fun links(document: Node, includeImages: Boolean): List<MarkdownLink> {
+    private fun links(document: Node): List<MarkdownLink> {
         val links = mutableListOf<MarkdownLink>()
         document.accept(object : AbstractVisitor() {
             override fun visit(link: Link) {
@@ -269,9 +245,7 @@ internal object RepositoryContracts {
             }
 
             override fun visit(image: Image) {
-                if (includeImages) {
-                    links += MarkdownLink(image.destination, lineOf(image))
-                }
+                links += MarkdownLink(image.destination, lineOf(image))
                 visitChildren(image)
             }
         })
