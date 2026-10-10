@@ -2,7 +2,7 @@
 
 Souz is a Kotlin Multiplatform AI assistant with desktop and backend hosts over shared agent and runtime modules.
 
-- Read and maintain this file and `docs/pain-points.md` before changing the repository.
+- Read and maintain this file before changing the repository. Before editing a module, read its linked `AGENTS.md`, any applicable nested instructions, and relevant module pain-point topics.
 - Keep runtime documentation and `docs/public-souz-contract/` concise and current-state only. Do not write change-history phrases such as “now we do”.
 - Keep pre-implementation client agreements under `docs/proposals/`, explicitly marked as proposed and not implemented; exclude them from the implemented public API schemas.
 
@@ -23,19 +23,20 @@ Souz is a Kotlin Multiplatform AI assistant with desktop and backend hosts over 
 
 ## Module Map
 
-- `:graph-engine` — framework-free typed graph execution.
-- `:llms` — provider-agnostic LLM contracts and model identities.
-- `:agent` — graph-based agent and subagent execution, sessions, Skill discovery/approval, and host SPIs.
-- `:native` — local llama.cpp runtime and native bridge.
-- `:ambientAgent` — ambient transcription semantics and local task analysis.
-- `:sharedLogic` — shared JVM runtime logic, providers, classifiers, tools, skills, memory, and sandboxes.
-- `:skill-oauth-api` — provider-neutral Skill OAuth contracts (`SkillOAuthGateway`) with no host or persistence dependencies.
-- `:skill-oauth-impl` — Postgres-backed `SkillOAuthGateway` implementation, provider token exchange, and the OAuth callback route, consumed only by `:backend`.
-- `:job-api` — owner-scoped job management and execution contracts.
-- `:job-impl` — PostgreSQL job persistence, scheduling, leased workers, and retries, composed by `:backend`.
-- `:sharedUI` — shared desktop UI logic, ViewModels, host ports, and Compose UI.
-- `:desktopApp` — desktop composition root, OS integrations, persistence, and packaging.
-- `:backend` — trusted-proxy HTTP host and PostgreSQL-backed conversation runtime.
+- [`:graph-engine`](graph-engine/AGENTS.md) — framework-free typed graph execution.
+- [`:llms`](llms/AGENTS.md) — provider-agnostic LLM contracts and model identities.
+- [`:agent`](agent/AGENTS.md) — graph-based agent and subagent execution, sessions, Skill discovery/approval, and host SPIs.
+- [`:native`](native/AGENTS.md) — local llama.cpp runtime and native bridge.
+- [`:ambientAgent`](ambientAgent/AGENTS.md) — ambient transcription semantics and local task analysis.
+- [`:sharedLogic`](sharedLogic/AGENTS.md) — shared JVM runtime logic, providers, classifiers, tools, skills, memory, and sandboxes.
+- [`:skill-oauth-api`](skill-oauth-api/AGENTS.md) — provider-neutral Skill OAuth contracts (`SkillOAuthGateway`) with no host or persistence dependencies.
+- [`:skill-oauth-impl`](skill-oauth-impl/AGENTS.md) — Postgres-backed `SkillOAuthGateway` implementation, provider token exchange, and the OAuth callback route, consumed only by `:backend`.
+- [`:job-api`](job-api/AGENTS.md) — owner-scoped job management and execution contracts.
+- [`:job-impl`](job-impl/AGENTS.md) — PostgreSQL job persistence, scheduling, leased workers, and retries, composed by `:backend`.
+- [`:sharedUI`](sharedUI/AGENTS.md) — shared desktop UI logic, ViewModels, host ports, and Compose UI.
+- [`:desktopApp`](desktopApp/AGENTS.md) — desktop composition root, OS integrations, persistence, and packaging.
+- [`:backend`](backend/AGENTS.md) — trusted-proxy HTTP host and PostgreSQL-backed conversation runtime.
+- [`build-logic`](build-logic/AGENTS.md) — included build for repository quality checks, outside the production module graph.
 
 ## Production dependency boundaries
 
