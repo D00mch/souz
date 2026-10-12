@@ -10,8 +10,8 @@ import ru.souz.llms.LLMModel
 class RequestParsingTest {
     @Test
     fun `parseModel trims and normalizes model names once at the request boundary`() {
-        assertEquals(LLMModel.QwenMax, parseModel("  QWENMAX  ", fieldName = "defaultModel"))
-        assertEquals(LLMModel.QwenMax, parseModel("  QWEN-MAX  ", fieldName = "defaultModel"))
+        assertEquals(LLMModel.QwenMax.alias, parseModel("  QWENMAX  ", fieldName = "defaultModel"))
+        assertEquals(LLMModel.QwenMax.alias, parseModel("  QWEN-MAX  ", fieldName = "defaultModel"))
     }
 
     @Test

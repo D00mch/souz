@@ -107,7 +107,7 @@ internal class BackendAgentRuntimeEventSink(
             payload = ExecutionStartedPayload(
                 executionId = execution.id,
                 userMessageId = execution.userMessageId,
-                model = execution.model?.alias,
+                model = execution.model,
                 provider = execution.provider?.name,
                 streamingMessages = streamingMessagesEnabled,
             ),

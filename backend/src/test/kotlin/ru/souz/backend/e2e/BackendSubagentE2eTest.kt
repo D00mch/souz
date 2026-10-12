@@ -20,6 +20,7 @@ import kotlin.test.assertTrue
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.http.BackendHttpRoutes
+import ru.souz.backend.llm.withNamedLlmConfig
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.http.ProviderHttpClients
@@ -27,16 +28,16 @@ import ru.souz.llms.http.providerHttpClientDefaults
 
 class BackendSubagentE2eTest {
     @Test
-    fun `configured remote child runs from a local parent with credentials and usage in both modes`() {
+    fun `legacy and named remote children preserve credentials and usage`() = withNamedLlmConfig { namedSource ->
         listOf(false, true).forEach { streaming ->
-            val childModel = "My-Deployment/v2"
+            val childModel = if (streaming) "tv-agent" else "My-Deployment/v2"
             var childRequests = 0
             val http = HttpClient(MockEngine { request ->
                 val body = restJsonMapper.readTree(request.body.toByteArray())
-                assertEquals(childModel, body["model"].asText())
+                assertEquals(if (streaming) "shared-model" else childModel, body["model"].asText())
                 assertEquals(streaming, body["stream"].asBoolean())
-                assertEquals("Bearer configured-child-key", request.headers[HttpHeaders.Authorization])
-                assertEquals("api.openai.com", request.url.host)
+                assertEquals(if (streaming) "Bearer router-secret" else "Bearer configured-child-key", request.headers[HttpHeaders.Authorization])
+                assertEquals(if (streaming) "router.test" else "api.openai.com", request.url.host)
                 assertFalse(body.has("provider"))
                 childRequests++
                 val reply = """{"choices":[{"index":0,"message":{"role":"assistant","content":"private remote answer"},"delta":{"role":"assistant","content":"private remote answer"},"finish_reason":"stop"}],"created":1,"usage":{"prompt_tokens":11,"completion_tokens":4,"total_tokens":15}}"""
@@ -46,7 +47,7 @@ class BackendSubagentE2eTest {
                 )
             }) { providerHttpClientDefaults() }
             val source = object : BackendConfigSource {
-                override fun env(key: String): String? = when (key) {
+                override fun env(key: String): String? = if (streaming) namedSource.env(key) else when (key) {
                     "SUBAGENT_MODELS_JSON" -> """{"OPENAI":["$childModel"]}"""
                     "OPENAI_API_KEY" -> "configured-child-key"
                     else -> null

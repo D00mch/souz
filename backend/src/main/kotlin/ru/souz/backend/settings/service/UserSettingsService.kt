@@ -6,12 +6,15 @@ import ru.souz.backend.http.invalidV1Request
 import ru.souz.backend.settings.model.EffectiveUserSettings
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
+import ru.souz.llms.findLLMModel
 import ru.souz.llms.LlmProvider
 
 class UserSettingsService(
     private val userSettingsRepository: UserSettingsRepository,
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
 ) {
+    val namedModelNames: Set<String> get() = effectiveSettingsResolver.namedModelNames
+
     suspend fun get(userId: String): EffectiveUserSettings =
         effectiveSettingsResolver.resolve(userId)
 
@@ -19,7 +22,7 @@ class UserSettingsService(
         userId: String,
         overrides: UserSettingsOverrides,
     ): EffectiveUserSettings {
-        if (overrides.defaultModel?.provider == LlmProvider.GIGA) {
+        if (overrides.defaultModel?.let(::findLLMModel)?.provider == LlmProvider.GIGA) {
             throw invalidV1Request(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
         }
         if (

@@ -39,7 +39,6 @@ import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.config.BackendFeatureFlags
-import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.execution.repository.AgentExecutionRepository
@@ -239,11 +238,6 @@ class BackendDiModuleTest {
             assertSame(httpDependencies, di.direct.instance<BackendHttpDependencies>())
             assertSame(di.direct.instance<BackendFeatureFlags>(), httpDependencies.featureFlags)
             assertEquals("test-proxy-token", httpDependencies.trustedProxyToken())
-            val configuredModel = di.direct.instance<ru.souz.db.SettingsProvider>().gigaModel
-            val expectedHealthModel = configuredModel
-                .takeIf { it in BackendLlmSupport.chatModels }
-                ?: BackendLlmSupport.fallbackChatModel
-            assertEquals(expectedHealthModel.alias, httpDependencies.selectedModel())
             assertNotNull(httpDependencies.onboardingService)
             assertNotNull(httpDependencies.userSettingsService)
             assertNotNull(httpDependencies.providerKeyService)

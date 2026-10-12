@@ -89,7 +89,7 @@ internal fun Route.messageRoutes(deps: BackendHttpDependencies) {
                 chatId = chatId,
                 content = content,
                 clientMessageId = request.clientMessageId,
-                requestOverrides = request.options.toUserSettingsOverrides(),
+                requestOverrides = request.options.toUserSettingsOverrides(deps.userSettingsService.namedModelNames),
             ).toResponse()
         )
     }.describeV1(

@@ -350,7 +350,7 @@ class PostgresAgentExecutionRepository(
         statement.setString(6, execution.status.value)
         statement.setString(7, execution.requestId)
         statement.setString(8, execution.clientMessageId)
-        statement.setString(9, execution.model?.alias)
+        statement.setString(9, execution.model)
         statement.setString(10, execution.provider?.name)
         statement.setInstant(11, execution.startedAt)
         statement.setInstant(12, execution.finishedAt)

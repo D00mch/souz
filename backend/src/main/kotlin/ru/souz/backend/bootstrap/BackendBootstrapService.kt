@@ -63,7 +63,9 @@ class BackendBootstrapService(
                             else -> model.provider in capabilityProviders
                         }
                     }
-                    .map { modelCapability(it, userManagedProviders) },
+                    .map { modelCapability(it, userManagedProviders) } + effectiveSettingsResolver.namedModelNames.map {
+                        BootstrapModelCapability(provider = "openai", model = it, serverManagedKey = true, userManagedKey = false)
+                    },
                 tools = advertisedToolNames.map { toolName ->
                     BootstrapToolCapability(name = toolName, enabled = true)
                 },

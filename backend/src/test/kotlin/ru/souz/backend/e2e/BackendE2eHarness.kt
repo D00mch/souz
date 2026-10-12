@@ -57,6 +57,8 @@ import ru.souz.backend.app.backendDiModule
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.config.NamedLlmConfig
+import ru.souz.backend.config.loadNamedModels
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.settings.service.BackendSettingsProvider
 import ru.souz.db.SettingsProvider
@@ -133,6 +135,7 @@ internal fun backendE2eTest(
     turnRunnerOverride: BackendConversationTurnRunner? = null,
     startBackgroundServices: Boolean = false,
     settingsSource: BackendConfigSource? = null,
+    localModels: List<LLMModel> = listOf(E2E_LOCAL_MODEL),
     providerClients: ProviderHttpClients? = null,
     hindsightUrl: String? = null,
     clock: Clock = Clock.systemUTC(),
@@ -150,6 +153,7 @@ internal fun backendE2eTest(
         turnRunnerOverride = turnRunnerOverride,
         startBackgroundServices = startBackgroundServices,
         settingsSource = settingsSource,
+        localModels = localModels,
         providerClients = providerClients,
         hindsightUrl = hindsightUrl,
         clock = clock,
@@ -296,6 +300,7 @@ internal class BackendE2eBackend(
     turnRunnerOverride: BackendConversationTurnRunner?,
     startBackgroundServices: Boolean,
     private val settingsSource: BackendConfigSource? = null,
+    private val localModels: List<LLMModel> = listOf(E2E_LOCAL_MODEL),
     private val providerClients: ProviderHttpClients? = null,
     private val hindsightUrl: String? = null,
     private val clock: Clock = Clock.systemUTC(),
@@ -312,7 +317,7 @@ internal class BackendE2eBackend(
         includeSkillOAuthConfig = false,
     ).copy(hindsightApiUrl = hindsightUrl, hooks = hookConfig, llmLimits = llmLimits)
     private val localChatApi = localChatApiBackedBy(llm)
-    private val localAvailability = localProviderAvailability()
+    private val localAvailability = localProviderAvailability(localModels)
     private val localRuntime = relaxedLocalRuntime()
 
     private val di = DI.invoke(allowSilentOverride = true) {
@@ -331,8 +336,9 @@ internal class BackendE2eBackend(
             bindSingleton<RuntimeSandboxFactory>(overrides = true) { sandboxFactory(instance()) }
         }
         if (settingsSource != null) {
+            bindSingleton<NamedLlmConfig>(overrides = true) { settingsSource.loadNamedModels() }
             bindSingleton<SettingsProvider>(overrides = true) {
-                BackendSettingsProvider(instance(), localAvailability, settingsSource)
+                BackendSettingsProvider(instance(), localAvailability, settingsSource, instance())
             }
         }
         if (providerClients != null) {
@@ -423,6 +429,8 @@ internal class BackendE2eBackend(
             turnRunnerOverride = null,
             startBackgroundServices = false,
             providerClients = providerClients,
+            settingsSource = settingsSource,
+            localModels = localModels,
             hindsightUrl = hindsightUrl,
             clock = clock,
             hookConfig = hookConfig,

@@ -26,9 +26,10 @@ class BackendOnboardingService(
         val storedSettings = userSettingsRepository.get(identity.userId)
         val completed = storedSettings?.onboardingCompletedAt != null
         val recommendedDefaultModel = bootstrap.settings.defaultModel
-            .takeIf { alias -> findLLMModel(alias)?.let { it in BackendLlmSupport.chatModels } == true }
+            .takeIf { alias -> alias in userSettingsService.namedModelNames || findLLMModel(alias) in BackendLlmSupport.chatModels }
             ?: BackendLlmSupport.fallbackChatModel.alias
-        val recommendedProvider = recommendedDefaultModel.toProviderOrNull()?.name?.lowercase()
+        val recommendedProvider = bootstrap.capabilities.models.firstOrNull { it.model == recommendedDefaultModel }?.provider
+            ?: findLLMModel(recommendedDefaultModel)?.provider?.name?.lowercase()
         val hasUsableModelAccess = bootstrap.capabilities.models.any { it.serverManagedKey || it.userManagedKey }
         val hasOpenAiCompatibleCustomModel = bootstrap.capabilities.models.any {
             it.model == LLMModel.OpenAICompatibleCustom.alias
@@ -90,14 +91,14 @@ class BackendOnboardingService(
         identity: RequestIdentity,
         overrides: UserSettingsOverrides,
     ): OnboardingCompleteResponse {
-        if (overrides.defaultModel?.provider == LlmProvider.GIGA) {
+        if (overrides.defaultModel?.let(::findLLMModel)?.provider == LlmProvider.GIGA) {
             throw invalidV1Request(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
         }
         val bootstrap = bootstrapService.response(identity)
         val accessibleModelAliases = bootstrap.capabilities.models
             .filter { it.serverManagedKey || it.userManagedKey }
             .mapTo(linkedSetOf()) { it.model }
-        if (overrides.defaultModel != null && overrides.defaultModel.alias !in accessibleModelAliases) {
+        if (overrides.defaultModel != null && overrides.defaultModel !in accessibleModelAliases) {
             throw invalidV1Request("defaultModel must be available to the current user.")
         }
         val allowedTools = bootstrap.capabilities.tools.mapTo(linkedSetOf()) { it.name }
@@ -129,9 +130,6 @@ class BackendOnboardingService(
         groupBy { it.provider }
             .toSortedMap()
             .mapValues { (_, models) -> models.map { it.model }.sorted() }
-
-    private fun String.toProviderOrNull(): LlmProvider? =
-        findLLMModel(this)?.provider
 
     private companion object {
         const val STEP_PROVIDER = "provider"

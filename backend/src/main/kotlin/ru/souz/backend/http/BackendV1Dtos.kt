@@ -281,7 +281,7 @@ internal data class PublicClientEventDto(
 
 internal fun EffectiveUserSettings.toDto(): BackendV1SettingsDto =
     BackendV1SettingsDto(
-        defaultModel = defaultModel.alias,
+        defaultModel = defaultModel,
         contextSize = contextSize,
         temperature = temperature,
         locale = locale.toLanguageTag(),
@@ -386,7 +386,7 @@ internal fun AgentExecution.toDto(): BackendV1ExecutionDto =
         status = status.value,
         requestId = requestId,
         clientMessageId = clientMessageId,
-        model = model?.alias,
+        model = model,
         provider = provider?.name,
         startedAt = startedAt.toString(),
         finishedAt = finishedAt?.toString(),

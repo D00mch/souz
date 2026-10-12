@@ -28,6 +28,7 @@ import ru.souz.backend.common.backendLogContext
 import ru.souz.backend.hooks.HookLlmBudget
 import ru.souz.backend.hooks.HookLlmBudget.Companion.withProviderCall
 import ru.souz.backend.hooks.HookStore
+import ru.souz.backend.config.NamedLlmModel
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
@@ -87,6 +88,7 @@ internal class BackendConversationRuntimeFactory(
     private val hookStore: HookStore,
     private val executionQuotas: ExecutionQuotaManager,
     private val metrics: BackendMetrics? = null,
+    private val namedModels: Map<String, NamedLlmModel> = emptyMap(),
     private val testLlmApiFactory: (suspend (SettingsProvider) -> LLMChatAPI)? = null,
 ) {
     internal suspend fun create(
@@ -120,6 +122,7 @@ internal class BackendConversationRuntimeFactory(
         val hookBudget = request.executionId?.let { id -> hookStore.find(key.userId, UUID.fromString(id)) }
             ?.let { HookLlmBudget(it, hookStore, executionQuotas, settingsProvider.openaiSummarizationParameters) }
         val executionApi = BackendExecutionLlmChatApi(
+            namedModels = namedModels,
             userId = key.userId,
             settingsProvider = settingsProvider,
             credentialResolver = credentialResolver,

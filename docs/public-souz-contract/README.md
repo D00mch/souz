@@ -134,3 +134,5 @@ JSON decoding rejection ACKs include `error.details` with a JSON Pointer `path` 
 - `POST /v1/chats`: HTTP creation for `backend` or `mobile_app`, sharing WebSocket creation idempotency.
 - `GET /v1/chats/{chatId}/threads/{threadId}?clientType=...`: durable status and liveness.
 - `/v1/chats/{chatId}/ws?clientType=...&afterSeq=...`: single-chat socket for either client type. Replays from the cursor (default `0`) before processing input; does not accept `chat.create`, `chat.subscribe` or `chat.unsubscribe`.
+
+Server-configured model names from bootstrap are accepted in `payload.meta.model`; see [named LLM connections](../../backend/docs/named-llm-connections.md).
