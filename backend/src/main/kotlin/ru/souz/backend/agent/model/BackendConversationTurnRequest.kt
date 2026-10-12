@@ -1,11 +1,11 @@
 package ru.souz.backend.agent.model
 
-import ru.souz.llms.LLMModel
+import ru.souz.llms.ChatModelSelection
 
 /** Internal request model for one chat-oriented backend agent turn. */
 internal data class BackendConversationTurnRequest(
     val prompt: String,
-    val model: LLMModel,
+    val model: ChatModelSelection,
     val reasoningEffort: String? = null,
     val contextSize: Int,
     val locale: String,

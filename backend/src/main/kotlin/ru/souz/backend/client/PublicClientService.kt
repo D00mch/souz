@@ -37,6 +37,7 @@ import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
+import ru.souz.llms.ChatModelSelection
 import ru.souz.llms.ModelResolution
 import ru.souz.llms.resolveChatModel
 import ru.souz.llms.LlmProvider
@@ -59,6 +60,7 @@ internal class PublicClientService(
     private val executionService: AgentExecutionService,
     private val registry: ClientThreadRuntimeRegistry,
     private val applicationScope: CoroutineScope,
+    private val namedModelNames: Set<String> = emptySet(),
     private val mapper: ObjectMapper = jacksonObjectMapper().registerKotlinModule(),
 ) {
     private val logger = LoggerFactory.getLogger(PublicClientService::class.java)
@@ -386,6 +388,7 @@ internal class PublicClientService(
 
     private fun requestOverrides(meta: ClientRequestMeta?): UserSettingsOverrides = UserSettingsOverrides(
         defaultModel = meta?.model?.let { raw ->
+            if (raw.trim() in namedModelNames) return@let ChatModelSelection.Named(raw.trim())
             when (
                 val resolution = resolveChatModel(
                     rawModel = raw,

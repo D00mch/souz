@@ -13,6 +13,7 @@ const val REGION_EN = "en"
 const val DEFAULT_REQUEST_TIMEOUT_MILLIS = 400_000L
 
 interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
+    val namedLlmModels: NamedLlmModels get() = NamedLlmModels.EMPTY
     val subagentModels: Map<String, LlmProvider> get() = emptyMap()
 
     override fun executionModelId(model: LLMModel): String =

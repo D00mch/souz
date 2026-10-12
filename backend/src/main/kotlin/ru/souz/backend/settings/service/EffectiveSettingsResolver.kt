@@ -7,6 +7,7 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.http.invalidV1Request
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.llm.hasCompleteCodexOAuthCredentials
 import ru.souz.backend.settings.model.EffectiveUserSettings
@@ -15,13 +16,14 @@ import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.ChatModelSelection
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LocalModelAvailability
 
 data class UserSettingsOverrides(
-    val defaultModel: LLMModel? = null,
+    val defaultModel: ChatModelSelection? = null,
     val contextSize: Int? = null,
     val temperature: Float? = null,
     val locale: Locale? = null,
@@ -49,8 +51,13 @@ class EffectiveSettingsResolver(
     private val advertisedToolNames: Set<String> =
         BackendToolCapabilityPolicy.advertisedToolNames(toolCatalog)
 
-    suspend fun isSelectableDefaultModel(userId: String, model: LLMModel): Boolean =
-        isSelectableModel(model) { loadUserManagedProviders(userId) }
+    val namedModelNames: Set<String> get() = baseSettingsProvider.namedLlmModels.models.keys
+
+    suspend fun isSelectableDefaultModel(userId: String, model: ChatModelSelection): Boolean =
+        when (model) {
+            is ChatModelSelection.Named -> model.alias in namedModelNames
+            is LLMModel -> isSelectableModel(model) { loadUserManagedProviders(userId) }
+        }
 
     suspend fun resolve(
         userId: String,
@@ -142,14 +149,19 @@ class EffectiveSettingsResolver(
         (enabledTools ?: advertisedToolNames).filterTo(linkedSetOf()) { it in advertisedToolNames }
 
     private suspend fun normalizeModel(
-        model: LLMModel?,
+        model: ChatModelSelection?,
         locale: Locale,
         userManagedProviders: suspend () -> Set<LlmProvider>,
-    ): LLMModel {
-        if (model?.provider == LlmProvider.GIGA) {
+    ): ChatModelSelection {
+        if (model is ChatModelSelection.Named) {
+            if (model.alias !in namedModelNames) throw invalidV1Request("Unknown configured model: ${model.alias}.")
             return model
         }
-        return model?.withConfiguredOpenAiCompatibleChatModel()
+        val builtin = model as LLMModel?
+        if (builtin?.provider == LlmProvider.GIGA) {
+            return builtin
+        }
+        return builtin?.withConfiguredOpenAiCompatibleChatModel()
             ?.takeIf { isSelectableModel(it, userManagedProviders) }
             ?: fallbackModel(locale, userManagedProviders)
     }

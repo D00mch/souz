@@ -4,6 +4,8 @@ import io.mockk.coEvery
 import io.mockk.mockk
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import ru.souz.backend.http.BackendV1Exception
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.keys.model.UserProviderKey
@@ -12,6 +14,9 @@ import ru.souz.backend.llm.LlmSettingsStub
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.testutil.TestToolCatalog
+import ru.souz.llms.ChatModelSelection
+import ru.souz.db.NamedLlmModel
+import ru.souz.db.NamedLlmModels
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMModel.AiTunnelClaudeHaiku
 import ru.souz.llms.LLMModel.AnthropicHaiku45
@@ -30,7 +35,10 @@ import ru.souz.llms.LocalModelAvailability
 class EffectiveSettingsResolverTest {
     @Test
     fun `selects the default model with at most one stored key listing`() = runTest {
+        val named = ChatModelSelection.Named("test-chat")
         val cases = listOf(
+            Case(named, selected = named, listings = 0),
+            Case(QwenMax, requestModel = named, selected = named, listings = 0),
             Case(QwenMax, selected = QwenMax, listings = 1, region = "en", customOpenAi = true, keys = setOf(QWEN)),
             Case(QwenMax, requestModel = AnthropicHaiku45, selected = AnthropicHaiku45, listings = 1, region = "en", keys = setOf(ANTHROPIC, QWEN)),
             Case(QwenMax, selected = QwenMax, listings = 0, region = "en", customOpenAi = true, serverKeys = setOf(QWEN)),
@@ -60,12 +68,16 @@ class EffectiveSettingsResolverTest {
             ),
         )
         assertEquals(cases, cases.map { resolve(it) })
+        assertFailsWith<BackendV1Exception> {
+            resolve(Case(ChatModelSelection.Named("removed-model"), selected = named, listings = 0))
+        }
     }
 
     private suspend fun resolve(case: Case): Case {
         var listings = 0
-        var saved: LLMModel? = null
+        var saved: ChatModelSelection? = null
         val settings = LlmSettingsStub().apply {
+            namedLlmModels = NamedLlmModels(models = mapOf("test-chat" to NamedLlmModel("raw", "test")))
             regionProfile = case.region
             gigaModel = case.serverDefault
             qwenChatKey = SERVER_KEY.takeIf { QWEN in case.serverKeys }
@@ -109,11 +121,11 @@ class EffectiveSettingsResolverTest {
 
 /** Resolution inputs with the expected selected model, new-user saved default, and stored key listings. */
 private data class Case(
-    val model: LLMModel?,
-    val requestModel: LLMModel? = null,
-    val selected: LLMModel,
+    val model: ChatModelSelection?,
+    val requestModel: ChatModelSelection? = null,
+    val selected: ChatModelSelection,
     val listings: Int,
-    val saved: LLMModel? = null,
+    val saved: ChatModelSelection? = null,
     val region: String = "ru",
     val keys: Set<LlmProvider> = emptySet(),
     val supplied: Set<LlmProvider>? = null,

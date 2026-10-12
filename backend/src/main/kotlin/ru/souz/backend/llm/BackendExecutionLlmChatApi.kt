@@ -47,7 +47,7 @@ internal class BackendExecutionLlmChatApi(
 ) : LLMChatAPI {
     private val providerStateMutex = Mutex()
     private val credentials = mutableMapOf<LlmProvider, String?>()
-    private val providerApis = mutableMapOf<LlmProvider, LLMChatAPI>()
+    private val providerApis = mutableMapOf<Pair<LlmProvider, String?>, LLMChatAPI>()
 
     private val usageMutex = Mutex()
     private var usage = initialUsage
@@ -66,19 +66,19 @@ internal class BackendExecutionLlmChatApi(
             val request = body.copy(model = summarizationModel, provider = LlmProvider.OPENAI, maxTokens = 0)
             return retryChat { callProvider(LlmProvider.OPENAI, request, api) }
         }
-        val (provider, request) = when (val route = chatRoute(body)) {
+        val (provider, request, connectionId) = when (val route = chatRoute(body)) {
             is ChatRoute.Ready -> route
             is ChatRoute.Rejected -> return route.error
         }
-        return retryChat { callProvider(provider, request, apiFor(provider)) }
+        return retryChat { callProvider(provider, request, apiFor(provider, connectionId)) }
     }
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> {
-        val (provider, request) = when (val route = chatRoute(body)) {
+        val (provider, request, connectionId) = when (val route = chatRoute(body)) {
             is ChatRoute.Ready -> route
             is ChatRoute.Rejected -> return flow { emit(route.error) }
         }
-        val api = apiFor(provider)
+        val api = apiFor(provider, connectionId)
         return retryingStream(provider, api, request)
     }
 
@@ -110,15 +110,15 @@ internal class BackendExecutionLlmChatApi(
 
     override suspend fun uploadFile(file: File): LLMResponse.UploadFile {
         val provider = currentProvider()
-        val api = apiFor(provider)
+        val api = apiFor(provider, currentConnectionId())
         return withProviderCall(hookBudget, provider) { api.uploadFile(file) }
     }
 
     override suspend fun downloadFile(fileId: String): String? =
-        apiFor(currentProvider()).downloadFile(fileId)
+        apiFor(currentProvider(), currentConnectionId()).downloadFile(fileId)
 
     override suspend fun balance(): LLMResponse.Balance =
-        apiFor(currentProvider()).balance()
+        apiFor(currentProvider(), currentConnectionId()).balance()
 
     suspend fun cumulativeUsage(): LLMResponse.Usage = usageMutex.withLock { usage }
 
@@ -131,7 +131,20 @@ internal class BackendExecutionLlmChatApi(
 
     private fun currentProvider(): LlmProvider = settingsProvider.gigaModel.provider
 
+    private fun currentConnectionId(): String? = settingsProvider.namedLlmModels.models[
+        settingsProvider.executionModelId(settingsProvider.gigaModel)
+    ]?.connectionId
+
     private fun chatRoute(body: LLMRequest.Chat): ChatRoute {
+        if (body.provider == null || body.provider == LlmProvider.OPENAI) {
+            settingsProvider.namedLlmModels.models[body.model]?.let { model ->
+                return ChatRoute.Ready(
+                    LlmProvider.OPENAI,
+                    body.copy(model = model.modelId, provider = LlmProvider.OPENAI),
+                    model.connectionId,
+                )
+            }
+        }
         body.provider?.let { provider ->
             return if (provider in BackendLlmSupport.chatProviders) ChatRoute.Ready(provider, body)
             else rejectChatRoute(ModelResolution.UnsupportedProvider(body, provider))
@@ -141,22 +154,23 @@ internal class BackendExecutionLlmChatApi(
             supportedProviders = BackendLlmSupport.chatProviders,
             preferredModel = settingsProvider.gigaModel,
         )) {
-            is ModelResolution.Resolved -> ChatRoute.Ready(
-                resolution.value.provider,
+            is ModelResolution.Resolved -> chatRoute(
                 body.copy(model = settingsProvider.executionModelId(resolution.value), provider = resolution.value.provider),
             )
             else -> rejectChatRoute(resolution)
         }
     }
 
-    private suspend fun apiFor(provider: LlmProvider): LLMChatAPI {
+    private suspend fun apiFor(provider: LlmProvider, connectionId: String? = null): LLMChatAPI {
         if (provider == LlmProvider.GIGA) error(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
         require(provider in BackendLlmSupport.chatProviders) {
             "Provider $provider is not supported by the backend."
         }
         if (provider == LlmProvider.LOCAL && providerApiOverride == null) return localChatApi
         return providerStateMutex.withLock {
-            providerApis[provider]?.let { return@withLock it }
+            val cacheKey = provider to connectionId
+            providerApis[cacheKey]?.let { return@withLock it }
+            val connection = connectionId?.let(settingsProvider.namedLlmModels.connections::getValue)
             val api = providerApiOverride?.invoke(provider) ?: when (provider) {
                 LlmProvider.OPENAI,
                 LlmProvider.AI_TUNNEL,
@@ -168,7 +182,8 @@ internal class BackendExecutionLlmChatApi(
                         LlmProvider.OPENAI -> httpClients.openAi
                         else -> httpClients.standard
                     },
-                    apiKey = resolveCredentialLocked(provider),
+                    apiKey = connection?.apiKey ?: resolveCredentialLocked(provider),
+                    baseUrl = connection?.baseUrl,
                 )
                 LlmProvider.ANTHROPIC -> AnthropicChatAPI(
                     settingsProvider,
@@ -183,7 +198,7 @@ internal class BackendExecutionLlmChatApi(
                 LlmProvider.LOCAL -> localChatApi
                 LlmProvider.GIGA -> error(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
             }
-            providerApis[provider] = api
+            providerApis[cacheKey] = api
             api
         }
     }
@@ -300,7 +315,7 @@ internal class BackendExecutionLlmChatApi(
 }
 
 private sealed interface ChatRoute {
-    data class Ready(val provider: LlmProvider, val request: LLMRequest.Chat) : ChatRoute
+    data class Ready(val provider: LlmProvider, val request: LLMRequest.Chat, val connectionId: String? = null) : ChatRoute
     data class Rejected(val error: LLMResponse.Chat.Error) : ChatRoute
 }
 

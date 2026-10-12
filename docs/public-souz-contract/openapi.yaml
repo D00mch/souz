@@ -380,6 +380,7 @@ components:
           type: string
         model:
           type: string
+          description: Built-in model selector or a server-configured model name advertised in bootstrap.
     SucceededToolResult:
       type: object
       additionalProperties: false

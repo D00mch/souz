@@ -142,10 +142,10 @@ enum class VoiceRecognitionProvider {
 
 enum class LLMModel(
     val displayName: String,
-    val alias: String,
-    val provider: LlmProvider,
+    override val alias: String,
+    override val provider: LlmProvider,
     val legacyAliases: Set<String> = emptySet(),
-) {
+) : ChatModelSelection {
     Lite("GigaChat Lite", "GigaChat-2", LlmProvider.GIGA, setOf("GigaChat")),
     Pro("GigaChat Pro", "GigaChat-2-Pro", LlmProvider.GIGA, setOf("GigaChat-Pro")),
     Max("GigaChat Max", "GigaChat-2-Max", LlmProvider.GIGA, setOf("GigaChat-Max")),

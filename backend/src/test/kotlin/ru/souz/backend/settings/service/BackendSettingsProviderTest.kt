@@ -16,6 +16,35 @@ import ru.souz.db.SUBAGENT_MODELS_JSON
 
 class BackendSettingsProviderTest {
     @Test
+    fun `named models load independent connections and reject broken configuration`() {
+        ru.souz.backend.llm.withNamedLlmConfig { source ->
+            val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source)
+            assertEquals(setOf("test-chat", "tv-agent"), settings.namedLlmModels.models.keys)
+            assertEquals(mapOf("tv-agent" to LlmProvider.OPENAI), settings.subagentModels)
+            assertEquals("https://router.test/v1", settings.openaiSummarizationBaseUrl)
+            assertEquals("router-secret", settings.openaiSummarizationApiKey)
+            assertEquals("shared-model", settings.openaiSummarizationModel)
+            assertEquals(32000, settings.summarizationContextSize)
+        }
+        val valid = ru.souz.backend.llm.NAMED_LLM_CONFIG
+        listOf(
+            valid.replace("EXPERIMENT_KEY", "MISSING_KEY"),
+            valid.replace("\"connection\":\"experiment\"", "\"connection\":\"missing\""),
+            valid.replace("test-chat", "QwenMax"),
+            valid.replace("32000", "0"),
+            valid.replace("\"models\":", "\"unknownField\":{},\"models\":"),
+            valid + " {}",
+            valid.replace("\"subagentModels\": [\"tv-agent\"]", "\"subagentModels\": [\"missing\"]"),
+            valid.replace("https://router.test/v1", "file:///tmp/model"),
+            valid.replace("\"models\":", "\"models\":{},\"models\":"),
+        ).forEach { json ->
+            ru.souz.backend.llm.withNamedLlmConfig(json) { source ->
+                assertFailsWith<Exception> { BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source) }
+            }
+        }
+    }
+
+    @Test
     fun `subagent configuration uses deploy precedence and rejects unsupported or invalid values`() {
         val property = mapOf(SUBAGENT_MODELS_JSON to """{"ANTHROPIC":["property-model"]}""")
         assertTrue(provider().subagentModels.isEmpty())

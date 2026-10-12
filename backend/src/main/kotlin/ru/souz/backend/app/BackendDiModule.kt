@@ -503,6 +503,7 @@ fun backendDiModule(
             executionService = instance(),
             registry = instance(),
             applicationScope = instance<BackendApplicationScope>(),
+            namedModelNames = instance<SettingsProvider>().namedLlmModels.models.keys,
         )
     }
     bindSingleton {

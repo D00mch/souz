@@ -43,7 +43,7 @@ internal fun Route.onboardingRoutes(deps: BackendHttpDependencies) {
         call.respond(
             deps.onboardingService.complete(
                 identity = call.requestIdentity(),
-                overrides = request.toUserSettingsOverrides(),
+                overrides = request.toUserSettingsOverrides(deps.userSettingsService.namedModelNames),
             )
         )
     }.describeV1(

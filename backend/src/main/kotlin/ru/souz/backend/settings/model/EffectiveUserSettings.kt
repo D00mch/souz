@@ -2,11 +2,11 @@ package ru.souz.backend.settings.model
 
 import java.time.ZoneId
 import java.util.Locale
-import ru.souz.llms.LLMModel
+import ru.souz.llms.ChatModelSelection
 
 data class EffectiveUserSettings(
     val userId: String,
-    val defaultModel: LLMModel,
+    val defaultModel: ChatModelSelection,
     val reasoningEffort: String? = null,
     val contextSize: Int,
     val temperature: Float,

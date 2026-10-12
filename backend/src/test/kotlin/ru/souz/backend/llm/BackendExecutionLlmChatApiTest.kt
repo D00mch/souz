@@ -122,6 +122,35 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
+    fun `named routes isolate endpoints and keys with identical upstream IDs in both modes`() = withNamedLlmConfig { source ->
+        runTest {
+            val requests = mutableListOf<CapturedRequest>()
+            val settings = LlmSettingsStub().apply {
+                namedLlmModels = ru.souz.backend.config.loadNamedLlmModels(source)
+            }
+            facadeFixture(settingsProvider = settings, providerApiOverride = null, client = recordingClient(requests)).use { fixture ->
+                for (name in listOf("test-chat", "tv-agent", "test-chat")) {
+                    val expected = if (name == "test-chat") "experiment" else "router"
+                    val request = chat(name).copy(provider = LlmProvider.OPENAI)
+                    assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
+                    assertTrue(fixture.api.messageStream(request).toList().any { it is LLMResponse.Chat.Ok })
+                    requests.takeLast(2).forEach {
+                        assertEquals("https://$expected.test/v1/chat/completions", it.url)
+                        assertEquals("Bearer $expected-secret", it.authorization)
+                        assertEquals("shared-model", it.body["model"].asText())
+                        assertTrue(!it.body.has("connectionId") && !it.body.has("provider"))
+                    }
+                }
+                settings.openaiModel = "test-chat"
+                fixture.api.message(chat(LLMModel.OpenAICompatibleCustom.alias))
+                assertEquals("https://experiment.test/v1/chat/completions", requests.last().url)
+                assertEquals("shared-model", requests.last().body["model"].asText())
+                assertEquals(0, fixture.credentialResolver.calls.get())
+            }
+        }
+    }
+
+    @Test
     fun `custom selectors use host model resolution while raw IDs are never rewritten`() = runTest {
         val requests = mutableListOf<CapturedRequest>()
         val settings = LlmSettingsStub().apply { gigaModel = LLMModel.OpenAIGpt52 }
@@ -444,9 +473,10 @@ private fun recordingClient(requests: MutableList<CapturedRequest>): HttpClient 
                 authorization = request.headers[HttpHeaders.Authorization],
                 body = restJsonMapper.readTree(request.body.toByteArray()),
             )
+            val stream = requests.last().body["stream"]?.asBoolean() == true
             respond(
-                content = OPENAI_CHAT_RESPONSE,
-                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                content = if (stream) "data: $OPENAI_CHAT_RESPONSE\n\ndata: [DONE]\n\n" else OPENAI_CHAT_RESPONSE,
+                headers = headersOf(HttpHeaders.ContentType, if (stream) "text/event-stream" else ContentType.Application.Json.toString()),
             )
         }
     ) {

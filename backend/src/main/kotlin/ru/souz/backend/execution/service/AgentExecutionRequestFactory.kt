@@ -48,7 +48,7 @@ internal class AgentExecutionRequestFactory(
         clientToolsEnabled: Boolean = false,
     ): PreparedChatTurn {
         val effectiveSettings = effectiveSettingsResolver.resolve(userId, requestOverrides)
-        if (effectiveSettings.defaultModel !in BackendLlmSupport.chatModels) {
+        if (effectiveSettings.defaultModel.provider !in BackendLlmSupport.chatProviders) {
             throw unsupportedBackendModel()
         }
         val normalizedClientMessageId = clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
@@ -132,7 +132,7 @@ internal class AgentExecutionRequestFactory(
         option: Option,
     ): BackendConversationTurnRequest {
         val model = execution.model ?: throw internalError("Execution model is missing.")
-        if (model !in BackendLlmSupport.chatModels) {
+        if (model.provider !in BackendLlmSupport.chatProviders) {
             throw unsupportedBackendModel()
         }
         return BackendConversationTurnRequest(

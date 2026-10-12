@@ -1,6 +1,7 @@
 package ru.souz.backend.settings.service
 
 import ru.souz.agent.AgentId
+import ru.souz.backend.config.loadNamedLlmModels
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.config.SystemBackendConfigSource
 import ru.souz.backend.common.BackendLlmSupport
@@ -27,10 +28,18 @@ class BackendSettingsProvider(
     private val localProviderAvailability: LocalModelAvailability,
     private val source: BackendConfigSource = SystemBackendConfigSource,
 ) : SettingsProvider {
+    override val namedLlmModels = loadNamedLlmModels(source)
+    private val summaryRoute = namedLlmModels.summarization
+    private val summaryConnection = summaryRoute?.connectionId?.let(namedLlmModels.connections::getValue)
+
     override val subagentModels: Map<String, LlmProvider> = parseSubagentModels(
         source.value(SUBAGENT_MODELS_JSON, SUBAGENT_MODELS_JSON),
         BackendLlmSupport.chatProviders,
-    )
+    ).also { legacy ->
+        require(legacy.keys.intersect(namedLlmModels.models.keys).isEmpty()) {
+            "SUBAGENT_MODELS_JSON IDs must not overlap named model selections."
+        }
+    } + namedLlmModels.subagentModels.mapValues { LlmProvider.OPENAI }
 
     private val promptOverrides = mutableMapOf<Pair<AgentId, LLMModel>, String>()
     private val llmBuildProfile by lazy { LlmBuildProfile(this, localProviderAvailability) }
@@ -42,11 +51,11 @@ class BackendSettingsProvider(
     override var openaiKey: String? = configured("OPENAI_API_KEY")
     override var openaiBaseUrl: String? = configured(OPENAI_BASE_URL)
     override var openaiModel: String? = configured(OPENAI_MODEL)
-    override val openaiSummarizationApiKey: String? = configured("OPENAI_SUMMARIZATION_API_KEY")
-    override val openaiSummarizationBaseUrl: String? = configured("OPENAI_SUMMARIZATION_BASE_URL")
-    override val openaiSummarizationModel: String? = configured("OPENAI_SUMMARIZATION_MODEL")
+    override val openaiSummarizationApiKey: String? = summaryConnection?.apiKey ?: configured("OPENAI_SUMMARIZATION_API_KEY")
+    override val openaiSummarizationBaseUrl: String? = summaryConnection?.baseUrl ?: configured("OPENAI_SUMMARIZATION_BASE_URL")
+    override val openaiSummarizationModel: String? = summaryRoute?.modelId ?: configured("OPENAI_SUMMARIZATION_MODEL")
     override val openaiSummarizationParameters: String? = configured("OPENAI_SUMMARIZATION_PARAMETERS")
-    override val summarizationContextSize: Int? = openaiSummarizationModel
+    override val summarizationContextSize: Int? = namedLlmModels.summarizationContextSize ?: openaiSummarizationModel
         ?.let { configured("OPENAI_SUMMARIZATION_CONTEXT_SIZE")?.toIntOrNull() }
         ?.takeIf { it > 0 }
     override var saluteSpeechKey: String? = configured("VOICE_KEY")

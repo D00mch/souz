@@ -12,6 +12,8 @@ class UserSettingsService(
     private val userSettingsRepository: UserSettingsRepository,
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
 ) {
+    val namedModelNames: Set<String> get() = effectiveSettingsResolver.namedModelNames
+
     suspend fun get(userId: String): EffectiveUserSettings =
         effectiveSettingsResolver.resolve(userId)
 

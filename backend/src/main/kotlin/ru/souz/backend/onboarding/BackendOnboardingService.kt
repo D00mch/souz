@@ -26,9 +26,13 @@ class BackendOnboardingService(
         val storedSettings = userSettingsRepository.get(identity.userId)
         val completed = storedSettings?.onboardingCompletedAt != null
         val recommendedDefaultModel = bootstrap.settings.defaultModel
-            .takeIf { alias -> findLLMModel(alias)?.let { it in BackendLlmSupport.chatModels } == true }
+            .takeIf { alias ->
+                findLLMModel(alias)?.let { it in BackendLlmSupport.chatModels } == true ||
+                    bootstrap.capabilities.models.any { it.model == alias }
+            }
             ?: BackendLlmSupport.fallbackChatModel.alias
-        val recommendedProvider = recommendedDefaultModel.toProviderOrNull()?.name?.lowercase()
+        val recommendedProvider = findLLMModel(recommendedDefaultModel)?.provider?.name?.lowercase()
+            ?: bootstrap.capabilities.models.firstOrNull { it.model == recommendedDefaultModel }?.provider
         val hasUsableModelAccess = bootstrap.capabilities.models.any { it.serverManagedKey || it.userManagedKey }
         val hasOpenAiCompatibleCustomModel = bootstrap.capabilities.models.any {
             it.model == LLMModel.OpenAICompatibleCustom.alias
@@ -129,9 +133,6 @@ class BackendOnboardingService(
         groupBy { it.provider }
             .toSortedMap()
             .mapValues { (_, models) -> models.map { it.model }.sorted() }
-
-    private fun String.toProviderOrNull(): LlmProvider? =
-        findLLMModel(this)?.provider
 
     private companion object {
         const val STEP_PROVIDER = "provider"

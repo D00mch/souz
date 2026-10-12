@@ -2,7 +2,7 @@ package ru.souz.backend.execution.model
 
 import java.time.Instant
 import java.util.UUID
-import ru.souz.llms.LLMModel
+import ru.souz.llms.ChatModelSelection
 import ru.souz.llms.LlmProvider
 
 data class AgentExecutionUsage(
@@ -21,7 +21,7 @@ data class AgentExecution(
     val status: AgentExecutionStatus,
     val requestId: String?,
     val clientMessageId: String?,
-    val model: LLMModel?,
+    val model: ChatModelSelection?,
     val provider: LlmProvider?,
     val startedAt: Instant,
     val finishedAt: Instant?,
