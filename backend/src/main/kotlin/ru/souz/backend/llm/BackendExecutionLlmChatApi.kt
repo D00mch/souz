@@ -14,6 +14,7 @@ import ru.souz.backend.hooks.HookLlmBudget.Companion.withProviderCall
 import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.metrics.metricOutcome
 import ru.souz.backend.metrics.responseMetricOutcome
+import ru.souz.backend.config.NamedLlmModel
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.EmbeddingsModelSelection
 import ru.souz.llms.LLMChatAPI
@@ -44,10 +45,11 @@ internal class BackendExecutionLlmChatApi(
     private val providerApiOverride: ((LlmProvider) -> LLMChatAPI)? = null,
     private val hookBudget: HookLlmBudget? = null,
     private val metrics: BackendMetrics? = null,
+    private val namedModels: Map<String, NamedLlmModel> = emptyMap(),
 ) : LLMChatAPI {
     private val providerStateMutex = Mutex()
     private val credentials = mutableMapOf<LlmProvider, String?>()
-    private val providerApis = mutableMapOf<LlmProvider, LLMChatAPI>()
+    private val providerApis = mutableMapOf<Pair<LlmProvider, NamedLlmModel?>, LLMChatAPI>()
 
     private val usageMutex = Mutex()
     private var usage = initialUsage
@@ -66,19 +68,19 @@ internal class BackendExecutionLlmChatApi(
             val request = body.copy(model = summarizationModel, provider = LlmProvider.OPENAI, maxTokens = 0)
             return retryChat { callProvider(LlmProvider.OPENAI, request, api) }
         }
-        val (provider, request) = when (val route = chatRoute(body)) {
+        val (provider, request, namedModel) = when (val route = chatRoute(body)) {
             is ChatRoute.Ready -> route
             is ChatRoute.Rejected -> return route.error
         }
-        return retryChat { callProvider(provider, request, apiFor(provider)) }
+        return retryChat { callProvider(provider, request, apiFor(provider, namedModel)) }
     }
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> {
-        val (provider, request) = when (val route = chatRoute(body)) {
+        val (provider, request, namedModel) = when (val route = chatRoute(body)) {
             is ChatRoute.Ready -> route
             is ChatRoute.Rejected -> return flow { emit(route.error) }
         }
-        val api = apiFor(provider)
+        val api = apiFor(provider, namedModel)
         return retryingStream(provider, api, request)
     }
 
@@ -110,15 +112,15 @@ internal class BackendExecutionLlmChatApi(
 
     override suspend fun uploadFile(file: File): LLMResponse.UploadFile {
         val provider = currentProvider()
-        val api = apiFor(provider)
+        val api = apiFor(provider, currentNamedModel())
         return withProviderCall(hookBudget, provider) { api.uploadFile(file) }
     }
 
     override suspend fun downloadFile(fileId: String): String? =
-        apiFor(currentProvider()).downloadFile(fileId)
+        apiFor(currentProvider(), currentNamedModel()).downloadFile(fileId)
 
     override suspend fun balance(): LLMResponse.Balance =
-        apiFor(currentProvider()).balance()
+        apiFor(currentProvider(), currentNamedModel()).balance()
 
     suspend fun cumulativeUsage(): LLMResponse.Usage = usageMutex.withLock { usage }
 
@@ -131,7 +133,16 @@ internal class BackendExecutionLlmChatApi(
 
     private fun currentProvider(): LlmProvider = settingsProvider.gigaModel.provider
 
+    private fun currentNamedModel(): NamedLlmModel? = namedModels[
+        settingsProvider.executionModelId(settingsProvider.gigaModel)
+    ]
+
     private fun chatRoute(body: LLMRequest.Chat): ChatRoute {
+        if (body.provider == null || body.provider == LlmProvider.OPENAI) {
+            namedModels[body.model]?.let { model ->
+                return ChatRoute.Ready(LlmProvider.OPENAI, body.copy(model = model.modelId, provider = LlmProvider.OPENAI), model)
+            }
+        }
         body.provider?.let { provider ->
             return if (provider in BackendLlmSupport.chatProviders) ChatRoute.Ready(provider, body)
             else rejectChatRoute(ModelResolution.UnsupportedProvider(body, provider))
@@ -141,22 +152,22 @@ internal class BackendExecutionLlmChatApi(
             supportedProviders = BackendLlmSupport.chatProviders,
             preferredModel = settingsProvider.gigaModel,
         )) {
-            is ModelResolution.Resolved -> ChatRoute.Ready(
-                resolution.value.provider,
+            is ModelResolution.Resolved -> chatRoute(
                 body.copy(model = settingsProvider.executionModelId(resolution.value), provider = resolution.value.provider),
             )
             else -> rejectChatRoute(resolution)
         }
     }
 
-    private suspend fun apiFor(provider: LlmProvider): LLMChatAPI {
+    private suspend fun apiFor(provider: LlmProvider, namedModel: NamedLlmModel? = null): LLMChatAPI {
         if (provider == LlmProvider.GIGA) error(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
         require(provider in BackendLlmSupport.chatProviders) {
             "Provider $provider is not supported by the backend."
         }
         if (provider == LlmProvider.LOCAL && providerApiOverride == null) return localChatApi
         return providerStateMutex.withLock {
-            providerApis[provider]?.let { return@withLock it }
+            val cacheKey = provider to namedModel
+            providerApis[cacheKey]?.let { return@withLock it }
             val api = providerApiOverride?.invoke(provider) ?: when (provider) {
                 LlmProvider.OPENAI,
                 LlmProvider.AI_TUNNEL,
@@ -168,7 +179,8 @@ internal class BackendExecutionLlmChatApi(
                         LlmProvider.OPENAI -> httpClients.openAi
                         else -> httpClients.standard
                     },
-                    apiKey = resolveCredentialLocked(provider),
+                    apiKey = namedModel?.apiKey ?: resolveCredentialLocked(provider),
+                    baseUrl = namedModel?.baseUrl,
                 )
                 LlmProvider.ANTHROPIC -> AnthropicChatAPI(
                     settingsProvider,
@@ -183,7 +195,7 @@ internal class BackendExecutionLlmChatApi(
                 LlmProvider.LOCAL -> localChatApi
                 LlmProvider.GIGA -> error(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
             }
-            providerApis[provider] = api
+            providerApis[cacheKey] = api
             api
         }
     }
@@ -300,7 +312,7 @@ internal class BackendExecutionLlmChatApi(
 }
 
 private sealed interface ChatRoute {
-    data class Ready(val provider: LlmProvider, val request: LLMRequest.Chat) : ChatRoute
+    data class Ready(val provider: LlmProvider, val request: LLMRequest.Chat, val namedModel: NamedLlmModel? = null) : ChatRoute
     data class Rejected(val error: LLMResponse.Chat.Error) : ChatRoute
 }
 

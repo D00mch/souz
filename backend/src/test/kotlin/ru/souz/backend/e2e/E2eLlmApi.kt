@@ -16,6 +16,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.MDC
 import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -258,17 +259,17 @@ internal fun localChatApiBackedBy(delegate: LLMChatAPI): LocalChatAPI =
         coEvery { balance() } coAnswers { delegate.balance() }
     }
 
-internal fun localProviderAvailability(): LocalProviderAvailability =
+internal fun localProviderAvailability(models: List<LLMModel> = listOf(E2E_LOCAL_MODEL)): LocalProviderAvailability =
     mockk {
-        every { isProviderAvailable() } returns true
-        every { availableGigaModels() } returns listOf(E2E_LOCAL_MODEL)
-        every { defaultGigaModel() } returns E2E_LOCAL_MODEL
+        every { isProviderAvailable() } returns models.isNotEmpty()
+        every { availableGigaModels() } returns models
+        every { defaultGigaModel() } returns models.firstOrNull()
         every { selectedProfile() } returns null
         every { status() } returns LocalProviderStatus(
-            available = true,
+            available = models.isNotEmpty(),
             message = "OK (backend E2E)",
             selectedProfile = null,
-            availableModels = listOf(E2E_LOCAL_MODEL),
+            availableModels = models,
         )
     }
 

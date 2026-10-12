@@ -31,6 +31,12 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.app.BackendLlmLimits
+import ru.souz.backend.settings.service.BackendSettingsProvider
+import ru.souz.backend.settings.service.MapBackendServerPreferenceStore
+import ru.souz.backend.settings.service.NoLocalModels
+import ru.souz.backend.config.NamedLlmModel
+import ru.souz.backend.config.loadNamedModels
+import ru.souz.db.SettingsProvider
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.hooks.HookAuth
 import ru.souz.backend.hooks.HookConfig
@@ -118,6 +124,41 @@ class BackendExecutionLlmChatApiTest {
             assertEquals("My-Deployment/v2", requests.single().body["model"].asText())
             assertEquals("Bearer execution-key", requests.single().authorization)
             assertEquals(1, credentials.calls.get())
+        }
+    }
+
+    @Test
+    fun `named routes isolate endpoints and keys with identical upstream IDs in both modes`() = withNamedLlmConfig { source ->
+        runTest {
+            val requests = mutableListOf<CapturedRequest>()
+            val config = source.loadNamedModels()
+            val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source, config).apply {
+                openaiModel = "shared-model"
+                openaiBaseUrl = "https://legacy.test/v1"
+            }
+            facadeFixture(settingsProvider = settings, namedModels = config.models, providerApiOverride = null, client = recordingClient(requests)).use { fixture ->
+                for ((request, expected) in listOf(
+                    chat("test-chat").copy(provider = LlmProvider.OPENAI) to "experiment",
+                    chat("tv-agent").copy(provider = LlmProvider.OPENAI) to "router",
+                    chat("shared-model").copy(provider = LlmProvider.OPENAI) to "legacy",
+                    chat(LLMModel.OpenAICompatibleCustom.alias) to "legacy",
+                    chat("test-chat") to "experiment",
+                    chat("test-chat").copy(isSummarization = true) to "router",
+                )) {
+                    val before = requests.size
+                    assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
+                    if (!request.isSummarization) {
+                        assertTrue(fixture.api.messageStream(request).toList().any { it is LLMResponse.Chat.Ok })
+                    }
+                    requests.drop(before).forEach {
+                        assertEquals("https://$expected.test/v1/chat/completions", it.url)
+                        assertEquals("Bearer " + if (expected == "legacy") "test-key" else "$expected-secret", it.authorization)
+                        assertEquals("shared-model", it.body["model"].asText())
+                        assertTrue(!it.body.has("provider"))
+                    }
+                }
+                assertEquals(1, fixture.credentialResolver.calls.get())
+            }
         }
     }
 
@@ -444,9 +485,10 @@ private fun recordingClient(requests: MutableList<CapturedRequest>): HttpClient 
                 authorization = request.headers[HttpHeaders.Authorization],
                 body = restJsonMapper.readTree(request.body.toByteArray()),
             )
+            val stream = requests.last().body["stream"]?.asBoolean() == true
             respond(
-                content = OPENAI_CHAT_RESPONSE,
-                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                content = if (stream) "data: $OPENAI_CHAT_RESPONSE\n\ndata: [DONE]\n\n" else OPENAI_CHAT_RESPONSE,
+                headers = headersOf(HttpHeaders.ContentType, if (stream) "text/event-stream" else ContentType.Application.Json.toString()),
             )
         }
     ) {
@@ -454,7 +496,8 @@ private fun recordingClient(requests: MutableList<CapturedRequest>): HttpClient 
     }
 
 private fun facadeFixture(
-    settingsProvider: LlmSettingsStub = LlmSettingsStub(),
+    namedModels: Map<String, NamedLlmModel> = emptyMap(),
+    settingsProvider: SettingsProvider = LlmSettingsStub(),
     credentialResolver: CountingCredentialResolver = CountingCredentialResolver("test-key"),
     retryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(max429Retries = 0),
     initialUsage: LLMResponse.Usage = usage(0, 0, 0, 0),
@@ -468,6 +511,7 @@ private fun facadeFixture(
     val clients = ProviderHttpClients(standard = client, openAi = client)
     val metrics = BackendMetrics()
     val api = BackendExecutionLlmChatApi(
+        namedModels = namedModels,
         userId = "user-a",
         settingsProvider = settingsProvider,
         credentialResolver = credentialResolver,

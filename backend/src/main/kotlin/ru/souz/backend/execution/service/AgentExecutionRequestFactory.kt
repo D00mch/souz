@@ -11,9 +11,12 @@ import ru.souz.backend.options.model.Option
 import ru.souz.backend.settings.model.EffectiveUserSettings
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsOverrides
+import ru.souz.llms.findLLMModel
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.restJsonMapper
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.http.invalidV1Request
 import ru.souz.backend.http.unsupportedBackendModel
 
 internal data class PreparedChatTurn(
@@ -48,7 +51,8 @@ internal class AgentExecutionRequestFactory(
         clientToolsEnabled: Boolean = false,
     ): PreparedChatTurn {
         val effectiveSettings = effectiveSettingsResolver.resolve(userId, requestOverrides)
-        if (effectiveSettings.defaultModel !in BackendLlmSupport.chatModels) {
+        val provider = findLLMModel(effectiveSettings.defaultModel)?.provider ?: LlmProvider.OPENAI
+        if (provider !in BackendLlmSupport.chatProviders) {
             throw unsupportedBackendModel()
         }
         val normalizedClientMessageId = clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
@@ -62,7 +66,7 @@ internal class AgentExecutionRequestFactory(
             requestId = null,
             clientMessageId = normalizedClientMessageId,
             model = effectiveSettings.defaultModel,
-            provider = effectiveSettings.defaultModel.provider,
+            provider = provider,
             startedAt = Instant.now(),
             finishedAt = null,
             cancelRequested = false,
@@ -132,7 +136,11 @@ internal class AgentExecutionRequestFactory(
         option: Option,
     ): BackendConversationTurnRequest {
         val model = execution.model ?: throw internalError("Execution model is missing.")
-        if (model !in BackendLlmSupport.chatModels) {
+        val builtin = findLLMModel(model)
+        if (builtin == null && model !in effectiveSettingsResolver.namedModelNames) {
+            throw invalidV1Request("Unknown configured model: $model.")
+        }
+        if (builtin != null && builtin !in BackendLlmSupport.chatModels) {
             throw unsupportedBackendModel()
         }
         return BackendConversationTurnRequest(

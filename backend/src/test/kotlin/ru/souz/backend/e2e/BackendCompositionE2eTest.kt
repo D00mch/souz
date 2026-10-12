@@ -1,13 +1,20 @@
 package ru.souz.backend.e2e
 
 import com.fasterxml.jackson.databind.JsonNode
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteArray
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
+import io.ktor.websocket.Frame
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,9 +26,82 @@ import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
+import ru.souz.backend.llm.withNamedLlmConfig
 import ru.souz.llms.LLMModel
+import ru.souz.llms.http.ProviderHttpClients
+import ru.souz.llms.http.providerHttpClientDefaults
+import ru.souz.llms.restJsonMapper
 
 class BackendCompositionE2eTest {
+    @Test
+    fun `named-only deployment supports first message overrides and persisted selections`() = withNamedLlmConfig { source ->
+        val http = HttpClient(MockEngine { request ->
+            val body = restJsonMapper.readTree(request.body.toByteArray())
+            assertEquals("shared-model", body["model"].asText())
+            val stream = body["stream"].asBoolean()
+            val reply = """{"choices":[{"index":0,"message":{"role":"assistant","content":"named answer"},"delta":{"role":"assistant","content":"named answer"},"finish_reason":"stop"}],"created":1}"""
+            respond(
+                if (stream) "data: $reply\n\ndata: [DONE]\n\n" else reply,
+                headers = headersOf(HttpHeaders.ContentType, if (stream) "text/event-stream" else "application/json"),
+            )
+        }) { providerHttpClientDefaults() }
+        backendE2eTest(
+            "e2e_named_models", settingsSource = source, localModels = emptyList(),
+            featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = true),
+            providerClients = ProviderHttpClients(standard = http, openAi = http),
+        ) {
+            val userId = UUID.randomUUID().toString()
+            assertEquals("test-chat", client.get(BackendHttpRoutes.HEALTH).jsonBody()["model"].asText())
+            val state = client.get(BackendHttpRoutes.ONBOARDING_STATE) { trusted(userId) }.jsonBody()
+            assertEquals("test-chat", state["recommendedDefaultModel"].asText())
+            assertTrue(state["hasUsableModelAccess"].asBoolean())
+            assertEquals(HttpStatusCode.OK, client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
+                trusted(userId); jsonBody("{}")
+            }.status)
+            val bootstrap = client.get(BackendHttpRoutes.BOOTSTRAP) { trusted(userId) }.jsonBody()
+            val serverModels = bootstrap["capabilities"]["models"].filter { it["serverManagedKey"].asBoolean() }
+            assertEquals(listOf("test-chat", "tv-agent"), serverModels.map { it["model"].asText() })
+            val chatId = createPublicChat(userId)
+            val first = client.post(BackendHttpRoutes.chatMessages(chatId)) {
+                trusted(userId); jsonBody("""{"content":"First message"}""")
+            }
+            assertEquals(HttpStatusCode.OK, first.status)
+            assertEquals("test-chat", first.jsonBody()["execution"]["model"].asText())
+            eventually("first named answer") {
+                client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
+                    .takeIf { it.last()["content"].asText() == "named answer" }
+            }
+            for ((model, status) in listOf("missing-model" to HttpStatusCode.BadRequest, "tv-agent" to HttpStatusCode.OK)) {
+                assertEquals(status, client.patch(BackendHttpRoutes.SETTINGS) {
+                    trusted(userId); jsonBody("""{"defaultModel":"$model"}""")
+                }.status)
+            }
+            val overrideChat = createPublicChat(userId, requestId = "http-override")
+            assertEquals("test-chat", client.post(BackendHttpRoutes.chatMessages(overrideChat)) {
+                trusted(userId); jsonBody("""{"content":"Override", "options":{"model":"test-chat"}}""")
+            }.jsonBody()["execution"]["model"].asText())
+            eventually("HTTP model override completed") {
+                client.get(BackendHttpRoutes.chatMessages(overrideChat)) { trusted(userId) }.jsonBody()["items"]
+                    .takeIf { it.last()["content"].asText() == "named answer" }
+            }
+            val socketChat = createPublicChat(userId, requestId = "ws-override")
+            withPublicSocket(socketChat) { socket ->
+                socket.send(Frame.Text(messageFrame(socketChat, userId, "named-ws").replace(E2E_LOCAL_MODEL.alias, "test-chat")))
+                assertEquals("accepted", readJson(socket)["status"].asText())
+                assertEquals("thread.status", readJson(socket)["type"].asText())
+                assertEquals("thread.completed", readJson(socket)["type"].asText())
+            }
+            withPeerBackend { peer ->
+                val persisted = peer.json.readTree(peer.client.get(BackendHttpRoutes.ONBOARDING_STATE) { trusted(userId) }.bodyAsText())
+                assertTrue(persisted["completed"].asBoolean())
+                assertFalse(persisted["required"].asBoolean())
+                assertEquals("tv-agent", persisted["currentSettings"]["defaultModel"].asText())
+                assertEquals("test-chat", peer.backend.executionRepository.listByChat(userId, UUID.fromString(chatId)).single().model)
+                assertEquals("test-chat", peer.client.get(BackendHttpRoutes.HEALTH).jsonBody()["model"].asText())
+            }
+        }
+    }
+
     @Test
     fun `production graph exposes health docs feature inventory and enforces trusted proxy`() =
         backendE2eTest("e2e_composition") {

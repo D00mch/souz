@@ -48,7 +48,7 @@ internal fun Route.settingsRoutes(deps: BackendHttpDependencies) {
             BackendV1SettingsResponse(
                 settings = deps.userSettingsService.patch(
                     userId = call.requireUserIdFromTrustedProxy(),
-                    overrides = request.toUserSettingsOverrides(),
+                    overrides = request.toUserSettingsOverrides(deps.userSettingsService.namedModelNames),
                 ).toDto(),
             )
         )

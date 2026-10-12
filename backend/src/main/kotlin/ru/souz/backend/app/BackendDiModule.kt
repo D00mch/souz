@@ -42,8 +42,10 @@ import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.PublicClientService
 import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.client.repository.ClientRequestRepository
+import ru.souz.backend.config.NamedLlmConfig
+import ru.souz.backend.config.SystemBackendConfigSource
+import ru.souz.backend.config.loadNamedModels
 import ru.souz.backend.config.BackendFeatureFlags
-import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.events.repository.AgentEventRepository
@@ -172,10 +174,12 @@ fun backendDiModule(
             masterKey = appConfig.masterKey ?: error("Master key is required."),
         )
     }
+    bindSingleton { SystemBackendConfigSource.loadNamedModels() }
     bindSingleton<SettingsProvider> {
         BackendSettingsProvider(
             preferenceStore = instance(),
             localProviderAvailability = instance<LocalProviderAvailability>(),
+            namedModels = instance(),
         )
     }
     bindSingleton<UserRepository> { PostgresUserRepository(instance()) }
@@ -243,6 +247,7 @@ fun backendDiModule(
     }
     bindSingleton {
         EffectiveSettingsResolver(
+            namedModelNames = instance<NamedLlmConfig>().models.keys,
             baseSettingsProvider = instance(),
             userSettingsRepository = instance(),
             userProviderKeyRepository = instance(),
@@ -301,6 +306,7 @@ fun backendDiModule(
     }
     bindSingleton {
         BackendConversationRuntimeFactory(
+            namedModels = instance<NamedLlmConfig>().models,
             skillClassifier = instance(),
             baseSettingsProvider = instance(),
             credentialResolver = instance(),
@@ -496,6 +502,7 @@ fun backendDiModule(
     }
     bindSingleton {
         PublicClientService(
+            namedModelNames = instance<NamedLlmConfig>().models.keys,
             chatRepository = instance(),
             executionRepository = instance(),
             clientRequestRepository = instance(),
@@ -524,7 +531,7 @@ fun backendDiModule(
     }
     bindSingleton {
         val featureFlags = instance<BackendFeatureFlags>()
-        val settingsProvider = instance<SettingsProvider>()
+        val settingsResolver = instance<EffectiveSettingsResolver>()
         val userRepository = instance<UserRepository>()
         BackendHttpDependencies(
             bootstrapService = instance(),
@@ -543,12 +550,7 @@ fun backendDiModule(
             telegramBotBindingService = if (featureFlags.telegramBot) instance() else null,
             vkBotBindingService = if (featureFlags.vkBot) instance() else null,
             featureFlags = featureFlags,
-            selectedModel = {
-                settingsProvider.gigaModel
-                    .takeIf { it in BackendLlmSupport.chatModels }
-                    ?.alias
-                    ?: BackendLlmSupport.fallbackChatModel.alias
-            },
+            selectedModel = { settingsResolver.defaultModel() },
             trustedProxyToken = { appConfig.server.proxyToken },
             ensureTrustedUser = userRepository::ensureUser,
         )

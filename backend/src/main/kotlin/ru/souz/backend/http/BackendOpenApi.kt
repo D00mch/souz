@@ -16,7 +16,6 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.openapi.describe
 import io.ktor.utils.io.ExperimentalKtorApi
 import ru.souz.backend.common.BackendLlmSupport
-import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
 
 internal object BackendOpenApiTags {
@@ -358,8 +357,8 @@ private fun HttpStatusCode.v1ErrorDescription(): String =
 private fun JsonSchema.withModelAliases(propertyName: String): JsonSchema =
     withProperty(propertyName) { property ->
         property.copy(
-            description = "Known Souz model alias.",
-            enum = property.enumValuesPreservingNull(BackendLlmSupport.chatModels.map { it.alias }.distinct()),
+            description = "Built-in Souz model alias or configured model name; see bootstrap capabilities.models.",
+            minLength = 1,
         )
     }
 

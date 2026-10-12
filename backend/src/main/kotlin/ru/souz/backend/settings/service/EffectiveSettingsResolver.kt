@@ -15,13 +15,15 @@ import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.findLLMModel
+import ru.souz.backend.http.invalidV1Request
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LocalModelAvailability
 
 data class UserSettingsOverrides(
-    val defaultModel: LLMModel? = null,
+    val defaultModel: String? = null,
     val contextSize: Int? = null,
     val temperature: Float? = null,
     val locale: Locale? = null,
@@ -45,12 +47,20 @@ class EffectiveSettingsResolver(
     private val featureFlags: BackendFeatureFlags,
     toolCatalog: AgentToolCatalog,
     private val localModelAvailability: LocalModelAvailability,
+    val namedModelNames: Set<String> = emptySet(),
 ) {
     private val advertisedToolNames: Set<String> =
         BackendToolCapabilityPolicy.advertisedToolNames(toolCatalog)
 
-    suspend fun isSelectableDefaultModel(userId: String, model: LLMModel): Boolean =
-        isSelectableModel(model) { loadUserManagedProviders(userId) }
+    internal suspend fun defaultModel(
+        userManagedProviders: suspend () -> Set<LlmProvider> = { emptySet() },
+    ): String = normalizeModel(
+        baseSettingsProvider.gigaModel.takeIf { it in BackendLlmSupport.chatModels }?.alias,
+        defaultLocale(), userManagedProviders,
+    )
+
+    suspend fun isSelectableDefaultModel(userId: String, model: String): Boolean =
+        model in namedModelNames || findLLMModel(model)?.let { isSelectableModel(it) { loadUserManagedProviders(userId) } } == true
 
     suspend fun resolve(
         userId: String,
@@ -119,7 +129,7 @@ class EffectiveSettingsResolver(
         val now = Instant.now()
         return UserSettings(
             userId = userId,
-            defaultModel = defaultModelForNewSettings(locale, userManagedProviders),
+            defaultModel = defaultModel(userManagedProviders),
             contextSize = baseSettingsProvider.contextSize,
             temperature = baseSettingsProvider.temperature,
             locale = locale,
@@ -142,33 +152,24 @@ class EffectiveSettingsResolver(
         (enabledTools ?: advertisedToolNames).filterTo(linkedSetOf()) { it in advertisedToolNames }
 
     private suspend fun normalizeModel(
-        model: LLMModel?,
+        model: String?,
         locale: Locale,
         userManagedProviders: suspend () -> Set<LlmProvider>,
-    ): LLMModel {
-        if (model?.provider == LlmProvider.GIGA) {
-            return model
-        }
-        return model?.withConfiguredOpenAiCompatibleChatModel()
-            ?.takeIf { isSelectableModel(it, userManagedProviders) }
-            ?: fallbackModel(locale, userManagedProviders)
-    }
-
-    private suspend fun defaultModelForNewSettings(
-        locale: Locale,
-        userManagedProviders: suspend () -> Set<LlmProvider>,
-    ): LLMModel {
-        val candidate = baseSettingsProvider.gigaModel.withConfiguredOpenAiCompatibleChatModel()
-        return candidate.takeIf { isSelectableModel(it, userManagedProviders) }
+    ): String {
+        if (model != null && model in namedModelNames) return model
+        val builtin = model?.let { findLLMModel(it) ?: throw invalidV1Request("Unknown configured model: $it.") }
+        if (builtin?.provider == LlmProvider.GIGA) return builtin.alias
+        return builtin?.withConfiguredOpenAiCompatibleChatModel()
+            ?.takeIf { isSelectableModel(it, userManagedProviders) }?.alias
             ?: fallbackModel(locale, userManagedProviders)
     }
 
     private suspend fun fallbackModel(
         locale: Locale,
         userManagedProviders: suspend () -> Set<LlmProvider>,
-    ): LLMModel {
+    ): String {
         if (isSelectableModel(LLMModel.OpenAICompatibleCustom, userManagedProviders)) {
-            return LLMModel.OpenAICompatibleCustom
+            return LLMModel.OpenAICompatibleCustom.alias
         }
         val defaults = LlmBuildProfile.defaultsForLanguage(locale.languageOrRegion())
         val localDefault = localModelAvailability.defaultGigaModel()
@@ -179,8 +180,10 @@ class EffectiveSettingsResolver(
                     else -> defaults[provider]?.takeIf { isSelectableModel(it, userManagedProviders) }
                 }
             }
-            ?: localDefault
-            ?: defaults.values.first { it in BackendLlmSupport.chatModels }
+            ?.alias
+            ?: localDefault?.alias
+            ?: namedModelNames.firstOrNull()
+            ?: defaults.values.first { it in BackendLlmSupport.chatModels }.alias
     }
 
     private suspend fun loadUserManagedProviders(userId: String): Set<LlmProvider> =

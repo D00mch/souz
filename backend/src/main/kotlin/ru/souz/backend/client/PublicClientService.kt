@@ -20,7 +20,6 @@ import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
-import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.client.repository.ClientFollowUpInput
 import ru.souz.backend.client.repository.ClientHistoryInput
@@ -37,9 +36,7 @@ import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
-import ru.souz.llms.ModelResolution
-import ru.souz.llms.resolveChatModel
-import ru.souz.llms.LlmProvider
+import ru.souz.backend.http.parseModel
 import kotlin.time.Duration.Companion.milliseconds
 
 internal data class HandledClientFrame(
@@ -59,6 +56,7 @@ internal class PublicClientService(
     private val executionService: AgentExecutionService,
     private val registry: ClientThreadRuntimeRegistry,
     private val applicationScope: CoroutineScope,
+    private val namedModelNames: Set<String> = emptySet(),
     private val mapper: ObjectMapper = jacksonObjectMapper().registerKotlinModule(),
 ) {
     private val logger = LoggerFactory.getLogger(PublicClientService::class.java)
@@ -385,32 +383,7 @@ internal class PublicClientService(
     }
 
     private fun requestOverrides(meta: ClientRequestMeta?): UserSettingsOverrides = UserSettingsOverrides(
-        defaultModel = meta?.model?.let { raw ->
-            when (
-                val resolution = resolveChatModel(
-                    rawModel = raw,
-                    supportedProviders = BackendLlmSupport.chatProviders,
-                )
-            ) {
-                is ModelResolution.Resolved -> resolution.value
-                is ModelResolution.Unknown -> throw ClientContractException(
-                    "invalid_request",
-                    "payload.meta.model must be a known model alias.",
-                )
-                is ModelResolution.Ambiguous -> throw ClientContractException(
-                    "invalid_request",
-                    "payload.meta.model is ambiguous; use a model enum name.",
-                )
-                is ModelResolution.UnsupportedProvider -> {
-                    val message = if (resolution.provider == LlmProvider.GIGA) {
-                        BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE
-                    } else {
-                        "payload.meta.model uses an unsupported provider."
-                    }
-                    throw ClientContractException("invalid_request", message)
-                }
-            }
-        },
+        defaultModel = meta?.model?.let { parseModel(it, "payload.meta.model", namedModelNames) },
         locale = meta?.locale?.let { Locale.forLanguageTag(it).takeIf { locale -> locale.language.isNotBlank() } },
         timeZone = meta?.timeZone?.let { runCatching { ZoneId.of(it) }.getOrNull() },
         streamingMessages = true,

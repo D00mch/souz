@@ -4,6 +4,8 @@ import io.mockk.coEvery
 import io.mockk.mockk
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import ru.souz.backend.http.BackendV1Exception
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.keys.model.UserProviderKey
@@ -30,41 +32,51 @@ import ru.souz.llms.LocalModelAvailability
 class EffectiveSettingsResolverTest {
     @Test
     fun `selects the default model with at most one stored key listing`() = runTest {
+        val named = "test-chat"
         val cases = listOf(
-            Case(QwenMax, selected = QwenMax, listings = 1, region = "en", customOpenAi = true, keys = setOf(QWEN)),
-            Case(QwenMax, requestModel = AnthropicHaiku45, selected = AnthropicHaiku45, listings = 1, region = "en", keys = setOf(ANTHROPIC, QWEN)),
-            Case(QwenMax, selected = QwenMax, listings = 0, region = "en", customOpenAi = true, serverKeys = setOf(QWEN)),
-            Case(OpenAICompatibleCustom, selected = OpenAICompatibleCustom, listings = 0, region = "en", customOpenAi = true, serverKeys = setOf(OPENAI)),
-            Case(CodexGpt54, selected = CodexGpt54, listings = 0, region = "en", customOpenAi = true, codex = true),
-            Case(LLMModel.Max, selected = LLMModel.Max, listings = 0),
-            Case(LocalQwen3_4B_Instruct_2507, selected = LocalQwen3_4B_Instruct_2507, listings = 0, local = true),
-            Case(OpenAIGpt5Mini, selected = OpenAICompatibleCustom, listings = 1, region = "en", customOpenAi = true, keys = setOf(OPENAI)),
-            Case(QwenMax, selected = CodexGpt54, listings = 1, region = "en", customOpenAi = true),
-            Case(QwenMax, selected = AiTunnelClaudeHaiku, listings = 1, keys = setOf(AI_TUNNEL, ANTHROPIC)),
-            Case(QwenMax, selected = AnthropicHaiku45, listings = 1, region = "en", keys = setOf(AI_TUNNEL, ANTHROPIC)),
-            Case(QwenMax, selected = LocalQwen3_4B_Instruct_2507, listings = 1, local = true),
-            Case(LocalQwen3_4B_Instruct_2507, selected = QwenMax, listings = 1, keys = setOf(QWEN)),
-            Case(LocalQwen3_4B_Instruct_2507, selected = AiTunnelClaudeHaiku, listings = 0, serverKeys = setOf(AI_TUNNEL)),
-            Case(OpenAICompatibleCustom, selected = QwenMax, listings = 1, region = "en", customOpenAi = true, keys = setOf(QWEN)),
-            Case(OpenAICompatibleCustom, selected = OpenAIGpt5Mini, listings = 1, region = "en", keys = setOf(OPENAI)),
-            Case(null, selected = OpenAICompatibleCustom, listings = 1, region = "en", customOpenAi = true, keys = setOf(OPENAI)),
-            Case(QwenMax, selected = QwenMax, listings = 0, supplied = setOf(QWEN)),
-            Case(AiTunnelClaudeHaiku, selected = QwenMax, listings = 0, keys = setOf(AI_TUNNEL), supplied = emptySet()),
+            Case(null, selected = named, saved = named, listings = 1, newUser = true, named = true),
+            Case(QwenMax.alias, selected = named, listings = 1, named = true),
+            Case(null, selected = named, saved = named, listings = 1, newUser = true, named = true, region = "en"),
+            Case(QwenMax.alias, selected = LocalQwen3_4B_Instruct_2507.alias, listings = 1, local = true, named = true),
+            Case(named, selected = named, listings = 0, named = true),
+            Case(QwenMax.alias, requestModel = named, selected = named, listings = 0, named = true),
+            Case(QwenMax.alias, selected = QwenMax.alias, listings = 1, region = "en", customOpenAi = true, keys = setOf(QWEN)),
+            Case(QwenMax.alias, requestModel = AnthropicHaiku45.alias, selected = AnthropicHaiku45.alias, listings = 1, region = "en", keys = setOf(ANTHROPIC, QWEN)),
+            Case(QwenMax.alias, selected = QwenMax.alias, listings = 0, region = "en", customOpenAi = true, serverKeys = setOf(QWEN)),
+            Case(OpenAICompatibleCustom.alias, selected = OpenAICompatibleCustom.alias, listings = 0, region = "en", customOpenAi = true, serverKeys = setOf(OPENAI)),
+            Case(CodexGpt54.alias, selected = CodexGpt54.alias, listings = 0, region = "en", customOpenAi = true, codex = true),
+            Case(LLMModel.Max.alias, selected = LLMModel.Max.alias, listings = 0),
+            Case(LocalQwen3_4B_Instruct_2507.alias, selected = LocalQwen3_4B_Instruct_2507.alias, listings = 0, local = true),
+            Case(OpenAIGpt5Mini.alias, selected = OpenAICompatibleCustom.alias, listings = 1, region = "en", customOpenAi = true, keys = setOf(OPENAI)),
+            Case(QwenMax.alias, selected = CodexGpt54.alias, listings = 1, region = "en", customOpenAi = true),
+            Case(QwenMax.alias, selected = AiTunnelClaudeHaiku.alias, listings = 1, keys = setOf(AI_TUNNEL, ANTHROPIC)),
+            Case(QwenMax.alias, selected = AnthropicHaiku45.alias, listings = 1, region = "en", keys = setOf(AI_TUNNEL, ANTHROPIC)),
+            Case(QwenMax.alias, selected = LocalQwen3_4B_Instruct_2507.alias, listings = 1, local = true),
+            Case(LocalQwen3_4B_Instruct_2507.alias, selected = QwenMax.alias, listings = 1, keys = setOf(QWEN)),
+            Case(LocalQwen3_4B_Instruct_2507.alias, selected = AiTunnelClaudeHaiku.alias, listings = 0, serverKeys = setOf(AI_TUNNEL)),
+            Case(OpenAICompatibleCustom.alias, selected = QwenMax.alias, listings = 1, region = "en", customOpenAi = true, keys = setOf(QWEN)),
+            Case(OpenAICompatibleCustom.alias, selected = OpenAIGpt5Mini.alias, listings = 1, region = "en", keys = setOf(OPENAI)),
+            Case(null, selected = OpenAICompatibleCustom.alias, listings = 1, region = "en", customOpenAi = true, keys = setOf(OPENAI)),
+            Case(QwenMax.alias, selected = QwenMax.alias, listings = 0, supplied = setOf(QWEN)),
+            Case(AiTunnelClaudeHaiku.alias, selected = QwenMax.alias, listings = 0, keys = setOf(AI_TUNNEL), supplied = emptySet()),
             Case(
-                null, selected = QwenMax, saved = QwenMax, listings = 1,
+                null, selected = QwenMax.alias, saved = QwenMax.alias, listings = 1,
                 region = "en", customOpenAi = true, keys = setOf(QWEN), newUser = true,
             ),
             Case(
-                null, selected = AnthropicHaiku45, saved = AnthropicHaiku45, listings = 1,
+                null, selected = AnthropicHaiku45.alias, saved = AnthropicHaiku45.alias, listings = 1,
                 keys = setOf(ANTHROPIC, QWEN), serverDefault = AnthropicHaiku45, newUser = true,
             ),
         )
         assertEquals(cases, cases.map { resolve(it) })
+        assertFailsWith<BackendV1Exception> {
+            resolve(Case("removed-model", selected = named, listings = 0))
+        }
     }
 
     private suspend fun resolve(case: Case): Case {
         var listings = 0
-        var saved: LLMModel? = null
+        var saved: String? = null
         val settings = LlmSettingsStub().apply {
             regionProfile = case.region
             gigaModel = case.serverDefault
@@ -91,6 +103,7 @@ class EffectiveSettingsResolverTest {
             }
         }
         val resolver = EffectiveSettingsResolver(
+            namedModelNames = if (case.named) setOf("test-chat") else emptySet(),
             baseSettingsProvider = settings,
             userSettingsRepository = settingsRepository,
             userProviderKeyRepository = keyRepository,
@@ -109,11 +122,11 @@ class EffectiveSettingsResolverTest {
 
 /** Resolution inputs with the expected selected model, new-user saved default, and stored key listings. */
 private data class Case(
-    val model: LLMModel?,
-    val requestModel: LLMModel? = null,
-    val selected: LLMModel,
+    val model: String?,
+    val requestModel: String? = null,
+    val selected: String,
     val listings: Int,
-    val saved: LLMModel? = null,
+    val saved: String? = null,
     val region: String = "ru",
     val keys: Set<LlmProvider> = emptySet(),
     val supplied: Set<LlmProvider>? = null,
@@ -122,6 +135,7 @@ private data class Case(
     val codex: Boolean = false,
     val local: Boolean = false,
     val newUser: Boolean = false,
+    val named: Boolean = false,
     val serverDefault: LLMModel = LLMModel.Max,
 )
 

@@ -41,7 +41,6 @@ import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.user.model.UserRecord
 import ru.souz.backend.vk.VkBotBinding
-import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.findLLMModel
@@ -427,7 +426,7 @@ internal fun UserSettings.toSettingsJson(): String =
     postgresStorageMapper.writeValueAsString(
         StoredSettingsPayload(
             reasoningEffort = reasoningEffort,
-            defaultModel = defaultModel?.alias,
+            defaultModel = defaultModel,
             contextSize = contextSize,
             temperature = temperature,
             locale = locale?.toLanguageTag(),
@@ -502,8 +501,8 @@ internal fun parseEventType(raw: String): AgentEventType =
 internal fun parseToolCallStatus(raw: String): ToolCallStatus =
     ToolCallStatus.entries.first { it.value == raw || it.name.equals(raw, ignoreCase = true) }
 
-internal fun String?.toModelOrNull(): LLMModel? =
-    this?.let(::findLLMModel)
+internal fun String?.toModelOrNull(): String? =
+    this?.let { findLLMModel(it)?.alias ?: it }
 
 internal fun String?.toProviderOrNull(): LlmProvider? =
     this?.let { raw ->

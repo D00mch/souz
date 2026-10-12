@@ -3,7 +3,6 @@ package ru.souz.backend.settings.model
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
-import ru.souz.llms.LLMModel
 
 enum class ToolPermissionMode {
     ALLOW,
@@ -23,7 +22,7 @@ data class UserMcpServer(
 
 data class UserSettings(
     val userId: String,
-    val defaultModel: LLMModel? = null,
+    val defaultModel: String? = null,
     val reasoningEffort: String? = null,
     val contextSize: Int? = null,
     val temperature: Float? = null,

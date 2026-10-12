@@ -9,7 +9,6 @@ import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.settings.service.UserSettingsOverrides
-import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.ModelResolution
 import ru.souz.llms.resolveChatModel
@@ -20,9 +19,9 @@ internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrV1BadRequ
 internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrBadRequest(): T =
     receiveOrRequestError(::badRequestV1)
 
-internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(): UserSettingsOverrides =
+internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(namedModels: Set<String> = emptySet()): UserSettingsOverrides =
     UserSettingsOverrides(
-        defaultModel = defaultModel?.let { parseModel(it, fieldName = "defaultModel") },
+        defaultModel = defaultModel?.let { parseModel(it, fieldName = "defaultModel", namedModels = namedModels) },
         contextSize = contextSize?.takeIf { it > 0 }
             ?: contextSize?.let { throw invalidV1Request("contextSize must be positive.") },
         temperature = temperature?.takeIf { it.isFinite() }
@@ -44,9 +43,9 @@ internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(): UserSettin
         useFewShotExamples = useFewShotExamples,
     )
 
-internal fun BackendV1OnboardingCompleteRequest.toUserSettingsOverrides(): UserSettingsOverrides =
+internal fun BackendV1OnboardingCompleteRequest.toUserSettingsOverrides(namedModels: Set<String> = emptySet()): UserSettingsOverrides =
     UserSettingsOverrides(
-        defaultModel = defaultModel?.let { parseModel(it, fieldName = "defaultModel") },
+        defaultModel = defaultModel?.let { parseModel(it, fieldName = "defaultModel", namedModels = namedModels) },
         locale = locale?.let { parseLocale(it, fieldName = "locale") },
         timeZone = timeZone?.let { parseTimeZone(it, fieldName = "timeZone") },
         enabledTools = enabledTools?.map { toolName ->
@@ -63,9 +62,9 @@ internal fun BackendV1OnboardingCompleteRequest.toUserSettingsOverrides(): UserS
         useFewShotExamples = useFewShotExamples,
     )
 
-internal fun BackendV1MessageOptionsRequest?.toUserSettingsOverrides(): UserSettingsOverrides =
+internal fun BackendV1MessageOptionsRequest?.toUserSettingsOverrides(namedModels: Set<String> = emptySet()): UserSettingsOverrides =
     UserSettingsOverrides(
-        defaultModel = this?.model?.let { parseModel(it, fieldName = "options.model") },
+        defaultModel = this?.model?.let { parseModel(it, fieldName = "options.model", namedModels = namedModels) },
         contextSize = this?.contextSize?.takeIf { it > 0 }
             ?: this?.contextSize?.let { throw invalidV1Request("options.contextSize must be positive.") },
         temperature = this?.temperature?.takeIf { it.isFinite() }
@@ -75,15 +74,16 @@ internal fun BackendV1MessageOptionsRequest?.toUserSettingsOverrides(): UserSett
         systemPrompt = this?.systemPrompt?.trim()?.takeIf { it.isNotEmpty() },
     )
 
-internal fun parseModel(rawModel: String, fieldName: String): LLMModel {
+internal fun parseModel(rawModel: String, fieldName: String, namedModels: Set<String> = emptySet()): String {
+    if (rawModel.trim() in namedModels) return rawModel.trim()
     return when (
         val resolution = resolveChatModel(
             rawModel = rawModel,
             supportedProviders = BackendLlmSupport.chatProviders,
         )
     ) {
-        is ModelResolution.Resolved -> resolution.value
-        is ModelResolution.Unknown -> throw invalidV1Request("$fieldName must be a known model alias.")
+        is ModelResolution.Resolved -> resolution.value.alias
+        is ModelResolution.Unknown -> throw invalidV1Request("$fieldName must be a known model alias or configured name.")
         is ModelResolution.Ambiguous -> throw invalidV1Request(
             "$fieldName is ambiguous; use a model enum name."
         )

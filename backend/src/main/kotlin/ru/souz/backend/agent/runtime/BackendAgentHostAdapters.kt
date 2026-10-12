@@ -10,6 +10,7 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.memory.hindsight.UNSUPPORTED_MEMORY_MUTATION_NOTICE
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.findLLMModel
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
@@ -23,6 +24,10 @@ class BackendConversationSettingsProvider(
     requestTimeoutMillis: Long = delegate.requestTimeoutMillis,
 ) : SettingsProvider by delegate {
     private var systemPrompt: String = defaultSystemPrompt
+    private var namedModel: String? = null
+
+    override fun executionModelId(model: LLMModel): String =
+        namedModel?.takeIf { model == LLMModel.OpenAICompatibleCustom } ?: delegate.executionModelId(model)
 
     override var defaultCalendar: String? = null
     override var regionProfile: String = localeToRegionProfile(locale)
@@ -49,7 +54,9 @@ class BackendConversationSettingsProvider(
         request: BackendConversationTurnRequest,
         temperature: Float,
     ) {
-        this.gigaModel = request.model
+        val builtin = findLLMModel(request.model)
+        this.namedModel = request.model.takeIf { builtin == null }
+        this.gigaModel = builtin ?: LLMModel.OpenAICompatibleCustom
         this.contextSize = request.contextSize
         this.temperature = request.temperature ?: temperature
         this.regionProfile = localeToRegionProfile(request.locale)

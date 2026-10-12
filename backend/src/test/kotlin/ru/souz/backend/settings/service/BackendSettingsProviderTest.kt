@@ -1,5 +1,8 @@
 package ru.souz.backend.settings.service
 
+import ru.souz.backend.config.loadNamedModels
+import ru.souz.backend.llm.withNamedLlmConfig
+import ru.souz.backend.llm.NAMED_LLM_CONFIG
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -15,6 +18,55 @@ import ru.souz.llms.LocalModelAvailability
 import ru.souz.db.SUBAGENT_MODELS_JSON
 
 class BackendSettingsProviderTest {
+    @Test
+    fun `named models load independent connections and reject broken configuration`() {
+        withNamedLlmConfig { source ->
+            val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source)
+            assertEquals(setOf("test-chat", "tv-agent"), source.loadNamedModels().models.keys)
+            assertEquals(mapOf("tv-agent" to LlmProvider.OPENAI), settings.subagentModels)
+            assertEquals("https://router.test/v1", settings.openaiSummarizationBaseUrl)
+            assertEquals("router-secret", settings.openaiSummarizationApiKey)
+            assertEquals("shared-model", settings.openaiSummarizationModel)
+            assertEquals(32000, settings.summarizationContextSize)
+        }
+        val valid = NAMED_LLM_CONFIG
+        for (port in listOf(1, 65535)) {
+            withNamedLlmConfig(valid.replace("router.test/v1", "router.test:$port/v1")) { source ->
+                val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source)
+                assertEquals("https://router.test:$port/v1", settings.openaiSummarizationBaseUrl)
+            }
+        }
+        listOf(
+            valid.replace("EXPERIMENT_KEY", "MISSING_KEY"),
+            valid.replace("\"connection\":\"experiment\"", "\"connection\":\"missing\""),
+            valid.replace("test-chat", "QwenMax"),
+            valid.replace("32000", "0"),
+            valid.replace("32000", "1.5"),
+            valid.replace("\"model\":\"tv-agent\"", "\"model\":\"missing\""),
+            valid.replace("\"models\":", "\"unknownField\":{},\"models\":"),
+            valid + " {}",
+            valid.replace("\"subagentModels\": [\"tv-agent\"]", "\"subagentModels\": [\"missing\"]"),
+            valid.replace("https://router.test/v1", "file:///tmp/model"),
+            valid.replace("https://router.test/v1", "https://router.test:99999/v1"),
+            valid.replace("https://router.test/v1", "https://router.test:0/v1"),
+            valid.replace("https://router.test/v1", "https://user:secret@router.test/v1"),
+            valid.replace("\"models\":", "\"models\":{},\"models\":"),
+        ).forEach { json ->
+            withNamedLlmConfig(json) { source ->
+                assertFailsWith<Exception> { BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source) }
+            }
+        }
+    }
+
+    @Test
+    fun `named model names cannot collide with legacy routing`() {
+        for ((key, value) in mapOf("OPENAI_MODEL" to " test-chat ", SUBAGENT_MODELS_JSON to """{"OPENAI":["tv-agent"]}""")) {
+            withNamedLlmConfig(environment = mapOf(key to value)) { source ->
+                assertFailsWith<IllegalArgumentException> { BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source) }
+            }
+        }
+    }
+
     @Test
     fun `subagent configuration uses deploy precedence and rejects unsupported or invalid values`() {
         val property = mapOf(SUBAGENT_MODELS_JSON to """{"ANTHROPIC":["property-model"]}""")
@@ -114,7 +166,7 @@ private class MapBackendConfigSource(
     override fun property(key: String): String? = properties[key]
 }
 
-private class MapBackendServerPreferenceStore : BackendServerPreferenceStore {
+internal class MapBackendServerPreferenceStore : BackendServerPreferenceStore {
     val values = mutableMapOf<String, String>()
 
     override fun get(key: String): String? = values[key]
@@ -128,7 +180,7 @@ private class MapBackendServerPreferenceStore : BackendServerPreferenceStore {
     }
 }
 
-private object NoLocalModels : LocalModelAvailability {
+internal object NoLocalModels : LocalModelAvailability {
     override fun availableGigaModels(): List<LLMModel> = emptyList()
 
     override fun defaultGigaModel(): LLMModel? = null

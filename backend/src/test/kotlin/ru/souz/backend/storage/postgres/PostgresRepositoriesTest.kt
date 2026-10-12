@@ -104,7 +104,7 @@ class PostgresRepositoriesTest {
 
             assertNotNull(stored)
             assertEquals("legacy-user", stored.userId)
-            assertEquals(LLMModel.Max, stored.defaultModel)
+            assertEquals(LLMModel.Max.alias, stored.defaultModel)
             assertEquals(12_000, stored.contextSize)
             assertEquals(0.2f, stored.temperature)
             assertEquals(Locale.forLanguageTag("en-US"), stored.locale)
@@ -130,7 +130,7 @@ class PostgresRepositoriesTest {
         val settingsRepository = PostgresUserSettingsRepository(dataSource)
         val settings = UserSettings(
             userId = "user-a",
-            defaultModel = LLMModel.Max,
+            defaultModel = LLMModel.Max.alias,
             reasoningEffort = "low",
             narrateSteps = true,
             contextSize = 16_000,
@@ -1126,7 +1126,7 @@ class PostgresRepositoriesTest {
     ): UserSettings =
         UserSettings(
             userId = userId,
-            defaultModel = defaultModel,
+            defaultModel = defaultModel.alias,
             contextSize = 16_000,
             temperature = 0.7f,
             locale = Locale.forLanguageTag("ru-RU"),
@@ -1202,7 +1202,7 @@ class PostgresRepositoriesTest {
             status = status,
             requestId = "req-$userId",
             clientMessageId = "client-$userId",
-            model = LLMModel.Max,
+            model = LLMModel.Max.alias,
             provider = LLMModel.Max.provider,
             startedAt = startedAt,
             finishedAt = null,
