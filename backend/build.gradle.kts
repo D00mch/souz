@@ -68,6 +68,16 @@ application {
     mainClass.set("ru.souz.backend.app.BackendMainKt")
 }
 
+tasks.startScripts {
+    // The full jar list exceeds the 8191-character cmd.exe line limit.
+    doLast {
+        val script = windowsScript.readText()
+        val wildcard = script.replace(Regex("(?m)^set CLASSPATH=.*$"), "set CLASSPATH=%APP_HOME%\\\\lib\\\\*")
+        check(wildcard != script) { "The Windows start script has no CLASSPATH line to replace." }
+        windowsScript.writeText(wildcard)
+    }
+}
+
 tasks.test {
     useJUnitPlatform()
     if (System.getenv("DOCKER_HOST").isNullOrBlank()) {
