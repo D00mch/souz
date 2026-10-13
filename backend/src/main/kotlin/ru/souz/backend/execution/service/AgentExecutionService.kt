@@ -115,9 +115,19 @@ class AgentExecutionService internal constructor(
         chatId: UUID,
         content: String,
         executionId: UUID,
+        dailyLaunchLimit: Int,
+        requiredTools: Set<String> = emptySet(),
     ): AgentExecution? {
+        // Existing occurrences remain deduplicated even if settings changed after dispatch.
+        executionRepository.get(userId, executionId)?.let { existing ->
+            check(existing.status != AgentExecutionStatus.FAILED) { existing.errorMessage ?: "Occurrence execution failed." }
+            return null
+        }
         val prepared = prepareChatTurn(userId, chatId, content, executionId = executionId)
-        if (!executionRepository.createIfAbsent(prepared.execution)) return null
+        check(prepared.effectiveSettings.enabledTools.containsAll(requiredTools)) {
+            "Scheduled reminder requires enabled SendMessageToChannel; delivery is unavailable."
+        }
+        if (!executionRepository.createIfAbsent(prepared.execution, dailyLaunchLimit)) return null
         return startCreatedChatTurn(prepared).execution
     }
 

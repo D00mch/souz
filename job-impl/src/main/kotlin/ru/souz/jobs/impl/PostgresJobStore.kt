@@ -11,6 +11,7 @@ import java.util.UUID
 import javax.sql.DataSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import ru.souz.jobs.FailedJobOccurrence
 import ru.souz.jobs.CreateJobRequest
 import ru.souz.jobs.JobInfo
 import ru.souz.jobs.JobSchedule
@@ -26,11 +27,11 @@ internal class PostgresJobStore(private val dataSource: DataSource, private val 
         val scheduledAt = cron?.let { nextCronTime(it.expression, it.timeZone, now) } ?: once?.runAt ?: now
         connection.query(
             """
-            insert into jobs(id, user_id, title, payload, run_at, cron, time_zone, scheduled_at, available_at, status)
-            values (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, 'PENDING') returning *
+            insert into jobs(id, user_id, title, payload, run_at, cron, time_zone, scheduled_at, available_at, status, continue_after_failure)
+            values (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, 'PENDING', ?) returning *
             """.trimIndent(),
             UUID.randomUUID(), userId, request.title, request.payload.toString(), once?.runAt,
-            cron?.expression, cron?.timeZone, scheduledAt, scheduledAt,
+            cron?.expression, cron?.timeZone, scheduledAt, scheduledAt, request.continueAfterFailure,
         ) { check(next()); jobInfo() }
     }
 
@@ -52,19 +53,17 @@ internal class PostgresJobStore(private val dataSource: DataSource, private val 
         ) { if (next()) jobInfo() else null }
     }
 
-    suspend fun claim(): JobClaim? = connection { connection ->
-        connection.update(
+    suspend fun claim(): JobClaim? = transaction { connection ->
+        // Lock expired claims once; recording failure and advancing recurrence commit together.
+        val expired = connection.query(
             """
-            update jobs set status = case when attempts >= 3 then 'FAILED' else 'PENDING' end,
-              available_at = case when attempts >= 3 then null else available_at end,
-              lease_token = null, lease_until = null,
-              last_finished_at = case when attempts >= 3 then clock_timestamp() else last_finished_at end,
-              last_error = 'Worker lease expired.'
-            where id in (select id from jobs
-              where status = 'RUNNING' and lease_until <= statement_timestamp()
-              for update skip locked)
+            select * from jobs where status = 'RUNNING' and lease_until <= statement_timestamp()
+            for update skip locked
             """.trimIndent(),
-        )
+        ) { buildList { while (next()) add(jobInfo()) } }
+        expired.forEach { job ->
+            complete(connection, job, "Worker lease expired.", connection.now(), job.availableAt)
+        }
         val token = UUID.randomUUID()
         connection.query(
             """
@@ -87,10 +86,28 @@ internal class PostgresJobStore(private val dataSource: DataSource, private val 
     }
 
     suspend fun finish(claim: JobClaim, error: String? = null): Boolean = lockedConnection(claim.job.id) { connection ->
-        val now = connection.now()
-        val cron = claim.job.schedule as? JobSchedule.Cron
-        val next = if (error == null && cron != null) nextCronTime(cron.expression, cron.timeZone, now) else null
-        val retry = error != null && claim.job.attempts < 3
+        val owned = connection.query("select id from jobs where $OWNED", claim.job.id, claim.token) { next() }
+        if (owned) complete(connection, claim.job, error, connection.now())
+        owned
+    }
+
+    private fun complete(
+        connection: Connection, job: JobInfo, error: String?, now: Instant, retryAt: Instant? = null,
+    ) {
+        val retry = error != null && job.attempts < 3
+        val exhausted = error != null && !retry
+        val cron = job.schedule as? JobSchedule.Cron
+        val next = if (cron != null && (error == null || exhausted && job.continueAfterFailure)) {
+            nextCronTime(cron.expression, cron.timeZone, maxOf(now, job.scheduledAt))
+        } else null
+        if (exhausted) {
+            connection.update(
+                """
+                insert into job_occurrence_failures(job_id, scheduled_at, attempts, finished_at, error)
+                values (?, ?, ?, ?, ?) on conflict (job_id, scheduled_at) do nothing
+                """.trimIndent(), job.id, job.scheduledAt, job.attempts, now, error,
+            )
+        }
         val status = when {
             next != null || retry -> JobStatus.PENDING
             error == null -> JobStatus.SUCCEEDED
@@ -100,17 +117,36 @@ internal class PostgresJobStore(private val dataSource: DataSource, private val 
             """
             update jobs set status = ?, scheduled_at = coalesce(?, scheduled_at), available_at = ?,
               attempts = ?, last_finished_at = ?, last_error = ?, lease_token = null, lease_until = null
-            where $OWNED
-            """.trimIndent(), status.name, next, next ?: now.plusSeconds(timing.retrySeconds).takeIf { retry },
-            if (next != null) 0 else claim.job.attempts, now, error, claim.job.id, claim.token,
-        ) == 1
+            where id = ?
+            """.trimIndent(), status.name, next, next ?: (retryAt ?: now.plusSeconds(timing.retrySeconds)).takeIf { retry },
+            if (next != null) 0 else job.attempts, now, error, job.id,
+        )
     }
 
-    private suspend fun lockedConnection(jobId: UUID, block: (Connection) -> Boolean): Boolean = connection { connection ->
+    suspend fun listFailures(userId: String, jobId: UUID): List<FailedJobOccurrence> = connection { connection ->
+        connection.query(
+            """
+            select f.* from job_occurrence_failures f join jobs j on j.id = f.job_id
+            where j.user_id = ? and j.id = ? order by f.scheduled_at desc
+            """.trimIndent(), userId, jobId,
+        ) {
+            buildList {
+                while (next()) add(FailedJobOccurrence(
+                    instant("scheduled_at")!!, getInt("attempts"), instant("finished_at")!!, getString("error"),
+                ))
+            }
+        }
+    }
+
+    private suspend fun lockedConnection(jobId: UUID, block: (Connection) -> Boolean): Boolean = transaction { connection ->
+        // Acquire the lock before checking ownership: the wait itself can outlast the lease.
+        connection.query("select id from jobs where id = ? for update", jobId) { next() }
+        block(connection)
+    }
+
+    private suspend fun <T> transaction(block: (Connection) -> T): T = connection { connection ->
         connection.autoCommit = false
         try {
-            // Acquire the lock before checking ownership: the wait itself can outlast the lease.
-            connection.query("select id from jobs where id = ? for update", jobId) { next() }
             block(connection).also { connection.commit() }
         } catch (error: Throwable) {
             connection.rollback()
@@ -137,6 +173,7 @@ private fun ResultSet.jobInfo(): JobInfo = JobInfo(
     status = JobStatus.valueOf(getString("status")), scheduledAt = instant("scheduled_at")!!,
     availableAt = instant("available_at"), attempts = getInt("attempts"), createdAt = instant("created_at")!!,
     lastFinishedAt = instant("last_finished_at"), lastError = getString("last_error"),
+    continueAfterFailure = getBoolean("continue_after_failure"),
 )
 
 private fun ResultSet.instant(column: String): Instant? = getObject(column, OffsetDateTime::class.java)?.toInstant()

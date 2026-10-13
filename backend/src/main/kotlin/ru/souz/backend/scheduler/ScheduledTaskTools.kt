@@ -11,6 +11,8 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
+import ru.souz.backend.execution.repository.AgentExecutionRepository
+import ru.souz.backend.channels.tool.SEND_MESSAGE_TO_CHANNEL_TOOL_NAME
 import ru.souz.backend.channels.ChannelProviderRegistry
 import ru.souz.jobs.CreateJobRequest
 import ru.souz.jobs.JobInfo
@@ -31,6 +33,7 @@ internal class ToolCreateScheduledTask(
     private val channels: ChannelProviderRegistry,
     private val config: ScheduledTaskConfig,
     private val clock: Clock,
+    private val executions: AgentExecutionRepository,
 ) : ToolSetup<ToolCreateScheduledTask.Input> {
     data class Input(
         @InputParamDescription(
@@ -38,6 +41,8 @@ internal class ToolCreateScheduledTask(
                 "conversation's history. For a reminder, include the reminder text."
         )
         val prompt: String,
+        @InputParamDescription("True for reminders or any task that must send a message (default). Set false only for action-only tasks.")
+        val requiresDelivery: Boolean = true,
         @InputParamDescription("Short title shown in the task list. Defaults to the start of prompt.")
         val title: String? = null,
         @InputParamDescription("One-off run time, RFC 3339 with offset, e.g. 2026-10-13T09:00:00+03:00.")
@@ -80,6 +85,9 @@ internal class ToolCreateScheduledTask(
         if (prompt.isEmpty() || prompt.length > 16_384) throw BadInputException("prompt must have 1..16384 characters.")
         val title = input.title?.trim()?.takeIf { it.isNotEmpty() } ?: prompt.take(80)
         if (title.length > 200) throw BadInputException("title must have at most 200 characters.")
+        if (input.requiresDelivery && !canDeliver(meta)) {
+            throw BadInputException("Scheduled reminder requires enabled SendMessageToChannel; delivery is unavailable.")
+        }
         val now = clock.instant()
         val schedule = schedule(input, meta, now)
         val needed = runsPerDay(schedule, now)
@@ -91,12 +99,18 @@ internal class ToolCreateScheduledTask(
                     "Cancel other tasks or choose a less frequent schedule."
             )
         }
-        val payload = restJsonMapper.createObjectNode().put("prompt", prompt)
+        val payload = restJsonMapper.createObjectNode().put("prompt", prompt).put("requiresDelivery", input.requiresDelivery)
         meta.conversationId
             ?.let { id -> channels.listAll(meta.userId).firstOrNull { it.channelId == id } }
             ?.let { payload.put("replyChannelType", it.channelType).put("replyChannelId", it.channelId) }
-        val job = jobs.createJob(meta.userId, CreateJobRequest(title, payload, schedule))
+        val job = jobs.createJob(meta.userId, CreateJobRequest(title, payload, schedule, continueAfterFailure = true))
         return restJsonMapper.writeValueAsString(job.toView(meta.zone()))
+    }
+
+    private suspend fun canDeliver(meta: ToolInvocationMeta): Boolean {
+        val executionId = meta.requestId?.let(UUID::fromString) ?: return false
+        val snapshot = executions.get(meta.userId, executionId)?.metadata?.get("enabledTools") ?: return false
+        return restJsonMapper.readTree(snapshot).any { it.asText() == SEND_MESSAGE_TO_CHANNEL_TOOL_NAME }
     }
 
     private fun schedule(input: Input, meta: ToolInvocationMeta, now: Instant): JobSchedule = when {
@@ -141,7 +155,12 @@ internal class ToolListScheduledTasks(
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val tasks = jobs.listJobs(meta.userId)
             .filter { input.includeInactive == true || it.isActive() }
-            .map { it.toView(meta.zone()) }
+            .map { job ->
+                job.toView(meta.zone()) + ("failedOccurrences" to jobs.listFailedOccurrences(meta.userId, job.id).map {
+                    mapOf("scheduledAt" to it.scheduledAt.toString(), "attempts" to it.attempts,
+                        "finishedAt" to it.finishedAt.toString(), "error" to it.error)
+                })
+            }
         return restJsonMapper.writeValueAsString(mapOf("tasks" to tasks))
     }
 }
@@ -191,8 +210,10 @@ private val taskReturnParameters = ReturnParameters(
         "taskId" to ReturnProperty("string", "Task ID for scheduled-task.delete."),
         "title" to ReturnProperty("string"),
         "prompt" to ReturnProperty("string"),
+        "requiresDelivery" to ReturnProperty("boolean", "Whether this task requires SendMessageToChannel at dispatch."),
         "schedule" to ReturnProperty("object", "runAt for a one-off task, or cron and timeZone."),
-        "status" to ReturnProperty("string", "pending, running, succeeded, failed or cancelled."),
+        "status" to ReturnProperty("string", "Dispatch status: pending, running, succeeded, failed or cancelled; not a delivery receipt."),
+        "failedOccurrences" to ReturnProperty("array", "Exhausted dispatch failures, retained for recurring tasks and returned by list."),
         "nextRunAt" to ReturnProperty("string", "Next run in the user's time zone; absent once the task is finished."),
         "lastRunAt" to ReturnProperty("string"),
         "lastError" to ReturnProperty("string"),
@@ -208,6 +229,7 @@ private fun JobInfo.toView(zone: ZoneId): Map<String, Any?> = mapOf(
     "taskId" to id.toString(),
     "title" to title,
     "prompt" to payload.path("prompt").asText(),
+    "requiresDelivery" to payload.path("requiresDelivery").asBoolean(true),
     "schedule" to when (val schedule = schedule) {
         is JobSchedule.Once -> mapOf("runAt" to schedule.runAt?.atZone(zone)?.toOffsetDateTime()?.toString())
         is JobSchedule.Cron -> mapOf("cron" to schedule.expression, "timeZone" to schedule.timeZone)
