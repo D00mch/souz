@@ -422,6 +422,7 @@ internal class BackendE2eBackend(
     val toolCallRepository: ToolCallRepository get() = di.direct.instance()
 
     val executionRepository: ru.souz.backend.execution.repository.AgentExecutionRepository get() = di.direct.instance()
+    val chatRepository: ru.souz.backend.chat.repository.ChatRepository get() = di.direct.instance()
 
     suspend fun recoverClientThreads() = di.direct.instance<ClientThreadRecoveryService>().recover()
 

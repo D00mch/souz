@@ -55,7 +55,7 @@ class BackendScheduledTasksE2eTest {
             mapOf("cron" to "0 9 * * *", "timeZone" to "Mars/Base"),
             mapOf("afterSeconds" to 1, "cron" to "0 9 * * *"),
         )) assertTrue(!taskTool(owner, chat, "create", arguments + ("prompt" to "Do it.")).has("taskId"))
-        assertTrue(backend.jobService.listJobs(owner).isEmpty())
+        assertTrue(backend.jobService.listJobs(owner).items.isEmpty())
 
         val daily = taskTool(owner, chat, "create", mapOf("prompt" to "Read mail.", "cron" to "0 9 * * *"))
         assertEquals("Europe/Moscow", daily["schedule"]["timeZone"].asText())
@@ -65,6 +65,17 @@ class BackendScheduledTasksE2eTest {
         assertEquals("cancelled", taskTool(owner, chat, "delete", mapOf("taskId" to daily["taskId"].asText()))["status"].asText())
         assertEquals(0, taskTool(owner, chat, "list")["tasks"].size())
         assertEquals("cancelled", taskTool(owner, chat, "list", mapOf("includeInactive" to true))["tasks"].single()["status"].asText())
+        repeat(3) { taskTool(owner, chat, "create", mapOf("prompt" to "Action $it", "afterSeconds" to 600, "requiresDelivery" to false)) }
+        val first = taskTool(owner, chat, "list", mapOf("limit" to 2))
+        assertEquals(2, first["tasks"].size())
+        val second = taskTool(owner, chat, "list", mapOf("limit" to 2, "cursor" to first["nextCursor"].asText()))
+        assertEquals(1, second["tasks"].size())
+        assertTrue(second["nextCursor"].isNull)
+        assertEquals(3, (first["tasks"] + second["tasks"]).map { it["taskId"].asText() }.toSet().size)
+        assertEquals(0, taskTool(other, otherChat, "list", mapOf("cursor" to first["nextCursor"].asText()))["tasks"].size())
+        for (invalid in listOf(mapOf("limit" to 0), mapOf("limit" to 101), mapOf("cursor" to "invalid"))) {
+            assertFalse(taskTool(owner, chat, "list", invalid).has("tasks"))
+        }
     }
 
     @Test
@@ -72,22 +83,29 @@ class BackendScheduledTasksE2eTest {
         val owner = UUID.randomUUID().toString()
         val chat = setupTasks(owner)
         val reminder = taskTool(owner, chat, "create", mapOf("prompt" to "Remind me to drink water.", "afterSeconds" to 1))
-        taskTool(owner, chat, "create", mapOf("prompt" to "Quiet action.", "afterSeconds" to 1, "requiresDelivery" to false))
+        val action = taskTool(owner, chat, "create", mapOf("prompt" to "Quiet action.", "afterSeconds" to 1, "requiresDelivery" to false))
         val cancelled = taskTool(owner, chat, "create", mapOf("prompt" to "Cancelled reminder.", "afterSeconds" to 1))
         taskTool(owner, chat, "delete", mapOf("taskId" to cancelled["taskId"].asText()))
-        val runs = backend.jobService.listJobs(owner).map { JobRun(it.id, owner, it.title, it.payload, it.scheduledAt, 1) }
+        val runs = backend.jobService.listJobs(owner).items.map { JobRun(it.id, owner, it.title, it.payload, it.scheduledAt, 1) }
         val run = runs.single { it.jobId.toString() == reminder["taskId"].asText() }
         val prompt = scheduledTaskInput(run)
         assertTrue("channelType=public_client, channelId=$chat" in prompt)
         llm.requestSkillForPrompt(prompt, "SendMessageToChannel", mapOf("channelType" to "public_client", "channelId" to chat, "text" to "Drink water"))
+        val actionRun = runs.single { it.jobId.toString() == action["taskId"].asText() }
+        val actionPrompt = scheduledTaskInput(actionRun)
+        llm.requestSkillForPrompt(actionPrompt, "SendMessageToChannel", mapOf("channelType" to "public_client", "channelId" to chat, "text" to "Unexpected message"))
         backend.startScheduledTaskWorker()
         eventually("dispatched", timeout = 15.seconds) {
-            backend.jobService.listJobs(owner).takeIf { jobs -> jobs.none { it.status == JobStatus.PENDING || it.status == JobStatus.RUNNING } }
+            backend.jobService.listJobs(owner).items.takeIf { jobs -> jobs.none { it.status == JobStatus.PENDING || it.status == JobStatus.RUNNING } }
         }
         runs.filter { it.jobId.toString() != cancelled["taskId"].asText() }.forEach { backend.awaitExecution(it.executionId()) }
         val delivered = client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(owner) }.jsonBody()["items"]
             .filter { it.path("metadata").path("crossChannel").asText() == "true" }
         assertEquals(listOf("Drink water"), delivered.map { it["content"].asText() })
+        val actionExecution = assertNotNull(backend.executionRepository.get(owner, actionRun.executionId()))
+        assertTrue(json.readTree(actionExecution.metadata.getValue("enabledTools")).none { it.asText() == "SendMessageToChannel" })
+        val denied = llm.requests.last { it.conversationPrompt() == actionPrompt }.messages.last { it.name == "RunSkillCommand" }
+        assertEquals("skill_not_found", json.readTree(denied.content).path("error").path("code").asText())
         assertTrue(llm.requests.none { it.conversationPrompt().startsWith("Cancelled reminder.") })
         val visible = client.get(BackendHttpRoutes.CHATS) { trusted(owner) }.jsonBody()["items"]
         assertEquals(listOf(chat), visible.map { it["id"].asText() })
@@ -189,7 +207,7 @@ class BackendScheduledTasksE2eTest {
         val owner = UUID.randomUUID().toString()
         val chat = setupTasks(owner)
         taskTool(owner, chat, "create", mapOf("prompt" to "Send a reminder.", "afterSeconds" to 60))
-        val job = backend.jobService.listJobs(owner).single()
+        val job = backend.jobService.listJobs(owner).items.single()
         val response = client.patch(BackendHttpRoutes.SETTINGS) {
             trusted(owner)
             jsonBody("""{"enabledTools":["scheduled-task.create","scheduled-task.list","scheduled-task.delete"]}""")
@@ -230,7 +248,7 @@ class BackendScheduledTasksE2eTest {
             jobs.forEach { makeScheduledJobReady(it.id) }
             val runs = jobs.map { JobRun(it.id, owner, it.title, it.payload, it.scheduledAt, 1) }
             suspend fun assertUnclaimed() {
-                val waiting = backend.jobService.listJobs(owner).single { it.id == jobs.last().id }
+                val waiting = backend.jobService.listJobs(owner).items.single { it.id == jobs.last().id }
                 assertEquals(JobStatus.PENDING, waiting.status)
                 assertEquals(0, waiting.attempts)
                 assertNull(waiting.lastError)
@@ -284,7 +302,7 @@ private suspend fun BackendE2eScope.taskTool(userId: String, chat: String, opera
     return json.readTree(request.messages.last { it.name == "RunSkillCommand" }.content)
 }
 
-private fun BackendE2eScope.taskRun(owner: String, atMostOnce: Boolean = false) = JobRun(
+internal fun BackendE2eScope.taskRun(owner: String, atMostOnce: Boolean = false) = JobRun(
     UUID.randomUUID(), owner, "Scheduled action", json.createObjectNode().put("prompt", UUID.randomUUID().toString())
         .put("requiresDelivery", false).put("atMostOnce", atMostOnce), Instant.now(), 1,
 )

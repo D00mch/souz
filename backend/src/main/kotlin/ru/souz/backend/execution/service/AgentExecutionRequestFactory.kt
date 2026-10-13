@@ -49,8 +49,11 @@ internal class AgentExecutionRequestFactory(
         latestDeviceContextJson: String = "{}",
         userMessageMetadataExtras: Map<String, String> = emptyMap(),
         clientToolsEnabled: Boolean = false,
+        excludedTools: Set<String> = emptySet(),
     ): PreparedChatTurn {
-        val effectiveSettings = effectiveSettingsResolver.resolve(userId, requestOverrides)
+        val effectiveSettings = effectiveSettingsResolver.resolve(userId, requestOverrides).let {
+            it.copy(enabledTools = it.enabledTools - excludedTools)
+        }
         val provider = findLLMModel(effectiveSettings.defaultModel)?.provider ?: LlmProvider.OPENAI
         if (provider !in BackendLlmSupport.chatProviders) {
             throw unsupportedBackendModel()

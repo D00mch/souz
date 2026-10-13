@@ -11,6 +11,8 @@ class ChatRequestConflictException(
 
 interface ChatRepository {
     suspend fun create(chat: Chat): Chat
+    /** Only removes a scheduled chat with no execution or messages, serialized with admission. */
+    suspend fun deleteEmptyScheduledChat(userId: String, chatId: UUID): Boolean
     suspend fun get(userId: String, chatId: UUID): Chat?
     suspend fun getById(chatId: UUID): Chat?
     suspend fun getByIds(chatIds: List<UUID>): List<Chat>

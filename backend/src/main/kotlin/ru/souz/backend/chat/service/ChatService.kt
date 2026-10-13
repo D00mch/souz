@@ -31,6 +31,9 @@ class ChatService(
     private val chatRepository: ChatRepository,
     private val messageRepository: MessageRepository,
 ) {
+    internal suspend fun deleteEmptyScheduledChat(userId: String, chatId: UUID): Boolean =
+        chatRepository.deleteEmptyScheduledChat(userId, chatId)
+
     suspend fun list(
         userId: String,
         limit: Int = ChatRepository.DEFAULT_LIMIT,

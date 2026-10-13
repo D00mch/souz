@@ -45,7 +45,7 @@ class JobWorkerTest {
         assertEquals(JobStatus.CANCELLED, service.cancelJob("owner", cancelled.id)?.status)
         withTimeout(5_000) { stopped.await(); nextStarted.await() }
         awaitStatus(service, next.id, JobStatus.SUCCEEDED)
-        assertEquals(JobStatus.CANCELLED, service.listJobs("owner").first { it.id == cancelled.id }.status)
+        assertEquals(JobStatus.CANCELLED, service.listJobs("owner").items.first { it.id == cancelled.id }.status)
         assertTrue(worker.isActive)
     }
 
@@ -74,7 +74,7 @@ class JobWorkerTest {
             assertSame(first, service.startWorker(this) { error("Cleanup must finish before replacement") })
             releaseCleanup.complete(Unit)
             withTimeout(5_000) { first.join() }
-            val interrupted = service.listJobs("owner").single()
+            val interrupted = service.listJobs("owner").items.single()
             assertEquals(JobStatus.RUNNING, interrupted.status)
             assertEquals(1, interrupted.attempts)
             db.execute("update jobs set lease_until = clock_timestamp() - interval '1 second' where id = ?", job.id)
@@ -103,7 +103,7 @@ class JobWorkerTest {
                 if (run.jobId == failed.id) fail() else assertEquals(next.id, run.jobId)
             }
             awaitStatus(service, next.id, JobStatus.SUCCEEDED)
-            val retrying = service.listJobs("owner").first { it.id == failed.id }
+            val retrying = service.listJobs("owner").items.first { it.id == failed.id }
             assertEquals(JobStatus.PENDING, retrying.status)
             assertEquals(1, retrying.attempts)
             assertNotNull(retrying.lastError)
@@ -148,7 +148,7 @@ class JobWorkerTest {
         val original = withTimeout(5_000) { started.await() }
         withTimeout(5_000) { stopped.await(); otherStarted.await() }
         awaitStatus(service, ready.id, JobStatus.SUCCEEDED)
-        assertEquals(1, service.listJobs("owner").first { it.id == interrupted.id }.attempts)
+        assertEquals(1, service.listJobs("owner").items.first { it.id == interrupted.id }.attempts)
         assertTrue(worker.isActive)
         db.execute("drop trigger reject_job_renewal on jobs")
         db.execute("""
@@ -176,7 +176,7 @@ class JobWorkerTest {
         db.execute("create trigger reject_job_finish before update on jobs for each row execute function reject_job_finish()")
         var original: JobRun? = null
         assertFailsWith<SQLException> { service.processNext { original = it } }
-        val interrupted = service.listJobs("owner").single()
+        val interrupted = service.listJobs("owner").items.single()
         assertEquals(JobStatus.RUNNING, interrupted.status)
         assertEquals(1, interrupted.attempts)
         db.execute("drop trigger reject_job_finish on jobs")
@@ -186,12 +186,12 @@ class JobWorkerTest {
             assertEquals(original?.scheduledAt, replay.scheduledAt)
             assertEquals(2, replay.attempt)
         })
-        assertEquals(JobStatus.SUCCEEDED, service.listJobs("owner").single().status)
+        assertEquals(JobStatus.SUCCEEDED, service.listJobs("owner").items.single().status)
     }
 
     private suspend fun awaitStatus(service: PostgresJobService, id: java.util.UUID, status: JobStatus) {
         withTimeout(5_000) {
-            while (service.listJobs("owner").first { it.id == id }.status != status) delay(10)
+            while (service.listJobs("owner").items.first { it.id == id }.status != status) delay(10)
         }
     }
 }

@@ -23,19 +23,19 @@ class JobOccurrenceFailureTest {
                 else assertTrue(service.store.finish(claim, "Start failed"))
             }
             service.store.claim()
-            val current = service.listJobs("owner").single()
+            val current = service.listJobs("owner").items.single()
             assertEquals(JobStatus.PENDING, current.status)
             assertTrue(current.scheduledAt > job.scheduledAt)
             assertEquals(0, current.attempts)
-            val failure = service.listFailedOccurrences("owner").single()
+            val failure = service.listFailedOccurrences("owner", setOf(job.id)).single()
             assertEquals(job.scheduledAt, failure.scheduledAt)
             assertEquals(3, failure.attempts)
             assertEquals(if (expired) "Worker lease expired." else "Start failed", failure.error)
-            assertTrue(service.listFailedOccurrences("stranger").isEmpty())
+            assertTrue(service.listFailedOccurrences("stranger", setOf(job.id)).isEmpty())
             db.execute("update jobs set available_at = clock_timestamp() - interval '1 second' where id = ?", job.id)
             val peer = PostgresJobService(db)
             peer.processNext { }
-            assertEquals(listOf(failure), peer.listFailedOccurrences("owner"))
+            assertEquals(listOf(failure), peer.listFailedOccurrences("owner", setOf(job.id)))
         }
     }
 }

@@ -68,7 +68,10 @@ class AgentExecutionService internal constructor(
         userId: String, chatId: UUID, executionId: UUID, content: String, requiresDelivery: Boolean,
     ) {
         executionRepository.get(userId, executionId)?.let { return checkScheduledDispatch(it) }
-        val prepared = prepareChatTurn(userId, chatId, content, executionId = executionId).let {
+        val prepared = prepareChatTurn(
+            userId, chatId, content, executionId = executionId,
+            excludedTools = if (requiresDelivery) emptySet() else setOf(SEND_MESSAGE_TO_CHANNEL_TOOL_NAME),
+        ).let {
             it.copy(execution = it.execution.copy(metadata = it.execution.metadata + (SCHEDULED_TASK_METADATA to "true")))
         }
         if (requiresDelivery && SEND_MESSAGE_TO_CHANNEL_TOOL_NAME !in prepared.effectiveSettings.enabledTools) {
@@ -169,6 +172,7 @@ class AgentExecutionService internal constructor(
         latestDeviceContextJson: String = "{}",
         userMessageMetadata: Map<String, String> = emptyMap(),
         clientToolsEnabled: Boolean = false,
+        excludedTools: Set<String> = emptySet(),
     ): PreparedChatTurn {
         requireOwnedChat(userId, chatId)
         return requestFactory.prepareChatTurn(
@@ -181,6 +185,7 @@ class AgentExecutionService internal constructor(
             latestDeviceContextJson = latestDeviceContextJson,
             userMessageMetadataExtras = userMessageMetadata,
             clientToolsEnabled = clientToolsEnabled,
+            excludedTools = excludedTools,
         )
     }
 

@@ -6,7 +6,9 @@ Claim the earliest eligible job atomically with `FOR UPDATE SKIP LOCKED` and com
 
 Recover expired running leases before claiming: requeue attempts below the limit with their existing availability time, and fail exhausted attempts. Both eligibility scans use `statement_timestamp()` as an index range boundary; the ordered claim reads only pending rows. Recovery skips locked rows. Lease creation and post-lock ownership checks use `clock_timestamp()`.
 
-One row represents a logical job. Its scheduled occurrence timestamp stays unchanged across retries and changes only when recurrence advances. A failed or abandoned claim consumes an attempt; exhausted recurring jobs stop unless created with `continueAfterFailure`. Exhaustion, including final expired leases, records a durable `job_occurrence_failures` row in the same transaction as the outcome. `listFailedOccurrences` is owner-scoped. Recurrence skips missed timestamps after completion; one-off jobs still fail after exhaustion.
+One row represents a logical job. Its scheduled occurrence timestamp stays unchanged across retries and changes only when recurrence advances. A failed or abandoned claim consumes an attempt; exhausted recurring jobs stop unless created with `continueAfterFailure`. Exhaustion, including final expired leases, records a durable `job_occurrence_failures` row in the same transaction as the outcome. Recurrence skips missed timestamps after completion; one-off jobs still fail after exhaustion.
+
+`listJobs` returns an owner-scoped page of 20 jobs by default, with a maximum of 100. Active filtering runs in SQL; newest-first cursor pagination uses `(created_at, id)`, anchored by the preceding page's last job ID. Unknown or foreign cursors return an empty page. `listFailedOccurrences` accepts up to 100 job IDs, verifies their owner, and reads only the latest three failures per job through the occurrence index. The complete failure history remains durable.
 
 ## Why it is fragile
 

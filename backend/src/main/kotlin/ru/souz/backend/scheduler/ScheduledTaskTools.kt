@@ -115,22 +115,33 @@ private class ListScheduledTasks(private val jobs: JobService) : ToolSetup<ListS
     data class Input(
         @InputParamDescription("Include completed, failed and cancelled tasks.")
         val includeInactive: Boolean = false,
+        @InputParamDescription("Page size, from 1 to 100; defaults to 20.")
+        val limit: Int = 20,
+        @InputParamDescription("nextCursor from the preceding page; omit for the first page.")
+        val cursor: String? = null,
     )
     override val name = "scheduled-task.list"
     override val description = "List your tasks, schedules, execution states and recent failed occurrences."
     override val fewShotExamples = listOf(FewShotExample("Какие у меня запланированы задачи?", emptyMap()))
-    override val returnParameters = ReturnParameters(properties = mapOf("tasks" to ReturnProperty("array")))
+    override val returnParameters = ReturnParameters(properties = mapOf(
+        "tasks" to ReturnProperty("array"), "nextCursor" to ReturnProperty("string", "Use as cursor for the next page; null when complete."),
+    ))
     override fun invoke(input: Input, meta: ToolInvocationMeta): String = runBlocking { suspendInvoke(input, meta) }
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val zone = meta.zone()
-        val failures = jobs.listFailedOccurrences(meta.userId).groupBy { it.jobId }
-        val tasks = jobs.listJobs(meta.userId).filter { input.includeInactive || it.active() }.map { job ->
-            job.view(zone) + ("failedOccurrences" to failures[job.id].orEmpty().take(3).map {
+        if (input.limit !in 1..100) throw BadInputException("limit must be between 1 and 100.")
+        val cursor = input.cursor?.let { value ->
+            runCatching { UUID.fromString(value) }.getOrNull() ?: throw BadInputException("cursor must be a UUID.")
+        }
+        val page = jobs.listJobs(meta.userId, input.limit, cursor, input.includeInactive)
+        val failures = jobs.listFailedOccurrences(meta.userId, page.items.map { it.id }.toSet()).groupBy { it.jobId }
+        val tasks = page.items.map { job ->
+            job.view(zone) + ("failedOccurrences" to failures[job.id].orEmpty().map {
                 mapOf("scheduledAt" to it.scheduledAt.atZone(zone).toString(), "error" to it.error)
             })
         }
-        return restJsonMapper.writeValueAsString(mapOf("tasks" to tasks))
+        return restJsonMapper.writeValueAsString(mapOf("tasks" to tasks, "nextCursor" to page.nextCursor))
     }
 }
 

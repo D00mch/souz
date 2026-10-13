@@ -1,6 +1,8 @@
 package ru.souz.backend.scheduler
 
 import java.util.UUID
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.jobs.JobRun
@@ -21,12 +23,22 @@ internal class ScheduledTaskRunner(
     private val chats: ChatService,
     private val executions: AgentExecutionService,
 ) {
+    @Suppress("SuspendFunSwallowedCancellation") // Preserve and rethrow cancellation after non-cancellable rejection cleanup.
     suspend fun run(job: JobRun) {
         val id = job.executionId()
         val chat = chats.createClient(job.userId, "scheduled-task:$id", SCHEDULED_TASK_CHAT_TYPE, job.title).chat
-        executions.executeScheduledTask(
-            job.userId, chat.id, id, scheduledTaskInput(job), job.payload.path("requiresDelivery").asBoolean(true),
-        )
+        try {
+            executions.executeScheduledTask(
+                job.userId, chat.id, id, scheduledTaskInput(job), job.payload.path("requiresDelivery").asBoolean(true),
+            )
+        } catch (error: Exception) {
+            try {
+                withContext(NonCancellable) { chats.deleteEmptyScheduledChat(job.userId, chat.id) }
+            } catch (cleanupError: Exception) {
+                error.addSuppressed(cleanupError)
+            }
+            throw error
+        }
     }
 }
 

@@ -10,6 +10,20 @@ import ru.souz.backend.chat.repository.ChatRepository
 class PostgresChatRepository(
     private val dataSource: DataSource,
 ) : ChatRepository {
+    override suspend fun deleteEmptyScheduledChat(userId: String, chatId: UUID): Boolean = dataSource.write { connection ->
+        // Check references in a fresh statement after waiting for any concurrent admission to commit.
+        connection.lockChat(userId, chatId)
+        connection.prepareStatement("""
+            delete from chats c where c.user_id = ? and c.id = ? and c.client_type = 'scheduled_task'
+              and not exists (select 1 from agent_executions where chat_id = c.id)
+              and not exists (select 1 from messages where chat_id = c.id)
+        """.trimIndent()).use {
+            it.setString(1, userId)
+            it.setObject(2, chatId)
+            it.executeUpdate() == 1
+        }
+    }
+
     override suspend fun create(chat: Chat): Chat = dataSource.write { connection ->
         try {
             connection.prepareStatement(

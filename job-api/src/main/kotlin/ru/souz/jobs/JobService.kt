@@ -7,12 +7,16 @@ import java.util.UUID
 /** Owner-scoped job operations, independent of the host and persistence implementation. */
 interface JobService {
     suspend fun createJob(userId: String, request: CreateJobRequest): JobInfo
-    suspend fun listJobs(userId: String): List<JobInfo>
-    suspend fun listFailedOccurrences(userId: String): List<FailedJobOccurrence>
+    /** Newest first; the cursor is the last job ID from the preceding page. */
+    suspend fun listJobs(userId: String, limit: Int = 20, beforeJobId: UUID? = null, includeInactive: Boolean = true): JobPage
+    /** Latest three failures per requested job; accepts at most 100 owner-scoped IDs. */
+    suspend fun listFailedOccurrences(userId: String, jobIds: Set<UUID>): List<FailedJobOccurrence>
 
     /** Returns null for an unknown owner/job pair; terminal jobs are returned unchanged. */
     suspend fun cancelJob(userId: String, jobId: UUID): JobInfo?
 }
+
+data class JobPage(val items: List<JobInfo>, val nextCursor: UUID?)
 
 data class CreateJobRequest(
     val title: String,
