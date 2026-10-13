@@ -12,6 +12,8 @@ import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.backend.client.LiveClientToolDispatcher
+import ru.souz.backend.personality.PersonalitySync
 import ru.souz.backend.hooks.HookDefinitions
 import ru.souz.backend.hooks.HookService
 import ru.souz.backend.hooks.HookStore
@@ -343,6 +345,8 @@ fun backendDiModule(
             hookStore = instance(),
             executionQuotas = instance(),
             metrics = instance(),
+            userSettingsRepository = instance(),
+            personalitySync = instance(),
         )
     }
     bindSingleton {
@@ -492,6 +496,8 @@ fun backendDiModule(
     bindSingleton { ToolListActiveChannels(registry = instance()) }
     bindSingleton { ToolSendMessageToChannel(registry = instance()) }
     bindSingleton { BackendChannelToolCatalog(instance(), instance()) }
+    bindSingleton { LiveClientToolDispatcher(instance(), instance(), instance(), metrics = instance()) }
+    bindSingleton { PersonalitySync(instance(), instance()) }
     bindSingleton<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG) {
         AgentToolCatalog.compose(
             instance<RuntimeToolsFactory>().catalog,
@@ -573,6 +579,7 @@ fun backendDiModule(
             optionService = instance(),
             eventService = instance(),
             publicClientService = instance(),
+            personalitySync = instance(),
             hookService = instance(),
             telegramBotBindingService = if (featureFlags.telegramBot) instance() else null,
             vkBotBindingService = if (featureFlags.vkBot) instance() else null,

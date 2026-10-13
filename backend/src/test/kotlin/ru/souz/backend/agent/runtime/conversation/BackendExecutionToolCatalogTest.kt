@@ -12,6 +12,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.backend.personality.PersonalityTool
 import ru.souz.agent.state.AgentSettings
 import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.testutil.TestToolCatalog
@@ -87,7 +88,7 @@ class BackendExecutionToolCatalogTest {
     @Test
     fun `catalog exposes only client web search for every compiled tool selection`() {
         val selections = mapOf(
-            null to setOf("ReadFile", "ViewImage", "GenerateImage"),
+            null to setOf("ReadFile", "ViewImage", "GenerateImage", PersonalityTool.NAME),
             setOf("ReadFile") to setOf("ReadFile"),
             setOf("InternetSearch", "InternetResearch", "WebPageText", "FutureWebTool") to emptySet(),
             emptySet<String>() to emptySet(),
@@ -148,6 +149,7 @@ class BackendExecutionToolCatalogTest {
                 ToolCategory.WEB_SEARCH to listOf("InternetSearch", "InternetResearch"),
                 ToolCategory.IMAGE to listOf("ViewImage"),
                 ToolCategory.IMAGE_GENERATION to listOf("GenerateImage"),
+                ToolCategory.CONFIG to listOf(PersonalityTool.NAME, "UnsafeLocalSettings"),
             ),
             enabledCompiledToolNames = enabledCompiledToolNames,
             clientToolCatalog = TestToolCatalog(

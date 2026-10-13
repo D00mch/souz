@@ -1,6 +1,7 @@
 package ru.souz.backend.common
 
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.backend.personality.PersonalityTool
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.files.ToolGenerateImage
 import ru.souz.tool.files.ToolViewImage
@@ -25,7 +26,7 @@ object BackendToolCapabilityPolicy {
     )
 
     /** Advertised tools whose LLM dependency is bound per execution, so no process catalog holds them. */
-    val executionBoundToolNames: Set<String> = setOf(ToolViewImage.NAME, ToolGenerateImage.NAME)
+    val executionBoundToolNames: Set<String> = setOf(ToolViewImage.NAME, ToolGenerateImage.NAME, PersonalityTool.NAME)
 
     /** Names the backend advertises and accepts in a user's `enabledTools`, in stable order. */
     fun advertisedToolNames(processToolCatalog: AgentToolCatalog): Set<String> =
@@ -50,5 +51,8 @@ object BackendToolCapabilityPolicy {
 
     /** The hostable view of a compiled catalog: safe categories only. */
     private fun hostableTools(catalog: AgentToolCatalog, allow: (String) -> Boolean = { true }): AgentToolCatalog =
-        catalog.filter { category, tool -> category in safeCategories && allow(tool.fn.name) }
+        catalog.filter { category, tool ->
+            allow(tool.fn.name) && (category in safeCategories ||
+                (category == ToolCategory.CONFIG && tool.fn.name == PersonalityTool.NAME))
+        }
 }

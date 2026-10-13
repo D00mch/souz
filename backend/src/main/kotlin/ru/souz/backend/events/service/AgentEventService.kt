@@ -93,6 +93,8 @@ class AgentEventService(
         createdAt = createdAt,
     )
 
+    fun liveChatIds(userId: String): List<UUID> = eventBus.liveChatIds(userId)
+
     fun hasLiveSubscriber(userId: String, chatId: UUID): Boolean = eventBus.hasSubscriber(userId, chatId)
 
     fun publishClientToolCall(

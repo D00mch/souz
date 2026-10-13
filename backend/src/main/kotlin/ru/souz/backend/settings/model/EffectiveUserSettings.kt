@@ -12,6 +12,8 @@ data class EffectiveUserSettings(
     val locale: Locale,
     val timeZone: ZoneId,
     val systemPrompt: String?,
+    val personalityPrompt: String? = null,
+    val personalityRevision: Long = 1,
     val enabledTools: Set<String>,
     val showToolEvents: Boolean,
     val streamingMessages: Boolean,
