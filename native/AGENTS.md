@@ -13,6 +13,7 @@ Before changing this module, read the relevant pain-point topics below.
 - Keep vendor checkouts and bridge build directories untracked. Rebuild tracked bridge binaries through the canonical script.
 - Treat the main model, linked embeddings model, and any required multimodal projector as one readiness/download set.
 - Cap configured context by the selected profile and reserve completion space from actual token counts; multimodal requests must use the `mtmd` prompt/image count.
+- Keep full parameter schemas for tools with nested constraints or `additionalProperties`, including when other tool guidance is compacted.
 - Keep Metal residency disabled by default on macOS; opt back in only through the documented debugging override.
 
 ## Pain points

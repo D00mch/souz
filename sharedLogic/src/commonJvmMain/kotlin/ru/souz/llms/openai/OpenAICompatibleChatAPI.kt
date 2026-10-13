@@ -26,6 +26,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.restJsonMapper
+import ru.souz.llms.toToolSchema
 import ru.souz.llms.toFinishReason
 import java.io.File
 
@@ -410,42 +411,17 @@ class OpenAICompatibleChatAPI(
         return result
     }
 
-    private fun buildTools(functions: List<LLMRequest.Function>): List<Map<String, Any>> {
-        return functions.map { fn ->
-            val properties = fn.parameters.properties.mapValues { (_, prop) ->
-                buildMap {
-                    put("type", prop.type)
-                    prop.description?.let { put("description", it) }
-                    prop.enum?.let { put("enum", it) }
-                    if (prop.type == "array") {
-                        // OpenAI tool schemas require `items` for every array type.
-                        // Keep items unconstrained so existing tools can pass arrays of strings, objects, or mixed payloads.
-                        put("items", emptyMap<String, Any>())
-                    }
-                }
-            }
-            buildMap {
-                put("type", "function")
-                put(
-                    "function",
-                    buildMap {
-                        put("name", fn.name)
-                        put("description", fn.description)
-                        put(
-                            "parameters",
-                            buildMap {
-                                put("type", fn.parameters.type)
-                                put("properties", properties)
-                                if (fn.parameters.required.isNotEmpty()) {
-                                    put("required", fn.parameters.required)
-                                }
-                            }
-                        )
-                    }
-                )
-            }
+    private fun buildTools(functions: List<LLMRequest.Function>): List<Map<String, Any>> =
+        functions.map { fn ->
+            mapOf(
+                "type" to "function",
+                "function" to mapOf(
+                    "name" to fn.name,
+                    "description" to fn.description,
+                    "parameters" to fn.parameters.toToolSchema(),
+                ),
+            )
         }
-    }
 
     private fun buildContent(message: LLMRequest.Message): Any =
         message.attachments

@@ -21,6 +21,17 @@ import ru.souz.llms.http.providerHttpClientDefaults
 
 class AnthropicChatAPICacheTest {
     @Test
+    fun `tools preserve the complete input schema`() = runTest {
+        val request = captureRequest(LLMRequest.Chat(
+            model = LLMModel.AnthropicHaiku45.alias,
+            messages = listOf(LLMRequest.Message(LLMMessageRole.user, "Process records")),
+            functions = listOf(nestedSchemaTool()),
+        ))
+        val body = restJsonMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(request)
+        assertEquals(restJsonMapper.readTree(nestedToolSchema), body["tools"][0]["input_schema"])
+    }
+
+    @Test
     fun `chat request puts message cache marker on penultimate cacheable message block`() = runTest {
         val request = captureRequest(
             body = LLMRequest.Chat(

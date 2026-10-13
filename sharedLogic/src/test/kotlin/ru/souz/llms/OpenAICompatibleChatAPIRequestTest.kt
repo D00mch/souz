@@ -36,6 +36,22 @@ data class CompatibleProviderCase(
 class OpenAICompatibleChatAPIRequestTest {
 
     @Test
+    fun `chat and streaming requests preserve the complete tool schema`() = runTest {
+        for (stream in listOf(false, true)) {
+            val request = captureChatRequest(
+                body = LLMRequest.Chat(
+                    model = LLMModel.OpenAIGpt5Mini.alias,
+                    messages = listOf(LLMRequest.Message(LLMMessageRole.user, "Process records")),
+                    functions = listOf(nestedSchemaTool()),
+                ),
+                stream = stream,
+            )
+            val body = restJsonMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(request)
+            assertEquals(restJsonMapper.readTree(nestedToolSchema), body["tools"][0]["function"]["parameters"])
+        }
+    }
+
+    @Test
     fun `provider matrix applies compatible protocol differences`() = runTest {
         compatibleProviderCases.forEach { case ->
             val engine = MockEngine { request ->

@@ -30,6 +30,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.restJsonMapper
+import ru.souz.llms.toToolSchema
 import ru.souz.llms.toFinishReason
 import ru.souz.llms.toSystemPromptMessage
 import java.io.File
@@ -484,31 +485,14 @@ class AnthropicChatAPI(
         return parseAssistantToolCall(content)
     }
 
-    private fun buildTools(functions: List<LLMRequest.Function>): List<Map<String, Any>> {
-        return functions.map { fn ->
-            val properties = fn.parameters.properties.mapValues { (_, prop) ->
-                buildMap {
-                    put("type", prop.type)
-                    prop.description?.let { put("description", it) }
-                    prop.enum?.let { put("enum", it) }
-                }
-            }
-
-            val inputSchema = mutableMapOf<String, Any>(
-                "type" to fn.parameters.type,
-                "properties" to properties,
-            )
-            if (fn.parameters.required.isNotEmpty()) {
-                inputSchema["required"] = fn.parameters.required
-            }
-
+    private fun buildTools(functions: List<LLMRequest.Function>): List<Map<String, Any>> =
+        functions.map { fn ->
             mapOf(
                 "name" to fn.name,
                 "description" to fn.description,
-                "input_schema" to inputSchema,
+                "input_schema" to fn.parameters.toToolSchema(),
             )
         }
-    }
 
     private fun parseMessageResponse(text: String, requestModel: String): LLMResponse.Chat {
         val node = restJsonMapper.readTree(text)

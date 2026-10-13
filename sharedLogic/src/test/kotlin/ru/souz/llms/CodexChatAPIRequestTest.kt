@@ -25,6 +25,13 @@ import ru.souz.llms.http.providerHttpClientDefaults
 
 class CodexChatAPIRequestTest {
     @Test
+    fun `Responses tools preserve the complete parameter schema`() = runTest {
+        val request = captureRequest(chatRequest().copy(functions = listOf(nestedSchemaTool())))
+        val body = restJsonMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(request)
+        assertEquals(restJsonMapper.readTree(nestedToolSchema), body["tools"][0]["parameters"])
+    }
+
+    @Test
     fun `reasoning effort is nested for Responses and omitted when unset`() = runTest {
         val configured = captureRequest(chatRequest().copy(reasoningEffort = "low"))
         assertEquals(mapOf("effort" to "low"), configured["reasoning"])

@@ -12,6 +12,7 @@ Before changing this module, read the relevant pain-point topics below.
 
 - Keep wire DTOs and enum aliases backward compatible unless all persisted and remote consumers are migrated together.
 - Preserve provider neutrality in public contracts; provider-specific transport behavior belongs in the provider implementation.
+- `toToolSchema` preserves recursive parameter constraints; array properties without declared items serialize with an unconstrained item schema.
 - Keep model-default and availability decisions in build profiles, with host capabilities supplied through narrow interfaces.
 - Preserve the shared Souz state-directory contract because multiple modules resolve persisted assets through it.
 

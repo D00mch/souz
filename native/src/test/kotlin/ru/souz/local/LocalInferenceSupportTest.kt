@@ -1204,6 +1204,32 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `local prompt keeps nested tool constraints in full and minimal guidance`() {
+        val schema = """
+            {"type":"object","properties":{"records":{"type":"array","items":{
+              "type":"object","properties":{"enabled":{"type":"boolean"}},
+              "required":["enabled"],"additionalProperties":false
+            }}},"required":["records"],"additionalProperties":false}
+        """.trimIndent()
+        val tool = LLMRequest.Function(
+            name = "client.batch",
+            parameters = restJsonMapper.readValue(schema, LLMRequest.Parameters::class.java),
+        )
+        for (otherTools in listOf(0, 60)) {
+            val prompt = LocalPromptRenderer().render(
+                body = LLMRequest.Chat(
+                    model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+                    messages = listOf(LLMRequest.Message(LLMMessageRole.user, "Process records")),
+                    functions = List(otherTools) { calendarListEventsFn.copy(name = "Calendar$it") } + tool,
+                ),
+                profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
+            )
+            val advertised = prompt.substringAfter("Parameters schema: ").lineSequence().first()
+            assertEquals(restJsonMapper.readTree(schema), restJsonMapper.readTree(advertised))
+        }
+    }
+
+    @Test
     fun `close unloads model and destroys runtime after local preload`() = runTest {
         val profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507
         val availability = mockk<LocalProviderAvailability>()

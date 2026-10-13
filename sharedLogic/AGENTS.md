@@ -17,6 +17,7 @@ Keep this module UI-free. Compose resources and UI adapters belong in `:sharedUI
 - Resolve filesystem and command access from each `ToolInvocationMeta`; do not retain user-specific paths in singleton tools.
 - Keep the skill registry and `RunSkillCommand` on the same single-user bundle layout so activation and execution resolve the same bundle.
 - Composite Skill steps use the invoking tool's filtered catalog snapshot; child snapshots contain only explicitly selected capabilities.
+- Provider requests preserve complete tool parameter schemas, including nested properties, array items, required fields, and `additionalProperties`.
 - Use sandbox filesystem abstractions for tool and skill IO whenever they are available.
 
 ## Pain points

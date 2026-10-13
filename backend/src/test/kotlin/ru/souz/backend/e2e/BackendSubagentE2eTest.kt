@@ -28,7 +28,18 @@ import ru.souz.llms.http.providerHttpClientDefaults
 
 class BackendSubagentE2eTest {
     @Test
-    fun `legacy and named remote children preserve credentials and usage`() = withNamedLlmConfig { namedSource ->
+    fun `legacy and named remote children preserve client tool schemas credentials and usage`() = withNamedLlmConfig { namedSource ->
+        val schema = """
+            {"type":"object","properties":{
+              "records":{"type":"array","items":{
+                "type":"object","properties":{
+                  "labels":{"type":"array","items":{"type":"string","enum":["a","b"]}},
+                  "options":{"type":"object","properties":{"enabled":{"type":"boolean"}},
+                    "required":["enabled"],"additionalProperties":false}
+                },"required":["labels","options"],"additionalProperties":false
+              }}
+            },"required":["records"],"additionalProperties":false}
+        """.trimIndent()
         listOf(false, true).forEach { streaming ->
             val childModel = if (streaming) "tv-agent" else "My-Deployment/v2"
             var childRequests = 0
@@ -39,6 +50,9 @@ class BackendSubagentE2eTest {
                 assertEquals(if (streaming) "Bearer router-secret" else "Bearer configured-child-key", request.headers[HttpHeaders.Authorization])
                 assertEquals(if (streaming) "router.test" else "api.openai.com", request.url.host)
                 assertFalse(body.has("provider"))
+                val tool = body["tools"].single()["function"]
+                assertEquals("client.batch", tool["name"].asText())
+                assertEquals(restJsonMapper.readTree(schema), tool["parameters"])
                 childRequests++
                 val reply = """{"choices":[{"index":0,"message":{"role":"assistant","content":"private remote answer"},"delta":{"role":"assistant","content":"private remote answer"},"finish_reason":"stop"}],"created":1,"usage":{"prompt_tokens":11,"completion_tokens":4,"total_tokens":15}}"""
                 respond(
@@ -67,12 +81,14 @@ class BackendSubagentE2eTest {
                     } else {
                         val choices = request.functions.single { it.name == "SpawnSubagent" }.parameters.properties.getValue("model").enum
                         assertEquals(setOf(childModel, E2E_LOCAL_MODEL.alias), choices?.toSet())
-                        toolCallReply(request, "SpawnSubagent", mapOf("task" to "Answer privately", "model" to childModel))
+                        toolCallReply(request, "SpawnSubagent", mapOf(
+                            "task" to "Answer privately", "model" to childModel, "skillIds" to listOf("client.batch"),
+                        ))
                     }
                 },
             ) {
                 val userId = UUID.randomUUID().toString()
-                val chatId = createPublicChat(userId)
+                val chatId = createPublicChat(userId, tools = """[{"name":"client.batch","description":"Process records","parameters":$schema}]""")
                 client.patch(BackendHttpRoutes.SETTINGS) {
                     trusted(userId)
                     jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","streamingMessages":$streaming}""")

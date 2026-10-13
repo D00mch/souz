@@ -4,6 +4,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.restJsonMapper
+import ru.souz.llms.toToolSchema
 
 private const val CLASSIFICATION_RESPONSE_FORMAT_MARKER = "CATEGORY1,CATEGORY2 0-100"
 
@@ -155,6 +156,12 @@ class LocalPromptRenderer {
                 }
             }
 
+            if (fn.parameters.additionalProperties != null || fn.parameters.properties.values.any {
+                it.items != null || it.properties != null || it.required != null || it.additionalProperties != null
+            }) {
+                append("  Parameters schema: ")
+                appendLine(restJsonMapper.writeValueAsString(fn.parameters.toToolSchema()))
+            }
             appendLine()
         }
     }.trim()
