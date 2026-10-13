@@ -135,7 +135,7 @@ Durable public events are same-thread `tool.call.started`, `thread.completed|fai
 | `message.submit`, `history.append`, `thread.cancel` | Shared `(chatId, requestId)` |
 | `tool.result` | `(chatId, threadId, toolCallId)` |
 
-For durable operations, the same key, operation and normalized payload return the original result with `duplicate:true`, without repeating execution. Changes conflict with `idempotency_conflict`. Creation compares `clientType` and `title`; tool results compare terminal status and payload. For `chat.subscribe` and `chat.unsubscribe`, `requestId` is only for correlation; each request applies to the current connection state.
+For durable operations, the same key, operation and normalized payload return the original result with `duplicate:true`, without repeating execution. Changes conflict with `idempotency_conflict`. Creation compares `clientType`, `title`, and normalized `tools` (omitted tools and `[]` are equivalent); tool results compare terminal status and payload. For `chat.subscribe` and `chat.unsubscribe`, `requestId` is only for correlation; each request applies to the current connection state.
 
 Frame envelopes reject unknown fields; tool arguments/results are generic JSON. Malformed JSON and unsupported kinds close the socket; recoverable errors receive correlated rejection ACKs.
 

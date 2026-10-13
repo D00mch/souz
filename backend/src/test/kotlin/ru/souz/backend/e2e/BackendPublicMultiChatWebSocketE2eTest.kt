@@ -27,6 +27,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
+import ru.souz.llms.LLMMessageRole
 
 class BackendPublicMultiChatWebSocketE2eTest {
     @Test
@@ -483,6 +484,10 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     }
                     val remote = readJson(socket)
                     assertEquals("tool.call.started", remote["type"].asText())
+                    val system = llm.requests.last().messages.first { it.role == LLMMessageRole.system }.content
+                    assertTrue("ListActiveChannels" in system)
+                    assertTrue("channelId" in system)
+                    assertTrue("RunSkillCommand.arguments" in system)
                     assertEquals(target, remote["chatId"].asText())
                     assertTrue(remote["seq"].isNull)
                     assertNotEquals(local["threadId"], remote["threadId"])

@@ -62,6 +62,12 @@ class BackendConversationSettingsProvider(
         this.regionProfile = localeToRegionProfile(request.locale)
         this.systemPrompt = listOfNotNull(
             request.systemPrompt ?: defaultSystemPrompt,
+            "Client tool-backed Skills run on the current client device by default. " +
+                "To use another connected device, or when this execution has no current client, " +
+                "discover and run ListActiveChannels, select the intended device channel, and add its " +
+                "channelId to RunSkillCommand.arguments alongside the client tool's arguments. " +
+                "channelId is reserved backend routing metadata, is absent from the registered input " +
+                "schema, and is removed before arguments are sent to the device.",
             UNSUPPORTED_MEMORY_MUTATION_NOTICE.takeIf { request.clientToolsEnabled },
             when {
                 !request.narrateSteps -> null

@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.DeserializationContext
 import com.fasterxml.jackson.databind.JsonDeserializer
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize
+import com.fasterxml.jackson.module.kotlin.convertValue
 import java.util.*
 
 object LLMResponse {
@@ -379,11 +380,6 @@ class FunctionCallArgumentsDeserializer : JsonDeserializer<Map<String, Any>>() {
             node
         }
         if (!argumentsNode.isObject) return emptyMap()
-        return restJsonMapper.convertValue(argumentsNode, Map::class.java)
-            .entries
-            .mapNotNull { (key, value) ->
-                if (key is String && value != null) key to value else null
-            }
-            .toMap()
+        return restJsonMapper.convertValue<Map<String, Any>>(argumentsNode)
     }
 }

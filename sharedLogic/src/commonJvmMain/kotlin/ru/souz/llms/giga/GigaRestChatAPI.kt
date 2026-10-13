@@ -3,6 +3,7 @@ package ru.souz.llms.giga
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.module.kotlin.convertValue
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -417,12 +418,7 @@ private fun JsonNode.toGigaFunctionCall(): LLMResponse.FunctionCall {
 private fun JsonNode.toGigaFunctionArguments(): Map<String, Any> {
     val argumentsNode = if (isTextual) restJsonMapper.readTree(asText()) else this
     if (!argumentsNode.isObject) return emptyMap()
-    return restJsonMapper.convertValue(argumentsNode, Map::class.java)
-        .entries
-        .mapNotNull { (key, value) ->
-            if (key is String && value != null) key to value else null
-        }
-        .toMap()
+    return restJsonMapper.convertValue<Map<String, Any>>(argumentsNode)
 }
 
 private fun JsonNode.toGigaUsage(): LLMResponse.Usage = LLMResponse.Usage(
