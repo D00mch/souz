@@ -11,6 +11,8 @@ class ChatRequestConflictException(
 
 interface ChatRepository {
     suspend fun create(chat: Chat): Chat
+    /** Inserts by primary key, or returns the existing chat without changing it. */
+    suspend fun getOrCreate(chat: Chat): Chat
     suspend fun get(userId: String, chatId: UUID): Chat?
     suspend fun getById(chatId: UUID): Chat?
     suspend fun getByIds(chatIds: List<UUID>): List<Chat>

@@ -20,4 +20,5 @@ enum class ToolCategory {
     DESKTOP,
     HELP,
     CHANNEL_MESSAGING,
+    SCHEDULING,
 }

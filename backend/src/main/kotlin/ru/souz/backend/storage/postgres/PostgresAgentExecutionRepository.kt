@@ -29,7 +29,17 @@ class PostgresAgentExecutionRepository(
         insert(connection, execution)
     }
 
-    internal fun insert(connection: Connection, execution: AgentExecution): AgentExecution {
+    override suspend fun createIfAbsent(execution: AgentExecution): Boolean = dataSource.write(afterCommit = {
+        if (it) metrics?.executions?.committed(execution)
+    }) { connection ->
+        connection.lockChat(execution.userId, execution.chatId)
+        insert(connection, execution, ignoreDuplicate = true) != null
+    }
+
+    internal fun insert(connection: Connection, execution: AgentExecution): AgentExecution =
+        checkNotNull(insert(connection, execution, ignoreDuplicate = false))
+
+    private fun insert(connection: Connection, execution: AgentExecution, ignoreDuplicate: Boolean): AgentExecution? {
         try {
             connection.prepareStatement(
                 """
@@ -40,10 +50,11 @@ class PostgresAgentExecutionRepository(
                     latest_device_context, runtime_owner, runtime_lease_until
                 )
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ${if (ignoreDuplicate) "on conflict (id) do nothing" else ""}
                 """.trimIndent()
             ).use { statement ->
                 bindExecution(statement, execution)
-                statement.executeUpdate()
+                if (statement.executeUpdate() == 0) return null
             }
         } catch (error: SQLException) {
             if (error.isConstraintViolation(ACTIVE_EXECUTION_CONSTRAINT)) {
