@@ -37,6 +37,9 @@ import ru.souz.backend.http.invalidV1Request
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.settings.service.UserSettingsOverrides
+import ru.souz.backend.scheduler.ScheduledTaskConfig
+import ru.souz.backend.scheduler.SCHEDULED_TASK_METADATA
+import ru.souz.backend.channels.tool.SEND_MESSAGE_TO_CHANNEL_TOOL_NAME
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 
 data class CancelExecutionResult(
@@ -56,9 +59,32 @@ class AgentExecutionService internal constructor(
     private val optionsEnabled: Boolean,
     private val hookStore: HookStore,
     private val hookConfig: HookConfig,
+    private val scheduledTaskConfig: ScheduledTaskConfig,
 ) {
     private val logger = LoggerFactory.getLogger(AgentExecutionService::class.java)
     private val hookSlots = Semaphore(hookConfig.concurrentExecutions)
+    private val scheduledSlots = Semaphore(scheduledTaskConfig.concurrentRuns)
+
+    internal suspend fun executeScheduledTask(
+        userId: String, chatId: UUID, executionId: UUID, content: String, requiresDelivery: Boolean,
+    ) {
+        if (executionRepository.get(userId, executionId) != null) return
+        val prepared = prepareChatTurn(userId, chatId, content, executionId = executionId).let {
+            it.copy(execution = it.execution.copy(metadata = it.execution.metadata + (SCHEDULED_TASK_METADATA to "true")))
+        }
+        if (requiresDelivery && SEND_MESSAGE_TO_CHANNEL_TOOL_NAME !in prepared.effectiveSettings.enabledTools) {
+            throw invalidV1Request("Scheduled messages require enabled $SEND_MESSAGE_TO_CHANNEL_TOOL_NAME.")
+        }
+        if (!executionRepository.createScheduledIfAbsent(prepared.execution, scheduledTaskConfig.runsPerUserPerDay)) return
+        try {
+            startPreparedChatTurn(prepared)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            finalizer.markFailed(prepared.execution, "agent_execution_failed", error.message ?: "Scheduled start failed.", prepared.execution.usage)
+            throw error
+        }
+    }
 
     suspend fun executeChatTurn(
         userId: String,
@@ -247,7 +273,12 @@ class AgentExecutionService internal constructor(
                     finalizer.runExecution(execution, conversationKey, turnRequest, eventSink)
                 }
                 // Both initial turns and option continuations acquire capacity for actual agent work.
-                if (isHook) hookSlots.withPermit { withTimeout(hookConfig.executionTimeoutMillis) { run() } } else run()
+                val limits = when {
+                    isHook -> hookSlots to hookConfig.executionTimeoutMillis
+                    execution.metadata[SCHEDULED_TASK_METADATA] == "true" -> scheduledSlots to scheduledTaskConfig.runTimeoutMillis
+                    else -> null
+                }
+                if (limits == null) run() else limits.first.withPermit { withTimeout(limits.second) { run() } }
             } catch (_: BackendV1Exception) {
                 // Background failures are already persisted by AgentExecutionFinalizer.
             }
@@ -332,7 +363,8 @@ class AgentExecutionService internal constructor(
             userId = execution.userId, chatId = execution.chatId, executionId = execution.id,
             messageRepository = messageRepository, optionRepository = optionRepository,
             eventService = eventService, toolCallRepository = toolCallRepository,
-            streamingMessagesEnabled = streaming, toolEventsEnabled = toolEvents, optionsEnabled = optionsEnabled,
+            streamingMessagesEnabled = streaming, toolEventsEnabled = toolEvents,
+            optionsEnabled = optionsEnabled && execution.metadata[SCHEDULED_TASK_METADATA] != "true",
             assistantMessageId = execution.assistantMessageId,
             publicClientThread = execution.runtimeOwner != null,
             narrateSteps = execution.metadata[METADATA_NARRATE_STEPS] == "true",

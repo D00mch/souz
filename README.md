@@ -339,6 +339,7 @@ Souz has two tool catalogs:
 | Mail | Count unread messages, list messages, read message, reply, send new message, search mail |
 | Text / clipboard | Get clipboard, replace selected text, read selected text |
 | Calculator | Calculator |
+| Scheduling | Create, list and cancel scheduled agent tasks ([details](backend/docs/scheduled-tasks.md)) |
 | Telegram | Read inbox, get chat history, set chat state, send message/attachment, forward message, search Telegram, save to Saved Messages |
 | Desktop | Take screenshot, start screen recording |
 
@@ -514,6 +515,11 @@ ENABLE_BACKEND_VK_FEATURE=false
 SOUZ_VK_POLLING_MAX_CONCURRENCY=4
 # Required when enabled; Base64 of 32 random bytes
 VK_TOKEN_ENCRYPTION_KEY=...
+
+# Scheduled agents: admissions per user per UTC day, concurrent runs per process, timeout
+SOUZ_SCHEDULED_TASK_RUNS_PER_USER_PER_DAY=100
+SOUZ_SCHEDULED_TASK_CONCURRENT_RUNS=16
+SOUZ_SCHEDULED_TASK_RUN_TIMEOUT_MILLIS=300000
 
 # Provider retries
 SOUZ_BACKEND_PROVIDER_MAX_429_RETRIES=2

@@ -141,6 +141,10 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("\\d+\\s*[+\\-*/^]\\s*\\d+"), 1.5), // Simple math expressions
         )
 
+        ToolCategory.SCHEDULING -> listOf(
+            WeightedRegex(Regex("напомни|напоминани|запланируй|по расписанию|remind|schedule"), 2.0),
+        )
+
         ToolCategory.CHANNEL_MESSAGING -> listOf(
             // Weighted high enough to outscore TELEGRAM's own combined patterns (up to 3.5) when the
             // destination channel happens to be Telegram — "перешли ... в телеграм" is forwarding out

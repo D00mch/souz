@@ -7,6 +7,7 @@ import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.config.SystemBackendConfigSource
 import ru.souz.backend.config.booleanValue
 import ru.souz.backend.hooks.HookConfig
+import ru.souz.backend.scheduler.ScheduledTaskConfig
 import ru.souz.skilloauth.impl.OAuthProviderCatalog
 
 /**
@@ -150,6 +151,7 @@ data class BackendAppConfig(
     val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     val providerRetryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(),
     val hooks: HookConfig = HookConfig(),
+    val scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
 ) {
     fun validate(): BackendAppConfig {
         server.validate()
@@ -201,6 +203,11 @@ data class BackendAppConfig(
                 hooks = HookConfig(
                     owners = source.value("SOUZ_HOOK_OWNERS", "souz.hooks.owners")
                         ?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)?.toSet().orEmpty(),
+                ),
+                scheduledTasks = ScheduledTaskConfig(
+                    runsPerUserPerDay = source.intValue("SOUZ_SCHEDULED_TASK_RUNS_PER_USER_PER_DAY", "souz.scheduledTasks.runsPerUserPerDay", 100),
+                    concurrentRuns = source.intValue("SOUZ_SCHEDULED_TASK_CONCURRENT_RUNS", "souz.scheduledTasks.concurrentRuns", 16),
+                    runTimeoutMillis = source.longValue("SOUZ_SCHEDULED_TASK_RUN_TIMEOUT_MILLIS", "souz.scheduledTasks.runTimeoutMillis", 300_000),
                 ),
                 server = BackendServerConfig(
                     host = source.value(

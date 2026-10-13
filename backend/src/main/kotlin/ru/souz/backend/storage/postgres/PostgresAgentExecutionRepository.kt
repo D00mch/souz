@@ -17,6 +17,8 @@ import ru.souz.backend.execution.repository.ActiveAgentExecutionConflictExceptio
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.repository.CommittedAgentTurn
 import ru.souz.backend.metrics.BackendMetrics
+import ru.souz.backend.http.BackendV1Exception
+import io.ktor.http.HttpStatusCode
 
 class PostgresAgentExecutionRepository(
     private val dataSource: DataSource,
@@ -53,6 +55,38 @@ class PostgresAgentExecutionRepository(
         }
         return execution
     }
+
+    override suspend fun createScheduledIfAbsent(execution: AgentExecution, dailyLimit: Int): Boolean =
+        dataSource.write(afterCommit = { if (it) metrics?.executions?.committed(execution) }) { connection ->
+            // Serialize admission across this owner's chats and replicas; allow foreign-key readers.
+            connection.prepareStatement("select id from users where id = ? for no key update").use {
+                it.setString(1, execution.userId)
+                it.executeQuery().use { rows -> check(rows.next()) }
+            }
+            connection.lockChat(execution.userId, execution.chatId)
+            if (connection.findExecution(execution.userId, execution.chatId, execution.id) != null) return@write false
+            val admittedAt = connection.prepareStatement("select clock_timestamp()").use {
+                it.executeQuery().use { rows -> check(rows.next()); rows.getObject(1, java.time.OffsetDateTime::class.java).toInstant() }
+            }
+            connection.prepareStatement(
+                """
+                select count(*) from agent_executions where user_id = ? and metadata->>'scheduledTask' = 'true'
+                  and started_at >= ?
+                """.trimIndent()
+            ).use {
+                it.setString(1, execution.userId)
+                it.setInstant(2, admittedAt.truncatedTo(java.time.temporal.ChronoUnit.DAYS))
+                it.executeQuery().use { rows ->
+                    check(rows.next())
+                    if (rows.getInt(1) >= dailyLimit) throw BackendV1Exception(
+                        HttpStatusCode.TooManyRequests, "scheduled_task_daily_limit", "Scheduled task daily execution limit reached.",
+                    )
+                }
+            }
+            // Use database admission time, so time spent waiting for the owner lock cannot cross quota days.
+            insert(connection, execution.copy(startedAt = admittedAt))
+            true
+        }
 
     override suspend fun transitionIfCurrent(
         expected: AgentExecution,
@@ -171,7 +205,8 @@ class PostgresAgentExecutionRepository(
             connection.prepareStatement(
                 """
                 update agent_executions
-                set user_message_id = ?, status = 'running', started_at = now()
+                set user_message_id = ?, status = 'running',
+                    started_at = case when metadata->>'scheduledTask' = 'true' then started_at else now() end
                 where user_id = ? and chat_id = ? and id = ? and status = 'queued'
                 returning *
                 """.trimIndent()

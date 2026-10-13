@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.zaxxer.hikari.HikariDataSource
 import java.time.Clock
+import ru.souz.backend.scheduler.ScheduledTaskTools
+import ru.souz.backend.scheduler.ScheduledTaskRunner
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
@@ -373,6 +375,7 @@ fun backendDiModule(
             optionsEnabled = appConfig.featureFlags.options,
             hookStore = instance(),
             hookConfig = appConfig.hooks,
+            scheduledTaskConfig = appConfig.scheduledTasks,
         )
     }
     if (appConfig.featureFlags.telegramBot) {
@@ -482,9 +485,11 @@ fun backendDiModule(
     }
     bindSingleton { ToolListActiveChannels(registry = instance()) }
     bindSingleton { ToolSendMessageToChannel(registry = instance()) }
+    bindSingleton { ScheduledTaskTools(instance(), instance(), instance(), instance()) }
+    bindSingleton { ScheduledTaskRunner(instance(), instance()) }
     bindSingleton { BackendChannelToolCatalog(instance(), instance()) }
     bindSingleton<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG) {
-        composeToolCatalogs(instance<RuntimeToolsFactory>(), instance<BackendChannelToolCatalog>())
+        composeToolCatalogs(instance<RuntimeToolsFactory>(), instance<BackendChannelToolCatalog>(), instance<ScheduledTaskTools>())
     }
     bindSingleton {
         OptionService(

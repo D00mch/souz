@@ -11,6 +11,7 @@ Before changing this module, read the relevant pain-point topics below.
 ## Pain points
 
 - Execution is at least once. The persisted job ID and scheduled occurrence timestamp identify one occurrence across retries; handlers use that identity when deduplicating side effects.
+- `continueAfterFailure` opts cron jobs into advancing after exhaustion. Failed occurrences remain durable and owner-scoped; one-off jobs still fail.
 - Owner identity is host-supplied and independent of backend user tables. Listing and cancellation must retain owner scoping in every implementation.
 
 Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.

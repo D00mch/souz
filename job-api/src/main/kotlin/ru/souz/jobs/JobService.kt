@@ -8,6 +8,7 @@ import java.util.UUID
 interface JobService {
     suspend fun createJob(userId: String, request: CreateJobRequest): JobInfo
     suspend fun listJobs(userId: String): List<JobInfo>
+    suspend fun listFailedOccurrences(userId: String): List<FailedJobOccurrence>
 
     /** Returns null for an unknown owner/job pair; terminal jobs are returned unchanged. */
     suspend fun cancelJob(userId: String, jobId: UUID): JobInfo?
@@ -17,6 +18,8 @@ data class CreateJobRequest(
     val title: String,
     val payload: JsonNode,
     val schedule: JobSchedule = JobSchedule.Once(),
+    /** Advance cron after exhausting an occurrence's retries; one-offs still fail. */
+    val continueAfterFailure: Boolean = false,
 )
 
 sealed interface JobSchedule {
@@ -40,6 +43,15 @@ data class JobInfo(
     val createdAt: Instant,
     val lastFinishedAt: Instant?,
     val lastError: String?,
+    val continueAfterFailure: Boolean = false,
+)
+
+data class FailedJobOccurrence(
+    val jobId: UUID,
+    val scheduledAt: Instant,
+    val attempts: Int,
+    val finishedAt: Instant,
+    val error: String,
 )
 
 /** Delivery is at least once. Use (jobId, scheduledAt) to deduplicate an occurrence's effects. */

@@ -15,6 +15,8 @@ class ActiveAgentExecutionConflictException(
 
 interface AgentExecutionRepository {
     suspend fun create(execution: AgentExecution): AgentExecution
+    /** Atomically reserves a scheduled launch and its UTC daily quota; false means already admitted. */
+    suspend fun createScheduledIfAbsent(execution: AgentExecution, dailyLimit: Int): Boolean
     /** Changes lifecycle fields only, guarded by status, cancellation intent and runtime owner. */
     suspend fun transitionIfCurrent(
         expected: AgentExecution,

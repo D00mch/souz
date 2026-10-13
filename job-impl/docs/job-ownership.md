@@ -6,7 +6,7 @@ Claim the earliest eligible job atomically with `FOR UPDATE SKIP LOCKED` and com
 
 Recover expired running leases before claiming: requeue attempts below the limit with their existing availability time, and fail exhausted attempts. Both eligibility scans use `statement_timestamp()` as an index range boundary; the ordered claim reads only pending rows. Recovery skips locked rows. Lease creation and post-lock ownership checks use `clock_timestamp()`.
 
-One row represents a logical job. Its scheduled occurrence timestamp stays unchanged across retries and changes only when successful recurrence advances. A failed or abandoned claim consumes an attempt; exhausted recurring jobs stop. Recurrence skips missed timestamps after completion.
+One row represents a logical job. Its scheduled occurrence timestamp stays unchanged across retries and changes only when recurrence advances. A failed or abandoned claim consumes an attempt; exhausted recurring jobs stop unless created with `continueAfterFailure`. Exhaustion, including final expired leases, records a durable `job_occurrence_failures` row in the same transaction as the outcome. `listFailedOccurrences` is owner-scoped. Recurrence skips missed timestamps after completion; one-off jobs still fail after exhaustion.
 
 ## Why it is fragile
 

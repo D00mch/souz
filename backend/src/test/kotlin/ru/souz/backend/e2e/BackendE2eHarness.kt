@@ -4,6 +4,11 @@ import ru.souz.agent.skills.SkillClassifier
 
 import ru.souz.backend.execution.service.AgentExecutionLauncher
 import ru.souz.backend.hooks.HookConfig
+import ru.souz.backend.scheduler.ScheduledTaskConfig
+import ru.souz.backend.scheduler.ScheduledTaskRunner
+import ru.souz.jobs.JobService
+import ru.souz.jobs.JobRun
+import ru.souz.jobs.impl.PostgresJobService
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -140,6 +145,7 @@ internal fun backendE2eTest(
     hindsightUrl: String? = null,
     clock: Clock = Clock.systemUTC(),
     hookConfig: HookConfig = HookConfig(),
+    scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     llmLimits: BackendLlmLimits = BackendLlmLimits(),
     sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
     block: suspend BackendE2eScope.() -> Unit,
@@ -158,6 +164,7 @@ internal fun backendE2eTest(
         hindsightUrl = hindsightUrl,
         clock = clock,
         hookConfig = hookConfig,
+        scheduledTasks = scheduledTasks,
         llmLimits = llmLimits,
         sandboxFactory = sandboxFactory,
     )
@@ -305,6 +312,7 @@ internal class BackendE2eBackend(
     private val hindsightUrl: String? = null,
     private val clock: Clock = Clock.systemUTC(),
     private val hookConfig: HookConfig = HookConfig(),
+    private val scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     private val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     private val sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
 ) : AutoCloseable {
@@ -315,7 +323,7 @@ internal class BackendE2eBackend(
         telegramTokenEncryptionKey = E2E_TELEGRAM_TOKEN_KEY.takeIf { featureFlags.telegramBot },
         vkTokenEncryptionKey = E2E_VK_TOKEN_KEY.takeIf { featureFlags.vkBot },
         includeSkillOAuthConfig = false,
-    ).copy(hindsightApiUrl = hindsightUrl, hooks = hookConfig, llmLimits = llmLimits)
+    ).copy(hindsightApiUrl = hindsightUrl, hooks = hookConfig, scheduledTasks = scheduledTasks, llmLimits = llmLimits)
     private val localChatApi = localChatApiBackedBy(llm)
     private val localAvailability = localProviderAvailability(localModels)
     private val localRuntime = relaxedLocalRuntime()
@@ -400,6 +408,12 @@ internal class BackendE2eBackend(
 
     suspend fun awaitExecution(id: UUID) { di.direct.instance<AgentExecutionLauncher>().join(id) }
 
+    val jobService: JobService get() = di.direct.instance()
+    suspend fun runScheduledTask(job: JobRun) = di.direct.instance<ScheduledTaskRunner>().run(job)
+    suspend fun startScheduledTaskWorker() {
+        di.direct.instance<PostgresJobService>().startWorker(applicationScope, di.direct.instance<ScheduledTaskRunner>()::run)
+    }
+
     fun <T> sql(block: (Connection) -> T): T =
         dataSource.connection.use(block)
 
@@ -434,6 +448,7 @@ internal class BackendE2eBackend(
             hindsightUrl = hindsightUrl,
             clock = clock,
             hookConfig = hookConfig,
+            scheduledTasks = scheduledTasks,
             llmLimits = llmLimits,
             sandboxFactory = sandboxFactory,
         )
