@@ -12,6 +12,8 @@ import java.time.ZoneOffset
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import ru.souz.backend.channels.ChannelProviderRegistry
+import ru.souz.backend.channels.tool.SEND_MESSAGE_TO_CHANNEL_TOOL_NAME
+import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.jobs.CreateJobRequest
 import ru.souz.jobs.JobInfo
 import ru.souz.jobs.JobSchedule
@@ -31,6 +33,7 @@ internal class ToolCreateScheduledTask(
     private val channels: ChannelProviderRegistry,
     private val config: ScheduledTaskConfig,
     private val clock: Clock,
+    private val executions: AgentExecutionRepository,
 ) : ToolSetup<ToolCreateScheduledTask.Input> {
     data class Input(
         @InputParamDescription(
@@ -51,6 +54,11 @@ internal class ToolCreateScheduledTask(
         val cron: String? = null,
         @InputParamDescription("IANA time zone for cron, e.g. Europe/Moscow. Defaults to the user's time zone.")
         val timeZone: String? = null,
+        @InputParamDescription(
+            "Whether the task must send a message, including reminders and reports. Defaults to true. " +
+                "Set false only for action-only tasks with no requested message."
+        )
+        val requiresMessage: Boolean = true,
     )
 
     override val name: String = "scheduled-task.create"
@@ -82,6 +90,13 @@ internal class ToolCreateScheduledTask(
         if (title.length > 200) throw BadInputException("title must have at most 200 characters.")
         val now = clock.instant()
         val schedule = schedule(input, meta, now)
+        if (input.requiresMessage) {
+            val execution = meta.requestId?.let { executions.get(meta.userId, UUID.fromString(it)) }
+            val enabledTools = restJsonMapper.readTree(execution?.metadata?.get("enabledTools") ?: "[]")
+            if (enabledTools.none { it.asText() == SEND_MESSAGE_TO_CHANNEL_TOOL_NAME }) {
+                throw BadInputException("Scheduled messages require enabled $SEND_MESSAGE_TO_CHANNEL_TOOL_NAME.")
+            }
+        }
         val needed = runsPerDay(schedule, now)
         val planned = jobs.listJobs(meta.userId).filter { it.isActive() }.sumOf { runsPerDay(it.schedule, now) }
         if (planned + needed > config.runsPerUserPerDay) {
@@ -91,7 +106,7 @@ internal class ToolCreateScheduledTask(
                     "Cancel other tasks or choose a less frequent schedule."
             )
         }
-        val payload = restJsonMapper.createObjectNode().put("prompt", prompt)
+        val payload = restJsonMapper.createObjectNode().put("prompt", prompt).put("requiresMessage", input.requiresMessage)
         meta.conversationId
             ?.let { id -> channels.listAll(meta.userId).firstOrNull { it.channelId == id } }
             ?.let { payload.put("replyChannelType", it.channelType).put("replyChannelId", it.channelId) }
@@ -128,7 +143,8 @@ internal class ToolListScheduledTasks(
 
     override val name: String = "scheduled-task.list"
     override val description: String =
-        "Lists the user's scheduled tasks with their schedules, statuses and next run times."
+        "Lists the user's scheduled tasks with schedules, dispatch statuses, next run times and occurrence failures. " +
+            "A succeeded status means dispatched; it does not confirm message delivery."
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(request = "Какие у меня запланированы задачи?", params = emptyMap()),
     )
@@ -192,10 +208,11 @@ private val taskReturnParameters = ReturnParameters(
         "title" to ReturnProperty("string"),
         "prompt" to ReturnProperty("string"),
         "schedule" to ReturnProperty("object", "runAt for a one-off task, or cron and timeZone."),
-        "status" to ReturnProperty("string", "pending, running, succeeded, failed or cancelled."),
+        "status" to ReturnProperty("string", "Dispatch status: pending, running, succeeded, failed or cancelled. Succeeded does not confirm delivery."),
         "nextRunAt" to ReturnProperty("string", "Next run in the user's time zone; absent once the task is finished."),
         "lastRunAt" to ReturnProperty("string"),
         "lastError" to ReturnProperty("string"),
+        "lastFailure" to ReturnProperty("object", "Most recent exhausted occurrence: scheduledAt, finishedAt, attempts and error; retained after later success."),
     )
 )
 
@@ -216,4 +233,8 @@ private fun JobInfo.toView(zone: ZoneId): Map<String, Any?> = mapOf(
     "nextRunAt" to scheduledAt.takeIf { isActive() }?.atZone(zone)?.toOffsetDateTime()?.toString(),
     "lastRunAt" to lastFinishedAt?.atZone(zone)?.toOffsetDateTime()?.toString(),
     "lastError" to lastError,
+    "lastFailure" to lastFailure?.let { failure -> mapOf(
+        "scheduledAt" to failure.scheduledAt.toString(), "finishedAt" to failure.finishedAt.toString(),
+        "attempts" to failure.attempts, "error" to failure.error,
+    ) },
 )

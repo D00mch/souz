@@ -496,7 +496,7 @@ fun backendDiModule(
             instance<BackendChannelToolCatalog>(),
             immutableToolCatalogFromLists(
                 mapOf(ToolCategory.SCHEDULING to listOf(
-                    ToolCreateScheduledTask(instance(), instance(), appConfig.scheduledTasks, instance()).toGiga(),
+                    ToolCreateScheduledTask(instance(), instance(), appConfig.scheduledTasks, instance(), instance()).toGiga(),
                     ToolListScheduledTasks(instance()).toGiga(),
                     ToolDeleteScheduledTask(instance()).toGiga(),
                 )),

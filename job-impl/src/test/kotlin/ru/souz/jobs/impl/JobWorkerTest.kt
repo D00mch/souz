@@ -15,10 +15,30 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import ru.souz.jobs.JobRun
+import ru.souz.jobs.JobSchedule
 import ru.souz.jobs.JobStatus
 
 class JobWorkerTest {
     private val fastTiming = JobWorkerTiming(pollMillis = 10, leaseSeconds = 3, heartbeatMillis = 20, retrySeconds = 30)
+
+    @Test
+    fun `transient start failure retries the same cron occurrence then keeps scheduling`() = jobTest { db, service ->
+        val job = service.create(schedule = JobSchedule.Cron("* * * * *", "UTC"))
+        db.execute("update jobs set available_at = clock_timestamp() - interval '1 second' where id = ?", job.id)
+        assertTrue(service.processNext { error("temporary start failure") })
+        val retry = service.listJobs("owner").single()
+        assertEquals(job.scheduledAt, retry.scheduledAt)
+        assertEquals("temporary start failure", retry.lastError)
+        db.execute("update jobs set available_at = clock_timestamp() - interval '1 second' where id = ?", job.id)
+        assertTrue(service.processNext {
+            assertEquals(job.scheduledAt, it.scheduledAt)
+            assertEquals(2, it.attempt)
+        })
+        val next = service.listJobs("owner").single()
+        assertEquals(JobStatus.PENDING, next.status)
+        assertEquals(0, next.attempts)
+        assertTrue(next.scheduledAt > job.scheduledAt)
+    }
 
     @Test
     fun `cancelled active handler stops at heartbeat and worker continues to the next job`() = jobTest(fastTiming) { _, service ->

@@ -132,7 +132,7 @@ class PostgresJobStoreTest {
         }
 
     @Test
-    fun `two retries retain occurrence time and the third failure stops recurring jobs`() = jobTest { db, service ->
+    fun `two retries retain occurrence time and exhausted failure survives the next successful cron occurrence`() = jobTest { db, service ->
         val job = service.create(schedule = JobSchedule.Cron("* * * * *", "UTC"))
         db.execute("update jobs set available_at = clock_timestamp() - interval '1 second' where id = ?", job.id)
         for (attempt in 1..3) {
@@ -143,20 +143,64 @@ class PostgresJobStoreTest {
             assertTrue(service.store.finish(claim, "failure-$attempt"))
             val current = service.listJobs("owner").single()
             assertEquals("failure-$attempt", current.lastError)
-            assertEquals(attempt, current.attempts)
             if (attempt < 3) {
+                assertEquals(attempt, current.attempts)
+                assertNull(current.lastFailure)
                 assertEquals(JobStatus.PENDING, current.status)
                 assertTrue(assertNotNull(current.availableAt) >= before.plusSeconds(30))
                 assertNull(service.store.claim())
                 db.execute("update jobs set available_at = clock_timestamp() - interval '1 second' where id = ?", job.id)
             } else {
-                assertEquals(JobStatus.FAILED, current.status)
-                assertNull(current.availableAt)
-                assertNotNull(current.lastFinishedAt)
-                assertEquals(current, service.cancelJob("owner", job.id))
+                assertEquals(JobStatus.PENDING, current.status)
+                assertEquals(0, current.attempts)
+                assertTrue(current.scheduledAt > job.scheduledAt)
+                val failure = assertNotNull(current.lastFailure)
+                assertEquals(job.scheduledAt, failure.scheduledAt)
+                assertEquals(3, failure.attempts)
+                assertEquals("failure-3", failure.error)
+                assertEquals(current.lastFinishedAt, failure.finishedAt)
                 assertNull(service.store.claim())
+                db.execute("update jobs set available_at = clock_timestamp() - interval '1 second' where id = ?", job.id)
+                val next = assertNotNull(service.store.claim())
+                assertEquals(1, next.job.attempts)
+                assertTrue(service.store.finish(next))
+                val succeeded = service.listJobs("owner").single()
+                assertEquals(JobStatus.PENDING, succeeded.status)
+                assertNull(succeeded.lastError)
+                assertEquals(failure, succeeded.lastFailure)
             }
         }
+    }
+
+    @Test
+    fun `exhausted expired cron leases record failure and retain future occurrences across replicas`() = jobTest { db, service ->
+        val job = service.create(schedule = JobSchedule.Cron("* * * * *", "UTC"))
+        db.execute("update jobs set available_at = clock_timestamp() - interval '1 second' where id = ?", job.id)
+        repeat(3) {
+            assertNotNull(service.store.claim())
+            db.execute("update jobs set lease_until = clock_timestamp() - interval '1 second' where id = ?", job.id)
+        }
+        val peer = PostgresJobService(db)
+        assertNull(peer.store.claim())
+        val recovered = peer.listJobs("owner").single()
+        assertEquals(JobStatus.PENDING, recovered.status)
+        assertEquals(0, recovered.attempts)
+        assertTrue(recovered.scheduledAt > job.scheduledAt)
+        assertEquals(job.scheduledAt, recovered.lastFailure?.scheduledAt)
+        assertEquals("Worker lease expired.", recovered.lastFailure?.error)
+        assertNull(service.store.claim())
+        assertEquals(recovered, service.listJobs("owner").single())
+    }
+
+    @Test
+    fun `an exhausted one-off is failed explicitly and cannot be dispatched again`() = jobTest(JobWorkerTiming(retrySeconds = 0)) { _, service ->
+        val job = service.create()
+        repeat(3) { assertTrue(service.processNext { error("start unavailable") }) }
+        val failed = service.listJobs("owner").single()
+        assertEquals(JobStatus.FAILED, failed.status)
+        assertEquals(job.scheduledAt, failed.lastFailure?.scheduledAt)
+        assertEquals("start unavailable", failed.lastFailure?.error)
+        assertFalse(service.processNext { error("Must not dispatch exhausted occurrence") })
     }
 
     @Test

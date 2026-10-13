@@ -115,10 +115,26 @@ class AgentExecutionService internal constructor(
         chatId: UUID,
         content: String,
         executionId: UUID,
+        dailyLaunchLimit: Int,
+        requiredTools: Set<String> = emptySet(),
     ): AgentExecution? {
+        if (existingOccurrence(userId, executionId)) return null
         val prepared = prepareChatTurn(userId, chatId, content, executionId = executionId)
-        if (!executionRepository.createIfAbsent(prepared.execution)) return null
+        val unavailable = requiredTools - prepared.effectiveSettings.enabledTools
+        check(unavailable.isEmpty()) { "Scheduled message requires enabled tools: ${unavailable.joinToString()}." }
+        if (!executionRepository.createIfAbsent(prepared.execution, dailyLaunchLimit)) {
+            existingOccurrence(userId, executionId)
+            return null
+        }
         return startCreatedChatTurn(prepared).execution
+    }
+
+    private suspend fun existingOccurrence(userId: String, executionId: UUID): Boolean {
+        val existing = executionRepository.get(userId, executionId) ?: return false
+        check(existing.status != AgentExecutionStatus.FAILED) {
+            existing.errorMessage ?: "Scheduled occurrence execution failed."
+        }
+        return true
     }
 
     private suspend fun startCreatedChatTurn(prepared: PreparedChatTurn): SendMessageResult = try {

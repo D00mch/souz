@@ -15,8 +15,8 @@ class ActiveAgentExecutionConflictException(
 
 interface AgentExecutionRepository {
     suspend fun create(execution: AgentExecution): AgentExecution
-    /** Atomically inserts by primary key; false leaves the existing execution unchanged, in any status. */
-    suspend fun createIfAbsent(execution: AgentExecution): Boolean
+    /** Inserts and reserves a scheduled launch atomically; duplicates never consume quota. */
+    suspend fun createIfAbsent(execution: AgentExecution, dailyLaunchLimit: Int): Boolean
     /** Changes lifecycle fields only, guarded by status, cancellation intent and runtime owner. */
     suspend fun transitionIfCurrent(
         expected: AgentExecution,

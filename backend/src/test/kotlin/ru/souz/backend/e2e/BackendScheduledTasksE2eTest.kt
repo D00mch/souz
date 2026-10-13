@@ -6,6 +6,8 @@ import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.http.HttpStatusCode
 import java.time.Instant
+import java.time.Clock
+import java.time.ZoneOffset
 import java.time.LocalTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
@@ -13,6 +15,8 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.awaitCancellation
@@ -20,6 +24,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.http.BackendHttpRoutes
+import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.scheduler.ScheduledTaskConfig
 import ru.souz.backend.scheduler.occurrenceId
@@ -61,6 +66,7 @@ class BackendScheduledTasksE2eTest {
                 peer.backend.runScheduledTask(job.copy(attempt = 4, title = "Renamed"))
                 assertEquals(completed, backend.executionRepository.get(userId, executionId))
                 assertEquals(1, llm.requests.size)
+                assertEquals(1, dailyLaunches(userId), "Competing and recovered dispatches reserve only one launch.")
                 val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
                 assertEquals(listOf("user", "assistant"), messages.map { it["role"].asText() })
 
@@ -70,6 +76,7 @@ class BackendScheduledTasksE2eTest {
                 val nextExecution = assertNotNull(backend.executionRepository.get(userId, next.occurrenceId("execution")))
                 assertTrue(nextExecution.chatId != completed.chatId)
                 assertEquals(2, llm.requests.size, "A new occurrence of the same job still runs.")
+                assertEquals(2, dailyLaunches(userId))
             }
         }
     }
@@ -93,6 +100,7 @@ class BackendScheduledTasksE2eTest {
                 peer.backend.runScheduledTask(job.copy(attempt = 2))
                 assertEquals(persisted, peer.backend.executionRepository.get(userId, executionId))
                 assertTrue(llm.requests.isEmpty() && peer.llm.requests.isEmpty())
+                assertEquals(1, dailyLaunches(userId), "Persistence reserves quota even if launch is lost.")
             }
         }
     }
@@ -229,6 +237,180 @@ class BackendScheduledTasksE2eTest {
         }
     }
 
+    @Test
+    fun `completed one-offs spend durable quota while retries are free and a new UTC day has a new allowance`() {
+        backendE2eTest(schemaPrefix = "e2e_scheduled_daily", scheduledTasks = ScheduledTaskConfig(runsPerUserPerDay = 2)) {
+            val userId = UUID.randomUUID().toString()
+            val chatId = setup(userId)
+            backend.startScheduledTaskWorker()
+            val completed = (1..2).map { index ->
+                val result = tool(userId, chatId, "create", mapOf("prompt" to "Task $index", "afterSeconds" to 1))
+                val id = UUID.fromString(result["taskId"].asText())
+                val job = eventually("completed one-off", timeout = 15.seconds) {
+                    backend.jobService.listJobs(userId).single { it.id == id }.takeIf { it.status == JobStatus.SUCCEEDED }
+                }
+                backend.awaitExecution(job.run().occurrenceId("execution"))
+                job
+            }
+            // Completed jobs have left the planning budget; the dispatch quota still applies.
+            val thirdId = tool(userId, chatId, "create", mapOf("prompt" to "Third", "afterSeconds" to 3600))["taskId"].asText()
+            val third = backend.jobService.listJobs(userId).single { it.id.toString() == thirdId }.run()
+            withPeerBackend(llm = llm) { peer ->
+                completed.forEach { peer.backend.runScheduledTask(it.run().copy(attempt = 2)) }
+                assertFailsWith<IllegalStateException> { peer.backend.runScheduledTask(third) }
+                assertNull(peer.backend.executionRepository.get(userId, third.occurrenceId("execution")))
+                assertEquals(2, dailyLaunches(userId))
+
+                val otherUser = UUID.randomUUID().toString()
+                setup(otherUser)
+                peer.backend.runScheduledTask(third.copy(userId = otherUser, jobId = UUID.randomUUID()))
+                assertEquals(1, dailyLaunches(otherUser))
+
+                // Deterministically move the persisted usage into the prior UTC day.
+                sql { connection -> connection.prepareStatement(
+                    "update scheduled_task_daily_launches set day = day - 1 where user_id = ?"
+                ).use { it.setString(1, userId); it.executeUpdate() } }
+                completed.forEach { peer.backend.runScheduledTask(it.run().copy(attempt = 3)) }
+                assertEquals(0, dailyLaunches(userId), "Duplicates remain free across day boundaries.")
+                peer.backend.runScheduledTask(third.copy(attempt = 2))
+                peer.backend.awaitExecution(third.occurrenceId("execution"))
+                assertEquals(1, dailyLaunches(userId))
+            }
+        }
+    }
+
+    @Test
+    fun `cron bursts beyond the planning week cannot race past the dispatch quota across replicas`() {
+        backendE2eTest(
+            schemaPrefix = "e2e_scheduled_burst", scheduledTasks = ScheduledTaskConfig(runsPerUserPerDay = 2),
+            clock = Clock.fixed(Instant.parse("2026-10-20T00:00:00Z"), ZoneOffset.UTC),
+        ) {
+            val userId = UUID.randomUUID().toString()
+            val chatId = setup(userId)
+            val created = tool(userId, chatId, "create", mapOf("prompt" to "Monthly burst", "cron" to "* * 1 * *", "timeZone" to "UTC"))
+            assertTrue(created.has("taskId"), created.toString())
+            val job = backend.jobService.listJobs(userId).single().run()
+            val occurrences = (0..3).map { job.copy(scheduledAt = Instant.parse("2026-11-01T00:00:00Z").plusSeconds(it * 60L)) }
+            withPeerBackend(llm = llm) { peer ->
+                val dispatched = mutableListOf<JobRun>()
+                withTableLocked("scheduled_task_daily_launches", "share") {
+                    occurrences.forEachIndexed { index, occurrence -> launch {
+                        try {
+                            (if (index % 2 == 0) backend else peer.backend).runScheduledTask(occurrence)
+                            dispatched.add(occurrence)
+                        } catch (error: IllegalStateException) {
+                            assertTrue("quota exceeded" in error.message.orEmpty())
+                        }
+                    } }
+                    awaitLockWait("scheduled_task_daily_launches")
+                }
+                assertEquals(2, dispatched.size)
+                dispatched.forEach {
+                    backend.awaitExecution(it.occurrenceId("execution"))
+                    peer.backend.awaitExecution(it.occurrenceId("execution"))
+                    peer.backend.runScheduledTask(it.copy(attempt = 2))
+                }
+                assertEquals(2, dailyLaunches(userId))
+                assertEquals(2, llm.requests.count { it.conversationPrompt().startsWith("Monthly burst\n") })
+                assertEquals(2, occurrences.count { backend.executionRepository.get(userId, it.occurrenceId("execution")) != null })
+            }
+        }
+    }
+
+    @Test
+    fun `reminders require delivery permission at creation and revoked permission records an exhausted occurrence`() {
+        backendE2eTest(schemaPrefix = "e2e_scheduled_permissions") {
+            val userId = UUID.randomUUID().toString()
+            val chatId = setup(userId)
+            val reminder = tool(userId, chatId, "create", mapOf("prompt" to "Reminder", "cron" to "0 9 * * *"))
+            val id = UUID.fromString(reminder["taskId"].asText())
+            val original = backend.jobService.listJobs(userId).single().run()
+            val settings = client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted(userId)
+                jsonBody("""{"enabledTools":["scheduled-task.create","scheduled-task.list","scheduled-task.delete"]}""")
+            }
+            assertEquals(HttpStatusCode.OK, settings.status)
+            val rejected = tool(userId, chatId, "create", mapOf("prompt" to "Another reminder", "afterSeconds" to 60))
+            assertTrue("require enabled SendMessageToChannel" in rejected.toString(), rejected.toString())
+            val action = tool(userId, chatId, "create", mapOf("prompt" to "Action only", "afterSeconds" to 3600, "requiresMessage" to false))
+            assertTrue(action.has("taskId"), action.toString())
+            backend.startScheduledTaskWorker()
+            repeat(3) { attempt ->
+                makeDue(id)
+                eventually<JobInfo>("permission failure attempt ${attempt + 1}", timeout = 15.seconds) {
+                    backend.jobService.listJobs(userId).single { it.id == id }.takeIf {
+                        it.status == JobStatus.PENDING && if (attempt == 2) it.lastFailure != null else it.attempts == attempt + 1
+                    }
+                }
+            }
+            val history = tool(userId, chatId, "list")["tasks"].single { it["taskId"].asText() == id.toString() }
+            assertEquals("pending", history["status"].asText())
+            assertEquals(original.scheduledAt.toString(), history["lastFailure"]["scheduledAt"].asText())
+            assertTrue("SendMessageToChannel" in history["lastFailure"]["error"].asText())
+            assertNull(backend.executionRepository.get(userId, original.occurrenceId("execution")))
+            assertEquals(0, dailyLaunches(userId))
+            assertTrue(llm.requests.none { it.conversationPrompt() == scheduledTaskInput(original) })
+            val actionJob = backend.jobService.listJobs(userId).single { it.id.toString() == action["taskId"].asText() }.run()
+            backend.runScheduledTask(actionJob)
+            backend.awaitExecution(actionJob.occurrenceId("execution"))
+            assertEquals(AgentExecutionStatus.COMPLETED, backend.executionRepository.get(userId, actionJob.occurrenceId("execution"))?.status)
+            client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted(userId)
+                jsonBody("""{"enabledTools":["scheduled-task.create","scheduled-task.list","scheduled-task.delete","SendMessageToChannel"]}""")
+            }
+            val next = backend.jobService.listJobs(userId).single { it.id == id }.run()
+            assertTrue(next.scheduledAt > original.scheduledAt)
+            backend.runScheduledTask(next)
+            backend.awaitExecution(next.occurrenceId("execution"))
+            assertNotNull(backend.executionRepository.get(userId, next.occurrenceId("execution")))
+        }
+    }
+
+    @Test
+    fun `a persisted start failure is never relaunched or reported as successful on recovery`() {
+        backendE2eTest(schemaPrefix = "e2e_scheduled_start_failure") {
+            val userId = UUID.randomUUID().toString()
+            setup(userId)
+            val run = JobRun(UUID.randomUUID(), userId, "Start fails", restJsonMapper.createObjectNode().put("prompt", "Check mail."),
+                Instant.parse("2026-10-13T12:00:00Z"), attempt = 1)
+            sql { connection -> connection.createStatement().use { statement ->
+                statement.execute("""
+                    create function reject_scheduled_input() returns trigger language plpgsql as ${'$'}${'$'}
+                    begin raise exception 'input persistence unavailable'; end;
+                    ${'$'}${'$'}
+                """.trimIndent())
+                statement.execute("create trigger reject_scheduled_input before insert on messages for each row execute function reject_scheduled_input()")
+            } }
+            assertFailsWith<BackendV1Exception> { backend.runScheduledTask(run) }
+            val failed = assertNotNull(backend.executionRepository.get(userId, run.occurrenceId("execution")))
+            assertEquals(AgentExecutionStatus.FAILED, failed.status)
+            sql { connection -> connection.createStatement().use { it.execute("drop trigger reject_scheduled_input on messages") } }
+            withPeerBackend { peer ->
+                assertFailsWith<IllegalStateException> { peer.backend.runScheduledTask(run.copy(attempt = 2)) }
+                assertEquals(failed, peer.backend.executionRepository.get(userId, failed.id))
+                assertEquals(1, dailyLaunches(userId))
+                assertTrue(llm.requests.isEmpty() && peer.llm.requests.isEmpty())
+                val next = run.copy(scheduledAt = run.scheduledAt.plusSeconds(60))
+                peer.backend.runScheduledTask(next)
+                peer.backend.awaitExecution(next.occurrenceId("execution"))
+                assertEquals(AgentExecutionStatus.COMPLETED, peer.backend.executionRepository.get(userId, next.occurrenceId("execution"))?.status)
+            }
+        }
+    }
+
+    private fun BackendE2eScope.dailyLaunches(userId: String): Int = sql { connection ->
+        connection.prepareStatement("select launches from scheduled_task_daily_launches where user_id = ? and day = (clock_timestamp() at time zone 'UTC')::date")
+            .use { statement ->
+                statement.setString(1, userId)
+                statement.executeQuery().use { if (it.next()) it.getInt(1) else 0 }
+            }
+    }
+
+    private fun BackendE2eScope.makeDue(id: UUID) = sql { connection ->
+        connection.prepareStatement("update jobs set available_at = clock_timestamp() - interval '1 second' where id = ?")
+            .use { it.setObject(1, id); it.executeUpdate() }
+    }
+
     private suspend fun BackendE2eScope.setup(userId: String): String {
         val chatId = createPublicChat(userId, "create-$userId")
         val settings = client.patch(BackendHttpRoutes.SETTINGS) {
@@ -260,5 +442,7 @@ class BackendScheduledTasksE2eTest {
 
     /** The hidden-chat input of this job's current occurrence, as the runner builds it. */
     private fun JobInfo.occurrenceInput(): String =
-        scheduledTaskInput(JobRun(id, userId, title, payload, scheduledAt, attempt = 1))
+        scheduledTaskInput(run())
+
+    private fun JobInfo.run(): JobRun = JobRun(id, userId, title, payload, scheduledAt, attempt = 1)
 }

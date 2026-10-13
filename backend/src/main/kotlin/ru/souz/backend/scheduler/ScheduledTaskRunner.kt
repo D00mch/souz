@@ -49,7 +49,12 @@ internal class ScheduledTaskRunner(
                     archived = false, createdAt = now, updatedAt = now, clientType = SCHEDULED_TASK_CHAT_TYPE,
                 )
             )
-            executions.executeChatTurnIfAbsent(job.userId, chat.id, scheduledTaskInput(job), job.occurrenceId("execution"))
+            executions.executeChatTurnIfAbsent(
+                job.userId, chat.id, scheduledTaskInput(job), job.occurrenceId("execution"), config.runsPerUserPerDay,
+                requiredTools = if (job.payload.path("requiresMessage").asBoolean(true)) {
+                    setOf(SEND_MESSAGE_TO_CHANNEL_TOOL_NAME)
+                } else emptySet(),
+            )
         } catch (error: Exception) {
             slots.release()
             throw error

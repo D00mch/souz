@@ -40,6 +40,15 @@ data class JobInfo(
     val createdAt: Instant,
     val lastFinishedAt: Instant?,
     val lastError: String?,
+    /** Most recent exhausted occurrence, retained even after a later occurrence succeeds. */
+    val lastFailure: JobOccurrenceFailure? = null,
+)
+
+data class JobOccurrenceFailure(
+    val scheduledAt: Instant,
+    val finishedAt: Instant,
+    val attempts: Int,
+    val error: String,
 )
 
 /** Delivery is at least once. Use (jobId, scheduledAt) to deduplicate an occurrence's effects. */

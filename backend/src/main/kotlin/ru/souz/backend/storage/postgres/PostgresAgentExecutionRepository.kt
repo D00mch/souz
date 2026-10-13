@@ -29,11 +29,26 @@ class PostgresAgentExecutionRepository(
         insert(connection, execution)
     }
 
-    override suspend fun createIfAbsent(execution: AgentExecution): Boolean = dataSource.write(afterCommit = {
+    override suspend fun createIfAbsent(execution: AgentExecution, dailyLaunchLimit: Int): Boolean = dataSource.write(afterCommit = {
         if (it) metrics?.executions?.committed(execution)
     }) { connection ->
+        require(dailyLaunchLimit > 0)
         connection.lockChat(execution.userId, execution.chatId)
-        insert(connection, execution, ignoreDuplicate = true) != null
+        if (insert(connection, execution, ignoreDuplicate = true) == null) return@write false
+        // The conditional upsert serializes replicas. Rejection rolls back the execution insert too.
+        connection.prepareStatement(
+            """
+            insert into scheduled_task_daily_launches (user_id, day, launches)
+            values (?, (clock_timestamp() at time zone 'UTC')::date, 1)
+            on conflict (user_id, day) do update set launches = scheduled_task_daily_launches.launches + 1
+              where scheduled_task_daily_launches.launches < ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, execution.userId)
+            statement.setInt(2, dailyLaunchLimit)
+            check(statement.executeUpdate() == 1) { "Daily scheduled launch quota exceeded ($dailyLaunchLimit per UTC day)." }
+        }
+        true
     }
 
     internal fun insert(connection: Connection, execution: AgentExecution): AgentExecution =

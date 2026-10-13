@@ -4,9 +4,9 @@
 
 Claim the earliest eligible job atomically with `FOR UPDATE SKIP LOCKED` and commit before running its handler. PostgreSQL time governs eligibility and lease validity. Renewals and outcome writes lock the row before validating the matching token, running status, and lease against current database time in the same transaction.
 
-Recover expired running leases before claiming: requeue attempts below the limit with their existing availability time, and fail exhausted attempts. Both eligibility scans use `statement_timestamp()` as an index range boundary; the ordered claim reads only pending rows. Recovery skips locked rows. Lease creation and post-lock ownership checks use `clock_timestamp()`.
+Recover expired running leases before claiming: requeue attempts below the limit with their existing availability time, and record exhausted occurrence failures. Exhausted one-offs stop; exhausted recurring occurrences advance. Eligibility scans use `statement_timestamp()` as an index range boundary; the ordered claim reads only pending rows. Recovery skips locked rows and commits failure recording and recurrence advancement together. Lease creation and post-lock ownership checks use `clock_timestamp()`.
 
-One row represents a logical job. Its scheduled occurrence timestamp stays unchanged across retries and changes only when successful recurrence advances. A failed or abandoned claim consumes an attempt; exhausted recurring jobs stop. Recurrence skips missed timestamps after completion.
+One row represents a logical job. Its scheduled occurrence timestamp stays unchanged across three attempts and advances after successful dispatch or exhausted recurring failure. A failed or abandoned claim consumes an attempt. Recurrence skips missed timestamps and starts the next occurrence with zero attempts. `lastFailure` retains the most recent exhausted occurrence's scheduled time, finish time, attempts and error independently of later success; it is not a complete run history. `lastError` describes the latest attempt.
 
 ## Why it is fragile
 
