@@ -161,11 +161,12 @@ internal class BackendConversationRuntimeFactory(
                 withProviderCall(hookBudget, LlmProvider.OPENAI) { imageGenerationGateway.generate(input) }
             },
         )
+        val clientTools = chatRepository.getClientTools(key.userId, key.chatId())
         val executionToolCatalog = backendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
             executionLlmToolCatalog = executionLlmToolCatalog,
             enabledCompiledToolNames = request.enabledTools,
-            clientToolCatalog = clientSkills.forChat(chatRepository.getClientTools(key.userId, key.chatId())),
+            clientToolCatalog = clientSkills.forChat(clientTools),
             includeFewShotExamples = settingsProvider.useFewShotExamples,
             metrics = metrics,
         )
@@ -203,7 +204,7 @@ internal class BackendConversationRuntimeFactory(
                     telemetry = toolTelemetry,
                 )
             },
-            toolCatalog = executionToolCatalog,
+            toolCatalog = backendSubagentToolCatalog(executionToolCatalog, clientTools.map { it.name }.toSet()),
             toolsFilter = requestToolsFilter,
             skillBundleProvider = skillBundleProvider,
             commandExecutor = commandExecutor,

@@ -67,7 +67,10 @@ class BackendConversationSettingsProvider(
                 "discover and run ListActiveChannels, select the intended device channel, and add its " +
                 "channelId to RunSkillCommand.arguments alongside the client tool's arguments. " +
                 "channelId is reserved backend routing metadata, is absent from the registered input " +
-                "schema, and is removed before arguments are sent to the device.",
+                "schema, and is removed before arguments are sent to the device. " +
+                "When delegating a client tool with SpawnSubagent, include the selected channelId in task " +
+                "or select ListActiveChannels alongside the client tool. Children call selected client tools " +
+                "directly with their optional channelId argument.",
             UNSUPPORTED_MEMORY_MUTATION_NOTICE.takeIf { request.clientToolsEnabled },
             when {
                 !request.narrateSteps -> null

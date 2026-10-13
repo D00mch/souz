@@ -1,5 +1,6 @@
 package ru.souz.backend.e2e
 
+import com.fasterxml.jackson.databind.node.ObjectNode
 import io.ktor.client.request.get
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -52,7 +53,12 @@ class BackendSubagentE2eTest {
                 assertFalse(body.has("provider"))
                 val tool = body["tools"].single()["function"]
                 assertEquals("client.batch", tool["name"].asText())
-                assertEquals(restJsonMapper.readTree(schema), tool["parameters"])
+                assertEquals("Process records", tool["description"].asText())
+                val childSchema = tool["parameters"].deepCopy<ObjectNode>()
+                val routing = (childSchema["properties"] as ObjectNode).remove("channelId")
+                assertEquals("string", routing["type"].asText())
+                assertTrue("ListActiveChannels" in routing["description"].asText())
+                assertEquals(restJsonMapper.readTree(schema), childSchema)
                 childRequests++
                 val reply = """{"choices":[{"index":0,"message":{"role":"assistant","content":"private remote answer"},"delta":{"role":"assistant","content":"private remote answer"},"finish_reason":"stop"}],"created":1,"usage":{"prompt_tokens":11,"completion_tokens":4,"total_tokens":15}}"""
                 respond(
