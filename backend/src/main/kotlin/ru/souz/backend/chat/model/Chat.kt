@@ -2,7 +2,6 @@ package ru.souz.backend.chat.model
 
 import java.time.Instant
 import java.util.UUID
-import ru.souz.backend.client.ClientToolDefinition
 
 data class Chat(
     val id: UUID,
@@ -14,5 +13,4 @@ data class Chat(
     val clientType: String = "backend",
     val requestId: String = "internal:$id",
     val payloadHash: String = "internal:$id",
-    val clientTools: List<ClientToolDefinition> = emptyList(),
 )

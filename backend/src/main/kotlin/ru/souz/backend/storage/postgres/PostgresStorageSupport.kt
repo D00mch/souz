@@ -200,7 +200,6 @@ internal fun ResultSet.toChat(): Chat =
         clientType = getString("client_type"),
         requestId = getString("request_id"),
         payloadHash = getString("payload_hash"),
-        clientTools = ru.souz.llms.restJsonMapper.readValue(getString("client_tools")),
         title = getString("title"),
         archived = getBoolean("archived"),
         createdAt = instant("created_at"),

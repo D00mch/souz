@@ -28,6 +28,7 @@ import ru.souz.backend.agent.session.toState
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
+import ru.souz.backend.client.ClientToolDefinition
 import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.client.repository.ClientFollowUpInput
 import ru.souz.backend.client.repository.ClientHistoryInput
@@ -646,7 +647,7 @@ class PostgresRepositoriesTest {
     }
 
     @Test
-    fun `chat repository updates title and archived fields`() = runTest {
+    fun `chat repository updates metadata and loads client tools only for the owner`() = runTest {
         val schema = newPostgresSchema("postgres_chat_updates")
         val userId = "opaque/user:42@example.com"
         val chat = chat(
@@ -659,10 +660,14 @@ class PostgresRepositoriesTest {
         val renamedAt = Instant.parse("2026-05-01T09:05:00Z")
         val archivedAt = Instant.parse("2026-05-01T09:10:00Z")
         val touchedAt = Instant.parse("2026-05-01T09:20:00Z")
+        val tools = listOf(ClientToolDefinition("speaker.stop", "Stop speaking.", LLMRequest.Parameters("object")))
 
         postgresRepositories(schema).use { repositories ->
             repositories.userRepository.ensureUser(userId)
-            repositories.chatRepository.create(chat)
+            assertEquals(chat, repositories.chatRepository.create(chat, tools))
+            assertEquals(tools, repositories.chatRepository.getClientTools(userId, chat.id))
+            assertEquals(emptyList(), repositories.chatRepository.getClientTools("user-b", chat.id))
+            assertEquals(emptyList(), repositories.chatRepository.getClientTools(userId, UUID.randomUUID()))
 
             val renamed = repositories.chatRepository.updateTitle(
                 userId = userId,
@@ -691,6 +696,11 @@ class PostgresRepositoriesTest {
             assertEquals("Renamed", touched?.title)
             assertEquals(true, touched?.archived)
             assertEquals(touchedAt, touched?.updatedAt)
+            assertEquals(touched, repositories.chatRepository.getById(chat.id))
+            assertEquals(touched, repositories.chatRepository.findByRequestId(userId, chat.requestId))
+            assertEquals(listOf(touched), repositories.chatRepository.getByIds(listOf(chat.id)))
+            assertEquals(listOf(touched), repositories.chatRepository.list(userId, includeArchived = true))
+            assertEquals(tools, repositories.chatRepository.getClientTools(userId, chat.id))
         }
     }
 
@@ -706,6 +716,7 @@ class PostgresRepositoriesTest {
             repositories.chatRepository.create(first)
             repositories.chatRepository.create(second)
 
+            assertEquals(emptyList(), repositories.chatRepository.getClientTools(userId, first.id))
             assertEquals(emptyList(), repositories.chatRepository.getByIds(emptyList()))
 
             val result = repositories.chatRepository.getByIds(listOf(first.id, second.id, UUID.randomUUID()))

@@ -3,6 +3,7 @@ package ru.souz.backend.chat.repository
 import java.time.Instant
 import java.util.UUID
 import ru.souz.backend.chat.model.Chat
+import ru.souz.backend.client.ClientToolDefinition
 
 class ChatRequestConflictException(
     val userId: String,
@@ -10,8 +11,9 @@ class ChatRequestConflictException(
 ) : RuntimeException("Chat request $requestId for user $userId already exists.")
 
 interface ChatRepository {
-    suspend fun create(chat: Chat): Chat
+    suspend fun create(chat: Chat, clientTools: List<ClientToolDefinition> = emptyList()): Chat
     suspend fun get(userId: String, chatId: UUID): Chat?
+    suspend fun getClientTools(userId: String, chatId: UUID): List<ClientToolDefinition>
     suspend fun getById(chatId: UUID): Chat?
     suspend fun getByIds(chatIds: List<UUID>): List<Chat>
     suspend fun findByRequestId(userId: String, requestId: String): Chat?

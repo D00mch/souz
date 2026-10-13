@@ -1,17 +1,21 @@
 package ru.souz.backend.storage.postgres
 
+import com.fasterxml.jackson.module.kotlin.readValue
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.ChatRequestConflictException
+import ru.souz.backend.client.ClientToolDefinition
 import ru.souz.llms.restJsonMapper
+
+private const val CHAT_COLUMNS = "id, user_id, client_type, request_id, payload_hash, title, archived, created_at, updated_at"
 
 class PostgresChatRepository(
     private val dataSource: DataSource,
 ) : ChatRepository {
-    override suspend fun create(chat: Chat): Chat = dataSource.write { connection ->
+    override suspend fun create(chat: Chat, clientTools: List<ClientToolDefinition>): Chat = dataSource.write { connection ->
         try {
             connection.prepareStatement(
                 """
@@ -20,7 +24,7 @@ class PostgresChatRepository(
                   title, archived, created_at, updated_at, client_tools
                 )
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
-                returning *
+                returning $CHAT_COLUMNS
                 """.trimIndent()
             ).use { statement ->
                 statement.setObject(1, chat.id)
@@ -32,7 +36,7 @@ class PostgresChatRepository(
                 statement.setBoolean(7, chat.archived)
                 statement.setInstant(8, chat.createdAt)
                 statement.setInstant(9, chat.updatedAt)
-                statement.setString(10, restJsonMapper.writeValueAsString(chat.clientTools))
+                statement.setString(10, restJsonMapper.writeValueAsString(clientTools))
                 statement.executeQuery().use { resultSet ->
                     check(resultSet.next())
                     resultSet.toChat()
@@ -48,7 +52,7 @@ class PostgresChatRepository(
 
     override suspend fun get(userId: String, chatId: UUID): Chat? = dataSource.read { connection ->
         connection.prepareStatement(
-            "select * from chats where user_id = ? and id = ?"
+            "select $CHAT_COLUMNS from chats where user_id = ? and id = ?"
         ).use { statement ->
             statement.setString(1, userId)
             statement.setObject(2, chatId)
@@ -58,8 +62,20 @@ class PostgresChatRepository(
         }
     }
 
+    override suspend fun getClientTools(userId: String, chatId: UUID): List<ClientToolDefinition> = dataSource.read { connection ->
+        connection.prepareStatement(
+            "select client_tools from chats where user_id = ? and id = ?"
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.setObject(2, chatId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) restJsonMapper.readValue(resultSet.getString("client_tools")) else emptyList()
+            }
+        }
+    }
+
     override suspend fun getById(chatId: UUID): Chat? = dataSource.read { connection ->
-        connection.prepareStatement("select * from chats where id = ?").use { statement ->
+        connection.prepareStatement("select $CHAT_COLUMNS from chats where id = ?").use { statement ->
             statement.setObject(1, chatId)
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next()) resultSet.toChat() else null
@@ -70,7 +86,7 @@ class PostgresChatRepository(
     override suspend fun getByIds(chatIds: List<UUID>): List<Chat> {
         if (chatIds.isEmpty()) return emptyList()
         return dataSource.read { connection ->
-            connection.prepareStatement("select * from chats where id = any(?)").use { statement ->
+            connection.prepareStatement("select $CHAT_COLUMNS from chats where id = any(?)").use { statement ->
                 statement.setArray(1, connection.createArrayOf("uuid", chatIds.toTypedArray()))
                 statement.executeQuery().use { resultSet ->
                     buildList {
@@ -85,7 +101,7 @@ class PostgresChatRepository(
 
     override suspend fun findByRequestId(userId: String, requestId: String): Chat? = dataSource.read { connection ->
         connection.prepareStatement(
-            "select * from chats where user_id = ? and request_id = ?"
+            "select $CHAT_COLUMNS from chats where user_id = ? and request_id = ?"
         ).use { statement ->
             statement.setString(1, userId)
             statement.setString(2, requestId)
@@ -102,7 +118,7 @@ class PostgresChatRepository(
     ): List<Chat> = dataSource.read { connection ->
         connection.prepareStatement(
             """
-            select * from chats
+            select $CHAT_COLUMNS from chats
             where user_id = ?
               and client_type <> 'hook'
               and (? or archived = false)
@@ -155,7 +171,7 @@ class PostgresChatRepository(
             update chats
             set title = ?, updated_at = ?
             where id = ? and user_id = ?
-            returning *
+            returning $CHAT_COLUMNS
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, title)
@@ -179,7 +195,7 @@ class PostgresChatRepository(
             update chats
             set archived = ?, updated_at = ?
             where id = ? and user_id = ?
-            returning *
+            returning $CHAT_COLUMNS
             """.trimIndent()
         ).use { statement ->
             statement.setBoolean(1, archived)

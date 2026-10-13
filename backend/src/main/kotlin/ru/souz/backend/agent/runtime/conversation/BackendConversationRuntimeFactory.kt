@@ -165,7 +165,7 @@ internal class BackendConversationRuntimeFactory(
             compiledToolCatalog = toolCatalog,
             executionLlmToolCatalog = executionLlmToolCatalog,
             enabledCompiledToolNames = request.enabledTools,
-            clientToolCatalog = clientSkills.forChat(chatRepository.get(key.userId, key.chatId())?.clientTools.orEmpty()),
+            clientToolCatalog = clientSkills.forChat(chatRepository.getClientTools(key.userId, key.chatId())),
             includeFewShotExamples = settingsProvider.useFewShotExamples,
             metrics = metrics,
         )

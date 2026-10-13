@@ -84,10 +84,9 @@ class ChatService(
                 clientType = clientType,
                 requestId = requestId,
                 payloadHash = payloadHash,
-                clientTools = normalizedTools,
             )
             try {
-                return CreateClientChatResult(chatRepository.create(chat), duplicate = false)
+                return CreateClientChatResult(chatRepository.create(chat, normalizedTools), duplicate = false)
             } catch (conflict: ChatRequestConflictException) {
                 if (conflict.userId != userId || conflict.requestId != requestId) throw conflict
                 existing = chatRepository.findByRequestId(userId, requestId) ?: throw conflict
