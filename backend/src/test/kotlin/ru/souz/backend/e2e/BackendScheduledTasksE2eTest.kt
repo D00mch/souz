@@ -11,7 +11,10 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.async
@@ -34,6 +37,8 @@ import ru.souz.backend.scheduler.ScheduledTaskConfig
 import ru.souz.backend.scheduler.executionId
 import ru.souz.backend.scheduler.scheduledTaskInput
 import ru.souz.jobs.JobRun
+import ru.souz.jobs.CreateJobRequest
+import ru.souz.jobs.JobSchedule
 import ru.souz.jobs.JobStatus
 import ru.souz.llms.LLMResponse
 
@@ -201,7 +206,7 @@ class BackendScheduledTasksE2eTest {
     }
 
     @Test
-    fun `timeout waits for cancellation cleanup before the next scheduled execution uses capacity`() {
+    fun `worker leaves excess jobs unclaimed through agent and cancellation persistence cleanup`() {
         val started = Channel<Unit>(Channel.UNLIMITED)
         val cleaning = Channel<Unit>(Channel.UNLIMITED)
         val finishCleanup = Channel<Unit>()
@@ -214,17 +219,40 @@ class BackendScheduledTasksE2eTest {
                 }
             }
         }
-        backendE2eTest("scheduled_timeout", llm = llm, scheduledTasks = ScheduledTaskConfig(concurrentRuns = 1, runTimeoutMillis = 500)) {
+        backendE2eTest("scheduled_timeout", llm = llm, scheduledTasks = ScheduledTaskConfig(concurrentRuns = 2, runTimeoutMillis = 500)) {
             val owner = UUID.randomUUID().toString()
             setupTasks(owner)
-            val runs = List(2) { taskRun(owner) }
-            runs.forEach { backend.runScheduledTask(it) }
+            val jobs = List(3) {
+                backend.jobService.createJob(owner, CreateJobRequest(
+                    "Queued action", taskRun(owner).payload, JobSchedule.Once(Instant.now().plusSeconds(60)),
+                ))
+            }
+            jobs.forEach { makeScheduledJobReady(it.id) }
+            val runs = jobs.map { JobRun(it.id, owner, it.title, it.payload, it.scheduledAt, 1) }
+            suspend fun assertUnclaimed() {
+                val waiting = backend.jobService.listJobs(owner).single { it.id == jobs.last().id }
+                assertEquals(JobStatus.PENDING, waiting.status)
+                assertEquals(0, waiting.attempts)
+                assertNull(waiting.lastError)
+                assertNull(backend.executionRepository.get(owner, runs.last().executionId()))
+                assertTrue(started.tryReceive().isFailure)
+            }
+            val worker = backend.startScheduledTaskWorker()
             try {
                 withTimeout(10.seconds) {
-                    started.receive()
-                    cleaning.receive()
-                    assertTrue(started.tryReceive().isFailure)
-                    finishCleanup.send(Unit)
+                    repeat(2) { started.receive(); cleaning.receive() }
+                    assertUnclaimed()
+                    withTableLocked("agent_executions", "share") {
+                        repeat(2) { finishCleanup.send(Unit) }
+                        awaitLockWait("agent_executions")
+                        // Agent cleanup is done; the launcher's cancellation write is still blocked.
+                        assertUnclaimed()
+                        worker.cancel()
+                        assertSame(worker, backend.startScheduledTaskWorker())
+                        assertFalse(worker.isCompleted)
+                    }
+                    worker.join()
+                    backend.startScheduledTaskWorker()
                     started.receive()
                     cleaning.receive()
                 }
@@ -237,7 +265,7 @@ class BackendScheduledTasksE2eTest {
     }
 }
 
-private suspend fun BackendE2eScope.setupTasks(userId: String): String {
+internal suspend fun BackendE2eScope.setupTasks(userId: String): String {
     val chat = createPublicChat(userId, "create-$userId")
     assertEquals(HttpStatusCode.OK, client.patch(BackendHttpRoutes.SETTINGS) {
         trusted(userId)

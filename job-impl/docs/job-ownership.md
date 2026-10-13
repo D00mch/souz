@@ -16,7 +16,7 @@ Lease recovery can run an occurrence more than once. Fencing protects queue stat
 
 - Use `(jobId, scheduledAt)` to deduplicate external effects; keep credentials outside payloads.
 - Keep handler and heartbeat in one coroutine scope. Join the heartbeat before writing the outcome. Record handler cancellation as a failed attempt when the worker context remains active; propagate application cancellation.
-- Reuse one service instance and one worker per host scope. Start workers explicitly with a supplied handler; stop application work before closing the datasource.
+- Reuse one service instance and one worker group per host scope. Start it explicitly with a supplied handler and a positive concurrency limit (default one); repeated starts retain the original configuration until the whole group finishes cleanup. Each lane claims only after its previous handler returns, so excess work waits durably without consuming attempts. Hosts must hold the handler through their work's cleanup to preserve that bound. Stop application work before closing the datasource.
 - Keep service migrations in their own Flyway location and history table so host and service versions cannot collide.
 
 ## Verification

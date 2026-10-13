@@ -247,19 +247,19 @@ internal class BackendE2eScope(
         backend.sql(block)
 
     // Real database barriers make commit and shutdown races deterministic.
-    suspend fun withTableLocked(table: String, mode: String, block: suspend CoroutineScope.() -> Unit) = coroutineScope {
-        val locked = CompletableDeferred<Unit>()
+    suspend fun withTableLocked(table: String, mode: String, block: suspend CoroutineScope.(Connection) -> Unit) = coroutineScope {
+        val locked = CompletableDeferred<Connection>()
         val release = CompletableDeferred<Unit>()
         val lock = launch(Dispatchers.IO) {
             sql { connection ->
                 connection.autoCommit = false
                 connection.createStatement().use { it.execute("lock table $table in $mode mode") }
-                locked.complete(Unit)
+                locked.complete(connection)
                 try { runBlocking { release.await() } } finally { connection.rollback() }
             }
         }
-        locked.await()
-        try { block() } finally {
+        val connection = locked.await()
+        try { block(connection) } finally {
             release.complete(Unit)
             lock.join()
         }
@@ -410,9 +410,9 @@ internal class BackendE2eBackend(
 
     val jobService: JobService get() = di.direct.instance()
     suspend fun runScheduledTask(job: JobRun) = di.direct.instance<ScheduledTaskRunner>().run(job)
-    suspend fun startScheduledTaskWorker() {
-        di.direct.instance<PostgresJobService>().startWorker(applicationScope, di.direct.instance<ScheduledTaskRunner>()::run)
-    }
+    suspend fun startScheduledTaskWorker() = di.direct.instance<PostgresJobService>().startWorker(
+        applicationScope, scheduledTasks.concurrentRuns, di.direct.instance<ScheduledTaskRunner>()::run,
+    )
 
     fun <T> sql(block: (Connection) -> T): T =
         dataSource.connection.use(block)

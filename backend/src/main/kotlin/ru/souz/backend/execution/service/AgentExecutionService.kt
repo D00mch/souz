@@ -63,19 +63,20 @@ class AgentExecutionService internal constructor(
 ) {
     private val logger = LoggerFactory.getLogger(AgentExecutionService::class.java)
     private val hookSlots = Semaphore(hookConfig.concurrentExecutions)
-    private val scheduledSlots = Semaphore(scheduledTaskConfig.concurrentRuns)
 
     internal suspend fun executeScheduledTask(
         userId: String, chatId: UUID, executionId: UUID, content: String, requiresDelivery: Boolean,
     ) {
-        if (executionRepository.get(userId, executionId) != null) return
+        executionRepository.get(userId, executionId)?.let { return checkScheduledDispatch(it) }
         val prepared = prepareChatTurn(userId, chatId, content, executionId = executionId).let {
             it.copy(execution = it.execution.copy(metadata = it.execution.metadata + (SCHEDULED_TASK_METADATA to "true")))
         }
         if (requiresDelivery && SEND_MESSAGE_TO_CHANNEL_TOOL_NAME !in prepared.effectiveSettings.enabledTools) {
             throw invalidV1Request("Scheduled messages require enabled $SEND_MESSAGE_TO_CHANNEL_TOOL_NAME.")
         }
-        if (!executionRepository.createScheduledIfAbsent(prepared.execution, scheduledTaskConfig.runsPerUserPerDay)) return
+        if (!executionRepository.createScheduledIfAbsent(prepared.execution, scheduledTaskConfig.runsPerUserPerDay)) {
+            return checkScheduledDispatch(checkNotNull(executionRepository.get(userId, executionId)))
+        }
         try {
             startPreparedChatTurn(prepared)
         } catch (cancelled: CancellationException) {
@@ -83,7 +84,15 @@ class AgentExecutionService internal constructor(
         } catch (error: Exception) {
             finalizer.markFailed(prepared.execution, "agent_execution_failed", error.message ?: "Scheduled start failed.", prepared.execution.usage)
             throw error
+        } finally {
+            // Keep the worker lane occupied through the registered execution's cancellation cleanup,
+            // including when the job lease or worker is cancelled during launch.
+            withContext(NonCancellable) { launcher.join(executionId) }
         }
+    }
+
+    private fun checkScheduledDispatch(execution: AgentExecution) {
+        check(execution.status != AgentExecutionStatus.FAILED) { execution.errorMessage ?: "Scheduled start failed." }
     }
 
     suspend fun executeChatTurn(
@@ -272,13 +281,11 @@ class AgentExecutionService internal constructor(
                 val run = suspend {
                     finalizer.runExecution(execution, conversationKey, turnRequest, eventSink)
                 }
-                // Both initial turns and option continuations acquire capacity for actual agent work.
-                val limits = when {
-                    isHook -> hookSlots to hookConfig.executionTimeoutMillis
-                    execution.metadata[SCHEDULED_TASK_METADATA] == "true" -> scheduledSlots to scheduledTaskConfig.runTimeoutMillis
-                    else -> null
+                when {
+                    isHook -> hookSlots.withPermit { withTimeout(hookConfig.executionTimeoutMillis) { run() } }
+                    execution.metadata[SCHEDULED_TASK_METADATA] == "true" -> withTimeout(scheduledTaskConfig.runTimeoutMillis) { run() }
+                    else -> run()
                 }
-                if (limits == null) run() else limits.first.withPermit { withTimeout(limits.second) { run() } }
             } catch (_: BackendV1Exception) {
                 // Background failures are already persisted by AgentExecutionFinalizer.
             }

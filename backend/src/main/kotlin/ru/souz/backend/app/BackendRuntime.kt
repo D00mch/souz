@@ -12,6 +12,7 @@ import ru.souz.backend.vk.VkBotPollingService
 import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
 import ru.souz.backend.scheduler.ScheduledTaskRunner
+import ru.souz.backend.scheduler.ScheduledTaskConfig
 import ru.souz.jobs.JobRun
 import ru.souz.jobs.impl.PostgresJobService
 
@@ -31,12 +32,14 @@ class BackendRuntime private constructor(
     private val clientThreadRecoveryService: ClientThreadRecoveryService by lazy { di.direct.instance() }
 
     /** Job execution starts only when the host supplies its handler. */
-    suspend fun startJobWorker(handler: suspend (JobRun) -> Unit): Job =
-        di.direct.instance<PostgresJobService>().startWorker(applicationScope, handler)
+    suspend fun startJobWorker(concurrency: Int = 1, handler: suspend (JobRun) -> Unit): Job =
+        di.direct.instance<PostgresJobService>().startWorker(applicationScope, concurrency, handler)
 
     fun startBackgroundServices() {
         runBlocking { httpDependencies.hookService.start(applicationScope) }
-        runBlocking { startJobWorker(di.direct.instance<ScheduledTaskRunner>()::run) }
+        runBlocking {
+            startJobWorker(di.direct.instance<ScheduledTaskConfig>().concurrentRuns, di.direct.instance<ScheduledTaskRunner>()::run)
+        }
         if (httpDependencies.featureFlags.wsEvents) {
             runBlocking { clientThreadRecoveryService.recover() }
             clientThreadRecoveryService.start(applicationScope)

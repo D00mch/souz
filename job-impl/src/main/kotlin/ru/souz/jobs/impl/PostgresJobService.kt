@@ -48,18 +48,23 @@ class PostgresJobService internal constructor(dataSource: DataSource, private va
 
     override suspend fun cancelJob(userId: String, jobId: UUID): JobInfo? = store.cancel(userId, jobId)
 
-    /** One sequential worker per service instance. Repeated starts retain the original scope and handler. */
-    suspend fun startWorker(scope: CoroutineScope, handler: suspend (JobRun) -> Unit): Job = startup.withLock {
+    /** One bounded worker group per instance. Repeated starts retain its scope, concurrency and handler. */
+    suspend fun startWorker(scope: CoroutineScope, concurrency: Int = 1, handler: suspend (JobRun) -> Unit): Job = startup.withLock {
+        require(concurrency > 0) { "Worker concurrency must be positive." }
         worker?.takeUnless { it.isCompleted } ?: scope.launch {
-            while (isActive) {
-                try {
-                    if (processNext(handler)) continue
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    logger.warn("Job polling failed category={}", error.javaClass.simpleName)
+            repeat(concurrency) {
+                launch {
+                    while (isActive) {
+                        try {
+                            if (processNext(handler)) continue
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            logger.warn("Job polling failed category={}", error.javaClass.simpleName)
+                        }
+                        delay(timing.pollMillis)
+                    }
                 }
-                delay(timing.pollMillis)
             }
         }.also { worker = it }
     }

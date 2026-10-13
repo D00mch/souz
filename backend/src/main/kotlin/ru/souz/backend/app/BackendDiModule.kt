@@ -486,6 +486,7 @@ fun backendDiModule(
     bindSingleton { ToolListActiveChannels(registry = instance()) }
     bindSingleton { ToolSendMessageToChannel(registry = instance()) }
     bindSingleton { ScheduledTaskTools(instance(), instance(), instance(), instance()) }
+    bindSingleton { appConfig.scheduledTasks }
     bindSingleton { ScheduledTaskRunner(instance(), instance()) }
     bindSingleton { BackendChannelToolCatalog(instance(), instance()) }
     bindSingleton<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG) {

@@ -16,7 +16,7 @@ data class ScheduledTaskConfig(
     init { require(runsPerUserPerDay > 0 && concurrentRuns > 0 && runTimeoutMillis > 0) }
 }
 
-/** Dispatch only; AgentExecutionService owns concurrency, timeouts and shutdown. */
+/** Holds a job-worker lane until AgentExecutionService finishes its registered execution lifecycle. */
 internal class ScheduledTaskRunner(
     private val chats: ChatService,
     private val executions: AgentExecutionService,
