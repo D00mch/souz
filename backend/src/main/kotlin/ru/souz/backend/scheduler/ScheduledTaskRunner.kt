@@ -2,12 +2,11 @@ package ru.souz.backend.scheduler
 
 import java.time.Clock
 import java.util.UUID
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeoutOrNull
-import org.slf4j.LoggerFactory
 import ru.souz.backend.channels.tool.SEND_MESSAGE_TO_CHANNEL_TOOL_NAME
 import ru.souz.backend.channels.tool.ToolSendMessageToChannel
 import ru.souz.backend.chat.model.Chat
@@ -15,7 +14,6 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.service.AgentExecutionLauncher
 import ru.souz.backend.execution.service.AgentExecutionService
-import ru.souz.backend.http.BackendV1Exception
 import ru.souz.jobs.JobRun
 
 /** Client type of the hidden technical chat that each scheduled occurrence runs in. */
@@ -32,9 +30,10 @@ data class ScheduledTaskConfig(
 }
 
 /**
- * Job handler for scheduled tasks. It starts the agent in a new hidden chat and returns, so the
+ * Job handler for scheduled tasks. It starts the agent in a hidden chat and returns, so the
  * sequential job worker keeps claiming due tasks while up to [ScheduledTaskConfig.concurrentRuns]
  * executions run. When every slot is busy, the handler waits and the next tasks stay in the queue.
+ * A start failure is rethrown for the job service's retries.
  */
 internal class ScheduledTaskRunner(
     private val chats: ChatRepository,
@@ -44,7 +43,6 @@ internal class ScheduledTaskRunner(
     private val config: ScheduledTaskConfig,
     private val clock: Clock,
 ) {
-    private val log = LoggerFactory.getLogger(javaClass)
     private val slots = Semaphore(config.concurrentRuns)
 
     suspend fun run(job: JobRun) {
@@ -52,35 +50,44 @@ internal class ScheduledTaskRunner(
         var execution: AgentExecution? = null
         try {
             val now = clock.instant()
-            val chat = chats.create(
+            val chat = chats.getOrCreate(
                 Chat(
-                    id = UUID.randomUUID(), userId = job.userId, title = "Scheduled task: ${job.title}",
+                    id = job.occurrenceId("chat"), userId = job.userId, title = "Scheduled task: ${job.title}",
                     archived = false, createdAt = now, updatedAt = now, clientType = SCHEDULED_TASK_CHAT_TYPE,
                 )
             )
-            execution = executions.executeChatTurn(job.userId, chat.id, scheduledTaskInput(job)).execution
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            // Failed attempts exhaust a job; a recurring task must survive to its next occurrence.
-            if (!job.payload.path("recurring").asBoolean()) throw error
-            log.warn("Scheduled task {} could not start its {} run ({})", job.jobId, job.scheduledAt, error.javaClass.simpleName)
+            execution = executions.executeChatTurnIfAbsent(
+                job.userId, chat.id, scheduledTaskInput(job), job.occurrenceId("execution"), config.runsPerUserPerDay,
+                requiredTools = if (job.payload.path("requiresDelivery").asBoolean(true)) {
+                    setOf(SEND_MESSAGE_TO_CHANNEL_TOOL_NAME)
+                } else emptySet(),
+            )
         } finally {
             if (execution == null) slots.release()
         }
         val started = execution ?: return
-        scope.launch {
+        // Undispatched start enters the finally block even if the application scope is shutting down.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
-                withTimeoutOrNull(config.runTimeoutMillis) { launcher.join(started.id) } ?: try {
-                    executions.cancelExecution(started.userId, started.chatId, started.id)
-                } catch (_: BackendV1Exception) {
-                    // The execution finished while the timeout fired.
+                if (withTimeoutOrNull(config.runTimeoutMillis) { launcher.join(started.id) } == null) {
+                    launcher.cancel(started.id)
+                    launcher.join(started.id)
                 }
             } finally {
                 slots.release()
             }
         }
     }
+}
+
+/**
+ * Stable chat and execution IDs for this occurrence. At most once keys them by occurrence, so a
+ * retry or a competing worker finds the existing execution and never launches it again. At least
+ * once also keys them by attempt, so a retry after an uncertain outcome launches a new execution.
+ */
+internal fun JobRun.occurrenceId(entity: String): UUID {
+    val attemptKey = if (payload.path("atMostOnce").asBoolean(false)) "" else ":attempt-$attempt"
+    return UUID.nameUUIDFromBytes("scheduled-task:$jobId:$scheduledAt$attemptKey:$entity".toByteArray(Charsets.UTF_8))
 }
 
 internal fun scheduledTaskInput(job: JobRun): String {

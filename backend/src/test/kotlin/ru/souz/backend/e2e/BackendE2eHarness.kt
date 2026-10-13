@@ -50,6 +50,7 @@ import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
 import ru.souz.backend.scheduler.ScheduledTaskConfig
 import ru.souz.backend.scheduler.ScheduledTaskRunner
 import ru.souz.jobs.JobService
+import ru.souz.jobs.JobRun
 import ru.souz.jobs.impl.PostgresJobService
 import ru.souz.backend.storage.postgres.PostgresHistoryMemoryRepository
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
@@ -412,6 +413,8 @@ internal class BackendE2eBackend(
     suspend fun startScheduledTaskWorker() {
         di.direct.instance<PostgresJobService>().startWorker(applicationScope, di.direct.instance<ScheduledTaskRunner>()::run)
     }
+
+    suspend fun runScheduledTask(job: JobRun) = di.direct.instance<ScheduledTaskRunner>().run(job)
 
     fun <T> sql(block: (Connection) -> T): T =
         dataSource.connection.use(block)

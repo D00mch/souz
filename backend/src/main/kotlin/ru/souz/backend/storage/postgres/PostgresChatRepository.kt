@@ -10,7 +10,12 @@ import ru.souz.backend.chat.repository.ChatRepository
 class PostgresChatRepository(
     private val dataSource: DataSource,
 ) : ChatRepository {
-    override suspend fun create(chat: Chat): Chat = dataSource.write { connection ->
+    override suspend fun create(chat: Chat): Chat = checkNotNull(insert(chat, ignoreDuplicate = false))
+
+    override suspend fun getOrCreate(chat: Chat): Chat =
+        insert(chat, ignoreDuplicate = true) ?: checkNotNull(get(chat.userId, chat.id))
+
+    private suspend fun insert(chat: Chat, ignoreDuplicate: Boolean): Chat? = dataSource.write { connection ->
         try {
             connection.prepareStatement(
                 """
@@ -19,6 +24,7 @@ class PostgresChatRepository(
                   title, archived, created_at, updated_at
                 )
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ${if (ignoreDuplicate) "on conflict (id) do nothing" else ""}
                 returning *
                 """.trimIndent()
             ).use { statement ->
@@ -32,8 +38,7 @@ class PostgresChatRepository(
                 statement.setInstant(8, chat.createdAt)
                 statement.setInstant(9, chat.updatedAt)
                 statement.executeQuery().use { resultSet ->
-                    check(resultSet.next())
-                    resultSet.toChat()
+                    if (resultSet.next()) resultSet.toChat() else null
                 }
             }
         } catch (error: java.sql.SQLException) {

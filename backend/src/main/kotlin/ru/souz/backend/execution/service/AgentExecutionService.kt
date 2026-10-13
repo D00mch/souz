@@ -103,25 +103,52 @@ class AgentExecutionService internal constructor(
                 message = "Chat already has an active execution.",
             )
         }
-        return try {
-            startPreparedChatTurn(prepared)
-        } catch (e: BackendV1Exception) {
-            throw e
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            finalizer.markFailed(
-                execution = prepared.execution,
-                errorCode = "agent_execution_failed",
-                errorMessage = e.message ?: "Agent execution failed.",
-                usage = prepared.execution.usage,
-            )
-            throw BackendV1Exception(
-                status = HttpStatusCode.InternalServerError,
-                code = "agent_execution_failed",
-                message = "Agent execution failed.",
-            )
+        return startCreatedChatTurn(prepared)
+    }
+
+    /**
+     * Only the successful insert may start this execution. A persisted ID is never relaunched,
+     * including after a crash before launch; null means another call already inserted it.
+     */
+    internal suspend fun executeChatTurnIfAbsent(
+        userId: String,
+        chatId: UUID,
+        content: String,
+        executionId: UUID,
+        dailyLaunchLimit: Int,
+        requiredTools: Set<String> = emptySet(),
+    ): AgentExecution? {
+        // Existing occurrences remain deduplicated even if settings changed after dispatch.
+        executionRepository.get(userId, executionId)?.let { existing ->
+            check(existing.status != AgentExecutionStatus.FAILED) { existing.errorMessage ?: "Occurrence execution failed." }
+            return null
         }
+        val prepared = prepareChatTurn(userId, chatId, content, executionId = executionId)
+        check(prepared.effectiveSettings.enabledTools.containsAll(requiredTools)) {
+            "Scheduled reminder requires enabled SendMessageToChannel; delivery is unavailable."
+        }
+        if (!executionRepository.createIfAbsent(prepared.execution, dailyLaunchLimit)) return null
+        return startCreatedChatTurn(prepared).execution
+    }
+
+    private suspend fun startCreatedChatTurn(prepared: PreparedChatTurn): SendMessageResult = try {
+        startPreparedChatTurn(prepared)
+    } catch (e: BackendV1Exception) {
+        throw e
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        finalizer.markFailed(
+            execution = prepared.execution,
+            errorCode = "agent_execution_failed",
+            errorMessage = e.message ?: "Agent execution failed.",
+            usage = prepared.execution.usage,
+        )
+        throw BackendV1Exception(
+            status = HttpStatusCode.InternalServerError,
+            code = "agent_execution_failed",
+            message = "Agent execution failed.",
+        )
     }
 
     internal suspend fun prepareChatTurn(

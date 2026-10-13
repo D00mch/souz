@@ -44,6 +44,8 @@ class PostgresJobService internal constructor(dataSource: DataSource, private va
 
     override suspend fun listJobs(userId: String): List<JobInfo> = store.list(userId)
 
+    override suspend fun listFailedOccurrences(userId: String) = store.listFailures(userId)
+
     override suspend fun cancelJob(userId: String, jobId: UUID): JobInfo? = store.cancel(userId, jobId)
 
     /** One sequential worker per service instance. Repeated starts retain the original scope and handler. */
