@@ -7,6 +7,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import ru.souz.db.SettingsProvider
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
+import ru.souz.test.createSymbolicLinkOrSkip
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 import kotlin.test.AfterTest
@@ -73,12 +74,7 @@ class LocalRuntimeSandboxTest {
         val outside = createTempDirectory("sandbox-outside-")
         val stateRoot = createTempDirectory("sandbox-state-")
 
-        val link = home.resolve("escape")
-        runCatching {
-            Files.createSymbolicLink(link, outside)
-        }.getOrElse { error ->
-            error("Could not create symlink for sandbox escape test: ${error.message}")
-        }
+        val link = createSymbolicLinkOrSkip(home.resolve("escape"), outside)
 
         assertTrue(Files.isSymbolicLink(link), "Test setup failed: link is not a symlink")
 
@@ -99,7 +95,7 @@ class LocalRuntimeSandboxTest {
         val outside = createTempDirectory("outside-")
         val safeFile = home.resolve("notes.txt").apply { writeText("safe") }
         val outsideFile = outside.resolve("secret.txt").apply { writeText("secret") }
-        Files.createSymbolicLink(home.resolve("escape.txt"), outsideFile)
+        createSymbolicLinkOrSkip(home.resolve("escape.txt"), outsideFile)
         val sandbox = createSandbox(home, stateRoot = createTempDirectory("state-"))
 
         val descendants = sandbox.fileSystem.listDescendants(

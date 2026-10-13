@@ -15,6 +15,7 @@ import ru.souz.skills.filesystem.SandboxSkillBundleFileSystem
 import ru.souz.skills.filesystem.SkillBundleFileSystem
 import ru.souz.skills.filesystem.SkillBundleFsContext
 import ru.souz.runtime.files.FilesToolUtil
+import ru.souz.test.createSymbolicLinkOrSkip
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 import kotlin.test.AfterTest
@@ -111,7 +112,7 @@ class FileSystemSkillBundleLoaderTest {
         val outside = createHomeTempDirectory("skill-loader-symlink-outside-")
         writeSkillFixture(root)
         outside.resolve("secret.txt").writeText("secret")
-        Files.createSymbolicLink(root.resolve("escape.txt"), outside.resolve("secret.txt"))
+        createSymbolicLinkOrSkip(root.resolve("escape.txt"), outside.resolve("secret.txt"))
         val loader = createLoader()
 
         val error = assertFailsWith<SkillBundleException> {
@@ -133,7 +134,7 @@ class FileSystemSkillBundleLoaderTest {
         Files.delete(target)
         root.resolve("docs").createDirectories()
         root.resolve("docs/README.md").writeText("Read me")
-        Files.createSymbolicLink(target, root.resolve("docs/README.md"))
+        createSymbolicLinkOrSkip(target, root.resolve("docs/README.md"))
         val loader = createLoader()
 
         val error = assertFailsWith<SkillBundleException> {
@@ -156,7 +157,7 @@ class FileSystemSkillBundleLoaderTest {
         templates.toFile().deleteRecursively()
         realTemplates.createDirectories()
         realTemplates.resolve("example.ts").writeText("export const template = true\n")
-        Files.createSymbolicLink(templates, realTemplates)
+        createSymbolicLinkOrSkip(templates, realTemplates)
         val loader = createLoader()
 
         val error = assertFailsWith<SkillBundleException> {

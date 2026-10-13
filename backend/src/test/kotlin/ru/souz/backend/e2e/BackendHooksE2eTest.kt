@@ -53,6 +53,7 @@ import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
 import ru.souz.backend.storage.postgres.postgresAppConfig
 import ru.souz.backend.storage.postgres.write
+import ru.souz.backend.testutil.createSymbolicLinkOrSkip
 import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.runtime.sandbox.RuntimeSandboxModeResolver
 import ru.souz.runtime.sandbox.docker.DockerRuntimeSandbox
@@ -229,7 +230,7 @@ class BackendHooksE2eTest {
             assert request['method']=='POST' and request['path']=='/hooks/check'
             assert base64.b64decode(request['bodyBase64'])==b'raw bytes'
             assert 'x-user-id' not in request['headers'] and 'x-souz-proxy-auth' not in request['headers']
-            assert pathlib.Path.cwd().parent==pathlib.Path('$workspace').resolve()
+            assert pathlib.Path.cwd().parent==pathlib.Path(r'$workspace').resolve()
             accepted=request['headers'].get('authorization')==['Bearer $secret']
             print(json.dumps({'accept':accepted,'eventId':'verified','payload':{'normalized':True}}))
         """.trimIndent())
@@ -377,7 +378,7 @@ class BackendHooksE2eTest {
             reload()
             assertEquals(404, client.post("/hooks/other") { header("Authorization", "Bearer $secret"); jsonBody("{}") }.status.value)
             Files.delete(ownRoot.resolve("hooks/check/hook.yaml"))
-            Files.createSymbolicLink(ownRoot.resolve("hooks/check/hook.yaml"), otherRoot.resolve("hooks/check/hook.yaml"))
+            createSymbolicLinkOrSkip(ownRoot.resolve("hooks/check/hook.yaml"), otherRoot.resolve("hooks/check/hook.yaml"))
             reload()
             assertEquals(404, invoke().status.value)
         }
