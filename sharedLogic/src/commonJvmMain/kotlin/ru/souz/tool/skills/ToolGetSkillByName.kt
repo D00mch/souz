@@ -104,19 +104,19 @@ class ToolGetSkillByName(
     private fun lookupError(skillId: String?, code: String, message: String) =
         SkillLookupResponse(error = SkillDiscoveryError(skillId, code, message))
 
-    private fun LLMToolSetup.toDetail(): ToolSkillDetail = ToolSkillDetail(
-        skillId = fn.name,
-        name = fn.name,
-        description = fn.description,
-        inputSchema = fn.parameters,
-        returnSchema = fn.returnParameters,
-        fewShotExamples = fn.fewShotExamples.orEmpty(),
-    )
-
     companion object {
         const val NAME = "GetSkillByName"
     }
 }
+
+internal fun LLMToolSetup.toDetail(): ToolSkillDetail = ToolSkillDetail(
+    skillId = fn.name,
+    name = fn.name,
+    description = fn.description,
+    inputSchema = fn.parameters,
+    returnSchema = fn.returnParameters,
+    fewShotExamples = fn.fewShotExamples.orEmpty(),
+)
 
 private val fileSkillInputSchema = toolInputParameters<SkillCommandExecutor.Args>()
 
@@ -150,7 +150,7 @@ internal data class SkillExecutionSchema(
     val returnSchema: LLMRequest.Parameters,
 )
 
-private data class ToolSkillDetail(
+internal data class ToolSkillDetail(
     override val skillId: String,
     val name: String,
     val description: String,

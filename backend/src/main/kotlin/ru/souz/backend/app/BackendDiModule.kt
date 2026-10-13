@@ -37,6 +37,7 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
+import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.PublicClientService
@@ -273,6 +274,8 @@ fun backendDiModule(
         ChatService(
             chatRepository = instance(),
             messageRepository = instance(),
+            serverToolNames = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG)
+                .toolsByCategory.values.flatMap { it.keys }.toSet() + BackendToolCapabilityPolicy.executionBoundToolNames,
         )
     }
     bindSingleton {
@@ -319,7 +322,8 @@ fun backendDiModule(
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
             toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
-            clientToolCatalog = instance<BackendClientSkills>(),
+            clientSkills = instance(),
+            chatRepository = instance(),
             skillBundleProvider = instance<SkillRegistryRepository>(),
             commandExecutor = instance<SkillCommandExecutor>(),
             filesToolUtil = instance<FilesToolUtil>(),

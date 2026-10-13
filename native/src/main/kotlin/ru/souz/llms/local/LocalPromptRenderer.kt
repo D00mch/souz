@@ -222,7 +222,7 @@ class LocalPromptRenderer {
                     "tool_result" to mapOf(
                         "tool_name" to message.name.orEmpty(),
                         "tool_call_id" to message.functionsStateId.orEmpty(),
-                        "content" to normalizeToolResultContent(message.content, contextBudget),
+                        "content" to normalizeToolResultContent(message, contextBudget),
                     )
                 )
             ),
@@ -298,8 +298,12 @@ class LocalPromptRenderer {
         append("<|turn>assistant\n")
     }
 
-    private fun normalizeToolResultContent(rawContent: String, contextBudget: Int): Any {
-        val decoded = runCatching { restJsonMapper.readValue<String>(rawContent) }.getOrDefault(rawContent)
+    private fun normalizeToolResultContent(message: LLMRequest.Message, contextBudget: Int): Any {
+        val decoded = runCatching { restJsonMapper.readValue<String>(message.content) }.getOrDefault(message.content)
+        // Skill schemas are executable contracts, not previews. Normal context budgeting still applies.
+        if (message.name in setOf("GetSkillByName", "GetSkillsByCategory")) {
+            return runCatching { restJsonMapper.readValue<Any>(decoded) }.getOrDefault(decoded)
+        }
         val budget = when {
             contextBudget <= SMALL_CONTEXT_THRESHOLD -> LOCAL_SMALL_CONTEXT_TOOL_PREVIEW_CHARS
             else -> LOCAL_LARGE_CONTEXT_TOOL_PREVIEW_CHARS

@@ -20,6 +20,7 @@ EmbeddingGemma query and document inputs use different prefixes; losing that dis
 - Explicitly routed chat requests must reject unknown local model IDs instead of falling back to the selected profile.
 - Preserve the shared `storageId` for projectors and update candidate aliases only when runtime resolution and tests change together.
 - Preserve embedding query/document formatting and the embedding profile's own context cap.
+- Keep Skill discovery results complete; truncating descriptions can also remove executable input schemas. Ordinary tool results retain bounded previews.
 - Apply settings-driven context size only within model limits. Leave room for at least one completion token and retain context-expansion retry bounds.
 - For media requests, perform budgeting only after `mtmd` reports the effective prompt token count. Do not enable non-media prompt-prefix reuse for media without validating cache semantics.
 

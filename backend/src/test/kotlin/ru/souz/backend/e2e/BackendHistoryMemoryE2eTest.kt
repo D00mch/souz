@@ -103,7 +103,7 @@ class BackendHistoryMemoryE2eTest {
                 requestSkillForPrompt("Find travel options for the weekend", "web.search", mapOf("query" to "weekend travel options"))
             }) {
             val owner = UUID.randomUUID().toString()
-            val chat = createPublicChat(owner)
+            val chat = createPublicChat(owner, tools = clientToolsJson("web.search"))
             val initial = messageFrame(chat, owner, "travel", text = "Find travel options for the weekend")
             val started = withPublicSocket(chat) { socket ->
                 socket.send(Frame.Text(initial))

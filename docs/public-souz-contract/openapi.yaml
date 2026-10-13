@@ -105,6 +105,104 @@ components:
           description: Client kind for this chat.
         title:
           type: [string, "null"]
+        tools:
+          $ref: "#/components/schemas/ClientToolCatalogue"
+    ClientToolCatalogue:
+      type: array
+      maxItems: 256
+      default: []
+      description: >-
+        Immutable chat catalogue, at most 1 MiB. Omission and [] are equivalent.
+        Definitions are normalized for shared HTTP/WS creation idempotency; changed definitions conflict.
+      items:
+        $ref: "#/components/schemas/ClientToolDefinition"
+    ClientToolDefinition:
+      type: object
+      additionalProperties: false
+      required: [name, description, parameters]
+      properties:
+        name:
+          type: string
+          pattern: '^[A-Za-z][A-Za-z0-9_.-]{0,63}$'
+          description: Exact wire name; unique and not reserved by server or core Skills.
+        description:
+          type: string
+          minLength: 1
+          maxLength: 16384
+          pattern: "\\S"
+        parameters:
+          type: object
+          additionalProperties: false
+          required: [type]
+          properties:
+            type:
+              const: object
+            properties:
+              type: object
+              additionalProperties:
+                $ref: "#/components/schemas/ClientToolProperty"
+            required:
+              type: array
+              items:
+                type: string
+            additionalProperties:
+              type: [boolean, "null"]
+    ClientToolProperty:
+      type: object
+      additionalProperties: false
+      required: [type]
+      description: Supported JSON Schema subset; maximum depth 16. Required names must exist in properties.
+      allOf:
+        - if:
+            properties:
+              type: {const: array}
+          then:
+            required: [items]
+            properties:
+              items:
+                $ref: "#/components/schemas/ClientToolProperty"
+          else:
+            properties:
+              items: {type: "null"}
+        - if:
+            properties:
+              type: {not: {const: object}}
+          then:
+            properties:
+              properties: {type: "null"}
+              required: {type: "null"}
+              additionalProperties: {type: "null"}
+        - if:
+            properties:
+              type: {not: {const: string}}
+          then:
+            properties:
+              enum: {type: "null"}
+      properties:
+        type:
+          type: string
+          enum: [object, array, string, integer, number, boolean, "null"]
+        description:
+          type: [string, "null"]
+        enum:
+          type: [array, "null"]
+          minItems: 1
+          items:
+            type: string
+        properties:
+          type: [object, "null"]
+          additionalProperties:
+            $ref: "#/components/schemas/ClientToolProperty"
+        required:
+          type: [array, "null"]
+          items:
+            type: string
+        additionalProperties:
+          type: [boolean, "null"]
+        items:
+          oneOf:
+            - $ref: "#/components/schemas/ClientToolProperty"
+            - type: "null"
     CreateChatResponse:
       type: object
       additionalProperties: false
@@ -236,6 +334,8 @@ components:
               $ref: "#/components/schemas/UUID"
             title:
               type: [string, "null"]
+            tools:
+              $ref: "#/components/schemas/ClientToolCatalogue"
     ChatSubscribe:
       description: Acknowledges before replay and live delivery. Explicit afterSeq replaces this chat subscription on the same socket and returns duplicate=false. Without afterSeq, an existing subscription is kept with duplicate=true. Does not execute input; requestId is for correlation only.
       type: object

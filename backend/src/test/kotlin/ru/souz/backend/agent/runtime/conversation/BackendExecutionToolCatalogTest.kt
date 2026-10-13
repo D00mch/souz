@@ -100,25 +100,16 @@ class BackendExecutionToolCatalogTest {
     }
 
     @Test
-    fun `client tools win name collisions with compiled tools`() {
-        val catalog = backendExecutionToolCatalog(
-            compiledToolCatalog = TestToolCatalog(ToolCategory.FILES to listOf("ReadFile")),
-            executionLlmToolCatalog = TestToolCatalog(),
-            enabledCompiledToolNames = null,
-            clientToolCatalog = TestToolCatalog(
-                mapOf(
-                    ToolCategory.FILES to mapOf(
-                        "ReadFile" to TestToolSetup("ReadFile", description = "client owned"),
-                    ),
-                )
-            ),
-            includeFewShotExamples = true,
-        )
-
-        assertEquals(
-            "client owned",
-            catalog.toolsByCategory.getValue(ToolCategory.FILES).getValue("ReadFile").fn.description,
-        )
+    fun `client tools cannot shadow compiled tools`() {
+        assertFailsWith<IllegalStateException> {
+            backendExecutionToolCatalog(
+                compiledToolCatalog = TestToolCatalog(ToolCategory.FILES to listOf("ReadFile")),
+                executionLlmToolCatalog = TestToolCatalog(),
+                enabledCompiledToolNames = null,
+                clientToolCatalog = TestToolCatalog(ToolCategory.FILES to listOf("ReadFile")),
+                includeFewShotExamples = true,
+            )
+        }
     }
 
     @Test

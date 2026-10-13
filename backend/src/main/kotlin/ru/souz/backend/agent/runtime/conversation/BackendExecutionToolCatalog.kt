@@ -22,7 +22,6 @@ internal fun backendExecutionToolCatalog(
         enabledToolNames = enabledCompiledToolNames,
     )
 
-    // Client tools intentionally win name collisions because the live client owns their execution boundary.
     val mergedTools = composeToolCatalogs(
         if (metrics == null) selectedCompiledTools else immutableToolCatalogSnapshot(
             selectedCompiledTools.toolsByCategory.mapValues { (category, tools) ->
@@ -30,7 +29,6 @@ internal fun backendExecutionToolCatalog(
             }
         ),
         clientToolCatalog,
-        allowLaterSourceOverrides = true,
     )
     if (includeFewShotExamples) {
         return mergedTools

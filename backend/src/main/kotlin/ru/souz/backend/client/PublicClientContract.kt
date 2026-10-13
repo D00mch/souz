@@ -12,6 +12,7 @@ data class CreateClientChatRequest(
     val requestId: String,
     val clientType: String,
     val title: String? = null,
+    val tools: List<ClientToolDefinition> = emptyList(),
 )
 
 data class CreateClientChatResponse(
@@ -25,7 +26,11 @@ data class ClientChatDto(
     val title: String?,
 )
 
-data class ChatCreatePayload(val userId: String, val title: String? = null)
+data class ChatCreatePayload(
+    val userId: String,
+    val title: String? = null,
+    val tools: List<ClientToolDefinition> = emptyList(),
+)
 
 data class ChatCreateFrame(val kind: String, val requestId: String, val payload: ChatCreatePayload)
 

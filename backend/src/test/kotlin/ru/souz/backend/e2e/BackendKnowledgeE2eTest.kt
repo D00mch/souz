@@ -29,8 +29,8 @@ class BackendKnowledgeE2eTest {
             llm = E2eLlmApi { request ->
                 val result = request.messages.lastOrNull { it.role == LLMMessageRole.function }
                 when {
-                    request.functions.map { it.name } == listOf("user.ask") ->
-                        toolCallReply(request, "user.ask", mapOf("question" to "Report progress"))
+                    request.functions.map { it.name } == listOf("RunSkillCommand") ->
+                        toolCallReply(request, "RunSkillCommand", mapOf("skillId" to "user.ask", "arguments" to mapOf("question" to "Report progress")))
 
                     result?.name in listOf("RunSkillCommand", "SpawnSubagent") -> {
                         val body = restJsonMapper.readTree(result!!.content)
@@ -87,7 +87,7 @@ class BackendKnowledgeE2eTest {
             },
         ) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            val chatId = createPublicChat(userId, tools = clientToolsJson("user.ask"))
             if (failWrites) backend.sql { connection ->
                 connection.createStatement().use {
                     it.execute("alter table conversation_knowledge add constraint reject_knowledge_writes check (false)")
