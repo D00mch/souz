@@ -151,6 +151,9 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("список .*каналов|доступные каналы"), 1.2),
         )
 
+        // Backend-only: the desktop has no scheduling tools, so its reminders stay with CALENDAR.
+        ToolCategory.SCHEDULING -> emptyList()
+
         ToolCategory.OAUTH -> listOf(
             WeightedRegex(Regex("подключи (яндекс|провайдер|аккаунт)|авторизуй.*скилл|connect (yandex|provider)|oauth"), 2.0),
             WeightedRegex(Regex("подключен.*скилл|авторизован.*скилл|is .* connected"), 1.5),

@@ -34,6 +34,10 @@ import ru.souz.backend.channels.tool.BackendChannelToolCatalog
 import ru.souz.backend.channels.tool.ToolListActiveChannels
 import ru.souz.backend.channels.tool.ToolSendMessageToChannel
 import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.scheduler.ScheduledTaskRunner
+import ru.souz.backend.scheduler.ToolCreateScheduledTask
+import ru.souz.backend.scheduler.ToolListScheduledTasks
+import ru.souz.backend.scheduler.ToolDeleteScheduledTask
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
@@ -114,8 +118,11 @@ import ru.souz.backend.vk.VkBotTokenCrypto
 import ru.souz.skilloauth.impl.SkillOAuthGatewayImpl
 import ru.souz.jobs.JobService
 import ru.souz.jobs.impl.PostgresJobService
+import ru.souz.llms.giga.toGiga
 import ru.souz.tool.RuntimeToolsFactory
+import ru.souz.tool.ToolCategory
 import ru.souz.tool.composeToolCatalogs
+import ru.souz.tool.immutableToolCatalogFromLists
 import ru.souz.tool.runtimeToolsDiModule
 import ru.souz.tool.portableSkillRuntimeToolsDiModule
 import ru.souz.tool.knowledge.ToolGetKnowledge
@@ -484,7 +491,27 @@ fun backendDiModule(
     bindSingleton { ToolSendMessageToChannel(registry = instance()) }
     bindSingleton { BackendChannelToolCatalog(instance(), instance()) }
     bindSingleton<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG) {
-        composeToolCatalogs(instance<RuntimeToolsFactory>(), instance<BackendChannelToolCatalog>())
+        composeToolCatalogs(
+            instance<RuntimeToolsFactory>(),
+            instance<BackendChannelToolCatalog>(),
+            immutableToolCatalogFromLists(
+                mapOf(ToolCategory.SCHEDULING to listOf(
+                    ToolCreateScheduledTask(instance(), instance(), appConfig.scheduledTasks, instance()).toGiga(),
+                    ToolListScheduledTasks(instance()).toGiga(),
+                    ToolDeleteScheduledTask(instance()).toGiga(),
+                )),
+            ),
+        )
+    }
+    bindSingleton {
+        ScheduledTaskRunner(
+            chats = instance(),
+            executions = instance(),
+            launcher = instance(),
+            scope = instance<BackendApplicationScope>(),
+            config = appConfig.scheduledTasks,
+            clock = instance(),
+        )
     }
     bindSingleton {
         OptionService(
