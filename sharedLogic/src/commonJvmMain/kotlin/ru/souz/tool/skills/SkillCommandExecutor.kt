@@ -1,6 +1,7 @@
 package ru.souz.tool.skills
 
 import java.nio.file.Path
+import kotlin.io.path.invariantSeparatorsPathString
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.llms.ToolInvocationMeta
@@ -90,13 +91,13 @@ class SkillCommandExecutor(
         val bundleRoot = skillRootPath(sandbox.runtimePaths.skillsDirPath, skillId)
             .resolve(BUNDLES_DIRECTORY_NAME)
             .resolve(bundleHash)
-        val storedBundle = fileSystem.resolvePath(bundleRoot.toString())
+        val storedBundle = fileSystem.resolvePath(bundleRoot.invariantSeparatorsPathString)
         if (storedBundle.exists && storedBundle.isDirectory) {
             return fileSystem.resolveExistingDirectory(storedBundle.path).path
         }
 
         val looseRoot = skillRootPath(sandbox.runtimePaths.skillsDirPath, skillId)
-        val looseBundle = fileSystem.resolvePath(looseRoot.toString())
+        val looseBundle = fileSystem.resolvePath(looseRoot.invariantSeparatorsPathString)
         if (looseBundle.exists && looseBundle.isDirectory) {
             return fileSystem.resolveExistingDirectory(looseBundle.path).path
         }
@@ -114,7 +115,7 @@ class SkillCommandExecutor(
         if (!workingDirectory.startsWith(skillRootPath)) {
             throw BadInputException("workingDirectory must stay inside the selected skill bundle root.")
         }
-        return workingDirectory.toString()
+        return workingDirectory.invariantSeparatorsPathString
     }
 
     private fun resolveScriptPath(
@@ -131,7 +132,7 @@ class SkillCommandExecutor(
         if (!resolved.startsWith(skillRootPath)) {
             throw BadInputException("scriptPath must stay inside the selected skill bundle root.")
         }
-        return sandbox.fileSystem.resolveExistingFile(resolved.toString()).path
+        return sandbox.fileSystem.resolveExistingFile(resolved.invariantSeparatorsPathString).path
     }
 
     private fun skillRootPath(
