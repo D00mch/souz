@@ -39,7 +39,8 @@ class ToolFindFoldersTest {
 
     @Test
     fun `handles quotes and special characters safely (Anti-Injection)`() {
-        val nastyFolderName = "John's \"Folder\""
+        // Windows forbids double quotes in file names.
+        val nastyFolderName = "John's 'Folder'"
         val homeDir = Files.createTempDirectory("souz-test-folder-name").toFile().canonicalFile
         val matchingDir = File(homeDir, nastyFolderName).apply { mkdirs() }.canonicalFile
         val tool = ToolFindFolders(createFilesToolUtil(homeDir))

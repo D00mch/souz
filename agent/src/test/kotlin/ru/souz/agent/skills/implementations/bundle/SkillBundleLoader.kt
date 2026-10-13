@@ -24,7 +24,7 @@ class SkillBundleLoader {
             stream.asSequence()
                 .filter { path -> Files.isRegularFile(path) }
                 .map { path ->
-                    val relativePath = rootDirectory.relativize(path).toString()
+                    val relativePath = rootDirectory.relativize(path).toString().replace('\\', '/')
                     SkillFile(
                         normalizedPath = SkillPathNormalizer.normalize(relativePath),
                         content = Files.readAllBytes(path),
