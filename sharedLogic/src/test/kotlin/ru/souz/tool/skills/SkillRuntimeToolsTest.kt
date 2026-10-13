@@ -41,6 +41,7 @@ import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
+import ru.souz.test.assumeLocalShellScripts
 import ru.souz.tool.BadInputException
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.knowledge.ToolGetKnowledge
@@ -376,6 +377,7 @@ class SkillRuntimeToolsTest {
 
     @Test
     fun `file backed invocation keeps authorization internal and preserves complete output`() = runTest {
+        assumeLocalShellScripts()
         val home = createTempDirectory("future-skill-home-")
         val stateRoot = home.resolve("state").createDirectories()
         stateRoot.resolve("skills/file-skill").createDirectories()
