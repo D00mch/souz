@@ -211,46 +211,75 @@ class BackendSubagentE2eTest {
     }
 
     @Test
-    fun `HTTP execution accounts for child usage and stores only the parent response`() =
+    fun `HTTP child routes to the selected device while parent accounts for usage and owns output`() {
+        lateinit var target: String
         backendE2eTest(
             schemaPrefix = "e2e_subagent_usage",
             featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = true, toolEvents = true),
             llm = E2eLlmApi { request ->
-                when {
-                    request.functions.isEmpty() -> reply(request, "private child text")
-                    request.messages.any { it.name == "SpawnSubagent" } -> reply(request, "parent synthesized answer")
-                    else -> toolCallReply(request, "SpawnSubagent", mapOf("task" to "Produce a private child answer."))
+                val result = request.messages.lastOrNull { it.role == LLMMessageRole.function }
+                if (request.functions.any { it.name == "speaker.say" }) {
+                    assertEquals(listOf("speaker.say"), request.functions.map { it.name })
+                    if (result != null) {
+                        assertEquals("speaker.say", result.name)
+                        assertTrue(restJsonMapper.readTree(result.content)["spoken"].asBoolean())
+                        reply(request, "private child text")
+                    } else {
+                        val route = request.conversationPrompt().substringAfter("channelId: ")
+                        assertEquals(target, route)
+                        toolCallReply(request, "speaker.say", mapOf("text" to "hello", "channelId" to route))
+                    }
+                } else if (result?.name == "SpawnSubagent") {
+                    assertEquals("private child text", restJsonMapper.readTree(result.content)["result"].asText())
+                    reply(request, "parent synthesized answer")
+                } else {
+                    toolCallReply(request, "SpawnSubagent", mapOf(
+                        "task" to "Say hello using channelId: $target", "skillIds" to listOf("speaker.say"),
+                    ))
                 }
             },
         ) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            target = createPublicChat(userId, "target")
+            val chatId = createPublicChat(userId, "source", tools = """[{"name":"speaker.say","description":"Speak text","parameters":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}}]""")
             client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId)
                 jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","streamingMessages":true}""")
             }
-            val sent = client.post(BackendHttpRoutes.chatMessages(chatId)) {
-                trusted(userId)
-                jsonBody("""{"content":"Delegate and synthesize"}""")
+            withMultiChatSocket { socket ->
+                socket.send(Frame.Text("""{"kind":"chat.subscribe","chatId":"$target","requestId":"watch"}"""))
+                assertEquals("accepted", readJson(socket)["status"].asText())
+                assertEquals(HttpStatusCode.OK, client.post(BackendHttpRoutes.chatMessages(chatId)) {
+                    trusted(userId)
+                    jsonBody("""{"content":"Delegate and synthesize"}""")
+                }.status)
+                val started = readJson(socket)
+                assertEquals("tool.call.started", started["type"].asText())
+                assertEquals(target, started["chatId"].asText())
+                assertTrue(started["seq"].isNull)
+                assertEquals("speaker.say", started["payload"]["name"].asText())
+                assertEquals(json.readTree("""{"text":"hello"}"""), started["payload"]["arguments"])
+                socket.send(Frame.Text("""{"kind":"tool.result","chatId":"$target","threadId":${started["threadId"]},"toolCallId":${started["payload"]["toolCallId"]},"status":"succeeded","result":{"spoken":true}}"""))
+                assertEquals("accepted", readJson(socket)["status"].asText())
             }
-            assertEquals(HttpStatusCode.OK, sent.status)
             val events = eventually("parent completion with child usage") {
                 client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(userId) }.jsonBody()["items"].takeIf { items ->
                     items.any { it["type"].asText() == "execution.finished" }
                 }
             }
-            assertEquals(3, llm.requests.size)
+            assertEquals(4, llm.requests.size)
             assertTrue("private child text" in llm.streamedChunks)
             val finished = events.single { it["type"].asText() == "execution.finished" }["payload"]
-            assertEquals(21, finished["promptTokens"].asInt())
-            assertEquals(9, finished["completionTokens"].asInt())
-            assertEquals(30, finished["totalTokens"].asInt())
+            assertEquals(28, finished["promptTokens"].asInt())
+            assertEquals(12, finished["completionTokens"].asInt())
+            assertEquals(40, finished["totalTokens"].asInt())
             val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
             assertEquals(listOf("user", "assistant"), messages.map { it["role"].asText() })
             assertEquals("parent synthesized answer", messages.last()["content"].asText())
             val completed = events.single { it["type"].asText() == "message.completed" }
             assertEquals("parent synthesized answer", completed["payload"]["content"].asText())
         }
+    }
 
     @Test
     fun `proxy child selection excludes compiled web search and returns failure to parent`() =
