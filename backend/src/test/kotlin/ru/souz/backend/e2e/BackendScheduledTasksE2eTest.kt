@@ -20,6 +20,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -298,6 +299,8 @@ class BackendScheduledTasksE2eTest {
                         try {
                             (if (index % 2 == 0) backend else peer.backend).runScheduledTask(occurrence)
                             dispatched.add(occurrence)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
                         } catch (error: IllegalStateException) {
                             assertTrue("quota exceeded" in error.message.orEmpty())
                         }
