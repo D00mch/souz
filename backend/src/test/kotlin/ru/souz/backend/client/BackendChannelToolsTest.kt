@@ -132,6 +132,7 @@ class BackendChannelToolsTest {
         val startedAt = Instant.now()
         val skill = BackendClientSkills(registry, tools, events, ChannelDeliveryService(chats, mockk(), events),
             now = { startedAt }, metrics = metrics)
+            .forChat(listOf(ClientToolDefinition("orion.call", "Call Orion", ru.souz.llms.LLMRequest.Parameters("object"))))
             .toolsByCategory.values.firstNotNullOf { it["orion.call"] }
         val service = PublicClientService(chats, mockk(), mockk(), tools, mockk(), registry, scope)
         val call = LLMResponse.FunctionCall("orion.call", mapOf("channelId" to target.id.toString(), "utterance" to "play"))

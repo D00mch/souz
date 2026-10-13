@@ -116,7 +116,7 @@ class BackendSubagentE2eTest {
             },
         ) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            val chatId = createPublicChat(userId, tools = clientToolsJson("user.ask"))
             client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId); jsonBody("""{"streamingMessages":true,"narrateSteps":true,"systemPrompt":"custom base"}""")
             }
@@ -257,7 +257,7 @@ class BackendSubagentE2eTest {
 
             assertEquals(2, llm.requests.size)
             val inventory = llm.requests.first().messages.first().content
-            assertEquals("- WEB_SEARCH: web.search", inventory.lineSequence().single { it.startsWith("- WEB_SEARCH:") })
+            assertFalse(inventory.lineSequence().any { it.startsWith("- WEB_SEARCH:") })
             val toolResult = llm.requests.last().messages.single { it.name == "SpawnSubagent" }
             assertEquals("skill_not_found", json.readTree(toolResult.content)["error"]["code"].asText())
             assertEquals("parent recovered", messages.last()["content"].asText())

@@ -4,8 +4,9 @@ import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.chat.model.Chat
-import ru.souz.backend.chat.repository.ChatRequestConflictException
 import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.chat.repository.ChatRequestConflictException
+import ru.souz.llms.restJsonMapper
 
 class PostgresChatRepository(
     private val dataSource: DataSource,
@@ -16,9 +17,9 @@ class PostgresChatRepository(
                 """
                 insert into chats(
                   id, user_id, client_type, request_id, payload_hash,
-                  title, archived, created_at, updated_at
+                  title, archived, created_at, updated_at, client_tools
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
                 returning *
                 """.trimIndent()
             ).use { statement ->
@@ -31,6 +32,7 @@ class PostgresChatRepository(
                 statement.setBoolean(7, chat.archived)
                 statement.setInstant(8, chat.createdAt)
                 statement.setInstant(9, chat.updatedAt)
+                statement.setString(10, restJsonMapper.writeValueAsString(chat.clientTools))
                 statement.executeQuery().use { resultSet ->
                     check(resultSet.next())
                     resultSet.toChat()

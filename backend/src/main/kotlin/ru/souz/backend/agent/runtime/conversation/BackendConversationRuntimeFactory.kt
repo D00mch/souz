@@ -8,8 +8,8 @@ import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
-import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.SkillClassifier
+import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.model.AgentConversationKey
@@ -23,12 +23,14 @@ import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.toConversationSession
 import ru.souz.backend.app.BackendProviderRetryPolicy
+import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
+import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.common.backendLogContext
+import ru.souz.backend.config.NamedLlmModel
 import ru.souz.backend.hooks.HookLlmBudget
 import ru.souz.backend.hooks.HookLlmBudget.Companion.withProviderCall
 import ru.souz.backend.hooks.HookStore
-import ru.souz.backend.config.NamedLlmModel
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
@@ -45,12 +47,12 @@ import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalVisionGateway
 import ru.souz.llms.openai.OpenAIImageGenerationGateway
 import ru.souz.llms.openai.OpenAIVisionGateway
-import ru.souz.llms.runtime.LLMCapabilityResolver
 import ru.souz.llms.runtime.ImageGenerationGateway
+import ru.souz.llms.runtime.LLMCapabilityResolver
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.runtime.files.FilesToolUtil
-import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.LlmBackedToolCatalog
+import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsByCategory
@@ -72,7 +74,8 @@ internal class BackendConversationRuntimeFactory(
     private val logObjectMapper: ObjectMapper,
     private val systemPrompt: String,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
-    private val clientToolCatalog: AgentToolCatalog,
+    private val clientSkills: BackendClientSkills,
+    private val chatRepository: ChatRepository,
     private val skillBundleProvider: SkillBundleProvider,
     private val skillClassifier: SkillClassifier,
     private val commandExecutor: SkillCommandExecutor,
@@ -162,7 +165,7 @@ internal class BackendConversationRuntimeFactory(
             compiledToolCatalog = toolCatalog,
             executionLlmToolCatalog = executionLlmToolCatalog,
             enabledCompiledToolNames = request.enabledTools,
-            clientToolCatalog = clientToolCatalog,
+            clientToolCatalog = clientSkills.forChat(chatRepository.get(key.userId, key.chatId())?.clientTools.orEmpty()),
             includeFewShotExamples = settingsProvider.useFewShotExamples,
             metrics = metrics,
         )

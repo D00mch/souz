@@ -3,16 +3,11 @@ package ru.souz.backend.client
 import com.fasterxml.jackson.databind.JsonNode
 import java.time.Duration
 import java.time.Instant
-import java.util.Collections
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import ru.souz.agent.skills.SkillId
-import ru.souz.agent.skills.bundle.SkillBundle
-import ru.souz.agent.skills.bundle.SkillFile
-import ru.souz.agent.skills.bundle.SkillManifest
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.channels.ChannelDeliveryService
 import ru.souz.backend.events.model.AgentEventType
@@ -30,39 +25,30 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
+import ru.souz.tool.immutableToolCatalogSnapshot
 
 internal class BackendClientSkills(
-    registry: ClientThreadRuntimeRegistry,
-    toolCallRepository: ToolCallRepository,
-    eventService: AgentEventService,
-    channelDeliveryService: ChannelDeliveryService,
-    now: () -> Instant = Instant::now,
-    metrics: BackendMetrics? = null,
-    classLoader: ClassLoader = BackendClientSkills::class.java.classLoader,
-) : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
-        loadClientSkillDefinitions(classLoader).values
-            .groupBy { it.category }
+    private val registry: ClientThreadRuntimeRegistry,
+    private val toolCallRepository: ToolCallRepository,
+    private val eventService: AgentEventService,
+    private val channelDeliveryService: ChannelDeliveryService,
+    private val now: () -> Instant = Instant::now,
+    private val metrics: BackendMetrics? = null,
+) {
+    fun forChat(tools: List<ClientToolDefinition>): AgentToolCatalog = immutableToolCatalogSnapshot(
+        tools.groupBy { if (it.name == "web.search") ToolCategory.WEB_SEARCH else ToolCategory.APPLICATIONS }
             .mapValues { (_, definitions) ->
-                Collections.unmodifiableMap(
-                    definitions.associate { definition ->
-                        definition.skillId.value to ClientWebSocketSkill(
-                            definition = definition,
-                            registry = registry,
-                            toolCallRepository = toolCallRepository,
-                            eventService = eventService,
-                            channelDeliveryService = channelDeliveryService,
-                            now = now,
-                            metrics = metrics,
-                        )
-                    },
-                )
-            }
-            .let { Collections.unmodifiableMap(it) }
+                definitions.associate { definition ->
+                    definition.name to ClientWebSocketSkill(
+                        definition, registry, toolCallRepository, eventService, channelDeliveryService, now, metrics,
+                    )
+                }
+            },
+    )
 }
 
 private class ClientWebSocketSkill(
-    definition: ClientSkillDefinition,
+    definition: ClientToolDefinition,
     private val registry: ClientThreadRuntimeRegistry,
     private val toolCallRepository: ToolCallRepository,
     private val eventService: AgentEventService,
@@ -70,13 +56,13 @@ private class ClientWebSocketSkill(
     private val now: () -> Instant,
     private val metrics: BackendMetrics?,
 ) : LLMToolSetup {
-    private val timeout = definition.timeout
-    private val metricCategory = definition.category.name.lowercase()
+    private val timeout = Duration.ofMinutes(1)
+    private val metricCategory = if (definition.name == "web.search") "web_search" else "applications"
 
     override val fn = LLMRequest.Function(
-        name = definition.skillId.value,
+        name = definition.name,
         description = definition.description,
-        parameters = LLMRequest.Parameters(type = "object"),
+        parameters = definition.parameters,
     )
 
     override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
@@ -110,6 +96,9 @@ private class ClientWebSocketSkill(
     }
 
     private suspend fun invokeClient(functionCall: LLMResponse.FunctionCall, meta: ToolInvocationMeta): ClientToolOutcome {
+        clientArgumentsError(fn.parameters, restJsonMapper.valueToTree(functionCall.arguments - "channelId"))?.let {
+            return failed("mcp_invalid_arguments", it)
+        }
         if ("channelId" in functionCall.arguments) return invokeOnChannel(functionCall, meta)
         val threadId = meta.requestId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
             ?: return failed("client_context_missing", "Thread ID is unavailable.")
@@ -288,95 +277,3 @@ private class ClientWebSocketSkill(
 
     private fun failed(code: String, message: String) = ClientToolOutcome("failed", null, ClientError(code, message))
 }
-
-private data class ClientSkillDefinition(
-    val skillId: SkillId,
-    val description: String,
-    val category: ToolCategory,
-    val timeout: Duration,
-)
-
-private fun loadClientSkillDefinitions(classLoader: ClassLoader): Map<SkillId, ClientSkillDefinition> {
-    val entries = requireNotNull(classLoader.getResourceAsStream(CLIENT_SKILL_INDEX)) {
-        "Missing bundled client Skill index: $CLIENT_SKILL_INDEX"
-    }.bufferedReader(Charsets.UTF_8).useLines { lines ->
-        lines
-            .map(String::trim)
-            .filter { it.isNotEmpty() && !it.startsWith('#') }
-            .toList()
-    }
-    require(entries.isNotEmpty()) { "Bundled client Skill index is empty: $CLIENT_SKILL_INDEX" }
-
-    val duplicateEntry = entries.groupingBy { it }.eachCount().entries.firstOrNull { it.value > 1 }
-    require(duplicateEntry == null) { "Duplicate bundled client Skill index entry: ${duplicateEntry?.key}" }
-
-    val definitionsById = linkedMapOf<SkillId, ClientSkillDefinition>()
-    entries.forEach { entry ->
-        require(CLIENT_SKILL_ENTRY_PATTERN.matches(entry)) {
-            "Invalid bundled client Skill index entry: $entry"
-        }
-        val resourcePath = "$CLIENT_SKILL_ROOT/$entry/SKILL.md"
-        val content = requireNotNull(classLoader.getResourceAsStream(resourcePath)) {
-            "Missing bundled client Skill resource: $resourcePath"
-        }.use { stream -> stream.readBytes() }
-        val indexedBundle = SkillBundle.fromFiles(
-            skillId = SkillId(entry),
-            files = listOf(SkillFile(normalizedPath = "SKILL.md", content = content)),
-        )
-        val canonicalId = requireNotNull(
-            indexedBundle.manifest.metadata[CLIENT_SKILL_ID_METADATA]
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() },
-        ) {
-            "Bundled client Skill $entry is missing metadata.$CLIENT_SKILL_ID_METADATA"
-        }
-        val transport = indexedBundle.manifest.metadata[CLIENT_SKILL_TRANSPORT_METADATA]?.trim()
-        require(transport == CLIENT_SKILL_TRANSPORT) {
-            "Bundled client Skill $entry has invalid metadata.$CLIENT_SKILL_TRANSPORT_METADATA: $transport"
-        }
-        val bundle = SkillBundle.fromFiles(
-            skillId = SkillId(canonicalId),
-            files = indexedBundle.files,
-        )
-        val definition = ClientSkillDefinition(
-            skillId = bundle.skillId,
-            description = "${bundle.manifest.description}\n\n${bundle.skillMarkdownBody}\n\n" +
-                "To target another device, use ListActiveChannels and pass its id as channelId in arguments.",
-            category = bundle.manifest.clientCategory(),
-            timeout = bundle.manifest.clientTimeout(),
-        )
-        require(definitionsById.put(definition.skillId, definition) == null) {
-            "Duplicate bundled client Skill ID: ${bundle.skillId.value}"
-        }
-    }
-    return Collections.unmodifiableMap(definitionsById)
-}
-
-private fun SkillManifest.clientCategory(): ToolCategory {
-    val rawCategory = metadata[CLIENT_SKILL_CATEGORY_METADATA]?.trim().orEmpty()
-    return requireNotNull(
-        ToolCategory.entries.firstOrNull { category -> category.name.equals(rawCategory, ignoreCase = true) },
-    ) {
-        "Client Skill $name has invalid metadata.$CLIENT_SKILL_CATEGORY_METADATA: $rawCategory"
-    }
-}
-
-private fun SkillManifest.clientTimeout(): Duration {
-    val rawTimeout = metadata[CLIENT_SKILL_TIMEOUT_METADATA]?.trim().orEmpty()
-    return requireNotNull(
-        runCatching { Duration.parse(rawTimeout) }
-            .getOrNull()
-            ?.takeIf { timeout -> !timeout.isZero && !timeout.isNegative },
-    ) {
-        "Client Skill $name has invalid metadata.$CLIENT_SKILL_TIMEOUT_METADATA: $rawTimeout"
-    }
-}
-
-private const val CLIENT_SKILL_TRANSPORT_METADATA = "souz.transport"
-private const val CLIENT_SKILL_TRANSPORT = "client-websocket"
-private const val CLIENT_SKILL_CATEGORY_METADATA = "souz.category"
-private const val CLIENT_SKILL_TIMEOUT_METADATA = "souz.timeout"
-private const val CLIENT_SKILL_ID_METADATA = "souz.skill-id"
-private const val CLIENT_SKILL_ROOT = "skills/client"
-private const val CLIENT_SKILL_INDEX = "$CLIENT_SKILL_ROOT/index.txt"
-private val CLIENT_SKILL_ENTRY_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")

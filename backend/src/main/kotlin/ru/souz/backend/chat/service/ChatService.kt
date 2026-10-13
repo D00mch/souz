@@ -3,11 +3,13 @@ package ru.souz.backend.chat.service
 import io.ktor.http.HttpStatusCode
 import java.time.Instant
 import java.util.UUID
-import ru.souz.backend.client.PublicPayloadHash
 import ru.souz.backend.chat.model.Chat
-import ru.souz.backend.chat.repository.ChatRequestConflictException
 import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.chat.repository.ChatRequestConflictException
 import ru.souz.backend.chat.repository.MessageRepository
+import ru.souz.backend.client.ClientToolDefinition
+import ru.souz.backend.client.PublicPayloadHash
+import ru.souz.backend.client.normalizeClientTools
 import ru.souz.backend.common.normalizePositiveLimit
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.invalidV1Request
@@ -30,6 +32,7 @@ data class CreateClientChatResult(
 class ChatService(
     private val chatRepository: ChatRepository,
     private val messageRepository: MessageRepository,
+    private val serverToolNames: Set<String>,
 ) {
     suspend fun list(
         userId: String,
@@ -58,9 +61,16 @@ class ChatService(
         requestId: String,
         clientType: String,
         title: String?,
+        tools: List<ClientToolDefinition> = emptyList(),
     ): CreateClientChatResult {
         val normalizedTitle = title?.trim()?.takeIf { it.isNotEmpty() }
-        val payloadHash = PublicPayloadHash.ofValue(mapOf("clientType" to clientType, "title" to normalizedTitle))
+        val normalizedTools = normalizeClientTools(tools, serverToolNames)
+        // Keep the empty-catalogue hash compatible with chats created before catalogue registration.
+        val payloadHash = PublicPayloadHash.ofValue(buildMap {
+            put("clientType", clientType)
+            put("title", normalizedTitle)
+            if (normalizedTools.isNotEmpty()) put("tools", normalizedTools)
+        })
         var existing = chatRepository.findByRequestId(userId, requestId)
         if (existing == null) {
             val now = Instant.now()
@@ -74,6 +84,7 @@ class ChatService(
                 clientType = clientType,
                 requestId = requestId,
                 payloadHash = payloadHash,
+                clientTools = normalizedTools,
             )
             try {
                 return CreateClientChatResult(chatRepository.create(chat), duplicate = false)

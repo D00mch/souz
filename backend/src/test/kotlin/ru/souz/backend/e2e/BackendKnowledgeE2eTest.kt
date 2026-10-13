@@ -87,7 +87,7 @@ class BackendKnowledgeE2eTest {
             },
         ) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            val chatId = createPublicChat(userId, tools = clientToolsJson("user.ask"))
             if (failWrites) backend.sql { connection ->
                 connection.createStatement().use {
                     it.execute("alter table conversation_knowledge add constraint reject_knowledge_writes check (false)")

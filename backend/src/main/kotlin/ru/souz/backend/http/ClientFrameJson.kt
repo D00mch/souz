@@ -6,10 +6,15 @@ import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonMappingException
 import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.MapperFeature
+import com.fasterxml.jackson.databind.cfg.CoercionAction
+import com.fasterxml.jackson.databind.cfg.CoercionInputShape
+import com.fasterxml.jackson.databind.type.LogicalType
 import com.fasterxml.jackson.databind.exc.InvalidTypeIdException
 import com.fasterxml.jackson.databind.exc.MismatchedInputException
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.KotlinFeature
 import io.ktor.websocket.Frame
 import io.ktor.websocket.WebSocketSession
 import io.ktor.websocket.readText
@@ -89,4 +94,12 @@ private fun Class<*>.jsonTypeName(): String = when {
 
 internal class InvalidClientFrameException(message: String) : RuntimeException(message)
 
-private val clientFrameMapper = jacksonObjectMapper().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+internal val clientFrameMapper = jacksonObjectMapper { enable(KotlinFeature.StrictNullChecks) }
+    .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+    .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
+    .apply {
+        coercionConfigFor(LogicalType.Textual)
+            .setCoercion(CoercionInputShape.Integer, CoercionAction.Fail)
+            .setCoercion(CoercionInputShape.Float, CoercionAction.Fail)
+            .setCoercion(CoercionInputShape.Boolean, CoercionAction.Fail)
+    }
