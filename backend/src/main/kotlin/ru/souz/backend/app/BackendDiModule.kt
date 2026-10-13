@@ -34,6 +34,8 @@ import ru.souz.backend.channels.tool.BackendChannelToolCatalog
 import ru.souz.backend.channels.tool.ToolListActiveChannels
 import ru.souz.backend.channels.tool.ToolSendMessageToChannel
 import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.scheduler.ScheduledTaskRunner
+import ru.souz.backend.scheduler.ScheduledTaskTools
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
@@ -483,8 +485,23 @@ fun backendDiModule(
     bindSingleton { ToolListActiveChannels(registry = instance()) }
     bindSingleton { ToolSendMessageToChannel(registry = instance()) }
     bindSingleton { BackendChannelToolCatalog(instance(), instance()) }
+    bindSingleton { ScheduledTaskTools(instance(), instance(), appConfig.scheduledTasks, instance()) }
     bindSingleton<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG) {
-        composeToolCatalogs(instance<RuntimeToolsFactory>(), instance<BackendChannelToolCatalog>())
+        composeToolCatalogs(
+            instance<RuntimeToolsFactory>(),
+            instance<BackendChannelToolCatalog>(),
+            instance<ScheduledTaskTools>(),
+        )
+    }
+    bindSingleton {
+        ScheduledTaskRunner(
+            chats = instance(),
+            executions = instance(),
+            launcher = instance(),
+            scope = instance<BackendApplicationScope>(),
+            config = appConfig.scheduledTasks,
+            clock = instance(),
+        )
     }
     bindSingleton {
         OptionService(

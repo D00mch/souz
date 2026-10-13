@@ -102,7 +102,7 @@ class PostgresChatRepository(
             """
             select * from chats
             where user_id = ?
-              and client_type <> 'hook'
+              and client_type not in ('hook', 'scheduled_task')
               and (? or archived = false)
             order by updated_at desc
             limit ?

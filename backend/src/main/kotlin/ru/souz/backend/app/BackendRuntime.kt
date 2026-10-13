@@ -11,6 +11,7 @@ import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.vk.VkBotPollingService
 import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
+import ru.souz.backend.scheduler.ScheduledTaskRunner
 import ru.souz.jobs.JobRun
 import ru.souz.jobs.impl.PostgresJobService
 
@@ -35,6 +36,7 @@ class BackendRuntime private constructor(
 
     fun startBackgroundServices() {
         runBlocking { httpDependencies.hookService.start(applicationScope) }
+        runBlocking { startJobWorker(di.direct.instance<ScheduledTaskRunner>()::run) }
         if (httpDependencies.featureFlags.wsEvents) {
             runBlocking { clientThreadRecoveryService.recover() }
             clientThreadRecoveryService.start(applicationScope)

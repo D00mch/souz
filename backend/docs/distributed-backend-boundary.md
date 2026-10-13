@@ -6,7 +6,7 @@ Backend storage is PostgreSQL-backed. Agent execution ownership is distributed-s
 
 The separate [job service](../../job-impl/docs/job-ownership.md) uses PostgreSQL claims and renewable leases across replicas. It executes host-supplied handlers at least once and starts only when a handler is explicitly supplied. Its lease does not confer distributed ownership on an agent execution that a handler might start.
 
-Ordinary trusted-proxy HTTP executions and Telegram/VK-triggered executions run as process-local background jobs without a renewable runtime lease. Their durable `agent_executions` rows can remain active if the owning process exits while the job is running. `waiting_option` is durable user-wait state and must not be treated as a crashed runtime by lease recovery.
+Ordinary trusted-proxy HTTP executions, Telegram/VK-triggered executions and scheduled-task occurrences run as process-local background jobs without a renewable runtime lease. Their durable `agent_executions` rows can remain active if the owning process exits while the job is running. `waiting_option` is durable user-wait state and must not be treated as a crashed runtime by lease recovery.
 
 [Workspace hooks](hooks.md) have single-process receipt-based recovery: pending work resumes and interrupted receipt-linked executions fail without replaying side effects. This does not provide distributed ownership or recover unrelated ordinary executions.
 

@@ -16,6 +16,7 @@ Before changing this module, read the relevant pain-point topics below.
 - Assistant progress is opt-in through `narrateSteps`; live-only bot observers stop delivery before the final reply. See [execution events](docs/execution-openapi-and-events.md).
 - PostgreSQL stores structured repositories and [conversation Knowledge](docs/conversation-knowledge.md). Sandbox workspaces remain filesystem-backed and user-scoped.
 - Bind one `JobService` and `PostgresJobService` instance to the application datasource. Job workers start only through `BackendRuntime.startJobWorker` with a host-supplied handler; shutdown joins application work before closing storage. See [job ownership](../job-impl/docs/job-ownership.md).
+- Scheduled tasks are `JobService` jobs managed by the `SCHEDULING` tools. Their handler starts each occurrence in a new hidden chat and returns without awaiting the agent. See [scheduled tasks](docs/scheduled-tasks.md).
 - Workspace hooks authenticate before agent setup and persist receipts before acknowledgement. Each new receipt owns a separate hidden technical chat; duplicate deliveries reuse the receipt. Hook recovery is single-process and only touches receipt-linked executions; see [the hook contract](../docs/hooks.md).
 - Hook intake capacity is isolated per configured owner and survives reload. Verifier commands use the trusted owner's configured LOCAL/DOCKER sandbox through `SandboxCommandExecutor`, before Skill discovery or LLM use. They share that sandbox's permissions and do not create a separate verification container.
 - Give each ordinary HTTP route explicit OpenAPI metadata. Keep the WebSocket routes out of the generated document and maintain its schema in `docs/public-souz-contract`.
@@ -31,6 +32,7 @@ Before changing this module, read the relevant pain-point topics below.
 - [Public client WebSocket](docs/public-client-websocket.md) — public idempotency, thread/runtime coordination, client tools, acknowledgement ordering, and replay.
 - [Distributed backend boundary](docs/distributed-backend-boundary.md) — which backend entry points have distributed runtime ownership and recovery.
 - [Job ownership and recovery](../job-impl/docs/job-ownership.md) — explicitly started workers, PostgreSQL claims, and at-least-once handlers.
+- [Scheduled tasks](docs/scheduled-tasks.md) — hidden occurrence chats, non-blocking handler, run budget, and recurring failure handling.
 - [Conversation Knowledge](docs/conversation-knowledge.md) — durable tool/subagent results, ownership, deletion, and read-only deployment verification.
 - [Telegram bindings](docs/telegram-bindings.md) — token custody, private-account linking, polling leases, and checkpoint safety.
 - [VK bindings](docs/vk-bindings.md) — private-account linking, encrypted tokens, Long Poll cursors, and lease fencing.
