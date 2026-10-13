@@ -32,6 +32,8 @@ With `HINDSIGHT_API_URL` configured and `SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL
 
 HTTP `POST /v1/chats` and WS `chat.create.payload` accept optional `tools`, an array of `{name, description, parameters}` definitions. Missing `tools` and `[]` both register no client tools. Explicit `null` is invalid. There is no catalogue discovery call or REST catalogue fetch. Server tools keep their existing policy.
 
+Chat-registered client tools are unsupported with Souz's `LOCAL` model provider. Use a non-`LOCAL` model for turns and subagents that use these tools. Local prompt rendering can truncate Skill discovery results and omit the input schema. This is a support limitation; catalogue creation and model selection do not reject this combination.
+
 The catalogue is validated and stored atomically with the chat. It is immutable across turns, threads, reconnects and backend restarts. Both creation paths share `(userId, requestId)` idempotency: definitions are sorted by name, schema property keys are sorted, and `required` and `enum` arrays are deduplicated and sorted. Names and descriptions are preserved exactly. A changed definition conflicts; use a new chat to change the catalogue. Pre-existing chats have an empty catalogue, and their empty-catalogue creation retries remain valid.
 
 Limits: 256 tools; 1 MiB of serialized definitions; unique names matching `[A-Za-z][A-Za-z0-9_.-]{0,63}`; nonblank descriptions of at most 16,384 characters; schema depth at most 16 below the root. Core Skill and server tool names are reserved. Validation rejects the entire creation with `invalid_request`.

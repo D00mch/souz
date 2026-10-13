@@ -111,7 +111,13 @@ components:
       type: array
       maxItems: 256
       default: []
-      description: Immutable chat catalogue, at most 1 MiB. Omission and [] are equivalent. Definitions are normalized for shared HTTP/WS creation idempotency; changed definitions conflict.
+      description: >-
+        Immutable chat catalogue, at most 1 MiB. Omission and [] are equivalent.
+        Definitions are normalized for shared HTTP/WS creation idempotency; changed definitions conflict.
+        Chat-registered client tools are unsupported with Souz's LOCAL model provider;
+        use a non-LOCAL model for turns and subagents that use them. Local prompt rendering can
+        truncate Skill discovery results and omit input schemas. This support limitation is
+        not enforced by catalogue creation or model selection.
       items:
         $ref: "#/components/schemas/ClientToolDefinition"
     ClientToolDefinition:
