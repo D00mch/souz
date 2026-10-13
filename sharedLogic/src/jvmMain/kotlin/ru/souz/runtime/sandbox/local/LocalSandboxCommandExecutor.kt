@@ -64,7 +64,12 @@ internal class LocalSandboxCommandExecutor(
         }
 
         SandboxCommandRuntime.BASH -> scriptCommand("bash", "-lc", "script is required for BASH runtime.", inlineCommandName = "bash")
-        SandboxCommandRuntime.PYTHON -> scriptCommand("python3", "-c", "script is required for PYTHON runtime.")
+        // Windows Python installs ship python.exe; python3.exe there is the Microsoft Store stub.
+        SandboxCommandRuntime.PYTHON -> scriptCommand(
+            if (System.getProperty("os.name").startsWith("Windows")) "python" else "python3",
+            "-c",
+            "script is required for PYTHON runtime.",
+        )
         SandboxCommandRuntime.NODE -> scriptCommand("node", "-e", "script is required for NODE runtime.")
     }
 
