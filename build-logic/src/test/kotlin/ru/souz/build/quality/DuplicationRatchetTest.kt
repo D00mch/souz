@@ -1,6 +1,8 @@
 package ru.souz.build.quality
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -46,6 +48,16 @@ class DuplicationRatchetTest {
         assertTrue(evaluation.failed)
         assertTrue(evaluation.diagnostics.any { it.message.contains("does not match pinned version") })
         assertTrue(evaluation.diagnostics.any { it.message.contains("configuration changed") })
+    }
+
+    @Test
+    fun `configuration hash ignores line endings but not content`(@TempDir root: Path) {
+        fun hash(content: String) = DuplicationRatchet.sha256(root.resolve("jscpd.json").toFile().apply { writeText(content) })
+        val lfHash = "sha256:5c4f48511e178220ea12c5d121a93a38882d251e6d8f606cd8b515b3e920000a"
+
+        assertEquals(lfHash, hash("{\n  \"threshold\": 0\n}\n"))
+        assertEquals(lfHash, hash("{\r\n  \"threshold\": 0\r\n}\r\n"))
+        assertNotEquals(lfHash, hash("{\n  \"threshold\": 1\n}\n"))
     }
 
     private fun evaluate(
