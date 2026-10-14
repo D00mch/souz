@@ -20,9 +20,9 @@ internal fun LLMRequest.Chat.prefersPlainTextLocalOutput(): Boolean {
 class LocalPromptRenderer {
     fun render(body: LLMRequest.Chat, profile: LocalModelProfile): String {
         val contextBudget = resolveEffectiveContextBudget(body, profile)
-        val systemPrompt = buildSystemPrompt(body, profile, contextBudget)
+        val systemPrompt = buildSystemPrompt(body, contextBudget)
         val messages = body.messages.filterNot { it.role == LLMMessageRole.system }
-            .map { toRenderedMessage(it, profile, contextBudget) }
+            .map { toRenderedMessage(it, contextBudget) }
 
         return when (profile.promptFamily) {
             LocalPromptFamily.QWEN_CHATML -> renderQwen(systemPrompt, messages)
@@ -30,7 +30,7 @@ class LocalPromptRenderer {
         }
     }
 
-    private fun buildSystemPrompt(body: LLMRequest.Chat, profile: LocalModelProfile, contextBudget: Int): String {
+    private fun buildSystemPrompt(body: LLMRequest.Chat, contextBudget: Int): String {
         val explicitSystem = body.messages
             .filter { it.role == LLMMessageRole.system }
             .joinToString("\n\n") { it.content.trim() }
@@ -206,7 +206,6 @@ class LocalPromptRenderer {
 
     private fun toRenderedMessage(
         message: LLMRequest.Message,
-        profile: LocalModelProfile,
         contextBudget: Int,
     ): RenderedMessage = when (message.role) {
         LLMMessageRole.user -> RenderedMessage(role = "user", content = renderUserMessage(message))
@@ -247,7 +246,7 @@ class LocalPromptRenderer {
                 val contentJson = restJsonMapper.readValue<Map<String, Any>>(message.content)
                 val name = contentJson["name"]?.toString()
                 val arguments = contentJson["arguments"]?.let { args ->
-                    if (args is String) args else restJsonMapper.writeValueAsString(args)
+                    args as? String ?: restJsonMapper.writeValueAsString(args)
                 }
                 if (name != null && arguments != null) LLMRequest.FunctionCall(name, arguments) else null
             }.getOrNull()
@@ -298,26 +297,35 @@ class LocalPromptRenderer {
         append("<|turn>assistant\n")
     }
 
-    private fun normalizeToolResultContent(message: LLMRequest.Message, contextBudget: Int): Any {
-        val decoded = runCatching { restJsonMapper.readValue<String>(message.content) }.getOrDefault(message.content)
-        // Skill schemas are executable contracts, not previews. Normal context budgeting still applies.
-        if (message.name in setOf("GetSkillByName", "GetSkillsByCategory")) {
-            return runCatching { restJsonMapper.readValue<Any>(decoded) }.getOrDefault(decoded)
-        }
-        val budget = when {
-            contextBudget <= SMALL_CONTEXT_THRESHOLD -> LOCAL_SMALL_CONTEXT_TOOL_PREVIEW_CHARS
-            else -> LOCAL_LARGE_CONTEXT_TOOL_PREVIEW_CHARS
+    private fun normalizeToolResultContent(
+        message: LLMRequest.Message,
+        contextBudget: Int,
+    ): Any {
+        val decoded = runCatching { restJsonMapper.readValue<String>(message.content) }
+            .getOrDefault(message.content)
+
+        // Discovery results must retain complete executable schemas.
+        val preserveFullContent = when (message.name) {
+            "GetSkillByName", "GetSkillsByCategory" -> true
+            else -> false
         }
 
-        if (decoded.length > budget) {
-            return mapOf(
+        val previewLimit = if (contextBudget <= SMALL_CONTEXT_THRESHOLD) {
+            LOCAL_SMALL_CONTEXT_TOOL_PREVIEW_CHARS
+        } else {
+            LOCAL_LARGE_CONTEXT_TOOL_PREVIEW_CHARS
+        }
+
+        return if (preserveFullContent || decoded.length <= previewLimit) {
+            runCatching { restJsonMapper.readValue<Any>(decoded) }
+                .getOrDefault(decoded)
+        } else {
+            mapOf(
                 "truncated" to true,
                 "original_length" to decoded.length,
-                "preview" to decoded.take(budget).trimEnd() + TRUNCATION_SUFFIX,
+                "preview" to decoded.take(previewLimit).trimEnd() + TRUNCATION_SUFFIX,
             )
         }
-
-        return runCatching { restJsonMapper.readValue<Any>(decoded) }.getOrDefault(decoded)
     }
 
     private fun resolveEffectiveContextBudget(body: LLMRequest.Chat, profile: LocalModelProfile): Int =
