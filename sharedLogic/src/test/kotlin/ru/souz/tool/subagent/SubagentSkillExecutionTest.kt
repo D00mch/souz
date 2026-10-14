@@ -9,6 +9,7 @@ import kotlinx.coroutines.test.runTest
 import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.validation.SkillApprovalGate
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentSettings
@@ -26,7 +27,6 @@ import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.test.assumeLocalShellScripts
-import ru.souz.tool.immutableToolCatalogSnapshot
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.ToolInvokeSkill
 import kotlin.test.Test
@@ -52,7 +52,7 @@ class SubagentSkillExecutionTest {
             assertFalse(java.io.File("$root/run.sh").canExecute())
             val registry = FileSystemSkillRegistryRepository(runtime)
             val commands = SkillCommandExecutor(ToolInvocationRuntimeSandboxResolver.fixed(runtime))
-            val catalog = immutableToolCatalogSnapshot(emptyMap())
+            val catalog = AgentToolCatalog()
             val filter = mockk<AgentToolsFilter> { every { applyFilter(any()) } answers { firstArg() } }
             val approval = mockk<SkillApprovalGate> {
                 coEvery { ensureApproved(any()) } answers {

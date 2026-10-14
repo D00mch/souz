@@ -43,7 +43,7 @@ class ToolsFactoryTest {
             ),
             desktopToolCatalog = catalog(ToolCategory.DESKTOP, desktopTool),
             settingsProvider = settingsProvider,
-        )
+        ).catalog
 
         val names = catalog.toolsByCategory.values.flatMapTo(linkedSetOf()) { it.keys }
         assertTrue("RuntimeTool" in names)
@@ -54,7 +54,7 @@ class ToolsFactoryTest {
 }
 
 private fun catalog(category: ToolCategory, tool: LLMToolSetup): AgentToolCatalog =
-    immutableToolCatalogFromLists(mapOf(category to listOf(tool)))
+    AgentToolCatalog(mapOf(category to listOf(tool)))
 
 private fun tool(name: String): LLMToolSetup = object : LLMToolSetup {
     override val fn: LLMRequest.Function = LLMRequest.Function(name)

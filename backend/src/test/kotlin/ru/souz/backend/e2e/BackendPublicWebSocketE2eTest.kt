@@ -464,7 +464,7 @@ class BackendPublicWebSocketE2eTest {
                 assertEquals("rejected", conflict["status"].asText())
                 assertEquals("idempotency_conflict", conflict["error"]["code"].asText())
                 assertEquals(0.0, metrics.get("souz.pending.tool.calls").gauge().value())
-                assertEquals(1.0, metrics.get("souz.tool.calls").tags("category", "applications", "outcome", "success").counter().count())
+                assertEquals(1.0, metrics.get("souz.tool.calls").tags("category", "chat", "outcome", "success").counter().count())
             }
         }
 
@@ -545,7 +545,7 @@ class BackendPublicWebSocketE2eTest {
                 assertTrue(duplicate["duplicate"].asBoolean())
                 val metrics = backend.dependencies.metrics.registry
                 assertEquals(0.0, metrics.get("souz.pending.tool.calls").gauge().value())
-                assertEquals(1.0, metrics.get("souz.tool.calls").tags("category", "applications", "outcome", "timeout").counter().count())
+                assertEquals(1.0, metrics.get("souz.tool.calls").tags("category", "chat", "outcome", "timeout").counter().count())
             }
         }
 
@@ -660,7 +660,7 @@ class BackendPublicWebSocketE2eTest {
                 assertEquals("idempotency_conflict", rejected["error"]["code"].asText())
                 val metrics = backend.dependencies.metrics.registry
                 assertEquals(0.0, metrics.get("souz.pending.tool.calls").gauge().value())
-                assertEquals(1.0, metrics.get("souz.tool.calls").tags("category", "applications", "outcome", "cancelled").counter().count())
+                assertEquals(1.0, metrics.get("souz.tool.calls").tags("category", "chat", "outcome", "cancelled").counter().count())
             }
         }
 

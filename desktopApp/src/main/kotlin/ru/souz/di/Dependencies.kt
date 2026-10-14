@@ -421,7 +421,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         )
     }
     bindSingleton<AgentToolCatalog>(tag = DiTags.TAG_DESKTOP_TOOL_CATALOG) {
-        immutableToolCatalogFromLists(
+        AgentToolCatalog(
             mapOf(
                 ToolCategory.BROWSER to listOf(
                     instance<ToolCreateNewBrowserTab>().toGiga(),
@@ -488,13 +488,13 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton {
         ToolsFactory(
-            runtimeToolCatalog = instance<RuntimeToolsFactory>(),
+            runtimeToolCatalog = instance<RuntimeToolsFactory>().catalog,
             llmBackedToolCatalog = instance(),
             desktopToolCatalog = instance(tag = DiTags.TAG_DESKTOP_TOOL_CATALOG),
             settingsProvider = instance(),
         )
     }
-    bindSingleton<AgentToolCatalog> { instance<ToolsFactory>() }
+    bindSingleton<AgentToolCatalog> { instance<ToolsFactory>().catalog }
     import(fileSystemSkillRegistryDiModule())
     bindSingleton<ConversationKnowledgeStore> { SandboxConversationKnowledgeStore(instance()) }
     import(portableSkillToolsDiModule())

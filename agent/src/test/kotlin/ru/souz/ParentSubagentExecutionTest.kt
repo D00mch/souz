@@ -245,7 +245,7 @@ private class ParentHarness(
         val nodesMemory = NodesMemory(NoopConversationMemoryRuntime, captureScope)
         val nodesErrorHandling = NodesErrorHandling(mockk(relaxed = true))
         val nodesToolUse = NodesToolUseWithKnowledge(AgentToolExecutor(), knowledgeStore = null)
-        val catalog = mockk<AgentToolCatalog> { every { toolsByCategory } returns catalogTools }
+        val catalog = AgentToolCatalog(catalogTools.mapValues { it.value.values })
         val filter = mockk<AgentToolsFilter> { every { applyFilter(any()) } answers { firstArg() } }
         val bundles = mockk<SkillBundleProvider> { coEvery { listSkillInventoryIds(any()) } returns emptyList() }
         val inventory = NodesSkillInventory(catalog, filter, bundles)

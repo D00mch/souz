@@ -190,11 +190,9 @@ class SkillsGraphBasedAgentTest {
         ctx
     }
 
-    private fun testCatalog(): AgentToolCatalog = object : AgentToolCatalog {
-        override val toolsByCategory = mapOf(
-            ToolCategory.FILES to mapOf("CatalogTool" to testTool("CatalogTool")),
-        )
-    }
+    private fun testCatalog(): AgentToolCatalog = AgentToolCatalog(
+        mapOf(ToolCategory.FILES to listOf(testTool("CatalogTool")))
+    )
 
     private fun emptySkillRegistry(): SkillRegistryRepository = mockk(relaxed = true) {
         coEvery { listSkills(any()) } returns emptyList()

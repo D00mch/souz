@@ -18,7 +18,6 @@ import ru.souz.backend.agent.model.chatId
 import ru.souz.backend.agent.runtime.BackendAgentErrorMessages
 import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
 import ru.souz.backend.agent.runtime.BackendNoopAgentDesktopInfoRepository
-import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.toConversationSession
@@ -74,7 +73,7 @@ internal class BackendConversationRuntimeFactory(
     private val messageRepository: MessageRepository,
     private val logObjectMapper: ObjectMapper,
     private val systemPrompt: String,
-    private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
+    private val toolCatalog: AgentToolCatalog = AgentToolCatalog(),
     private val clientSkills: BackendClientSkills,
     private val chatRepository: ChatRepository,
     private val skillBundleProvider: SkillBundleProvider,
@@ -163,11 +162,12 @@ internal class BackendConversationRuntimeFactory(
             },
         )
         val clientTools = chatRepository.clientTools(key.userId, key.chatId())
+        val clientToolCatalog = clientSkills.catalog(clientTools)
         val executionToolCatalog = backendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
-            executionLlmToolCatalog = executionLlmToolCatalog,
+            executionLlmToolCatalog = executionLlmToolCatalog.catalog,
             enabledCompiledToolNames = request.enabledTools,
-            clientToolCatalog = clientSkills.catalog(clientTools),
+            clientToolCatalog = clientToolCatalog,
             includeFewShotExamples = settingsProvider.useFewShotExamples,
             metrics = metrics,
         )
@@ -210,7 +210,7 @@ internal class BackendConversationRuntimeFactory(
             skillBundleProvider = skillBundleProvider,
             commandExecutor = commandExecutor,
             configuredModels = settingsProvider.subagentModels,
-            commandToolNames = clientTools.map { it.name }.toSet(),
+            commandToolNames = clientToolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet(),
             commandInstructions = CLIENT_TOOL_ROUTING_INSTRUCTIONS,
         )
         val kernel = AgentExecutionKernelFactory(

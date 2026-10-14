@@ -27,6 +27,7 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class LocalSandboxCommandExecutorTest {
@@ -174,8 +175,10 @@ class LocalSandboxCommandExecutorTest {
                 withTimeout(10_000) {
                     val execution = async {
                         sandbox.commandExecutor.execute(SandboxCommandRequest(
-                            runtime = SandboxCommandRuntime.BASH,
-                            script = $$"sleep 30 & printf '%s %s' \"$$\" \"$!\" > pids.tmp; mv pids.tmp pids; wait",
+                            runtime = SandboxCommandRuntime.PROCESS,
+                            command = listOf("bash", "--noprofile", "--norc", "-c",
+                                $$"sleep 30 & printf '%s %s' \"$$\" \"$!\" > pids.tmp; mv pids.tmp pids; wait"),
+                            environment = mapOf("BASH_ENV" to "/dev/null"),
                             workingDirectory = home.toString(), timeoutMillis = if (cancel) null else 1_000, stdin = input,
                         )).also { commandResult = it }
                     }
@@ -206,6 +209,52 @@ class LocalSandboxCommandExecutorTest {
                     )
                 }
             }
+        }
+    }
+
+    @Test
+    fun `terminates the parent before children can resume its startup script`() = runBlocking {
+        assumeLocalShellScripts()
+        val home = createTempDirectory("sandbox-startup-")
+        val sandbox = createSandbox(home)
+        val pidFile = home.resolve("startup-pids")
+        val continuedFile = home.resolve("continued")
+        val startup = home.resolve("startup.sh").apply {
+            writeText($$"""
+                sleep 30 &
+                first="$!"
+                pids="$$ $first"
+                for i in {1..63}; do
+                    sleep 30 &
+                    pids="$pids $!"
+                done
+                printf '%s' "$pids" > startup-pids
+                wait "$first"
+            """.trimIndent())
+        }
+        var pids = emptyList<Long>()
+        try {
+            withTimeout(10_000) {
+                val result = sandbox.commandExecutor.execute(SandboxCommandRequest(
+                    runtime = SandboxCommandRuntime.PROCESS,
+                    command = listOf("bash", "--noprofile", "--norc", "-c", "printf continued > continued"),
+                    workingDirectory = home.toString(),
+                    environment = mapOf("BASH_ENV" to startup.toString()),
+                    timeoutMillis = 2_000,
+                ))
+                assertTrue(Files.exists(pidFile), "Startup did not publish its process IDs: $result")
+                pids = Files.readString(pidFile).split(' ').map(String::toLong)
+                assertEquals(65, pids.size)
+                assertTrue(result.timedOut)
+                assertEquals(-1, result.exitCode)
+                assertFalse(Files.exists(continuedFile), "Killing a child resumed the parent after its deadline")
+                while (pids.any(::isProcessRunning)) delay(10)
+            }
+        } finally {
+            if (pids.isEmpty() && Files.exists(pidFile)) {
+                pids = Files.readString(pidFile).split(' ').map(String::toLong)
+            }
+            pids.filter(::isProcessRunning).forEach { pid -> ProcessHandle.of(pid).ifPresent { it.destroyForcibly() } }
         }
     }
 

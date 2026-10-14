@@ -28,7 +28,7 @@ class AgentExecutionKernelFactoryTest {
             logObjectMapper = restJsonMapper,
             settingsProvider = mockk<AgentSettingsProvider>(relaxed = true),
             desktopInfoRepository = mockk<AgentDesktopInfoRepository>(relaxed = true),
-            toolCatalog = EmptyToolCatalog,
+            toolCatalog = AgentToolCatalog(),
             toolsFilter = PassThroughToolsFilter,
             skillBundleProvider = mockk<SkillBundleProvider>(relaxed = true),
             runtimeEnvironment = mockk<AgentRuntimeEnvironment>(relaxed = true),
@@ -53,10 +53,6 @@ class AgentExecutionKernelFactoryTest {
         assertTrue(kernel.executor.supportsActiveRunInput(AgentId.GRAPH))
         assertTrue(kernel.executor.supportsActiveRunInput(AgentId.SKILLS_GRAPH))
     }
-}
-
-private object EmptyToolCatalog : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = emptyMap()
 }
 
 private object PassThroughToolsFilter : AgentToolsFilter {

@@ -25,7 +25,7 @@ Keep this module UI-free. Compose resources and UI adapters belong in `:sharedUI
 - [Web tools](docs/web-tools.md) — evidence handling, citations, provider behavior, sandboxed output, and URL limitations.
 - [Observability](docs/observability.md) — request bookkeeping, structured events, and host-owned logging sinks.
 - [Provider HTTP lifecycle](docs/provider-http-lifecycle.md) — client ownership, request-local credentials, and host shutdown.
-- [Tool catalog composition](docs/tool-catalog-composition.md) — LLM-backed ownership, duplicate rejection, source precedence, and immutable execution snapshots.
+- [Tool catalog composition](docs/tool-catalog-composition.md) — catalog value ownership, LLM-backed construction, duplicate rejection, and immutable execution snapshots.
 
 Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.
 

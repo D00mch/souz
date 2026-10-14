@@ -3,8 +3,6 @@ package ru.souz.backend.agent.runtime.conversation
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.metrics.BackendMetrics
-import ru.souz.tool.composeToolCatalogs
-import ru.souz.tool.immutableToolCatalogSnapshot
 import ru.souz.tool.withoutFewShotExamples
 
 /** Immutable tools available to one backend execution. Compiled-tool selection precedes client-tool merging. */
@@ -22,20 +20,14 @@ internal fun backendExecutionToolCatalog(
         enabledToolNames = enabledCompiledToolNames,
     )
 
-    val mergedTools = composeToolCatalogs(
-        if (metrics == null) selectedCompiledTools else immutableToolCatalogSnapshot(
-            selectedCompiledTools.toolsByCategory.mapValues { (category, tools) ->
-                tools.mapValues { (_, tool) -> metrics.instrumentTool(tool, category) }
-            }
-        ),
+    val mergedTools = AgentToolCatalog.compose(
+        if (metrics == null) selectedCompiledTools else selectedCompiledTools.mapTools { category, tool ->
+            metrics.instrumentTool(tool, category)
+        },
         clientToolCatalog,
     )
     if (includeFewShotExamples) {
         return mergedTools
     }
-    return immutableToolCatalogSnapshot(
-        mergedTools.toolsByCategory.mapValues { (_, tools) ->
-            tools.mapValues { (_, tool) -> tool.withoutFewShotExamples() }
-        }
-    )
+    return mergedTools.mapTools { _, tool -> tool.withoutFewShotExamples() }
 }

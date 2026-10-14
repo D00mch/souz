@@ -122,8 +122,6 @@ import ru.souz.jobs.JobService
 import ru.souz.jobs.impl.PostgresJobService
 import ru.souz.tool.RuntimeToolsFactory
 import ru.souz.tool.ToolCategory
-import ru.souz.tool.composeToolCatalogs
-import ru.souz.tool.immutableToolCatalogFromLists
 import ru.souz.tool.runtimeToolsDiModule
 import ru.souz.tool.portableSkillRuntimeToolsDiModule
 import ru.souz.tool.knowledge.ToolGetKnowledge
@@ -495,10 +493,10 @@ fun backendDiModule(
     bindSingleton { ToolSendMessageToChannel(registry = instance()) }
     bindSingleton { BackendChannelToolCatalog(instance(), instance()) }
     bindSingleton<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG) {
-        composeToolCatalogs(
-            instance<RuntimeToolsFactory>(),
-            instance<BackendChannelToolCatalog>(),
-            immutableToolCatalogFromLists(mapOf(ToolCategory.SCHEDULING to listOf(
+        AgentToolCatalog.compose(
+            instance<RuntimeToolsFactory>().catalog,
+            instance<BackendChannelToolCatalog>().catalog,
+            AgentToolCatalog(mapOf(ToolCategory.SCHEDULING to listOf(
                 ToolCreateScheduledTask(instance(), instance(), instance(), appConfig.scheduledTasks, instance()).toGiga(),
                 ToolListScheduledTasks(instance()).toGiga(),
                 ToolDeleteScheduledTask(instance()).toGiga(),

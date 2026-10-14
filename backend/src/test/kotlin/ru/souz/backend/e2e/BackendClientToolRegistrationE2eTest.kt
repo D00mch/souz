@@ -4,15 +4,108 @@ import io.ktor.client.request.post
 import io.ktor.http.HttpStatusCode
 import io.ktor.websocket.Frame
 import java.util.UUID
+import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.storage.postgres.newPostgresSchema
+import ru.souz.backend.client.ClientToolDefinition
+import ru.souz.llms.LLMRequest
 
 class BackendClientToolRegistrationE2eTest {
     private val definition = """{"name":"speaker.say","description":"Speak text","parameters":{"type":"object","properties":{"text":{"type":"string"},"volume":{"type":"integer"}},"required":["text","volume"],"additionalProperties":false}}"""
+
+    @Test
+    fun `empty catalogues expose all bundled Skills with guidance and original deadlines`() =
+        backendE2eTest("e2e_bundled_defaults") {
+            val owner = UUID.randomUUID().toString()
+            val cases = listOf<Triple<String, Map<String, Any>, Long>>(
+                Triple("user.ask", mapOf("question" to "Which genre?"), 300),
+                Triple("device.media.open", mapOf("query" to "The Thing"), 60),
+                Triple("device.mcp.list_devices", emptyMap(), 30),
+                Triple("device.mcp.list_tools", mapOf("target" to "speaker"), 30),
+                Triple("device.mcp.call_tool", mapOf("name" to "set_volume", "arguments" to mapOf("level" to 7)), 60),
+                Triple("web.search", mapOf("query" to "Kotlin release"), 60),
+                Triple("orion.call", mapOf("utterance" to "включи Pink Floyd"), 60),
+            )
+            val chat = createPublicChat(owner)
+            withMultiChatSocket { socket ->
+                for ((name, arguments, seconds) in cases) {
+                    llm.requestSkillForPrompt(name, name, arguments)
+                    val before = Instant.now()
+                    socket.send(Frame.Text(messageFrame(chat, owner, name, text = name)))
+                    assertEquals("accepted", readJson(socket)["status"].asText())
+                    assertEquals("thread.status", readJson(socket)["type"].asText())
+                    val started = readJson(socket)
+                    val after = Instant.now()
+                    val payload = started["payload"]
+                    assertEquals(name, payload["name"].asText())
+                    assertEquals(json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(arguments), payload["arguments"])
+                    val deadline = Instant.parse(payload["deadlineAt"].asText())
+                    assertTrue(deadline >= before.plusSeconds(seconds) && deadline <= after.plusSeconds(seconds))
+                    val detail = json.readTree(llm.requests.last().messages.last { it.name == "GetSkillByName" }.content)["skill"]
+                    assertTrue("RunSkillCommand" in detail["description"].asText())
+                    assertEquals(json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(LLMRequest.Parameters("object")), detail["inputSchema"])
+                    socket.send(Frame.Text("""{"kind":"tool.result","chatId":"$chat","threadId":${started["threadId"]},"toolCallId":${payload["toolCallId"]},"status":"succeeded","result":{"ok":true}}"""))
+                    assertEquals("accepted", readJson(socket)["status"].asText())
+                    assertEquals("thread.completed", readJson(socket)["type"].asText())
+                }
+            }
+            withMultiChatSocket { socket ->
+                socket.send(Frame.Text("""{"kind":"chat.create","requestId":"empty-tools","payload":{"userId":"$owner","tools":[]}}"""))
+                val created = readJson(socket)
+                assertEquals("accepted", created["status"].asText())
+                llm.requestSkillForPrompt("empty array", "orion.call", emptyMap())
+                socket.send(Frame.Text(messageFrame(created["chatId"].asText(), owner, "empty-array", text = "empty array")))
+                assertEquals("accepted", readJson(socket)["status"].asText())
+                readJson(socket)
+                val started = readJson(socket)
+                assertEquals("orion.call", started["payload"]["name"].asText())
+                socket.send(Frame.Text("""{"kind":"tool.result","chatId":${created["chatId"]},"threadId":${started["threadId"]},"toolCallId":${started["payload"]["toolCallId"]},"status":"succeeded","result":{"reply":"done"}}"""))
+                assertEquals("accepted", readJson(socket)["status"].asText())
+                assertEquals("thread.completed", readJson(socket)["type"].asText())
+            }
+        }
+
+    @Test
+    fun `nonempty declarations replace defaults while preserving schemas and bundled instructions`() =
+        backendE2eTest("e2e_bundled_declared") {
+            val owner = UUID.randomUUID().toString()
+            val parameters = LLMRequest.Parameters(
+                "object", mapOf("utterance" to LLMRequest.Property("string")),
+                required = listOf("utterance"), additionalProperties = false,
+            )
+            val tools = json.writeValueAsString(listOf(ClientToolDefinition("orion.call", "Custom Orion description", parameters)))
+            val chat = createPublicChat(owner, tools = tools)
+            llm.requestSkillForPrompt("declared", "orion.call", mapOf("utterance" to "stop"))
+            withMultiChatSocket { socket ->
+                socket.send(Frame.Text(messageFrame(chat, owner, "declared", text = "declared")))
+                assertEquals("accepted", readJson(socket)["status"].asText())
+                readJson(socket)
+                val started = readJson(socket)
+                assertEquals("orion.call", started["payload"]["name"].asText())
+                val detail = json.readTree(llm.requests.last().messages.last { it.name == "GetSkillByName" }.content)["skill"]
+                assertTrue(detail["description"].asText().startsWith("Custom Orion description\n\n"))
+                assertTrue("# Orion voice commands" in detail["description"].asText())
+                assertEquals(json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(parameters), detail["inputSchema"])
+                socket.send(Frame.Text("""{"kind":"tool.result","chatId":"$chat","threadId":${started["threadId"]},"toolCallId":${started["payload"]["toolCallId"]},"status":"succeeded","result":{"reply":"stopped"}}"""))
+                assertEquals("accepted", readJson(socket)["status"].asText())
+                assertEquals("thread.completed", readJson(socket)["type"].asText())
+                for ((name, arguments, code) in listOf(
+                    Triple("web.search", mapOf("query" to "news"), "skill_not_found"),
+                    Triple("orion.call", mapOf("text" to "wrong schema"), "mcp_invalid_arguments"),
+                )) {
+                    llm.requestSkillForPrompt(code, name, arguments)
+                    socket.send(Frame.Text(messageFrame(chat, owner, code, text = code)))
+                    assertEquals("accepted", readJson(socket)["status"].asText())
+                    readJson(socket)
+                    assertEquals("thread.completed", readJson(socket)["type"].asText())
+                    val result = llm.requests.last().messages.last { it.name == "RunSkillCommand" }
+                    assertEquals(code, json.readTree(result.content)["error"]["code"].asText())
+                }
+            }
+        }
 
     @Test
     fun `creation shares normalized HTTP and WS receipts and rejects invalid catalogues atomically`() =
@@ -118,7 +211,7 @@ class BackendClientToolRegistrationE2eTest {
                     assertEquals("thread.completed", readJson(socket)["type"].asText())
                     val result = llm.requests.last().messages.last { it.name == "RunSkillCommand" }
                     assertEquals(expected, json.readTree(result.content)["error"]["code"].asText())
-                    if (target == empty) assertFalse("web.search" in llm.requests.last().messages.first().content)
+                    if (target == empty) assertTrue("web.search" in llm.requests.last().messages.first().content)
                 }
             }
         }

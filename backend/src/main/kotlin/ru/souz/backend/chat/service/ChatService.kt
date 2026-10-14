@@ -64,7 +64,7 @@ class ChatService(
         tools: List<ClientToolDefinition> = emptyList(),
     ): CreateClientChatResult {
         val normalizedTitle = title?.trim()?.takeIf { it.isNotEmpty() }
-        val normalizedTools = normalizeClientTools(tools, serverToolNames)
+        val normalizedTools = tools.normalizeClientTools(serverToolNames)
         // Preserve creation receipts for legacy chats with no catalogue.
         val payloadHash = PublicPayloadHash.ofValue(buildMap {
             put("clientType", clientType)

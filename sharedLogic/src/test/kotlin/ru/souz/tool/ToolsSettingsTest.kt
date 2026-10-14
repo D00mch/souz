@@ -16,8 +16,8 @@ class ToolsSettingsTest {
         val store = MemoryToolsSettingsStore()
         val settings = ToolsSettings(
             store = store,
-            toolCatalog = FakeToolCatalog(
-                mapOf(ToolCategory.FILES to mapOf("read_file" to fakeTool("read_file")))
+            toolCatalog = AgentToolCatalog(
+                mapOf(ToolCategory.FILES to listOf(fakeTool("read_file")))
             ),
         )
 
@@ -41,8 +41,8 @@ class ToolsSettingsTest {
         val store = MemoryToolsSettingsStore()
         val settings = ToolsSettings(
             store = store,
-            toolCatalog = FakeToolCatalog(
-                mapOf(ToolCategory.BROWSER to mapOf("open_url" to fakeTool("open_url")))
+            toolCatalog = AgentToolCatalog(
+                mapOf(ToolCategory.BROWSER to listOf(fakeTool("open_url")))
             ),
             availabilityPolicy = ToolAvailabilityPolicy { category -> category == ToolCategory.BROWSER },
         )
@@ -72,10 +72,6 @@ class ToolsSettingsTest {
             this.state = state
         }
     }
-
-    private class FakeToolCatalog(
-        override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
-    ) : AgentToolCatalog
 
     private companion object {
         fun fakeTool(name: String): LLMToolSetup = object : LLMToolSetup {
