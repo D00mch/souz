@@ -66,11 +66,12 @@ internal class ToolCreateScheduledTask(
         )
         val requiresDelivery: Boolean = true,
         @InputParamDescription(
-            "Delivery semantics after a failure leaves an occurrence's outcome uncertain. False (default, at least " +
-                "once) runs it again: nothing is missed, but it may rarely run twice; use it for tasks that must not " +
-                "be lost, such as appointments, medication or deadlines. True (at most once) never runs it again: " +
-                "nothing is duplicated, but it may be missed; use it when a duplicate would be harmful, such as " +
-                "payments or messages to other people, or when a missed occurrence does not matter."
+            "Whether a dispatch retry may launch this occurrence again after a failure left its outcome uncertain, " +
+                "such as a lost worker lease. False (default, at least once): a retry launches a new run, so a run " +
+                "may rarely repeat; prefer it when a missed run is worse, such as appointments, medication or " +
+                "deadlines. True (at most once): a retry never launches it again, so a run may be missed; prefer it " +
+                "when a repeat is worse, such as payments or messages to other people. Neither setting guarantees " +
+                "delivery or restarts an agent interrupted by a server crash."
         )
         val atMostOnce: Boolean = false,
         @InputParamDescription("Short title shown in the task list. Defaults to the start of prompt.")
@@ -268,7 +269,7 @@ private val taskReturnParameters = ReturnParameters(
         "title" to ReturnProperty("string"),
         "prompt" to ReturnProperty("string"),
         "requiresDelivery" to ReturnProperty("boolean", "Whether each occurrence must be able to send a message."),
-        "atMostOnce" to ReturnProperty("boolean", "True: never rerun an uncertain occurrence; false: rerun it."),
+        "atMostOnce" to ReturnProperty("boolean", "True: dispatch retries never launch an occurrence again; false: they may."),
         "schedule" to ReturnProperty("object", "runAt for a one-off task, or cron and timeZone."),
         "status" to ReturnProperty("string", "Dispatch status: pending, running, succeeded, failed or cancelled; not a delivery receipt."),
         "failedOccurrences" to ReturnProperty("array", "Latest occurrences that failed after all retries (list only)."),
