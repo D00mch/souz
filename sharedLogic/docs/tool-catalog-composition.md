@@ -6,7 +6,7 @@
 
 Host factories expose their catalog through `.catalog`. `LlmBackedToolCatalog` is the single factory for `InternetSearch`, `InternetResearch`, `ViewImage`, and `GenerateImage`. Portable and JVM runtime catalogs do not contain those tools.
 
-Backend execution restricts policy-hostable compiled and execution-bound LLM tools to the enabled-tool snapshot before merging persisted client tools. Creation reserves server names and composition rejects collisions. Few-shot filtering happens after the final merge.
+Backend execution restricts policy-hostable compiled and execution-bound LLM tools to the enabled-tool snapshot before merging persisted client tools or bundled defaults for an empty catalogue. Creation reserves server names and composition rejects collisions. Few-shot filtering happens after the final merge.
 
 ## Safe changes
 

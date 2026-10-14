@@ -162,11 +162,12 @@ internal class BackendConversationRuntimeFactory(
             },
         )
         val clientTools = chatRepository.clientTools(key.userId, key.chatId())
+        val clientToolCatalog = clientSkills.catalog(clientTools)
         val executionToolCatalog = backendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
             executionLlmToolCatalog = executionLlmToolCatalog.catalog,
             enabledCompiledToolNames = request.enabledTools,
-            clientToolCatalog = clientSkills.catalog(clientTools),
+            clientToolCatalog = clientToolCatalog,
             includeFewShotExamples = settingsProvider.useFewShotExamples,
             metrics = metrics,
         )
@@ -209,7 +210,7 @@ internal class BackendConversationRuntimeFactory(
             skillBundleProvider = skillBundleProvider,
             commandExecutor = commandExecutor,
             configuredModels = settingsProvider.subagentModels,
-            commandToolNames = clientTools.map { it.name }.toSet(),
+            commandToolNames = clientToolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet(),
             commandInstructions = CLIENT_TOOL_ROUTING_INSTRUCTIONS,
         )
         val kernel = AgentExecutionKernelFactory(

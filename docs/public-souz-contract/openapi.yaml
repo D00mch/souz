@@ -112,7 +112,8 @@ components:
       maxItems: 256
       default: []
       description: >-
-        Immutable chat catalogue, at most 1 MiB. Omission and [] are equivalent.
+        Immutable chat catalogue, at most 1 MiB. Omission and [] use the seven bundled
+        client Skills; nonempty declarations replace those defaults.
         Definitions are normalized for shared HTTP/WS creation idempotency; changed definitions conflict.
       items:
         $ref: "#/components/schemas/ClientToolDefinition"

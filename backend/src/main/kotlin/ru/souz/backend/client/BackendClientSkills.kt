@@ -8,6 +8,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import ru.souz.agent.skills.SkillId
+import ru.souz.agent.skills.bundle.SkillBundle
+import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.channels.ChannelDeliveryService
 import ru.souz.backend.events.model.AgentEventType
@@ -34,14 +37,64 @@ internal class BackendClientSkills(
     private val now: () -> Instant = Instant::now,
     private val metrics: BackendMetrics? = null,
 ) {
-    fun catalog(definitions: List<ClientToolDefinition>): AgentToolCatalog = AgentToolCatalog(
-        definitions.groupBy { if (it.name == "web.search") ToolCategory.WEB_SEARCH else ToolCategory.APPLICATIONS }
-            .mapValues { (category, tools) ->
-                tools.map { definition ->
-                    ClientWebSocketSkill(definition, category, registry, toolCallRepository, eventService, channelDeliveryService, now, metrics)
-                }
-            },
-    )
+    private val bundledGuidance = loadBundledClientSkillGuidance()
+
+    fun catalog(definitions: List<ClientToolDefinition>): AgentToolCatalog {
+        val useDefaults = definitions.isEmpty()
+        val selected = definitions.ifEmpty {
+            bundledGuidance.map { (name, guidance) ->
+                ClientToolDefinition(name, guidance.description, LLMRequest.Parameters(type = "object"))
+            }
+        }
+        return AgentToolCatalog(
+            selected.groupBy { bundledGuidance[it.name]?.category ?: ToolCategory.APPLICATIONS }
+                .mapValues { (category, tools) ->
+                    tools.map { definition ->
+                        val guidance = bundledGuidance[definition.name]
+                        val enriched = if (useDefaults || guidance == null) definition else definition.copy(
+                            description = "${definition.description}\n\n${guidance.description}",
+                        )
+                        ClientWebSocketSkill(
+                            enriched, category, registry, toolCallRepository, eventService, channelDeliveryService, now, metrics,
+                            timeout = guidance?.timeout ?: Duration.ofMinutes(1),
+                        )
+                    }
+                },
+        )
+    }
+}
+
+private data class ClientSkillGuidance(val description: String, val category: ToolCategory, val timeout: Duration)
+
+private fun loadBundledClientSkillGuidance(): Map<String, ClientSkillGuidance> {
+    val classLoader = BackendClientSkills::class.java.classLoader
+    fun readResource(path: String): ByteArray = requireNotNull(classLoader.getResourceAsStream(path)) {
+        "Missing bundled client Skill resource: $path"
+    }.use { it.readBytes() }
+    val entries = readResource("skills/client/index.txt").toString(Charsets.UTF_8).lineSequence()
+        .map(String::trim).filter { it.isNotEmpty() && !it.startsWith('#') }.toList()
+    require(entries.isNotEmpty() && entries.distinct().size == entries.size) { "Invalid bundled client Skill index." }
+    return buildMap {
+        entries.forEach { entry ->
+            require(Regex("[A-Za-z0-9][A-Za-z0-9._-]*").matches(entry)) { "Invalid bundled client Skill entry: $entry" }
+            val bundle = SkillBundle.fromFiles(SkillId(entry), listOf(
+                SkillFile("SKILL.md", readResource("skills/client/$entry/SKILL.md")),
+            ))
+            val metadata = bundle.manifest.metadata
+            val id = requireNotNull(metadata["souz.skill-id"]?.takeIf { it.isNotBlank() }) {
+                "Missing bundled client Skill ID: $entry"
+            }
+            require(metadata["souz.transport"] == "client-websocket") { "Invalid client Skill transport: $entry" }
+            val category = ToolCategory.valueOf(requireNotNull(metadata["souz.category"]))
+            val timeout = Duration.parse(requireNotNull(metadata["souz.timeout"]))
+            require(!timeout.isZero && !timeout.isNegative) { "Invalid client Skill timeout: $entry" }
+            val guidance = ClientSkillGuidance(
+                "${bundle.manifest.description}\n\n${bundle.skillMarkdownBody}\n\n$CLIENT_TOOL_ROUTING_INSTRUCTIONS",
+                category, timeout,
+            )
+            require(put(id, guidance) == null) { "Duplicate bundled client Skill ID: $id" }
+        }
+    }
 }
 
 private class ClientWebSocketSkill(
@@ -53,8 +106,8 @@ private class ClientWebSocketSkill(
     private val channelDeliveryService: ChannelDeliveryService,
     private val now: () -> Instant,
     private val metrics: BackendMetrics?,
+    private val timeout: Duration,
 ) : LLMToolSetup {
-    private val timeout = Duration.ofMinutes(1)
     private val metricCategory = category.name.lowercase()
 
     override val fn = LLMRequest.Function(

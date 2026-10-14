@@ -118,7 +118,7 @@ class BackendSubagentE2eTest {
             },
         ) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId, tools = clientToolsJson("user.ask"))
+            val chatId = createPublicChat(userId)
             client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId); jsonBody("""{"streamingMessages":true,"narrateSteps":true,"systemPrompt":"custom base"}""")
             }
@@ -176,6 +176,7 @@ class BackendSubagentE2eTest {
             assertTrue(ru.souz.backend.memory.hindsight.UNSUPPORTED_MEMORY_MUTATION_NOTICE in system)
             val childRequests = llm.requests.filter { it.functions.map { tool -> tool.name } == listOf("RunSkillCommand") }
             assertEquals(2, childRequests.size)
+            assertTrue("# Ask the user" in childRequests.first().messages.first().content)
             assertEquals(2, childRequests.first().messages.size)
             assertFalse(childRequests.first().messages.any { "delegate the question" in it.content || "<skill_inventory>" in it.content })
             val parentResult = llm.requests.last().messages.single { it.name == "SpawnSubagent" }
@@ -259,7 +260,8 @@ class BackendSubagentE2eTest {
 
             assertEquals(2, llm.requests.size)
             val inventory = llm.requests.first().messages.first().content
-            assertFalse("web.search" in inventory)
+            assertTrue("- WEB_SEARCH: web.search" in inventory)
+            assertFalse("InternetSearch" in inventory)
             val toolResult = llm.requests.last().messages.single { it.name == "SpawnSubagent" }
             assertEquals("skill_not_found", json.readTree(toolResult.content)["error"]["code"].asText())
             assertEquals("parent recovered", messages.last()["content"].asText())
