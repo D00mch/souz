@@ -50,6 +50,8 @@ internal class SandboxCommandProcessOutputCapture private constructor(
         stdoutThread.joinUntil(deadlineNanos)
         stderrThread.joinUntil(deadlineNanos)
         if (stdoutThread.isAlive || stderrThread.isAlive) {
+            // Descendants that inherited the pipes keep them open; on Windows close() waits until they exit.
+            process.descendants().use { children -> children.forEach { it.destroyForcibly() } }
             process.inputStream.closeQuietly()
             process.errorStream.closeQuietly()
         }

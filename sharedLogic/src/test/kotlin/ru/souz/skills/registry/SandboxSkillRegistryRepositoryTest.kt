@@ -27,6 +27,7 @@ import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.paths.DefaultSouzPaths
 import ru.souz.runtime.files.FilesToolUtil
 import kotlin.io.path.exists
+import kotlin.io.path.invariantSeparatorsPathString
 import kotlin.io.path.readText
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -302,8 +303,8 @@ class FileSystemSkillRegistryRepositoryTest {
             skillId = bundle.skillId,
             bundleHash = stored.bundleHash,
         )
-        val metadataInfo = sandbox.fileSystem.resolveExistingFile(metadataPath.toString())
-        val bundleInfo = sandbox.fileSystem.resolveExistingDirectory(bundleRoot.toString())
+        val metadataInfo = sandbox.fileSystem.resolveExistingFile(metadataPath.invariantSeparatorsPathString)
+        val bundleInfo = sandbox.fileSystem.resolveExistingDirectory(bundleRoot.invariantSeparatorsPathString)
 
         assertEquals(bundle, loaded)
         assertTrue(metadataInfo.path.startsWith("/souz/state/skills"))
@@ -327,7 +328,7 @@ class FileSystemSkillRegistryRepositoryTest {
             policyVersion = record.policyVersion,
             bundleHash = record.bundleHash,
         )
-        val pathInfo = sandbox.fileSystem.resolveExistingFile(path.toString())
+        val pathInfo = sandbox.fileSystem.resolveExistingFile(path.invariantSeparatorsPathString)
 
         assertEquals(record, loaded)
         assertTrue(pathInfo.path.startsWith("/souz/state/skill-validations"))

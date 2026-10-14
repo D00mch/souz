@@ -19,6 +19,7 @@ import ru.souz.runtime.sandbox.SandboxCommandRequest
 import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxScope
+import ru.souz.test.assumeLocalShellScripts
 import ru.souz.tool.BadInputException
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
@@ -34,6 +35,7 @@ class LocalSandboxCommandExecutorTest {
 
     @Test
     fun `executes command inside resolved sandbox working directory`() = runTest {
+        assumeLocalShellScripts()
         val home = createTempDirectory("sandbox-home-")
         val workspace = home.resolve("workspace").createDirectories()
         val sandbox = createSandbox(home)
@@ -71,6 +73,7 @@ class LocalSandboxCommandExecutorTest {
 
     @Test
     fun `executes script path with args and stdin`() = runTest {
+        assumeLocalShellScripts()
         val home = createTempDirectory("sandbox-home-")
         val scripts = home.resolve("scripts").createDirectories()
         val script = scripts.resolve("echo.sh").apply {
@@ -143,6 +146,13 @@ class LocalSandboxCommandExecutorTest {
             assertEquals(0, result.exitCode)
             assertEquals("done", result.stdout)
             assertTrue(elapsedMillis < 3_000, "Inherited streams delayed completion: ${elapsedMillis}ms")
+            // Windows hosts terminate the descendant, so its output readers must not outlive the command.
+            // POSIX hosts no longer see the orphaned descendant; its readers end when it exits.
+            if (System.getProperty("os.name").startsWith("Windows")) {
+                withTimeout(2_000) {
+                    while (Thread.getAllStackTraces().keys.any { it.name.startsWith("local-sandbox-command-") }) delay(10)
+                }
+            }
         } finally {
             if (Files.exists(pidFile)) {
                 ProcessHandle.of(Files.readString(pidFile).toLong()).ifPresent { it.destroyForcibly() }
@@ -152,6 +162,7 @@ class LocalSandboxCommandExecutorTest {
 
     @Test
     fun `timeout and cancellation terminate the process and its children`() = runBlocking {
+        assumeLocalShellScripts()
         for (cancel in listOf(false, true)) for (input in listOf(null, "x".repeat(90_000))) {
             val home = createTempDirectory("sandbox-home-")
             val sandbox = createSandbox(home)

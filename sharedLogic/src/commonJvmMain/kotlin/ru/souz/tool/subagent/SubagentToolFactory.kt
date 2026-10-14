@@ -36,6 +36,8 @@ class SubagentToolFactory(
     private val commandExecutor: SkillCommandExecutor,
     private val approvalGate: SkillApprovalGate? = null,
     private val configuredModels: Map<String, LlmProvider> = emptyMap(),
+    private val commandToolNames: Set<String> = emptySet(),
+    private val commandInstructions: String = "",
 ) {
     fun create(parentSettings: AgentSettings): LLMToolSetup {
         val models = configuredModels + (parentSettings.model to parentSettings.provider)
@@ -71,16 +73,27 @@ class SubagentToolFactory(
                 is SkillResolution.Error -> fail(resolved.code, resolved.message)
             }
         }
-        if (bundles.isNotEmpty()) tools += bundleCommandTool(bundles.toMap(), meta.userId, tools.toList())
+        // Dynamic tools keep their exact names and schemas behind the same command path as bundles.
+        val commandTools = tools.filter { it.fn.name in commandToolNames }
+        val selectedTools = tools.toList()
+        tools.removeAll(commandTools.toSet())
+        if (bundles.isNotEmpty() || commandTools.isNotEmpty()) {
+            tools += skillCommandTool(bundles.toMap(), meta.userId, selectedTools, commandTools)
+        }
         return SubagentTool.Setup(
             settings = parentSettings.copy(tools = AgentTools(tools, tools.associate {
                 it.fn.name to (resolver.enabledTools.categoryByName[it.fn.name] ?: ToolCategory.CHAT)
             })),
-            systemPrompt = systemPrompt(bundles.values),
+            systemPrompt = systemPrompt(bundles.values, commandTools),
         )
     }
 
-    private fun bundleCommandTool(bundles: Map<SkillId, SkillBundle>, ownerId: String, tools: List<LLMToolSetup>): LLMToolSetup {
+    private fun skillCommandTool(
+        bundles: Map<SkillId, SkillBundle>,
+        ownerId: String,
+        tools: List<LLMToolSetup>,
+        commandTools: List<LLMToolSetup>,
+    ): LLMToolSetup {
         val command = ToolInvokeSkill(
             toolCatalog = immutableToolCatalogFromLists(mapOf(ToolCategory.CHAT to tools)),
             toolsFilter = RuntimePassThroughToolsFilter,
@@ -92,17 +105,25 @@ class SubagentToolFactory(
         )
         return object : LLMToolSetup by command {
             override val fn = command.fn.copy(
-                description = "Run a command for a selected file-backed Skill using its instructions and execution schema in the system prompt.",
+                description = "Run a selected Skill using its instructions and input schema in the system prompt.",
                 parameters = command.fn.parameters.copy(properties = command.fn.parameters.properties + (
-                    "skillId" to LLMRequest.Property("string", "Selected Skill ID.", enum = bundles.keys.map { it.value })
+                    "skillId" to LLMRequest.Property("string", "Selected Skill ID.", enum = bundles.keys.map { it.value } + commandTools.map { it.fn.name })
                 )),
             )
         }
     }
 
-    private fun systemPrompt(bundles: Collection<SkillBundle>): String = buildString {
+    private fun systemPrompt(bundles: Collection<SkillBundle>, commandTools: List<LLMToolSetup>): String = buildString {
         append("Complete the delegated task using only the supplied context and selected tools. ")
         append("Return a final answer to the parent agent. You cannot delegate to another agent.")
+        if (commandTools.isNotEmpty()) {
+            append("\nSelected tool-backed Skills follow. Use RunSkillCommand with their exact skillId and arguments matching inputSchema.\n")
+            append(commandInstructions)
+            commandTools.forEach { tool ->
+                append("\n\n")
+                append(restJsonMapper.writeValueAsString(tool.toDetail()))
+            }
+        }
         if (bundles.isNotEmpty()) {
             append("\nSelected file-backed Skills follow. Invoke their commands with RunSkillCommand, ")
             append("using skillId and arguments matching this shared execution schema:\n")

@@ -77,8 +77,9 @@ class ToolViewImage(
     }
 
     private fun requireAbsolutePath(rawPath: String) {
+        // Docker sandbox paths are POSIX-absolute even when the host is Windows.
         val path = runCatching { Path.of(rawPath) }.getOrNull()
-        if (path == null || !path.isAbsolute) {
+        if (path == null || !(path.isAbsolute || rawPath.startsWith("/"))) {
             throw BadInputException("imagePath must be an absolute local path")
         }
     }

@@ -296,6 +296,30 @@ class SubagentToolFactoryTest {
         assertTrue(fixture.contexts.isEmpty())
     }
 
+    @Test
+    fun `command Skills retain names schemas null arguments and selected capability isolation`() = runTest {
+        val selected = namedTool("speaker.say")
+        val parameters = restJsonMapper.readValue(
+            """{"type":"object","properties":{"values":{"type":"array","items":{"type":"object","properties":{"empty":{"type":"null"}},"required":["empty"],"additionalProperties":false}}},"required":["values"],"additionalProperties":false}""",
+            LLMRequest.Parameters::class.java,
+        )
+        every { selected.fn } returns LLMRequest.Function("speaker.say", "Speak", parameters)
+        coEvery { selected.invoke(any(), any()) } returns LLMRequest.Message(LLMMessageRole.function, "{}")
+        val fixture = Fixture(listOf(selected, namedTool("unselected")))
+        fixture.factory(commandToolNames = setOf("speaker.say"), commandInstructions = "Use channelId for routing.")
+            .create(fixture.parent).call(mapOf("task" to "Speak", "skillIds" to listOf("speaker.say")))
+        val context = fixture.context
+        assertEquals(listOf("RunSkillCommand"), context.activeTools.map { it.name })
+        assertContains(context.systemPrompt, restJsonMapper.writeValueAsString(parameters))
+        assertContains(context.systemPrompt, "Use channelId for routing.")
+        val command = context.settings.tools.byName.getValue("RunSkillCommand")
+        val arguments = mapOf("values" to listOf(mapOf("empty" to null)), "channelId" to "target")
+        command.call(mapOf("skillId" to "speaker.say", "arguments" to arguments))
+        coVerify(exactly = 1) { selected.invoke(LLMResponse.FunctionCall("speaker.say", arguments), ToolInvocationMeta("owner")) }
+        assertEquals("skill_not_found", command.call(mapOf("skillId" to "unselected"))["error"]["code"].asText())
+        coVerify(exactly = 0) { fixture.bundles.loadSkillBundle(any(), any()) }
+    }
+
     private class Fixture(compiled: List<LLMToolSetup> = emptyList()) {
         val catalog = immutableToolCatalogFromLists(mapOf(ToolCategory.FILES to compiled))
         val parent = AgentSettings(LLMModel.Max.alias, LLMModel.Max.provider, 0.5f, AgentTools(catalog.toolsByCategory))
@@ -308,6 +332,8 @@ class SubagentToolFactoryTest {
         fun factory(
             approvalGate: SkillApprovalGate? = null,
             configuredModels: Map<String, LlmProvider> = emptyMap(),
+            commandToolNames: Set<String> = emptySet(),
+            commandInstructions: String = "",
         ) = SubagentToolFactory(
             { _ -> mockk<Agent> {
                 coEvery { execute(any(), any(), any()) } answers {
@@ -315,7 +341,7 @@ class SubagentToolFactoryTest {
                     AgentExecutionResult("child answer", context)
                 }
             } },
-            catalog, filter, bundles, commands, approvalGate, configuredModels,
+            catalog, filter, bundles, commands, approvalGate, configuredModels, commandToolNames, commandInstructions,
         )
     }
 }

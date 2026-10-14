@@ -188,9 +188,9 @@ internal class BackendE2eScope(
         install(WebSockets)
     }
 
-    suspend fun createPublicChat(userId: String, requestId: String = "create-1"): String {
+    suspend fun createPublicChat(userId: String, requestId: String = "create-1", tools: String = "[]"): String {
         val created = client.post(BackendHttpRoutes.CHATS) {
-            jsonBody("""{"userId":"$userId","requestId":"$requestId","clientType":"backend"}""")
+            jsonBody("""{"userId":"$userId","requestId":"$requestId","clientType":"backend","tools":$tools}""")
         }
         assertEquals(HttpStatusCode.Created, created.status)
         return created.jsonBody()["chat"]["id"].asText()
@@ -459,3 +459,7 @@ internal class BackendE2eBackend(
         resources.close()
     }
 }
+
+internal fun clientToolsJson(vararg names: String): String = ru.souz.llms.restJsonMapper.writeValueAsString(
+    names.map { ru.souz.backend.client.ClientToolDefinition(it, "Invoke $it", ru.souz.llms.LLMRequest.Parameters("object")) },
+)
