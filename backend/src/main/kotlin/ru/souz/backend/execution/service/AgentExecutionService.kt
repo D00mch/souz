@@ -124,7 +124,10 @@ class AgentExecutionService internal constructor(
             checkNotFailed(existing)
             return null
         }
-        val prepared = prepareChatTurn(userId, chatId, content, executionId = executionId)
+        val unmarked = prepareChatTurn(userId, chatId, content, executionId = executionId)
+        val prepared = unmarked.copy(
+            execution = unmarked.execution.copy(metadata = unmarked.execution.metadata + (METADATA_SCHEDULED_TASK to "true"))
+        )
         check(prepared.effectiveSettings.enabledTools.containsAll(requiredTools)) {
             "Scheduled reminder requires enabled SendMessageToChannel; delivery is unavailable."
         }
@@ -368,7 +371,8 @@ class AgentExecutionService internal constructor(
             userId = execution.userId, chatId = execution.chatId, executionId = execution.id,
             messageRepository = messageRepository, optionRepository = optionRepository,
             eventService = eventService, toolCallRepository = toolCallRepository,
-            streamingMessagesEnabled = streaming, toolEventsEnabled = toolEvents, optionsEnabled = optionsEnabled,
+            streamingMessagesEnabled = streaming, toolEventsEnabled = toolEvents,
+            optionsEnabled = optionsEnabled && execution.metadata[METADATA_SCHEDULED_TASK] != "true",
             assistantMessageId = execution.assistantMessageId,
             publicClientThread = execution.runtimeOwner != null,
             narrateSteps = execution.metadata[METADATA_NARRATE_STEPS] == "true",

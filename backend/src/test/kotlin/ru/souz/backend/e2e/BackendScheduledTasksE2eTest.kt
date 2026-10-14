@@ -15,6 +15,13 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.backend.agent.model.AgentConversationKey
+import ru.souz.backend.agent.model.BackendConversationTurnRequest
+import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
+import ru.souz.backend.agent.runtime.BackendConversationTurnOutcome
+import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
+import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.scheduler.ScheduledTaskConfig
@@ -24,6 +31,7 @@ import ru.souz.jobs.CreateJobRequest
 import ru.souz.jobs.JobRun
 import ru.souz.jobs.JobSchedule
 import ru.souz.jobs.JobStatus
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
 
 class BackendScheduledTasksE2eTest {
@@ -245,6 +253,39 @@ class BackendScheduledTasksE2eTest {
             assertTrue("1 of 25 remain" in second, second)
             scheduledTaskTool(userId, chatId, "delete", mapOf("taskId" to first))
             assertTrue(scheduledTaskTool(userId, chatId, "create", hourly).has("taskId"), "Cancelling a task returns its runs to the budget.")
+        }
+    }
+
+    @Test
+    fun `scheduled executions never wait for an option answer even when options are enabled`() {
+        val scripted = ScriptedOptionTurnRunner()
+        val runner = object : BackendConversationTurnRunner {
+            override suspend fun run(
+                conversationKey: AgentConversationKey,
+                request: BackendConversationTurnRequest,
+                eventSink: AgentRuntimeEventSink,
+                initialUsage: LLMResponse.Usage,
+            ): BackendConversationTurnOutcome {
+                val waiting = scripted.run(conversationKey, request, eventSink, initialUsage)
+                // Like the production runner, the turn waits only when the sink accepted the choice.
+                return if ((eventSink as BackendAgentRuntimeEventSink).hasRequestedOption) waiting
+                else BackendConversationTurnOutcome.Completed("Done", waiting.usage, waiting.session)
+            }
+        }
+        backendE2eTest(
+            schemaPrefix = "e2e_scheduled_options",
+            featureFlags = BackendFeatureFlags(wsEvents = true, options = true),
+            turnRunnerOverride = runner,
+        ) {
+            val owner = UUID.randomUUID().toString()
+            scheduledTaskSetup(owner)
+            val run = backend.jobService.createJob(owner, CreateJobRequest("Ask", restJsonMapper.createObjectNode().put("prompt", "Ask me."))).run()
+            backend.runScheduledTask(run)
+            backend.awaitExecution(run.occurrenceId("execution"))
+            val execution = assertNotNull(backend.executionRepository.get(owner, run.occurrenceId("execution")))
+            assertEquals(AgentExecutionStatus.COMPLETED, execution.status)
+            val events = client.get(BackendHttpRoutes.chatEvents(execution.chatId)) { trusted(owner) }.jsonBody()["items"]
+            assertTrue(events.none { it["type"].asText() == "option.requested" }, events.toString())
         }
     }
 
