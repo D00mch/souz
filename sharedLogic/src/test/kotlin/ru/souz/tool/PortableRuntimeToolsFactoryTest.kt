@@ -34,7 +34,7 @@ class PortableRuntimeToolsFactoryTest {
         val filesToolUtil = mockk<FilesToolUtil>()
         val factory = portableFactory(filesToolUtil, gateway = mockk<SkillOAuthGateway>())
 
-        val tools = factory.toolsByCategory
+        val tools = factory.catalog.toolsByCategory
 
         assertTrue("ListFiles" in tools.getValue(ToolCategory.FILES))
         assertTrue("ReadFile" in tools.getValue(ToolCategory.FILES))
@@ -52,7 +52,7 @@ class PortableRuntimeToolsFactoryTest {
         val filesToolUtil = mockk<FilesToolUtil>()
         val factory = portableFactory(filesToolUtil, gateway = null)
 
-        val tools = factory.toolsByCategory
+        val tools = factory.catalog.toolsByCategory
 
         assertEquals(emptyMap(), tools.getValue(ToolCategory.OAUTH))
     }
@@ -70,7 +70,7 @@ class PortableRuntimeToolsFactoryTest {
             toolWebImageSearch = ToolWebImageSearch(filesToolUtil),
         )
 
-        val tools = factory.toolsByCategory
+        val tools = factory.catalog.toolsByCategory
 
         assertTrue("ListFiles" in tools.getValue(ToolCategory.FILES))
         assertTrue("ReadFile" in tools.getValue(ToolCategory.FILES))

@@ -78,7 +78,7 @@ fun portableRuntimeToolsDiModule(
 
     bindPortableRuntimeToolsFactory()
     if (bindAgentToolCatalog) {
-        bindSingleton<AgentToolCatalog> { instance<PortableRuntimeToolsFactory>() }
+        bindSingleton<AgentToolCatalog> { instance<PortableRuntimeToolsFactory>().catalog }
     }
     bindSingleton<AgentToolsFilter> { RuntimePassThroughToolsFilter }
 }
@@ -232,27 +232,26 @@ class PortableRuntimeToolsFactory(
     private val toolWebPageText: ToolWebPageText,
     private val toolConnectOAuthProvider: ToolConnectOAuthProvider?,
     private val toolSafeApiCall: ToolSafeApiCall?,
-) : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
-        immutableToolCatalogFromLists(
-            mapOf(
-                ToolCategory.FILES to listOf(
-                    toolListFiles.toGiga(),
-                    toolReadFile.toGiga(),
-                    toolFindInFiles.toGiga(),
-                    toolNewFile.toGiga(),
-                    toolDeleteFile.toGiga(),
-                    toolModifyFile.toGiga(),
-                    toolMoveFile.toGiga(),
-                    toolFindFilesByName.toGiga(),
-                    toolFindFolders.toGiga(),
-                ),
-                ToolCategory.WEB_SEARCH to listOf(toolWebPageText.toGiga()),
-                ToolCategory.CALCULATOR to listOf(toolCalculator.toGiga()),
-                ToolCategory.OAUTH to listOfNotNull(
-                    toolConnectOAuthProvider?.toGiga(),
-                    toolSafeApiCall?.toGiga(),
-                ),
-            )
-        ).toolsByCategory
+) {
+    val catalog = AgentToolCatalog(
+        mapOf(
+            ToolCategory.FILES to listOf(
+                toolListFiles.toGiga(),
+                toolReadFile.toGiga(),
+                toolFindInFiles.toGiga(),
+                toolNewFile.toGiga(),
+                toolDeleteFile.toGiga(),
+                toolModifyFile.toGiga(),
+                toolMoveFile.toGiga(),
+                toolFindFilesByName.toGiga(),
+                toolFindFolders.toGiga(),
+            ),
+            ToolCategory.WEB_SEARCH to listOf(toolWebPageText.toGiga()),
+            ToolCategory.CALCULATOR to listOf(toolCalculator.toGiga()),
+            ToolCategory.OAUTH to listOfNotNull(
+                toolConnectOAuthProvider?.toGiga(),
+                toolSafeApiCall?.toGiga(),
+            ),
+        )
+    )
 }

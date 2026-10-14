@@ -83,12 +83,10 @@ class NodesSkillInventoryTest {
         val browserTool = FixedTool("BrowserTool")
         val filter = SwitchingToolsFilter(ToolCategory.FILES)
         val inventory = node(
-            catalog = object : AgentToolCatalog {
-                override val toolsByCategory = mapOf(
-                    ToolCategory.FILES to mapOf(filesTool.fn.name to filesTool),
-                    ToolCategory.BROWSER to mapOf(browserTool.fn.name to browserTool),
-                )
-            },
+            catalog = AgentToolCatalog(mapOf(
+                ToolCategory.FILES to listOf(filesTool),
+                ToolCategory.BROWSER to listOf(browserTool),
+            )),
             toolsFilter = filter,
         )
         val context = contextWithCatalog(filesTool)
@@ -292,11 +290,8 @@ class NodesSkillInventoryTest {
         systemPrompt = PROVIDED_SYSTEM_PROMPT,
     )
 
-    private fun catalog(vararg tools: LLMToolSetup): AgentToolCatalog = object : AgentToolCatalog {
-        override val toolsByCategory = mapOf(
-            ToolCategory.FILES to tools.associateBy { it.fn.name },
-        )
-    }
+    private fun catalog(vararg tools: LLMToolSetup): AgentToolCatalog =
+        AgentToolCatalog(mapOf(ToolCategory.FILES to tools.toList()))
 
     private fun repository(vararg skills: Pair<String, String>): SkillRegistryRepository =
         mockk(relaxed = true) {

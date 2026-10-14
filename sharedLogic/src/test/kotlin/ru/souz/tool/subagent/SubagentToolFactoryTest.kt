@@ -15,6 +15,7 @@ import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.validation.SkillApprovalGate
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -29,7 +30,6 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.tool.ToolCategory
-import ru.souz.tool.immutableToolCatalogFromLists
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolInvokeSkill
@@ -321,7 +321,7 @@ class SubagentToolFactoryTest {
     }
 
     private class Fixture(compiled: List<LLMToolSetup> = emptyList()) {
-        val catalog = immutableToolCatalogFromLists(mapOf(ToolCategory.FILES to compiled))
+        val catalog = AgentToolCatalog(mapOf(ToolCategory.FILES to compiled))
         val parent = AgentSettings(LLMModel.Max.alias, LLMModel.Max.provider, 0.5f, AgentTools(catalog.toolsByCategory))
         val filter = mockk<AgentToolsFilter> { every { applyFilter(any()) } answers { firstArg() } }
         val bundles = mockk<SkillBundleProvider> { coEvery { loadSkillBundle(any(), any()) } returns null }

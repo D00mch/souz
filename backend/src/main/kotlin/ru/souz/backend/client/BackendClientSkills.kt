@@ -24,7 +24,6 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
-import ru.souz.tool.immutableToolCatalogFromLists
 import ru.souz.tool.ToolCategory
 
 internal class BackendClientSkills(
@@ -35,7 +34,7 @@ internal class BackendClientSkills(
     private val now: () -> Instant = Instant::now,
     private val metrics: BackendMetrics? = null,
 ) {
-    fun catalog(definitions: List<ClientToolDefinition>): AgentToolCatalog = immutableToolCatalogFromLists(
+    fun catalog(definitions: List<ClientToolDefinition>): AgentToolCatalog = AgentToolCatalog(
         definitions.groupBy { if (it.name == "web.search") ToolCategory.WEB_SEARCH else ToolCategory.APPLICATIONS }
             .mapValues { (category, tools) ->
                 tools.map { definition ->

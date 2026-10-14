@@ -667,11 +667,7 @@ private class TestToolsFilter(
 
 private fun catalog(
     vararg categories: Pair<ToolCategory, List<LLMToolSetup>>,
-): AgentToolCatalog = object : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = linkedMapOf(
-        *categories.map { (category, tools) -> category to tools.associateBy { it.fn.name } }.toTypedArray()
-    )
-}
+): AgentToolCatalog = AgentToolCatalog(categories.toMap())
 
 private fun repository(vararg bundles: SkillBundle): SkillRegistryRepository {
     val bundlesById = bundles.associateBy { it.skillId.value }

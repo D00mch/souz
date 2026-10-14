@@ -116,7 +116,6 @@ import ru.souz.skilloauth.impl.SkillOAuthGatewayImpl
 import ru.souz.jobs.JobService
 import ru.souz.jobs.impl.PostgresJobService
 import ru.souz.tool.RuntimeToolsFactory
-import ru.souz.tool.composeToolCatalogs
 import ru.souz.tool.runtimeToolsDiModule
 import ru.souz.tool.portableSkillRuntimeToolsDiModule
 import ru.souz.tool.knowledge.ToolGetKnowledge
@@ -488,7 +487,7 @@ fun backendDiModule(
     bindSingleton { ToolSendMessageToChannel(registry = instance()) }
     bindSingleton { BackendChannelToolCatalog(instance(), instance()) }
     bindSingleton<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG) {
-        composeToolCatalogs(instance<RuntimeToolsFactory>(), instance<BackendChannelToolCatalog>())
+        AgentToolCatalog.compose(instance<RuntimeToolsFactory>().catalog, instance<BackendChannelToolCatalog>().catalog)
     }
     bindSingleton {
         OptionService(

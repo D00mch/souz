@@ -26,10 +26,10 @@ import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import ru.souz.llms.runtime.SettingsRoutingLlmChatApi
 import ru.souz.ToolLoopGraphBasedAgent
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
 import ru.souz.tool.RuntimePassThroughToolsFilter
-import ru.souz.tool.immutableToolCatalogSnapshot
 import ru.souz.tool.subagent.SubagentToolFactory
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -109,7 +109,7 @@ class ProviderStreamingFlowTest {
                     val api = TokenLoggingChatApi(router, mockk(relaxed = true))
                     val spawn = SubagentToolFactory(
                         createAgent = { ToolLoopGraphBasedAgent(api, settings, it) },
-                        toolCatalog = immutableToolCatalogSnapshot(emptyMap()),
+                        toolCatalog = AgentToolCatalog(),
                         toolsFilter = RuntimePassThroughToolsFilter,
                         skillBundleProvider = mockk(), commandExecutor = mockk(),
                         configuredModels = mapOf(model to provider),

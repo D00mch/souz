@@ -9,16 +9,14 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMToolSetup
-import ru.souz.tool.immutableToolCatalogSnapshot
 
 /** One lookup or spawn selection uses one catalog snapshot and the caller's scoped bundle loader. */
 internal class SkillResolver(
-    toolCatalog: AgentToolCatalog,
+    private val catalog: AgentToolCatalog,
     toolsFilter: AgentToolsFilter,
     private val loadBundle: suspend (userId: String, skillId: SkillId) -> SkillBundle?,
     private val approvalGate: SkillApprovalGate?,
 ) {
-    private val catalog = immutableToolCatalogSnapshot(toolCatalog.toolsByCategory)
     val enabledTools = AgentTools(toolsFilter.applyFilter(catalog.toolsByCategory))
 
     suspend fun resolve(skillId: SkillId, userId: String): SkillResolution {

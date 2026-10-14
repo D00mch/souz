@@ -8,15 +8,13 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
 
 /** Catalog of inert tools that only carry their identity, for capability and selection tests. */
-internal class TestToolCatalog(
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
-) : AgentToolCatalog {
-    constructor(vararg categories: Pair<ToolCategory, List<String>>) : this(
-        categories.associate { (category, toolNames) ->
-            category to toolNames.associateWith { toolName -> TestToolSetup(toolName) }
-        }
-    )
-}
+internal fun TestToolCatalog(
+    toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
+): AgentToolCatalog = AgentToolCatalog(toolsByCategory.mapValues { it.value.values })
+
+internal fun TestToolCatalog(vararg categories: Pair<ToolCategory, List<String>>): AgentToolCatalog = AgentToolCatalog(
+    categories.associate { (category, names) -> category to names.map { TestToolSetup(it) } }
+)
 
 internal class TestToolSetup(
     name: String,

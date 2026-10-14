@@ -101,7 +101,7 @@ class BackendExecutionToolCatalogTest {
 
     @Test
     fun `client tools cannot shadow compiled tools`() {
-        assertFailsWith<IllegalStateException> {
+        assertFailsWith<IllegalArgumentException> {
             backendExecutionToolCatalog(
                 compiledToolCatalog = TestToolCatalog(ToolCategory.FILES to listOf("ReadFile")),
                 executionLlmToolCatalog = TestToolCatalog(),

@@ -18,7 +18,6 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.ToolCategory
-import ru.souz.tool.immutableToolCatalogFromLists
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.SkillResolution
 import ru.souz.tool.skills.SkillResolver
@@ -95,7 +94,7 @@ class SubagentToolFactory(
         commandTools: List<LLMToolSetup>,
     ): LLMToolSetup {
         val command = ToolInvokeSkill(
-            toolCatalog = immutableToolCatalogFromLists(mapOf(ToolCategory.CHAT to tools)),
+            toolCatalog = AgentToolCatalog(mapOf(ToolCategory.CHAT to tools)),
             toolsFilter = RuntimePassThroughToolsFilter,
             loadBundle = { userId, skillId ->
                 bundles[skillId].takeIf { userId == ownerId }

@@ -49,7 +49,7 @@ class AgentScenarioTestSupportTest {
             mockedTools = listOf(mockedFileTool),
         )
 
-        assertEquals(setOf(ToolCategory.FILES), scenarioCatalog.toolsByCategory.keys)
+        assertEquals(setOf(ToolCategory.FILES), scenarioCatalog.toolsByCategory.filterValues { it.isNotEmpty() }.keys)
         val exposedTool = scenarioCatalog.toolsByCategory.getValue(ToolCategory.FILES).getValue("FindFilesByName")
         assertEquals(productionFileTool.fn, exposedTool.fn)
         assertFalse(
@@ -108,7 +108,7 @@ class AgentScenarioTestSupportTest {
             .createScenarioDi(listOf(mockedFileTool))
 
         val catalog: AgentToolCatalog = di.direct.instance()
-        assertEquals(setOf(ToolCategory.FILES), catalog.toolsByCategory.keys)
+        assertEquals(setOf(ToolCategory.FILES), catalog.toolsByCategory.filterValues { it.isNotEmpty() }.keys)
         val exposedNames = catalog.toolsByCategory.values.flatMap { it.keys }
         assertEquals(listOf("FindFilesByName"), exposedNames)
         val contextFactory: AgentContextFactory = di.direct.instance()
@@ -205,8 +205,4 @@ private class RecordingTool(
 
 private fun catalog(
     vararg categories: Pair<ToolCategory, List<LLMToolSetup>>,
-): AgentToolCatalog = object : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = categories.associate { (category, tools) ->
-        category to tools.associateBy { it.fn.name }
-    }
-}
+): AgentToolCatalog = AgentToolCatalog(categories.toMap())

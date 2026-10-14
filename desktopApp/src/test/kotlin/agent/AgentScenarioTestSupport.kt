@@ -209,7 +209,7 @@ class AgentScenarioTestSupport(
             bindProvider<DI> { this.di }
             bindSingleton<AgentToolCatalog>(overrides = true) {
                 ScenarioAgentToolCatalog(
-                    productionCatalog = instance<ToolsFactory>(),
+                    productionCatalog = instance<ToolsFactory>().catalog,
                     mockedTools = mockedTools,
                 )
             }
@@ -293,37 +293,18 @@ private fun ScenarioToolCall.traceLabel(): String {
     return "$name$target(${argumentKeys.joinToString()})"
 }
 
-internal class ScenarioAgentToolCatalog(
+internal fun ScenarioAgentToolCatalog(
     productionCatalog: AgentToolCatalog,
     mockedTools: List<LLMToolSetup>,
-) : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = buildMap {
-        val duplicateNames = mockedTools
-            .groupingBy { it.fn.name }
-            .eachCount()
-            .filterValues { it > 1 }
-            .keys
-            .sorted()
-        require(duplicateNames.isEmpty()) {
-            "Scenario mocks contain duplicate tool names: ${duplicateNames.joinToString()}"
-        }
-
-        val mockedByName = mockedTools.associateBy { it.fn.name }
-        val matchedNames = mutableSetOf<String>()
-        productionCatalog.toolsByCategory.forEach { (category, productionTools) ->
-            val scenarioTools = productionTools.mapNotNull { (name, productionTool) ->
-                val mockedTool = mockedByName[name] ?: return@mapNotNull null
-                matchedNames += name
-                name to productionTool.withMockInvocation(mockedTool)
-            }.toMap()
-            if (scenarioTools.isNotEmpty()) put(category, scenarioTools)
-        }
-
-        val unknownNames = (mockedByName.keys - matchedNames).sorted()
-        require(unknownNames.isEmpty()) {
-            "Scenario mocks are not present in the production tool catalog: ${unknownNames.joinToString()}"
-        }
+): AgentToolCatalog {
+    val mockedByName = mockedTools.associateBy { it.fn.name }
+    require(mockedByName.size == mockedTools.size) { "Scenario mocks contain duplicate tool names." }
+    val selected = productionCatalog.filter { _, tool -> tool.fn.name in mockedByName }
+    val unknownNames = mockedByName.keys - selected.toolsByCategory.values.flatMap { it.keys }.toSet()
+    require(unknownNames.isEmpty()) {
+        "Scenario mocks are not present in the production tool catalog: ${unknownNames.sorted().joinToString()}"
     }
+    return selected.mapTools { _, tool -> tool.withMockInvocation(mockedByName.getValue(tool.fn.name)) }
 }
 
 private fun LLMToolSetup.withMockInvocation(mockedTool: LLMToolSetup): LLMToolSetup {
