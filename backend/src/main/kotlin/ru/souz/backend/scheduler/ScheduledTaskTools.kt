@@ -11,7 +11,6 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
-import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.channels.ChannelProviderRegistry
 import ru.souz.backend.channels.tool.SEND_MESSAGE_TO_CHANNEL_TOOL_NAME
 import ru.souz.backend.execution.repository.AgentExecutionRepository
@@ -20,33 +19,14 @@ import ru.souz.jobs.JobInfo
 import ru.souz.jobs.JobSchedule
 import ru.souz.jobs.JobService
 import ru.souz.jobs.JobStatus
-import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
-import ru.souz.llms.giga.toGiga
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
-import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolSetup
-
-internal class ScheduledTaskTools(
-    jobs: JobService,
-    channels: ChannelProviderRegistry,
-    executions: AgentExecutionRepository,
-    config: ScheduledTaskConfig,
-    clock: Clock,
-) : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = mapOf(
-        ToolCategory.SCHEDULING to listOf(
-            ToolCreateScheduledTask(jobs, channels, executions, config, clock).toGiga(),
-            ToolListScheduledTasks(jobs).toGiga(),
-            ToolDeleteScheduledTask(jobs).toGiga(),
-        ).associateBy { it.fn.name }
-    )
-}
 
 internal class ToolCreateScheduledTask(
     private val jobs: JobService,
