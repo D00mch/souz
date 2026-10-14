@@ -246,20 +246,21 @@ internal class BackendE2eScope(
     fun <T> sql(block: (Connection) -> T): T =
         backend.sql(block)
 
-    // Real database barriers make commit and shutdown races deterministic.
-    suspend fun withTableLocked(table: String, mode: String, block: suspend CoroutineScope.() -> Unit) = coroutineScope {
-        val locked = CompletableDeferred<Unit>()
+    // Real database barriers make commit and shutdown races deterministic. The block may write
+    // through the lock-holding connection; committing it releases the lock.
+    suspend fun withTableLocked(table: String, mode: String, block: suspend CoroutineScope.(Connection) -> Unit) = coroutineScope {
+        val locked = CompletableDeferred<Connection>()
         val release = CompletableDeferred<Unit>()
         val lock = launch(Dispatchers.IO) {
             sql { connection ->
                 connection.autoCommit = false
                 connection.createStatement().use { it.execute("lock table $table in $mode mode") }
-                locked.complete(Unit)
+                locked.complete(connection)
                 try { runBlocking { release.await() } } finally { connection.rollback() }
             }
         }
-        locked.await()
-        try { block() } finally {
+        val connection = locked.await()
+        try { block(connection) } finally {
             release.complete(Unit)
             lock.join()
         }

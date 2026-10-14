@@ -109,6 +109,7 @@ class AgentExecutionService internal constructor(
     /**
      * Only the successful insert may start this execution. A persisted ID is never relaunched,
      * including after a crash before launch; null means another call already inserted it.
+     * A persisted failure fails every later call for the same ID.
      */
     internal suspend fun executeChatTurnIfAbsent(
         userId: String,
@@ -120,15 +121,23 @@ class AgentExecutionService internal constructor(
     ): AgentExecution? {
         // Existing occurrences remain deduplicated even if settings changed after dispatch.
         executionRepository.get(userId, executionId)?.let { existing ->
-            check(existing.status != AgentExecutionStatus.FAILED) { existing.errorMessage ?: "Occurrence execution failed." }
+            checkNotFailed(existing)
             return null
         }
         val prepared = prepareChatTurn(userId, chatId, content, executionId = executionId)
         check(prepared.effectiveSettings.enabledTools.containsAll(requiredTools)) {
             "Scheduled reminder requires enabled SendMessageToChannel; delivery is unavailable."
         }
-        if (!executionRepository.createIfAbsent(prepared.execution, dailyLaunchLimit)) return null
+        if (!executionRepository.createIfAbsent(prepared.execution, dailyLaunchLimit)) {
+            // A competing call inserted it after the lookup above and may already have failed it.
+            checkNotFailed(checkNotNull(executionRepository.get(userId, executionId)))
+            return null
+        }
         return startCreatedChatTurn(prepared).execution
+    }
+
+    private fun checkNotFailed(existing: AgentExecution) {
+        check(existing.status != AgentExecutionStatus.FAILED) { existing.errorMessage ?: "Occurrence execution failed." }
     }
 
     private suspend fun startCreatedChatTurn(prepared: PreparedChatTurn): SendMessageResult = try {

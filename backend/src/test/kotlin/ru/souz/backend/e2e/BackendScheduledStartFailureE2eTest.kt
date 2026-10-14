@@ -3,9 +3,12 @@ package ru.souz.backend.e2e
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.async
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.scheduler.occurrenceId
 import ru.souz.jobs.CreateJobRequest
@@ -76,4 +79,37 @@ class BackendScheduledStartFailureE2eTest {
             }
         }
     }
+
+    @Test
+    fun `failure committed by a competing dispatch after the lookup fails this dispatch too`() =
+        backendE2eTest(schemaPrefix = "e2e_scheduled_race") {
+            val owner = UUID.randomUUID().toString()
+            val chatId = UUID.fromString(scheduledTaskSetup(owner))
+            val executionId = UUID.randomUUID()
+            withTableLocked("chats", "exclusive") { connection ->
+                val dispatch = async {
+                    assertFailsWith<IllegalStateException> {
+                        backend.dependencies.executionService.executeChatTurnIfAbsent(
+                            owner, chatId, "Check mail.", executionId, dailyLaunchLimit = 100,
+                        )
+                    }
+                }
+                awaitLockWait("chats") // The lookup found nothing; the insert waits for the chat lock.
+                assertNull(backend.executionRepository.get(owner, executionId))
+                connection.prepareStatement(
+                    """
+                    insert into agent_executions(id, user_id, chat_id, status, error_message, finished_at)
+                    values (?, ?, ?, 'failed', 'competing start failure', clock_timestamp())
+                    """.trimIndent()
+                ).use {
+                    it.setObject(1, executionId)
+                    it.setString(2, owner)
+                    it.setObject(3, chatId)
+                    assertEquals(1, it.executeUpdate())
+                }
+                connection.commit()
+                assertEquals("competing start failure", dispatch.await().message)
+            }
+            assertTrue(llm.requests.isEmpty())
+        }
 }
