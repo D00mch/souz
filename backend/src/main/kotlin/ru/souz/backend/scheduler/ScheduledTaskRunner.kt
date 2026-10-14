@@ -4,8 +4,10 @@ import java.time.Clock
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.backend.channels.tool.SEND_MESSAGE_TO_CHANNEL_TOOL_NAME
 import ru.souz.backend.channels.tool.ToolSendMessageToChannel
@@ -33,7 +35,7 @@ data class ScheduledTaskConfig(
  * Job handler for scheduled tasks. It starts the agent in a hidden chat and returns, so the
  * sequential job worker keeps claiming due tasks while up to [ScheduledTaskConfig.concurrentRuns]
  * executions run. When every slot is busy, the handler waits and the next tasks stay in the queue.
- * A start failure is rethrown for the job service's retries.
+ * A start failure removes the occurrence's empty hidden chat and is rethrown for the job service's retries.
  */
 internal class ScheduledTaskRunner(
     private val chats: ChatRepository,
@@ -56,12 +58,22 @@ internal class ScheduledTaskRunner(
                     archived = false, createdAt = now, updatedAt = now, clientType = SCHEDULED_TASK_CHAT_TYPE,
                 )
             )
-            execution = executions.executeChatTurnIfAbsent(
-                job.userId, chat.id, scheduledTaskInput(job), job.occurrenceId("execution"), config.runsPerUserPerDay,
-                requiredTools = if (job.payload.path("requiresDelivery").asBoolean(true)) {
-                    setOf(SEND_MESSAGE_TO_CHANNEL_TOOL_NAME)
-                } else emptySet(),
-            )
+            execution = try {
+                executions.executeChatTurnIfAbsent(
+                    job.userId, chat.id, scheduledTaskInput(job), job.occurrenceId("execution"), config.runsPerUserPerDay,
+                    requiredTools = if (job.payload.path("requiresDelivery").asBoolean(true)) {
+                        setOf(SEND_MESSAGE_TO_CHANNEL_TOOL_NAME)
+                    } else emptySet(),
+                )
+            } catch (error: Exception) {
+                // A rejected dispatch leaves no execution, so its hidden chat would stay empty forever.
+                try {
+                    withContext(NonCancellable) { chats.deleteEmptyScheduledChat(job.userId, chat.id) }
+                } catch (cleanupError: Exception) {
+                    error.addSuppressed(cleanupError)
+                }
+                throw error
+            }
         } finally {
             if (execution == null) slots.release()
         }

@@ -19,6 +19,23 @@ class PostgresChatRepository(
     override suspend fun getOrCreate(chat: Chat): Chat =
         insert(chat, emptyList(), ignoreDuplicate = true) ?: checkNotNull(get(chat.userId, chat.id))
 
+    override suspend fun deleteEmptyScheduledChat(userId: String, chatId: UUID): Boolean = dataSource.write { connection ->
+        // Admission holds this lock until it commits; the next statement then sees its execution.
+        connection.lockChat(userId, chatId)
+        connection.prepareStatement(
+            """
+            delete from chats c
+            where c.user_id = ? and c.id = ? and c.client_type = 'scheduled_task'
+              and not exists (select 1 from agent_executions where chat_id = c.id)
+              and not exists (select 1 from messages where chat_id = c.id)
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.setObject(2, chatId)
+            statement.executeUpdate() == 1
+        }
+    }
+
     private suspend fun insert(
         chat: Chat,
         tools: List<ClientToolDefinition>,

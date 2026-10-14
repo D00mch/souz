@@ -266,6 +266,21 @@ internal class BackendE2eScope(
         }
     }
 
+    /** Waits until another session blocks on a row that [holder]'s open transaction has locked or written. */
+    suspend fun awaitTransactionWait(holder: Connection) {
+        val xid = holder.createStatement().use { statement ->
+            statement.executeQuery("select pg_current_xact_id()::xid::text").use { rows -> rows.next(); rows.getString(1) }
+        }
+        eventually("database wait on transaction $xid") {
+            sql { connection -> connection.prepareStatement(
+                "select count(*) from pg_locks where not granted and locktype = 'transactionid' and transactionid::text = ?"
+            ).use { statement ->
+                statement.setString(1, xid)
+                statement.executeQuery().use { rows -> rows.next() && rows.getInt(1) > 0 }
+            } }.takeIf { it }
+        }
+    }
+
     suspend fun awaitLockWait(table: String) {
         eventually("database wait on $table") {
             sql { connection -> connection.createStatement().use { statement ->
@@ -425,6 +440,8 @@ internal class BackendE2eBackend(
     val toolCallRepository: ToolCallRepository get() = di.direct.instance()
 
     val executionRepository: ru.souz.backend.execution.repository.AgentExecutionRepository get() = di.direct.instance()
+
+    val chatRepository: ru.souz.backend.chat.repository.ChatRepository get() = di.direct.instance()
 
     suspend fun recoverClientThreads() = di.direct.instance<ClientThreadRecoveryService>().recover()
 

@@ -9,6 +9,7 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -18,7 +19,9 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.http.BackendHttpRoutes
+import ru.souz.backend.scheduler.SCHEDULED_TASK_CHAT_TYPE
 import ru.souz.backend.scheduler.ScheduledTaskConfig
 import ru.souz.backend.scheduler.occurrenceId
 import ru.souz.jobs.JobInfo
@@ -95,6 +98,7 @@ class BackendScheduledDispatchE2eTest {
             val run = backend.jobService.listJobs(owner).single { it.id.toString() == second["taskId"].asText() }.run()
             assertFailsWith<IllegalStateException> { backend.runScheduledTask(run) }
             assertNull(backend.executionRepository.get(owner, run.occurrenceId("execution")), "Denied insert must roll back.")
+            assertNull(backend.chatRepository.get(owner, run.occurrenceId("chat")), "Denied dispatch removes its empty chat.")
             assertEquals(1, quota(owner))
             // Deterministic database clock-window fixture: yesterday's consumption remains durable.
             backend.sql { connection ->
@@ -156,6 +160,7 @@ class BackendScheduledDispatchE2eTest {
                 }
             }
             assertNull(backend.executionRepository.get(owner, original.occurrenceId("execution")))
+            assertEquals(0, hiddenChats(owner), "Each rejected attempt removes its own empty chat.")
             assertEquals(0, quota(owner))
             val listed = scheduledTaskTool(owner, chat, "list")["tasks"].single { it["taskId"].asText() == id.toString() }
             assertEquals("pending", listed["status"].asText())
@@ -164,6 +169,63 @@ class BackendScheduledDispatchE2eTest {
             backend.runScheduledTask(actionRun)
             backend.awaitExecution(actionRun.occurrenceId("execution"))
             assertEquals(1, quota(owner), "Action-only tasks can run with delivery disabled.")
+        }
+    }
+
+    @Test
+    fun `rejection cleanup removes only empty hidden chats and waits for a competing admission`() {
+        backendE2eTest(schemaPrefix = "e2e_dispatch_cleanup") {
+            val owner = UUID.randomUUID().toString()
+            val visible = UUID.fromString(scheduledTaskSetup(owner))
+            val chats = backend.chatRepository
+            suspend fun hidden(): Chat {
+                val now = Instant.now()
+                return chats.getOrCreate(Chat(
+                    id = UUID.randomUUID(), userId = owner, title = "Hidden", archived = false,
+                    createdAt = now, updatedAt = now, clientType = SCHEDULED_TASK_CHAT_TYPE,
+                ))
+            }
+            val withMessage = hidden()
+            backend.sql { connection ->
+                connection.prepareStatement("insert into messages(id, user_id, chat_id, seq, role, content) values (?, ?, ?, 1, 'user', 'Hi')").use {
+                    it.setObject(1, UUID.randomUUID())
+                    it.setString(2, owner)
+                    it.setObject(3, withMessage.id)
+                    assertEquals(1, it.executeUpdate())
+                }
+            }
+            val admitted = hidden()
+            assertFalse(chats.deleteEmptyScheduledChat(owner, visible), "Visible chats are never removed.")
+            assertFalse(chats.deleteEmptyScheduledChat(UUID.randomUUID().toString(), admitted.id), "Other owners cannot remove it.")
+            assertFalse(chats.deleteEmptyScheduledChat(owner, withMessage.id), "A chat with messages is kept.")
+            val executionId = UUID.randomUUID()
+            // An access share lock blocks nothing. Its connection plays a competing admission: it locks
+            // the chat row and inserts an execution, then commits while cleanup waits for that row.
+            withTableLocked("chats", "access share") { admission ->
+                admission.prepareStatement("select id from chats where id = ? for update").use {
+                    it.setObject(1, admitted.id)
+                    it.executeQuery().close()
+                }
+                admission.prepareStatement("insert into agent_executions(id, user_id, chat_id, status) values (?, ?, ?, 'queued')").use {
+                    it.setObject(1, executionId)
+                    it.setString(2, owner)
+                    it.setObject(3, admitted.id)
+                    assertEquals(1, it.executeUpdate())
+                }
+                val cleanup = async { chats.deleteEmptyScheduledChat(owner, admitted.id) }
+                awaitTransactionWait(admission)
+                admission.commit()
+                assertFalse(cleanup.await(), "The committed admission keeps its chat.")
+            }
+            assertNotNull(backend.executionRepository.get(owner, executionId))
+            listOf(visible, withMessage.id, admitted.id).forEach { assertNotNull(chats.get(owner, it)) }
+        }
+    }
+
+    private fun BackendE2eScope.hiddenChats(owner: String): Int = backend.sql { connection ->
+        connection.prepareStatement("select count(*) from chats where user_id = ? and client_type = 'scheduled_task'").use {
+            it.setString(1, owner)
+            it.executeQuery().use { rows -> rows.next(); rows.getInt(1) }
         }
     }
 
