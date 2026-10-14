@@ -47,6 +47,7 @@ internal class ScheduledTaskRunner(
 ) {
     private val slots = Semaphore(config.concurrentRuns)
 
+    @Suppress("SuspendFunSwallowedCancellation") // Dispatch errors, cancellation included, are rethrown after non-cancellable cleanup.
     suspend fun run(job: JobRun) {
         slots.acquire()
         var execution: AgentExecution? = null
