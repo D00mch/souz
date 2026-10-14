@@ -72,7 +72,7 @@ class PostgresJobStoreTest {
         assertFalse(service.store.renew(first))
         assertFalse(service.store.finish(first, "stale failure"))
         assertTrue(service.store.finish(second))
-        assertEquals(JobStatus.SUCCEEDED, service.listJobs("owner").single().status)
+        assertEquals(JobStatus.SUCCEEDED, service.listJobs("owner").items.single().status)
     }
 
     @Test
@@ -122,7 +122,7 @@ class PostgresJobStoreTest {
                     assertFalse(withTimeout(5_000) { pending.await() })
                 }
             }
-            assertEquals(claim.job, service.listJobs("owner").single())
+            assertEquals(claim.job, service.listJobs("owner").items.single())
             val recovered = assertNotNull(service.store.claim())
             assertEquals(claim.job.id, recovered.job.id)
             assertEquals(claim.job.scheduledAt, recovered.job.scheduledAt)
@@ -141,7 +141,7 @@ class PostgresJobStoreTest {
             assertEquals(job.scheduledAt, claim.job.scheduledAt)
             val before = db.databaseNow()
             assertTrue(service.store.finish(claim, "failure-$attempt"))
-            val current = service.listJobs("owner").single()
+            val current = service.listJobs("owner").items.single()
             assertEquals("failure-$attempt", current.lastError)
             assertEquals(attempt, current.attempts)
             if (attempt < 3) {
@@ -184,7 +184,7 @@ class PostgresJobStoreTest {
             assertEquals(ready.id, claimed?.job?.id)
         }
         assertNull(service.store.claim())
-        val failed = service.listJobs("owner").first { it.id == exhausted.id }
+        val failed = service.listJobs("owner").items.first { it.id == exhausted.id }
         assertEquals(JobStatus.FAILED, failed.status)
         assertEquals(3, failed.attempts)
         assertNotNull(failed.lastError)
@@ -203,7 +203,7 @@ class PostgresJobStoreTest {
                 start.complete(Unit)
                 cancelling.await() to finishing.await()
             }
-            val terminal = service.listJobs("owner").first { it.id == job.id }
+            val terminal = service.listJobs("owner").items.first { it.id == job.id }
             assertEquals(if (completed) JobStatus.SUCCEEDED else JobStatus.CANCELLED, terminal.status)
             assertEquals(terminal, cancelled)
             assertFalse(service.store.renew(claim))

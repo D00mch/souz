@@ -29,7 +29,36 @@ class PostgresAgentExecutionRepository(
         insert(connection, execution)
     }
 
-    internal fun insert(connection: Connection, execution: AgentExecution): AgentExecution {
+    override suspend fun createIfAbsent(execution: AgentExecution, dailyLaunchLimit: Int?): Boolean = dataSource.write(afterCommit = {
+        if (it) metrics?.executions?.committed(execution)
+    }) { connection ->
+        connection.lockChat(execution.userId, execution.chatId)
+        if (insert(connection, execution, ignoreDuplicate = true) == null) return@write false
+        if (dailyLaunchLimit != null) {
+            connection.prepareStatement(
+                """
+                insert into scheduled_task_daily_launches(user_id, launch_day, launches)
+                values (?, (clock_timestamp() at time zone 'UTC')::date, 1)
+                on conflict (user_id, launch_day) do update
+                  set launches = scheduled_task_daily_launches.launches + 1
+                  where scheduled_task_daily_launches.launches < ?
+                returning launches
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, execution.userId)
+                statement.setInt(2, dailyLaunchLimit)
+                statement.executeQuery().use { rows ->
+                    check(rows.next()) { "Scheduled task daily launch quota exhausted (UTC day)." }
+                }
+            }
+        }
+        true
+    }
+
+    internal fun insert(connection: Connection, execution: AgentExecution): AgentExecution =
+        checkNotNull(insert(connection, execution, ignoreDuplicate = false))
+
+    private fun insert(connection: Connection, execution: AgentExecution, ignoreDuplicate: Boolean): AgentExecution? {
         try {
             connection.prepareStatement(
                 """
@@ -40,10 +69,11 @@ class PostgresAgentExecutionRepository(
                     latest_device_context, runtime_owner, runtime_lease_until
                 )
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ${if (ignoreDuplicate) "on conflict (id) do nothing" else ""}
                 """.trimIndent()
             ).use { statement ->
                 bindExecution(statement, execution)
-                statement.executeUpdate()
+                if (statement.executeUpdate() == 0) return null
             }
         } catch (error: SQLException) {
             if (error.isConstraintViolation(ACTIVE_EXECUTION_CONSTRAINT)) {
