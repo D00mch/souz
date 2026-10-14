@@ -11,14 +11,13 @@ data class ClientToolDefinition(
     val parameters: LLMRequest.Parameters,
 )
 
-internal fun normalizeClientTools(
-    tools: List<ClientToolDefinition>,
+internal fun List<ClientToolDefinition>.normalizeClientTools(
     serverNames: Set<String>
 ): List<ClientToolDefinition> {
-    requireCatalogue(tools.size <= 256, "tools must contain at most 256 definitions.")
-    requireCatalogue(restJsonMapper.writeValueAsBytes(tools).size <= 1_048_576, "tools must not exceed 1 MiB.")
-    requireCatalogue(tools.map { it.name }.distinct().size == tools.size, "Tool names must be unique.")
-    return tools.withIndex().sortedBy { it.value.name }.map { (index, tool) ->
+    requireCatalogue(this.size <= 256, "tools must contain at most 256 definitions.")
+    requireCatalogue(restJsonMapper.writeValueAsBytes(this).size <= 1_048_576, "tools must not exceed 1 MiB.")
+    requireCatalogue(this.map { it.name }.distinct().size == this.size, "Tool names must be unique.")
+    return this.withIndex().sortedBy { it.value.name }.map { (index, tool) ->
         requireCatalogue(Regex("[A-Za-z][A-Za-z0-9_.-]{0,63}").matches(tool.name), "Invalid tool name.")
         requireCatalogue(
             tool.name !in serverNames && tool.name !in reservedSkillNames,
