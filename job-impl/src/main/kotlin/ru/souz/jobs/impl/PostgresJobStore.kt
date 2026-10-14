@@ -35,8 +35,18 @@ internal class PostgresJobStore(private val dataSource: DataSource, private val 
         ) { check(next()); jobInfo() }
     }
 
-    suspend fun list(userId: String): List<JobInfo> = connection { connection ->
-        connection.query("select * from jobs where user_id = ? order by created_at desc, id desc", userId) {
+    suspend fun list(userId: String, limit: Int, beforeJobId: UUID?, includeInactive: Boolean): List<JobInfo> = connection { connection ->
+        val active = if (includeInactive) "" else "and status in ('PENDING', 'RUNNING')"
+        // An unknown or foreign cursor matches no anchor row, so the page is empty.
+        val before = if (beforeJobId == null) "" else
+            "and (created_at, id) < (select created_at, id from jobs where user_id = ? and id = ?)"
+        val cursorParameters: Array<Any> = if (beforeJobId == null) emptyArray() else arrayOf(userId, beforeJobId)
+        connection.query(
+            """
+            select * from jobs where user_id = ? $active $before
+            order by created_at desc, id desc limit ?
+            """.trimIndent(), userId, *cursorParameters, limit,
+        ) {
             buildList { while (next()) add(jobInfo()) }
         }
     }
@@ -123,12 +133,14 @@ internal class PostgresJobStore(private val dataSource: DataSource, private val 
         )
     }
 
-    suspend fun listFailures(userId: String): List<FailedJobOccurrence> = connection { connection ->
+    suspend fun listFailures(userId: String, jobIds: Set<UUID>): List<FailedJobOccurrence> = connection { connection ->
         connection.query(
             """
-            select f.* from job_occurrence_failures f join jobs j on j.id = f.job_id
-            where j.user_id = ? order by f.scheduled_at desc
-            """.trimIndent(), userId,
+            select f.* from jobs j cross join lateral (
+              select * from job_occurrence_failures where job_id = j.id order by scheduled_at desc limit 3
+            ) f
+            where j.user_id = ? and j.id = any(?) order by f.scheduled_at desc, f.job_id
+            """.trimIndent(), userId, connection.createArrayOf("uuid", jobIds.toTypedArray()),
         ) {
             buildList {
                 while (next()) add(FailedJobOccurrence(

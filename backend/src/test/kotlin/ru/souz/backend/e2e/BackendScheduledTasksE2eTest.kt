@@ -22,6 +22,7 @@ import ru.souz.backend.scheduler.occurrenceId
 import ru.souz.backend.scheduler.scheduledTaskInput
 import ru.souz.jobs.CreateJobRequest
 import ru.souz.jobs.JobRun
+import ru.souz.jobs.JobSchedule
 import ru.souz.jobs.JobStatus
 import ru.souz.llms.restJsonMapper
 
@@ -124,7 +125,7 @@ class BackendScheduledTasksE2eTest {
             val created = scheduledTaskTool(userId, chatId, "create", mapOf("prompt" to "Remind the user to drink water.", "afterSeconds" to 1))
             assertEquals("pending", created["status"].asText(), created.toString())
             assertEquals("Remind the user to drink water.", created["title"].asText(), "A missing title defaults to the prompt.")
-            val occurrence = backend.jobService.listJobs(userId).single().occurrenceInput()
+            val occurrence = backend.jobService.listJobs(userId).items.single().occurrenceInput()
             assertTrue("channelType=public_client, channelId=$chatId" in occurrence, occurrence)
             llm.requestSkillForPrompt(
                 occurrence,
@@ -208,7 +209,7 @@ class BackendScheduledTasksE2eTest {
             withTimeout(10.seconds) {
                 repeat(2) { started.receive() }
                 eventually("third occurrence waiting for a slot") {
-                    backend.jobService.listJobs(userId).single { it.title == "Task 2" }.takeIf { it.status == JobStatus.RUNNING }
+                    backend.jobService.listJobs(userId).items.single { it.title == "Task 2" }.takeIf { it.status == JobStatus.RUNNING }
                 }
                 assertTrue(started.tryReceive().isFailure, "Only two occurrences may start.")
                 assertTrue(cancelled.tryReceive().isFailure, "Both occurrences start before either times out.")
@@ -244,6 +245,31 @@ class BackendScheduledTasksE2eTest {
             assertTrue("1 of 25 remain" in second, second)
             scheduledTaskTool(userId, chatId, "delete", mapOf("taskId" to first))
             assertTrue(scheduledTaskTool(userId, chatId, "create", hourly).has("taskId"), "Cancelling a task returns its runs to the budget.")
+        }
+    }
+
+    @Test
+    fun `list pages through tasks and the budget counts active tasks beyond the first page`() {
+        backendE2eTest(schemaPrefix = "e2e_scheduled_pages", scheduledTasks = ScheduledTaskConfig(runsPerUserPerDay = 101)) {
+            val userId = UUID.randomUUID().toString()
+            val chatId = scheduledTaskSetup(userId)
+            val later = JobSchedule.Once(Instant.now().plusSeconds(3600))
+            // The budget reads 100 active tasks per page, so the 101st sits on its second page.
+            val active = List(101) {
+                backend.jobService.createJob(userId, CreateJobRequest("Task $it", restJsonMapper.createObjectNode().put("prompt", "Do it."), later))
+            }
+            val rejected = scheduledTaskTool(userId, chatId, "create", mapOf("prompt" to "One more.", "afterSeconds" to 3600)).toString()
+            assertTrue("0 of 101 remain" in rejected, rejected)
+
+            // The newest task is cancelled, so the default listing must start below it.
+            backend.jobService.cancelJob(userId, active.last().id)
+            val expected = backend.jobService.listJobs(userId, limit = 4, includeInactive = false).items.map { it.id.toString() }
+            assertTrue(active.last().id.toString() !in expected)
+            // Short pages keep the tool result under the agent's 8 KB knowledge offload threshold.
+            val first = scheduledTaskTool(userId, chatId, "list", mapOf("limit" to 2))
+            val cursor = assertNotNull(first["nextCursor"], first.toString().take(1000)).asText()
+            val second = scheduledTaskTool(userId, chatId, "list", mapOf("limit" to 2, "cursor" to cursor))
+            assertEquals(expected, (first["tasks"] + second["tasks"]).map { it["taskId"].asText() })
         }
     }
 

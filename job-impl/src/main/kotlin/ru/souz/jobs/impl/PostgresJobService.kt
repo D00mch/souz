@@ -16,7 +16,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import ru.souz.jobs.CreateJobRequest
+import ru.souz.jobs.FailedJobOccurrence
 import ru.souz.jobs.JobInfo
+import ru.souz.jobs.JobPage
 import ru.souz.jobs.JobRun
 import ru.souz.jobs.JobService
 
@@ -42,9 +44,18 @@ class PostgresJobService internal constructor(dataSource: DataSource, private va
         return store.create(userId, request)
     }
 
-    override suspend fun listJobs(userId: String): List<JobInfo> = store.list(userId)
+    override suspend fun listJobs(userId: String, limit: Int, beforeJobId: UUID?, includeInactive: Boolean): JobPage {
+        require(limit in 1..100) { "Job page limit must be between 1 and 100." }
+        val rows = store.list(userId, limit + 1, beforeJobId, includeInactive)
+        val items = rows.take(limit)
+        return JobPage(items, items.lastOrNull()?.id?.takeIf { rows.size > limit })
+    }
 
-    override suspend fun listFailedOccurrences(userId: String) = store.listFailures(userId)
+    override suspend fun listFailedOccurrences(userId: String, jobIds: Set<UUID>): List<FailedJobOccurrence> {
+        if (jobIds.isEmpty()) return emptyList()
+        require(jobIds.size <= 100) { "Request failures for at most 100 jobs." }
+        return store.listFailures(userId, jobIds)
+    }
 
     override suspend fun cancelJob(userId: String, jobId: UUID): JobInfo? = store.cancel(userId, jobId)
 

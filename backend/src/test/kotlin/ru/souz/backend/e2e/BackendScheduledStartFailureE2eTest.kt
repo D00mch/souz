@@ -48,7 +48,7 @@ class BackendScheduledStartFailureE2eTest {
                 makeScheduledJobReady(job.id)
                 backend.startScheduledTaskWorker()
                 eventually<JobInfo>("first start failure", timeout = 15.seconds) {
-                    backend.jobService.listJobs(owner).single().takeIf { it.status == JobStatus.PENDING && it.attempts == 1 }
+                    backend.jobService.listJobs(owner).items.single().takeIf { it.status == JobStatus.PENDING && it.attempts == 1 }
                 }
                 backend.sql { it.createStatement().use { statement -> statement.execute("drop trigger reject_scheduled_start on $table") } }
                 // Safe pre-insert failures recover. A failed committed execution consumes its
@@ -56,24 +56,24 @@ class BackendScheduledStartFailureE2eTest {
                 repeat(if (beforePersistence) 1 else 2) { index ->
                     makeScheduledJobReady(job.id)
                     eventually<JobInfo>("retried start", timeout = 15.seconds) {
-                        backend.jobService.listJobs(owner).single().takeIf {
+                        backend.jobService.listJobs(owner).items.single().takeIf {
                             it.status == JobStatus.PENDING &&
                                 (it.scheduledAt > job.scheduledAt || it.attempts == index + 2)
                         }
                     }
                 }
-                val next = backend.jobService.listJobs(owner).single()
+                val next = backend.jobService.listJobs(owner).items.single()
                 assertTrue(next.scheduledAt > job.scheduledAt)
                 assertEquals(0, next.attempts)
                 backend.awaitExecution(run.occurrenceId("execution"))
                 val execution = assertNotNull(backend.executionRepository.get(owner, run.occurrenceId("execution")))
                 if (beforePersistence) {
                     assertEquals(AgentExecutionStatus.COMPLETED, execution.status)
-                    assertTrue(backend.jobService.listFailedOccurrences(owner).isEmpty())
+                    assertTrue(backend.jobService.listFailedOccurrences(owner, setOf(job.id)).isEmpty())
                     assertEquals(1, llm.requests.size)
                 } else {
                     assertEquals(AgentExecutionStatus.FAILED, execution.status)
-                    assertEquals(job.scheduledAt, backend.jobService.listFailedOccurrences(owner).single().scheduledAt)
+                    assertEquals(job.scheduledAt, backend.jobService.listFailedOccurrences(owner, setOf(job.id)).single().scheduledAt)
                     assertTrue(llm.requests.isEmpty())
                 }
             }

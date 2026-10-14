@@ -122,7 +122,14 @@ internal class ToolCreateScheduledTask(
         }
         val now = clock.instant()
         val schedule = schedule(input, meta, now)
-        val planned = jobs.listJobs(meta.userId).filter { it.isActive() }.sumOf { runsPerDay(it.schedule, now) }
+        // The budget covers every active task, not just the first page.
+        var planned = 0
+        var cursor: UUID? = null
+        do {
+            val page = jobs.listJobs(meta.userId, limit = 100, beforeJobId = cursor, includeInactive = false)
+            planned += page.items.sumOf { runsPerDay(it.schedule, now) }
+            cursor = page.nextCursor
+        } while (cursor != null)
         val needed = runsPerDay(schedule, now)
         if (planned + needed > config.runsPerUserPerDay) {
             throw BadInputException(
@@ -175,31 +182,43 @@ internal class ToolListScheduledTasks(
     data class Input(
         @InputParamDescription("Also show completed, failed and cancelled tasks. Defaults to false.")
         val includeInactive: Boolean? = null,
+        @InputParamDescription("Page size from 1 to 100. Defaults to 20.")
+        val limit: Int? = null,
+        @InputParamDescription("nextCursor from the previous page; omit for the first page.")
+        val cursor: String? = null,
     )
 
     override val name: String = "scheduled-task.list"
     override val description: String =
-        "Lists the user's scheduled tasks with their schedules, statuses and next run times."
+        "Lists the user's scheduled tasks, newest first, with their schedules, statuses and next run times. " +
+            "When nextCursor is not null, pass it as cursor to get the next page."
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(request = "Какие у меня запланированы задачи?", params = emptyMap()),
     )
     override val returnParameters: ReturnParameters = ReturnParameters(
-        properties = mapOf("tasks" to ReturnProperty("array", "Tasks, each shaped like scheduled-task.create's result.")),
+        properties = mapOf(
+            "tasks" to ReturnProperty("array", "Tasks, each shaped like scheduled-task.create's result."),
+            "nextCursor" to ReturnProperty("string", "cursor for the next page; null on the last page."),
+        ),
     )
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String = runBlocking { suspendInvoke(input, meta) }
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val zone = meta.zone()
-        val failures = jobs.listFailedOccurrences(meta.userId).groupBy { it.jobId }
-        val tasks = jobs.listJobs(meta.userId)
-            .filter { input.includeInactive == true || it.isActive() }
-            .map { job ->
-                job.toView(zone) + ("failedOccurrences" to failures[job.id].orEmpty().take(3).map {
-                    mapOf("scheduledAt" to it.scheduledAt.atZone(zone).toOffsetDateTime().toString(), "error" to it.error)
-                })
-            }
-        return restJsonMapper.writeValueAsString(mapOf("tasks" to tasks))
+        val limit = input.limit ?: 20
+        if (limit !in 1..100) throw BadInputException("limit must be between 1 and 100.")
+        val cursor = input.cursor?.let {
+            runCatching { UUID.fromString(it) }.getOrNull() ?: throw BadInputException("cursor must be a nextCursor value.")
+        }
+        val page = jobs.listJobs(meta.userId, limit, cursor, includeInactive = input.includeInactive == true)
+        val failures = jobs.listFailedOccurrences(meta.userId, page.items.mapTo(HashSet()) { it.id }).groupBy { it.jobId }
+        val tasks = page.items.map { job ->
+            job.toView(zone) + ("failedOccurrences" to failures[job.id].orEmpty().map {
+                mapOf("scheduledAt" to it.scheduledAt.atZone(zone).toOffsetDateTime().toString(), "error" to it.error)
+            })
+        }
+        return restJsonMapper.writeValueAsString(mapOf("tasks" to tasks, "nextCursor" to page.nextCursor?.toString()))
     }
 }
 

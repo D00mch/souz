@@ -91,11 +91,11 @@ class BackendScheduledDispatchE2eTest {
             scheduledTaskTool(owner, chat, "create", mapOf("prompt" to "Check mail.", "afterSeconds" to 1))
             backend.startScheduledTaskWorker()
             val completed = eventually("one off dispatched", timeout = 15.seconds) {
-                backend.jobService.listJobs(owner).single().takeIf { it.status == JobStatus.SUCCEEDED }
+                backend.jobService.listJobs(owner).items.single().takeIf { it.status == JobStatus.SUCCEEDED }
             }
             backend.awaitExecution(completed.run().occurrenceId("execution"))
             val second = scheduledTaskTool(owner, chat, "create", mapOf("prompt" to "Check mail again.", "afterSeconds" to 3600))
-            val run = backend.jobService.listJobs(owner).single { it.id.toString() == second["taskId"].asText() }.run()
+            val run = backend.jobService.listJobs(owner).items.single { it.id.toString() == second["taskId"].asText() }.run()
             assertFailsWith<IllegalStateException> { backend.runScheduledTask(run) }
             assertNull(backend.executionRepository.get(owner, run.occurrenceId("execution")), "Denied insert must roll back.")
             assertNull(backend.chatRepository.get(owner, run.occurrenceId("chat")), "Denied dispatch removes its empty chat.")
@@ -121,7 +121,7 @@ class BackendScheduledDispatchE2eTest {
             val chat = scheduledTaskSetup(owner)
             val created = scheduledTaskTool(owner, chat, "create", mapOf("prompt" to "Check mail.", "cron" to "* * 25 * *"))
             assertTrue(created.has("taskId"), created.toString())
-            val first = backend.jobService.listJobs(owner).single().run()
+            val first = backend.jobService.listJobs(owner).items.single().run()
             repeat(2) { minute ->
                 val run = first.copy(scheduledAt = first.scheduledAt.plusSeconds(minute * 60L))
                 backend.runScheduledTask(run)
@@ -139,7 +139,7 @@ class BackendScheduledDispatchE2eTest {
             val chat = scheduledTaskSetup(owner)
             val created = scheduledTaskTool(owner, chat, "create", mapOf("prompt" to "Remind me.", "cron" to "0 9 * * *"))
             val id = UUID.fromString(created["taskId"].asText())
-            val original = backend.jobService.listJobs(owner).single().run()
+            val original = backend.jobService.listJobs(owner).items.single().run()
             val patched = client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(owner)
                 jsonBody("""{"enabledTools":["scheduled-task.create","scheduled-task.list","scheduled-task.delete"]}""")
@@ -154,7 +154,7 @@ class BackendScheduledDispatchE2eTest {
                 // Move only retry availability to avoid waiting 30 seconds between attempts.
                 makeScheduledJobReady(id)
                 eventually<JobInfo>("permission failure attempt ${index + 1}", timeout = 15.seconds) {
-                    backend.jobService.listJobs(owner).single { it.id == id }.takeIf {
+                    backend.jobService.listJobs(owner).items.single { it.id == id }.takeIf {
                         it.status == JobStatus.PENDING && if (index < 2) it.attempts == index + 1 else it.scheduledAt > original.scheduledAt
                     }
                 }
@@ -165,7 +165,7 @@ class BackendScheduledDispatchE2eTest {
             val listed = scheduledTaskTool(owner, chat, "list")["tasks"].single { it["taskId"].asText() == id.toString() }
             assertEquals("pending", listed["status"].asText())
             assertTrue("delivery is unavailable" in listed["failedOccurrences"].single()["error"].asText())
-            val actionRun = backend.jobService.listJobs(owner).single { it.id.toString() == action["taskId"].asText() }.run()
+            val actionRun = backend.jobService.listJobs(owner).items.single { it.id.toString() == action["taskId"].asText() }.run()
             backend.runScheduledTask(actionRun)
             backend.awaitExecution(actionRun.occurrenceId("execution"))
             assertEquals(1, quota(owner), "Action-only tasks can run with delivery disabled.")
