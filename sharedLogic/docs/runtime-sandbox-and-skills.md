@@ -59,4 +59,6 @@ For Knowledge storage changes, include `--tests 'ru.souz.knowledge.*' --tests 'r
 
 For Docker behavior, build the sandbox image and run the opt-in Docker tests described in the module `AGENTS.md`.
 
+Local timeout and cancellation cleanup snapshots descendants before terminating the parent, then terminates the captured children. Killing an awaited child first can resume its parent into new work and spawn an untracked child. Process-cleanup fixtures exclude host shell profiles so startup cannot consume the command deadline before PID readiness. A controlled startup script waiting on background children covers parent resumption during cleanup.
+
 Local process-cleanup failures report the command variant, waiting phase, command result, and remaining processes. Inspect these diagnostics in the JVM XML or HTML test reports retained by CI even when the suite fails.

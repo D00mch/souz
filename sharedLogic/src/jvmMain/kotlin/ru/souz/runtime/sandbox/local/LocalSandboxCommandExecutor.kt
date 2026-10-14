@@ -39,8 +39,10 @@ internal class LocalSandboxCommandExecutor(
                 }
             } finally {
                 if (process.isAlive) {
-                    process.descendants().use { children -> children.forEach { it.destroyForcibly() } }
+                    // Stop the parent before child exits can resume it into new work.
+                    val children = process.descendants().use { it.toList() }
                     process.destroyForcibly()
+                    children.forEach { it.destroyForcibly() }
                 }
                 output.awaitDrainedOrClose()
             }
