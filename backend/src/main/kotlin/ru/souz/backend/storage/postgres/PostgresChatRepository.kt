@@ -13,7 +13,35 @@ import ru.souz.backend.chat.repository.ChatRepository
 class PostgresChatRepository(
     private val dataSource: DataSource,
 ) : ChatRepository {
-    override suspend fun create(chat: Chat, tools: List<ClientToolDefinition>): Chat = dataSource.write { connection ->
+    override suspend fun create(chat: Chat, tools: List<ClientToolDefinition>): Chat =
+        checkNotNull(insert(chat, tools, ignoreDuplicate = false))
+
+    override suspend fun getOrCreate(chat: Chat): Chat =
+        insert(chat, emptyList(), ignoreDuplicate = true) ?: get(chat.userId, chat.id)
+            ?: throw ChatRequestConflictException(chat.userId, chat.requestId)
+
+    override suspend fun deleteEmptyScheduledChat(userId: String, chatId: UUID): Boolean = dataSource.write { connection ->
+        // Admission holds this lock until it commits; the next statement then sees its execution.
+        connection.lockChat(userId, chatId)
+        connection.prepareStatement(
+            """
+            delete from chats c
+            where c.user_id = ? and c.id = ? and c.client_type = 'scheduled_task'
+              and not exists (select 1 from agent_executions where chat_id = c.id)
+              and not exists (select 1 from messages where chat_id = c.id)
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.setObject(2, chatId)
+            statement.executeUpdate() == 1
+        }
+    }
+
+    private suspend fun insert(
+        chat: Chat,
+        tools: List<ClientToolDefinition>,
+        ignoreDuplicate: Boolean,
+    ): Chat? = dataSource.write { connection ->
         try {
             connection.prepareStatement(
                 """
@@ -22,6 +50,7 @@ class PostgresChatRepository(
                   title, archived, created_at, updated_at, client_tools
                 )
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+                ${if (ignoreDuplicate) "on conflict do nothing" else ""}
                 returning $CHAT_COLUMNS
                 """.trimIndent()
             ).use { statement ->
@@ -36,8 +65,7 @@ class PostgresChatRepository(
                 statement.setInstant(9, chat.updatedAt)
                 statement.setString(10, restJsonMapper.writeValueAsString(tools))
                 statement.executeQuery().use { resultSet ->
-                    check(resultSet.next())
-                    resultSet.toChat()
+                    if (resultSet.next()) resultSet.toChat() else null
                 }
             }
         } catch (error: java.sql.SQLException) {
@@ -116,7 +144,7 @@ class PostgresChatRepository(
             """
             select $CHAT_COLUMNS from chats
             where user_id = ?
-              and client_type <> 'hook'
+              and client_type not in ('hook', 'scheduled_task')
               and (? or archived = false)
             order by updated_at desc
             limit ?

@@ -265,6 +265,8 @@ private const val METADATA_LOCALE = "locale"
 private const val METADATA_TIME_ZONE = "timeZone"
 private const val METADATA_SYSTEM_PROMPT = "systemPrompt"
 internal const val METADATA_NARRATE_STEPS = "narrateSteps"
+/** Marks a scheduled-task execution: it runs in a hidden chat, so it never waits for an option answer. */
+internal const val METADATA_SCHEDULED_TASK = "scheduledTask"
 private const val METADATA_STREAMING_MESSAGES = "streamingMessages"
 private const val METADATA_SHOW_TOOL_EVENTS = "showToolEvents"
 private const val METADATA_REQUEST_TIMEOUT_MILLIS = "requestTimeoutMillis"

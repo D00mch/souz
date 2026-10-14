@@ -47,6 +47,11 @@ import org.kodein.di.direct
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
+import ru.souz.backend.scheduler.ScheduledTaskConfig
+import ru.souz.backend.scheduler.ScheduledTaskRunner
+import ru.souz.jobs.JobService
+import ru.souz.jobs.JobRun
+import ru.souz.jobs.impl.PostgresJobService
 import ru.souz.backend.storage.postgres.PostgresHistoryMemoryRepository
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.app.BackendAppConfig
@@ -140,6 +145,7 @@ internal fun backendE2eTest(
     hindsightUrl: String? = null,
     clock: Clock = Clock.systemUTC(),
     hookConfig: HookConfig = HookConfig(),
+    scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     llmLimits: BackendLlmLimits = BackendLlmLimits(),
     sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
     block: suspend BackendE2eScope.() -> Unit,
@@ -158,6 +164,7 @@ internal fun backendE2eTest(
         hindsightUrl = hindsightUrl,
         clock = clock,
         hookConfig = hookConfig,
+        scheduledTasks = scheduledTasks,
         llmLimits = llmLimits,
         sandboxFactory = sandboxFactory,
     )
@@ -239,22 +246,38 @@ internal class BackendE2eScope(
     fun <T> sql(block: (Connection) -> T): T =
         backend.sql(block)
 
-    // Real database barriers make commit and shutdown races deterministic.
-    suspend fun withTableLocked(table: String, mode: String, block: suspend CoroutineScope.() -> Unit) = coroutineScope {
-        val locked = CompletableDeferred<Unit>()
+    // Real database barriers make commit and shutdown races deterministic. The block may write
+    // through the lock-holding connection; committing it releases the lock.
+    suspend fun withTableLocked(table: String, mode: String, block: suspend CoroutineScope.(Connection) -> Unit) = coroutineScope {
+        val locked = CompletableDeferred<Connection>()
         val release = CompletableDeferred<Unit>()
         val lock = launch(Dispatchers.IO) {
             sql { connection ->
                 connection.autoCommit = false
                 connection.createStatement().use { it.execute("lock table $table in $mode mode") }
-                locked.complete(Unit)
+                locked.complete(connection)
                 try { runBlocking { release.await() } } finally { connection.rollback() }
             }
         }
-        locked.await()
-        try { block() } finally {
+        val connection = locked.await()
+        try { block(connection) } finally {
             release.complete(Unit)
             lock.join()
+        }
+    }
+
+    /** Waits until another session blocks on a row that [holder]'s open transaction has locked or written. */
+    suspend fun awaitTransactionWait(holder: Connection) {
+        val xid = holder.createStatement().use { statement ->
+            statement.executeQuery("select pg_current_xact_id()::xid::text").use { rows -> rows.next(); rows.getString(1) }
+        }
+        eventually("database wait on transaction $xid") {
+            sql { connection -> connection.prepareStatement(
+                "select count(*) from pg_locks where not granted and locktype = 'transactionid' and transactionid::text = ?"
+            ).use { statement ->
+                statement.setString(1, xid)
+                statement.executeQuery().use { rows -> rows.next() && rows.getInt(1) > 0 }
+            } }.takeIf { it }
         }
     }
 
@@ -305,6 +328,7 @@ internal class BackendE2eBackend(
     private val hindsightUrl: String? = null,
     private val clock: Clock = Clock.systemUTC(),
     private val hookConfig: HookConfig = HookConfig(),
+    private val scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     private val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     private val sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
 ) : AutoCloseable {
@@ -315,7 +339,7 @@ internal class BackendE2eBackend(
         telegramTokenEncryptionKey = E2E_TELEGRAM_TOKEN_KEY.takeIf { featureFlags.telegramBot },
         vkTokenEncryptionKey = E2E_VK_TOKEN_KEY.takeIf { featureFlags.vkBot },
         includeSkillOAuthConfig = false,
-    ).copy(hindsightApiUrl = hindsightUrl, hooks = hookConfig, llmLimits = llmLimits)
+    ).copy(hindsightApiUrl = hindsightUrl, hooks = hookConfig, scheduledTasks = scheduledTasks, llmLimits = llmLimits)
     private val localChatApi = localChatApiBackedBy(llm)
     private val localAvailability = localProviderAvailability(localModels)
     private val localRuntime = relaxedLocalRuntime()
@@ -400,6 +424,14 @@ internal class BackendE2eBackend(
 
     suspend fun awaitExecution(id: UUID) { di.direct.instance<AgentExecutionLauncher>().join(id) }
 
+    val jobService: JobService get() = di.direct.instance()
+
+    suspend fun startScheduledTaskWorker() {
+        di.direct.instance<PostgresJobService>().startWorker(applicationScope, di.direct.instance<ScheduledTaskRunner>()::run)
+    }
+
+    suspend fun runScheduledTask(job: JobRun) = di.direct.instance<ScheduledTaskRunner>().run(job)
+
     fun <T> sql(block: (Connection) -> T): T =
         dataSource.connection.use(block)
 
@@ -408,6 +440,8 @@ internal class BackendE2eBackend(
     val toolCallRepository: ToolCallRepository get() = di.direct.instance()
 
     val executionRepository: ru.souz.backend.execution.repository.AgentExecutionRepository get() = di.direct.instance()
+
+    val chatRepository: ru.souz.backend.chat.repository.ChatRepository get() = di.direct.instance()
 
     suspend fun recoverClientThreads() = di.direct.instance<ClientThreadRecoveryService>().recover()
 
@@ -434,6 +468,7 @@ internal class BackendE2eBackend(
             hindsightUrl = hindsightUrl,
             clock = clock,
             hookConfig = hookConfig,
+            scheduledTasks = scheduledTasks,
             llmLimits = llmLimits,
             sandboxFactory = sandboxFactory,
         )

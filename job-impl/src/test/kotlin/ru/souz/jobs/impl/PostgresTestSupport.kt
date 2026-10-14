@@ -73,7 +73,8 @@ internal suspend fun PostgresJobService.create(
     title: String = "Test job",
     userId: String = "owner",
     schedule: JobSchedule = JobSchedule.Once(),
-) = createJob(userId, CreateJobRequest(title, jobTestMapper.readTree("{\"task\":\"example\"}"), schedule))
+    continueAfterFailure: Boolean = false,
+) = createJob(userId, CreateJobRequest(title, jobTestMapper.readTree("{\"task\":\"example\"}"), schedule, continueAfterFailure))
 
 internal fun DataSource.execute(sql: String, vararg values: Any?) = connection.use { connection ->
     connection.prepareStatement(sql).use { statement ->
