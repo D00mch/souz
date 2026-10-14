@@ -4,7 +4,7 @@
 
 `LlmBackedToolCatalog` is the single concrete catalog for `InternetSearch`, `InternetResearch`, `ViewImage`, and `GenerateImage`. Portable and JVM runtime catalogs do not contain those tools. Catalogs iterate `ToolCategory.entries`, reject duplicate names by default, and return immutable snapshots.
 
-Backend execution merges compiled and execution-bound LLM tools before applying the enabled-tool snapshot. Client tools merge afterward and intentionally replace a same-named compiled tool because the live client owns that execution boundary. Few-shot filtering happens after the final merge.
+Backend execution merges compiled and execution-bound LLM tools before applying the enabled-tool snapshot. Persisted client tools merge afterward; creation reserves server names and composition rejects collisions. Few-shot filtering happens after the final merge.
 
 ## Safe changes
 

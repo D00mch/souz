@@ -39,6 +39,8 @@ class BackendSubagentE2eTest {
                 assertEquals(if (streaming) "Bearer router-secret" else "Bearer configured-child-key", request.headers[HttpHeaders.Authorization])
                 assertEquals(if (streaming) "router.test" else "api.openai.com", request.url.host)
                 assertFalse(body.has("provider"))
+                assertEquals(listOf("RunSkillCommand"), body["tools"].map { it["function"]["name"].asText() })
+                assertTrue("speaker.say" in body["messages"][0]["content"].asText())
                 childRequests++
                 val reply = """{"choices":[{"index":0,"message":{"role":"assistant","content":"private remote answer"},"delta":{"role":"assistant","content":"private remote answer"},"finish_reason":"stop"}],"created":1,"usage":{"prompt_tokens":11,"completion_tokens":4,"total_tokens":15}}"""
                 respond(
@@ -67,12 +69,12 @@ class BackendSubagentE2eTest {
                     } else {
                         val choices = request.functions.single { it.name == "SpawnSubagent" }.parameters.properties.getValue("model").enum
                         assertEquals(setOf(childModel, E2E_LOCAL_MODEL.alias), choices?.toSet())
-                        toolCallReply(request, "SpawnSubagent", mapOf("task" to "Answer privately", "model" to childModel))
+                        toolCallReply(request, "SpawnSubagent", mapOf("task" to "Answer privately", "model" to childModel, "skillIds" to listOf("speaker.say")))
                     }
                 },
             ) {
                 val userId = UUID.randomUUID().toString()
-                val chatId = createPublicChat(userId)
+                val chatId = createPublicChat(userId, tools = clientToolsJson("speaker.say"))
                 client.patch(BackendHttpRoutes.SETTINGS) {
                     trusted(userId)
                     jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","streamingMessages":$streaming}""")
@@ -103,10 +105,10 @@ class BackendSubagentE2eTest {
             llm = E2eLlmApi { request ->
                 val result = request.messages.lastOrNull { it.role == LLMMessageRole.function }
                 when {
-                    request.functions.map { it.name } == listOf("user.ask") -> {
+                    request.functions.map { it.name } == listOf("RunSkillCommand") -> {
                         releaseChild.await()
                         if (result != null) reply(request, "private child answer: Horror")
-                        else toolCallReply(request, "user.ask", mapOf("question" to "Which genre?")).let { response ->
+                        else toolCallReply(request, "RunSkillCommand", mapOf("skillId" to "user.ask", "arguments" to mapOf("question" to "Which genre?"))).let { response ->
                             response.copy(choices = response.choices.map { it.copy(message = it.message.copy(content = "private child progress")) })
                         }
                     }
@@ -116,7 +118,7 @@ class BackendSubagentE2eTest {
             },
         ) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            val chatId = createPublicChat(userId, tools = clientToolsJson("user.ask"))
             client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId); jsonBody("""{"streamingMessages":true,"narrateSteps":true,"systemPrompt":"custom base"}""")
             }
@@ -172,7 +174,7 @@ class BackendSubagentE2eTest {
             assertTrue("custom base" in system)
             assertTrue("Перед каждым вызовом инструментов" in system)
             assertTrue(ru.souz.backend.memory.hindsight.UNSUPPORTED_MEMORY_MUTATION_NOTICE in system)
-            val childRequests = llm.requests.filter { it.functions.map { tool -> tool.name } == listOf("user.ask") }
+            val childRequests = llm.requests.filter { it.functions.map { tool -> tool.name } == listOf("RunSkillCommand") }
             assertEquals(2, childRequests.size)
             assertEquals(2, childRequests.first().messages.size)
             assertFalse(childRequests.first().messages.any { "delegate the question" in it.content || "<skill_inventory>" in it.content })
@@ -257,7 +259,7 @@ class BackendSubagentE2eTest {
 
             assertEquals(2, llm.requests.size)
             val inventory = llm.requests.first().messages.first().content
-            assertEquals("- WEB_SEARCH: web.search", inventory.lineSequence().single { it.startsWith("- WEB_SEARCH:") })
+            assertFalse("web.search" in inventory)
             val toolResult = llm.requests.last().messages.single { it.name == "SpawnSubagent" }
             assertEquals("skill_not_found", json.readTree(toolResult.content)["error"]["code"].asText())
             assertEquals("parent recovered", messages.last()["content"].asText())

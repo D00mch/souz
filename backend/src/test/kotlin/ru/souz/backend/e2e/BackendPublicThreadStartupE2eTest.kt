@@ -130,7 +130,7 @@ class BackendPublicThreadStartupE2eTest {
         "e2e_ws_unacked_tool", llm = E2eLlmApi().apply { requestSkill("user.ask", mapOf("question" to "Continue?")) },
     ) {
         val userId = UUID.randomUUID().toString()
-        val chatId = createPublicChat(userId)
+        val chatId = createPublicChat(userId, tools = clientToolsJson("user.ask"))
         submitDirectly(chatId, messageFrame(chatId, userId, "unacked"))
         withPublicSocket(chatId) { session -> withTimeout(10.seconds) {
             val started = readJson(session)

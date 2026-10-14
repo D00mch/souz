@@ -62,6 +62,7 @@ class BackendConversationSettingsProvider(
         this.regionProfile = localeToRegionProfile(request.locale)
         this.systemPrompt = listOfNotNull(
             request.systemPrompt ?: defaultSystemPrompt,
+            ru.souz.backend.client.CLIENT_TOOL_ROUTING_INSTRUCTIONS,
             UNSUPPORTED_MEMORY_MUTATION_NOTICE.takeIf { request.clientToolsEnabled },
             when {
                 !request.narrateSteps -> null

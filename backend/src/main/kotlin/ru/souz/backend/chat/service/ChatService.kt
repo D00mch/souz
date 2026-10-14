@@ -4,6 +4,8 @@ import io.ktor.http.HttpStatusCode
 import java.time.Instant
 import java.util.UUID
 import ru.souz.backend.client.PublicPayloadHash
+import ru.souz.backend.client.ClientToolDefinition
+import ru.souz.backend.client.normalizeClientTools
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRequestConflictException
 import ru.souz.backend.chat.repository.ChatRepository
@@ -30,6 +32,7 @@ data class CreateClientChatResult(
 class ChatService(
     private val chatRepository: ChatRepository,
     private val messageRepository: MessageRepository,
+    private val serverToolNames: Set<String>,
 ) {
     suspend fun list(
         userId: String,
@@ -58,9 +61,16 @@ class ChatService(
         requestId: String,
         clientType: String,
         title: String?,
+        tools: List<ClientToolDefinition> = emptyList(),
     ): CreateClientChatResult {
         val normalizedTitle = title?.trim()?.takeIf { it.isNotEmpty() }
-        val payloadHash = PublicPayloadHash.ofValue(mapOf("clientType" to clientType, "title" to normalizedTitle))
+        val normalizedTools = normalizeClientTools(tools, serverToolNames)
+        // Preserve creation receipts for legacy chats with no catalogue.
+        val payloadHash = PublicPayloadHash.ofValue(buildMap {
+            put("clientType", clientType)
+            put("title", normalizedTitle)
+            if (normalizedTools.isNotEmpty()) put("tools", normalizedTools)
+        })
         var existing = chatRepository.findByRequestId(userId, requestId)
         if (existing == null) {
             val now = Instant.now()
@@ -76,7 +86,7 @@ class ChatService(
                 payloadHash = payloadHash,
             )
             try {
-                return CreateClientChatResult(chatRepository.create(chat), duplicate = false)
+                return CreateClientChatResult(chatRepository.create(chat, normalizedTools), duplicate = false)
             } catch (conflict: ChatRequestConflictException) {
                 if (conflict.userId != userId || conflict.requestId != requestId) throw conflict
                 existing = chatRepository.findByRequestId(userId, requestId) ?: throw conflict

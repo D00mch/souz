@@ -10,7 +10,7 @@
 }
 ```
 
-`skillIds` contains enabled compiled-tool names or file-backed Skill IDs. Compiled tools are exposed directly. Selected file-backed instructions are loaded through the host's approval policy, and their bundled commands are available through a restricted `RunSkillCommand`. Missing or disabled selections fail the call; an empty list gives the child no tools.
+`skillIds` contains enabled compiled-tool names or file-backed Skill IDs. Compiled tools are exposed directly, except backend client Skills: they use `RunSkillCommand` with their full schemas and channel-routing guidance in the child prompt. Selected file-backed instructions are loaded through the host's approval policy, and their bundled commands are available through a restricted `RunSkillCommand`. Missing or disabled selections fail the call; an empty list gives the child no tools.
 
 File-backed Skills use the same command execution as the parent, with approval applied when selected at spawn. Commands use the existing Skill directory, so executable permissions, file edits, and generated outputs persist between calls.
 

@@ -126,7 +126,7 @@ internal class PublicClientConnection(
                             "chat.create" -> {
                                 val create = decode(ChatCreateFrame::class.java, "create_chat")
                                 val (created, duplicate) = deps.createClientChat(
-                                    CreateClientChatRequest(create.payload.userId, create.requestId, clientType, create.payload.title)
+                                    CreateClientChatRequest(create.payload.userId, create.requestId, clientType, create.payload.title, create.payload.tools)
                                 )
                                 chat = created
                                 withContext(mdcContext()) {

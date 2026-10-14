@@ -298,7 +298,9 @@ object LLMRequest {
     data class Parameters(
         val type: String,
         val properties: Map<String, Property> = emptyMap(),
-        val required: List<String> = emptyList()
+        val required: List<String> = emptyList(),
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        val additionalProperties: Boolean? = null,
     )
 
     data class Property(
@@ -309,6 +311,10 @@ object LLMRequest {
         val items: Property? = null,
         @field:JsonInclude(JsonInclude.Include.NON_NULL)
         val properties: Map<String, Property>? = null,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        val required: List<String>? = null,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        val additionalProperties: Boolean? = null,
     )
 
     data class FewShotExample(

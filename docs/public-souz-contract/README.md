@@ -14,7 +14,7 @@ A **chat** stores history; a **thread** is a task inside it. A **subscription** 
 
 | Kind | Purpose |
 | --- | --- |
-| `chat.create` | Create or retrieve a chat with `requestId` and `payload:{userId,title?}`. ACK returns `chatId`; `clientType` comes from the socket. |
+| `chat.create` | Create or retrieve a chat with `requestId` and `payload:{userId,title?,tools?}`. ACK returns `chatId`; `clientType` comes from the socket. |
 | `chat.subscribe` | Replay and receive live events using `chatId`, `requestId` and optional `afterSeq`. |
 | `chat.unsubscribe` | Close this socket's subscription to `chatId`, with a correlated `requestId` ACK. |
 | `message.submit` | Submit user input. Explicit `threadId` continues that thread; omission selects the active thread or creates one. |
@@ -27,6 +27,20 @@ History, tool results and cancellation neither require nor initiate subscription
 Assistant tool history uses `content: {"type":"tool_call","name":"weather","arguments":{},"result":{"temperature_c":25.1}}`. Both `arguments` and `result` are required JSON objects; history content has no `toolCallId` or `target`. Send memory retrieval results through this same shape, preserving the tool name, arguments and result. Do not copy tool results into text history: text is eligible for memory extraction.
 
 With `HINDSIGHT_API_URL` configured and `SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL=true`, Souz retrieves memory once before the first LLM call of each new thread. The flag defaults to `false` and controls all backend executions. Client-supplied memory history remains available in either mode. Tool loops, duplicate submits, reconnects and active-thread continuation do not repeat automatic recall. The agent can invoke `SearchMemory` explicitly in either mode. With Hindsight enabled, accepted text history also enters background memory capture. See [external memory](../../backend/docs/external-memory.md) for retention, acknowledgement timing, attribution, privacy and recovery rules.
+
+## Client tool catalogue
+
+HTTP `POST /v1/chats` and WS `chat.create.payload` accept optional `tools`, an array of `{name, description, parameters}` definitions. Missing `tools` and `[]` both register no client tools. Explicit `null` is invalid. There is no catalogue discovery call or REST catalogue fetch. Server tools keep their existing policy.
+
+Delegated client Skills also use `RunSkillCommand`; their exact names and full schemas are included in the child's instructions. Only explicitly selected Skills are callable. Local discovery preserves schemas in full; the selected model's context window must still fit them.
+
+The catalogue is validated and stored atomically with the chat. It is immutable across turns, threads, reconnects and backend restarts. Both creation paths share `(userId, requestId)` idempotency: definitions are sorted by name, schema property keys are sorted, and `required` and `enum` arrays are deduplicated and sorted. Names and descriptions are preserved exactly. A changed definition conflicts; use a new chat to change the catalogue. Pre-existing chats have an empty catalogue, and their empty-catalogue creation retries remain valid.
+
+Limits: 256 tools; 1 MiB of serialized definitions; unique names matching `[A-Za-z][A-Za-z0-9_.-]{0,63}`; nonblank descriptions of at most 16,384 characters; schema depth at most 16 below the root. Core Skill and server tool names are reserved. Validation rejects the entire creation with `invalid_request`.
+
+`parameters` uses an object root with `type`, optional `properties`, `required`, and boolean `additionalProperties`. Nested properties support `type`, `description`, nonempty string `enum`, object `properties`/`required`/`additionalProperties`, and array `items`. Types are `object`, `array`, `string`, `integer`, `number`, `boolean`, and `null`. Arrays require `items`; required names must be declared properties. Other schema keywords are rejected, not discarded. Arguments are checked against this schema before dispatch; invalid arguments return `mcp_invalid_arguments` through generic Skill execution.
+
+Declared tools use `GetSkillByName` and `RunSkillCommand`, preserving advertised wire names, descriptions and normalized schemas. `web.search` is available only when declared. Successful results must be JSON objects; malformed success output becomes `invalid_tool_result` for the model. Each call has a one-minute deadline. `channelId` remains a reserved routing argument for existing cross-channel calls and is removed before schema validation and device dispatch; it cannot be declared as a tool parameter. Orion owns device binding; creation adds no device fields or binding checks.
 
 Every public `tool.call.started` requests client execution and omits `target`. Return `tool.result`, respecting `deadlineAt` when present. The example covers `user.ask`, `device.media.open` and `web.search`; argument/result shapes are documented in the schemas and trace.
 
@@ -123,7 +137,7 @@ Durable public events are same-thread `tool.call.started`, `thread.completed|fai
 | `message.submit`, `history.append`, `thread.cancel` | Shared `(chatId, requestId)` |
 | `tool.result` | `(chatId, threadId, toolCallId)` |
 
-For durable operations, the same key, operation and normalized payload return the original result with `duplicate:true`, without repeating execution. Changes conflict with `idempotency_conflict`. Creation compares `clientType` and `title`; tool results compare terminal status and payload. For `chat.subscribe` and `chat.unsubscribe`, `requestId` is only for correlation; each request applies to the current connection state.
+For durable operations, the same key, operation and normalized payload return the original result with `duplicate:true`, without repeating execution. Changes conflict with `idempotency_conflict`. Creation compares `clientType`, `title`, and normalized `tools` (omitted tools and `[]` are equivalent); tool results compare terminal status and payload. For `chat.subscribe` and `chat.unsubscribe`, `requestId` is only for correlation; each request applies to the current connection state.
 
 Frame envelopes reject unknown fields; tool arguments/results are generic JSON. Malformed JSON and unsupported kinds close the socket; recoverable errors receive correlated rejection ACKs.
 

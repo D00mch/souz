@@ -1294,6 +1294,24 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `local discovery preserves complete Skill schemas beyond the result preview budget`() {
+        val detail = """{"skill":{"description":"${"x".repeat(8_000)}","inputSchema":{"type":"object","required":["lastField"]}}}"""
+        for (name in listOf("GetSkillByName", "GetSkillsByCategory")) {
+            val prompt = LocalPromptRenderer().render(
+                LLMRequest.Chat(
+                    model = LocalModelProfiles.GEMMA4_E2B_IT.gigaModel.alias,
+                    messages = listOf(LLMRequest.Message(LLMMessageRole.function, detail, name = name)),
+                    maxTokens = 4_096,
+                ),
+                LocalModelProfiles.GEMMA4_E2B_IT,
+            )
+            assertTrue("lastField" in prompt)
+            assertTrue("x".repeat(8_000) in prompt)
+            assertFalse("truncated" in prompt)
+        }
+    }
+
+    @Test
     fun `local prompt renderer truncates oversized tool results for small context models`() {
         val renderer = LocalPromptRenderer()
         val oversizedResult = restJsonMapper.writeValueAsString(
