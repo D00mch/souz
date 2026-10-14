@@ -1,6 +1,7 @@
 .git
 .gradle
 **/build
+!**/src/**
 **/.idea
 **/.DS_Store
 data

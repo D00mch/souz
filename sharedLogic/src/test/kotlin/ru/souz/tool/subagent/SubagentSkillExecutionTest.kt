@@ -26,6 +26,7 @@ import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
+import ru.souz.test.assumeLocalShellScripts
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.ToolInvokeSkill
 import kotlin.test.Test
@@ -35,6 +36,7 @@ import kotlin.test.assertFalse
 class SubagentSkillExecutionTest {
     @Test
     fun `child uses existing loose scripts and persistent outputs without approving again`() = runTest {
+        assumeLocalShellScripts()
         val home = Files.createTempDirectory("subagent-skill-")
         try {
             val runtime = LocalRuntimeSandbox(

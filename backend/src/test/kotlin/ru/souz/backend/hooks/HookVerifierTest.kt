@@ -16,6 +16,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.io.TempDir
 import ru.souz.backend.http.BackendV1Exception
+import ru.souz.backend.testutil.createSymbolicLinkOrSkip
 import ru.souz.db.SettingsProvider
 import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.runtime.sandbox.RuntimeSandboxModeResolver
@@ -75,7 +76,7 @@ class HookVerifierTest {
         }
         Files.writeString(manifest, valid)
         Files.delete(script)
-        Files.createSymbolicLink(script, Files.writeString(workspace.resolve("outside.py"), "print('{}')"))
+        createSymbolicLinkOrSkip(script, Files.writeString(workspace.resolve("outside.py"), "print('{}')"))
         assertTrue(definitions.loadSafely(owner).isEmpty())
     }
 
@@ -104,7 +105,7 @@ class HookVerifierTest {
               runtime: PYTHON
               script: scripts/verify.py
               parameters:
-                workspace: "$workspace"
+                workspace: '$workspace'
             prompt: Process this verified event
         """.trimIndent())
     }

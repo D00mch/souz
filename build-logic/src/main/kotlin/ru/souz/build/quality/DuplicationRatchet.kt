@@ -178,7 +178,7 @@ internal object DuplicationRatchet {
         .requiredText("jscpd")
 
     fun sha256(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(file.toPath()))
+        val digest = MessageDigest.getInstance("SHA-256").digest(file.readText().replace("\r\n", "\n").toByteArray())
         return "sha256:" + digest.joinToString("") { byte -> "%02x".format(byte) }
     }
 

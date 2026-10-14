@@ -6,6 +6,7 @@ import java.nio.file.Path
 import java.time.Clock
 import java.time.Instant
 import java.util.UUID
+import kotlin.io.path.invariantSeparatorsPathString
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -231,7 +232,7 @@ class FileSystemSkillRegistryRepository(
             if (!targetPath.startsWith(bundleRootPath)) {
                 throw SkillBundleException("Skill file path escapes bundle root: ${file.normalizedPath}")
             }
-            store.fileSystem.writeBytes(store.fileSystem.resolvePath(targetPath.toString()), file.content)
+            store.fileSystem.writeBytes(store.fileSystem.resolvePath(targetPath.invariantSeparatorsPathString), file.content)
         }
     }
 
@@ -444,9 +445,6 @@ class FileSystemSkillRegistryRepository(
     ): Path = validationPolicyRoot(paths, skillId, policyVersion)
         .resolve("${requireSafeBundleHash(bundleHash)}.json")
 
-    private fun childPath(parent: String, child: String): String =
-        Path.of(parent).resolve(child).normalize().toString()
-
     private fun logSkillRootUnavailable(
         userId: String,
         store: Store,
@@ -530,16 +528,13 @@ class FileSystemSkillRegistryRepository(
         val fileSystem: SandboxFileSystem,
         val sandboxMode: String,
     ) {
-        fun resolvePath(path: Path): SandboxPathInfo = fileSystem.resolvePath(path.toString())
+        fun resolvePath(path: Path): SandboxPathInfo = fileSystem.resolvePath(path.invariantSeparatorsPathString)
 
         fun resolveChildPath(parent: SandboxPathInfo, child: String): SandboxPathInfo =
             fileSystem.resolvePath(childPath(parent.path, child))
 
         fun refresh(path: SandboxPathInfo): SandboxPathInfo =
             fileSystem.resolvePath(path.path)
-
-        private fun childPath(parent: String, child: String): String =
-            Path.of(parent).resolve(child).normalize().toString()
     }
 
     private data class StoredSkillRecord(
@@ -570,6 +565,10 @@ class FileSystemSkillRegistryRepository(
 
         private val BUNDLE_HASH_REGEX = Regex("^[a-fA-F0-9]{64}$")
         private val PATH_SEGMENT_REGEX = Regex("^[A-Za-z0-9._-]+$")
+
+        // Docker sandbox paths stay POSIX even when the host is Windows.
+        fun childPath(parent: String, child: String): String =
+            Path.of(parent).resolve(child).normalize().invariantSeparatorsPathString
 
         fun requireSafeBundleHash(bundleHash: String): String {
             require(bundleHash.matches(BUNDLE_HASH_REGEX)) {

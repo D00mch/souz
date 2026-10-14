@@ -244,7 +244,7 @@ class TelegramBotControllerTest {
 
         val command = commandSlot.captured
         assertTrue(command.contains("Проанализируй файл"))
-        val attachedPath = command.lineSequence().lastOrNull { it.startsWith("/") }
+        val attachedPath = command.lineSequence().lastOrNull { it.startsWith(tmpDownloads.toString()) }
         assertNotNull(attachedPath)
         assertTrue(Files.exists(java.nio.file.Path.of(attachedPath)))
         assertTrue(botApi.sentTexts.any { it == "Processing command..." })

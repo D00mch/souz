@@ -33,7 +33,7 @@ class DockerRuntimeSandboxHelpersTest {
 
     @Test
     fun `container and host layout paths stay scoped under sandbox root`() {
-        val hostRoot = Path.of("/tmp/souz-docker-test")
+        val hostRoot = Path.of("/tmp/souz-docker-test").toAbsolutePath()
         val layout = DockerSandboxLayout(hostRoot)
 
         assertEquals("/souz/home", layout.runtimePaths.homePath)

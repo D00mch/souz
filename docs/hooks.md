@@ -115,4 +115,4 @@ location /hooks/ {
 
 ## Проверка
 
-`./gradlew :backend:test` требует Docker и локальный `python3`: проверяются рабочая сборка backend с PostgreSQL, авторизация, снимки verifier, дедупликация, доставка, очереди, бюджеты, опции и восстановление. Отдельные проверки протокола verifier и очистки процессов: `./gradlew :backend:test --tests 'ru.souz.backend.hooks.HookVerifierTest'`. Также выполните `./gradlew souzGateFast` и принятую проверку дублирования.
+`./gradlew :backend:test` требует Docker и локальный Python (`python3`, на Windows — `python`): проверяются рабочая сборка backend с PostgreSQL, авторизация, снимки verifier, дедупликация, доставка, очереди, бюджеты, опции и восстановление. Отдельные проверки протокола verifier и очистки процессов: `./gradlew :backend:test --tests 'ru.souz.backend.hooks.HookVerifierTest'`. Также выполните `./gradlew souzGateFast` и принятую проверку дублирования.
