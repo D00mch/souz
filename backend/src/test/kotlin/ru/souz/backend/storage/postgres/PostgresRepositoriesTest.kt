@@ -10,6 +10,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.CyclicBarrier
 import javax.sql.DataSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -18,7 +19,11 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.agent.session.AgentConversationState
@@ -711,6 +716,25 @@ class PostgresRepositoriesTest {
             val result = repositories.chatRepository.getByIds(listOf(first.id, second.id, UUID.randomUUID()))
 
             assertEquals(setOf(first, second), result.toSet())
+        }
+    }
+
+    @Test
+    fun `chat repository getOrCreate returns one chat to concurrent creators`() = runTest {
+        val schema = newPostgresSchema("postgres_chat_get_or_create_race")
+        val userId = "opaque/user:race@example.com"
+
+        postgresRepositories(schema).use { repositories ->
+            repositories.userRepository.ensureUser(userId)
+            // Simultaneous inserts usually collide on the request-identity constraint before the primary key.
+            repeat(20) {
+                val chat = chat(userId = userId, updatedAt = Instant.parse("2026-05-01T09:00:00Z"))
+                val barrier = CyclicBarrier(2)
+                val created = withContext(Dispatchers.IO) {
+                    List(2) { async { barrier.await(); repositories.chatRepository.getOrCreate(chat) } }.awaitAll()
+                }
+                assertEquals(listOf(chat, chat), created)
+            }
         }
     }
 

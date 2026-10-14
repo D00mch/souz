@@ -17,7 +17,8 @@ class PostgresChatRepository(
         checkNotNull(insert(chat, tools, ignoreDuplicate = false))
 
     override suspend fun getOrCreate(chat: Chat): Chat =
-        insert(chat, emptyList(), ignoreDuplicate = true) ?: checkNotNull(get(chat.userId, chat.id))
+        insert(chat, emptyList(), ignoreDuplicate = true) ?: get(chat.userId, chat.id)
+            ?: throw ChatRequestConflictException(chat.userId, chat.requestId)
 
     override suspend fun deleteEmptyScheduledChat(userId: String, chatId: UUID): Boolean = dataSource.write { connection ->
         // Admission holds this lock until it commits; the next statement then sees its execution.
@@ -49,7 +50,7 @@ class PostgresChatRepository(
                   title, archived, created_at, updated_at, client_tools
                 )
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
-                ${if (ignoreDuplicate) "on conflict (id) do nothing" else ""}
+                ${if (ignoreDuplicate) "on conflict do nothing" else ""}
                 returning $CHAT_COLUMNS
                 """.trimIndent()
             ).use { statement ->

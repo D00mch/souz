@@ -36,68 +36,53 @@ import ru.souz.llms.restJsonMapper
 
 class BackendScheduledTasksE2eTest {
     @Test
-    fun `at most once lets competing handlers and recovered attempts reuse one execution even after completion`() {
-        backendE2eTest(schemaPrefix = "e2e_scheduled_dedup") {
-            val userId = UUID.randomUUID().toString()
-            scheduledTaskSetup(userId)
-            val job = JobRun(UUID.randomUUID(), userId, "Once", restJsonMapper.createObjectNode().put("prompt", "Check mail.").put("atMostOnce", true),
-                Instant.parse("2026-10-13T12:00:00Z"), attempt = 1)
-            val prompt = scheduledTaskInput(job)
-            val chatId = job.occurrenceId("chat").toString()
-            val executionId = job.occurrenceId("execution")
-            llm.pausePromptUntilReleased(prompt)
-            withPeerBackend(llm = llm) { peer ->
-                // Both hosts contend while execution insertion is blocked in PostgreSQL.
-                withTableLocked("agent_executions", "share") {
-                    launch { backend.runScheduledTask(job) }
-                    launch { peer.backend.runScheduledTask(job.copy(attempt = 2)) }
-                    awaitLockWait("agent_executions")
+    fun `competing handlers launch once per key and recovery follows the chosen delivery semantics`() {
+        for (atMostOnce in listOf(false, true)) {
+            backendE2eTest(schemaPrefix = "e2e_scheduled_dedup") {
+                val userId = UUID.randomUUID().toString()
+                scheduledTaskSetup(userId)
+                val payload = restJsonMapper.createObjectNode().put("prompt", "Check mail.")
+                // An absent flag exercises the at-least-once default.
+                if (atMostOnce) payload.put("atMostOnce", true)
+                val job = JobRun(UUID.randomUUID(), userId, "Task", payload,
+                    Instant.parse("2026-10-13T12:00:00Z"), attempt = 1)
+                val prompt = scheduledTaskInput(job)
+                val executionId = job.occurrenceId("execution")
+                llm.pausePromptUntilReleased(prompt)
+                withPeerBackend(llm = llm) { peer ->
+                    // Competing retries share a key only with at-most-once semantics.
+                    withTableLocked("agent_executions", "share") {
+                        launch { backend.runScheduledTask(job) }
+                        launch { peer.backend.runScheduledTask(job.copy(attempt = if (atMostOnce) 2 else 1)) }
+                        awaitLockWait("agent_executions")
+                    }
+                    withTimeout(10.seconds) { llm.awaitPrompt(prompt) }
+                    assertEquals(1, llm.requests.size)
+                    llm.releasePrompt(prompt)
+                    backend.awaitExecution(executionId)
+                    peer.backend.awaitExecution(executionId)
+                    val completed = assertNotNull(backend.executionRepository.get(userId, executionId))
+                    assertEquals(AgentExecutionStatus.COMPLETED, completed.status)
+                    val messages = client.get(BackendHttpRoutes.chatMessages(completed.chatId)) { trusted(userId) }.jsonBody()["items"]
+                    assertEquals(listOf("user", "assistant"), messages.map { it["role"].asText() })
+
+                    val retry = job.copy(attempt = 3)
+                    backend.runScheduledTask(retry)
+                    peer.backend.runScheduledTask(retry.copy(title = "Renamed"))
+                    backend.awaitExecution(retry.occurrenceId("execution"))
+                    peer.backend.awaitExecution(retry.occurrenceId("execution"))
+                    assertEquals(completed, backend.executionRepository.get(userId, executionId))
+                    assertEquals(atMostOnce, retry.occurrenceId("chat") == completed.chatId)
+                    assertEquals(if (atMostOnce) 1 else 2, llm.requests.size)
+
+                    val next = job.copy(scheduledAt = job.scheduledAt.plusSeconds(60))
+                    peer.backend.runScheduledTask(next)
+                    peer.backend.awaitExecution(next.occurrenceId("execution"))
+                    val nextExecution = assertNotNull(backend.executionRepository.get(userId, next.occurrenceId("execution")))
+                    assertTrue(nextExecution.chatId != completed.chatId)
+                    assertEquals(if (atMostOnce) 2 else 3, llm.requests.size, "A new occurrence still runs.")
                 }
-                withTimeout(10.seconds) { llm.awaitPrompt(prompt) }
-                assertEquals(1, llm.requests.size)
-                llm.releasePrompt(prompt)
-                backend.awaitExecution(executionId)
-                peer.backend.awaitExecution(executionId)
-                val completed = assertNotNull(backend.executionRepository.get(userId, executionId))
-                assertEquals(AgentExecutionStatus.COMPLETED, completed.status)
-
-                backend.runScheduledTask(job.copy(attempt = 3))
-                peer.backend.runScheduledTask(job.copy(attempt = 4, title = "Renamed"))
-                assertEquals(completed, backend.executionRepository.get(userId, executionId))
-                assertEquals(1, llm.requests.size)
-                val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
-                assertEquals(listOf("user", "assistant"), messages.map { it["role"].asText() })
-
-                val next = job.copy(scheduledAt = job.scheduledAt.plusSeconds(60))
-                peer.backend.runScheduledTask(next)
-                peer.backend.awaitExecution(next.occurrenceId("execution"))
-                val nextExecution = assertNotNull(backend.executionRepository.get(userId, next.occurrenceId("execution")))
-                assertTrue(nextExecution.chatId != completed.chatId)
-                assertEquals(2, llm.requests.size, "A new occurrence of the same job still runs.")
             }
-        }
-    }
-
-    @Test
-    fun `at least once relaunches a recovered attempt while competing handlers of one attempt launch once`() {
-        backendE2eTest(schemaPrefix = "e2e_scheduled_at_least_once") {
-            val userId = UUID.randomUUID().toString()
-            scheduledTaskSetup(userId)
-            // No atMostOnce flag: the default semantics.
-            val job = JobRun(UUID.randomUUID(), userId, "Pills", restJsonMapper.createObjectNode().put("prompt", "Take pills."),
-                Instant.parse("2026-10-13T12:00:00Z"), attempt = 1)
-            val prompt = scheduledTaskInput(job)
-            backend.runScheduledTask(job)
-            backend.runScheduledTask(job)
-            backend.awaitExecution(job.occurrenceId("execution"))
-            assertEquals(1, llm.requests.count { it.conversationPrompt() == prompt }, "One attempt launches once.")
-
-            // The worker hands the same occurrence out again after an uncertain outcome.
-            val retry = job.copy(attempt = 2)
-            backend.runScheduledTask(retry)
-            backend.awaitExecution(retry.occurrenceId("execution"))
-            assertEquals(2, llm.requests.count { it.conversationPrompt() == prompt }, "A recovered attempt runs again.")
-            assertTrue(retry.occurrenceId("chat") != job.occurrenceId("chat"))
         }
     }
 
