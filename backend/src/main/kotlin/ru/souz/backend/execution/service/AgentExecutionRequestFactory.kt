@@ -1,5 +1,9 @@
 package ru.souz.backend.execution.service
 
+import ru.souz.plugins.runtime.PluginRegistry
+import ru.souz.backend.plugins.decodePluginBindings
+import ru.souz.backend.plugins.encodePluginBindings
+import ru.souz.backend.plugins.PLUGIN_BINDINGS_METADATA
 import java.time.Instant
 import java.util.UUID
 import ru.souz.backend.agent.model.AgentConversationKey
@@ -38,6 +42,7 @@ internal data class PreparedContinuationTurn(
 internal class AgentExecutionRequestFactory(
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
     private val clientThreadRegistry: ClientThreadRuntimeRegistry? = null,
+    private val pluginRegistry: PluginRegistry? = null,
 ) {
     suspend fun prepareChatTurn(
         userId: String,
@@ -51,6 +56,9 @@ internal class AgentExecutionRequestFactory(
         clientToolsEnabled: Boolean = false,
     ): PreparedChatTurn {
         val effectiveSettings = effectiveSettingsResolver.resolve(userId, requestOverrides)
+        val pluginBindings = ru.souz.backend.common.BackendToolCapabilityPolicy.selectPluginBindings(
+            pluginRegistry?.installed().orEmpty().map { it.binding }, effectiveSettings.disabledPlugins,
+        )
         val provider = findLLMModel(effectiveSettings.defaultModel)?.provider ?: LlmProvider.OPENAI
         if (provider !in BackendLlmSupport.chatProviders) {
             throw unsupportedBackendModel()
@@ -86,7 +94,7 @@ internal class AgentExecutionRequestFactory(
                 requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
                 enabledTools = effectiveSettings.enabledTools,
-            ),
+            ) + (PLUGIN_BINDINGS_METADATA to encodePluginBindings(pluginBindings)),
             latestDeviceContextJson = latestDeviceContextJson,
             runtimeOwner = clientThreadRegistry?.runtimeOwner?.takeIf { clientToolsEnabled },
             runtimeLeaseUntil = ClientThreadRuntimeRegistry.leaseUntil().takeIf { clientToolsEnabled },
@@ -113,6 +121,7 @@ internal class AgentExecutionRequestFactory(
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
                 enabledTools = effectiveSettings.enabledTools.toSet(),
                 clientToolsEnabled = clientToolsEnabled,
+                pluginBindings = pluginBindings,
             ),
             userMessageMetadata = userMessageMetadata(normalizedClientMessageId) + userMessageMetadataExtras,
         )
@@ -161,6 +170,7 @@ internal class AgentExecutionRequestFactory(
             requestTimeoutMillis = executionMetadataLong(execution, METADATA_REQUEST_TIMEOUT_MILLIS),
             useFewShotExamples = executionMetadataBoolean(execution, METADATA_USE_FEW_SHOT_EXAMPLES),
             enabledTools = executionMetadataStringSet(execution, METADATA_ENABLED_TOOLS),
+            pluginBindings = decodePluginBindings(execution.metadata[PLUGIN_BINDINGS_METADATA]),
         )
     }
 

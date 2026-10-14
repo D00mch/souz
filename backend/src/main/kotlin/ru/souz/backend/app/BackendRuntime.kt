@@ -1,5 +1,6 @@
 package ru.souz.backend.app
 
+import ru.souz.backend.plugins.BackendPlugins
 import org.kodein.di.DI
 import org.kodein.di.direct
 import org.kodein.di.instance
@@ -34,6 +35,7 @@ class BackendRuntime private constructor(
         di.direct.instance<PostgresJobService>().startWorker(applicationScope, handler)
 
     fun startBackgroundServices() {
+        runBlocking { di.direct.instance<BackendPlugins>().registry.start(applicationScope) }
         runBlocking { httpDependencies.hookService.start(applicationScope) }
         if (httpDependencies.featureFlags.wsEvents) {
             runBlocking { clientThreadRecoveryService.recover() }

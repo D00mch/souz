@@ -40,3 +40,5 @@ include(":job-api")
 include(":job-impl")
 include(":desktopApp")
 include(":backend")
+
+include(":plugin-api", ":plugin-runtime", ":plugins:saved-links")

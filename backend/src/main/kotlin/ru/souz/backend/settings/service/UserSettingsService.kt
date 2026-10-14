@@ -42,6 +42,7 @@ class UserSettingsService(
                 timeZone = overrides.timeZone ?: existing.timeZone,
                 systemPrompt = overrides.systemPrompt ?: existing.systemPrompt,
                 enabledTools = overrides.enabledTools ?: existing.enabledTools,
+                disabledPlugins = overrides.disabledPlugins ?: existing.disabledPlugins,
                 showToolEvents = overrides.showToolEvents ?: existing.showToolEvents,
                 streamingMessages = overrides.streamingMessages ?: existing.streamingMessages,
                 narrateSteps = overrides.narrateSteps ?: existing.narrateSteps,

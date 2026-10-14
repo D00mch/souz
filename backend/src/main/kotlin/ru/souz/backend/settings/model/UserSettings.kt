@@ -30,6 +30,7 @@ data class UserSettings(
     val timeZone: ZoneId? = null,
     val systemPrompt: String? = null,
     val enabledTools: Set<String>? = null,
+    val disabledPlugins: Set<String> = emptySet(),
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,
     val narrateSteps: Boolean? = null,
@@ -44,6 +45,6 @@ data class UserSettings(
     val updatedAt: Instant = createdAt,
 ) {
     companion object {
-        const val CURRENT_SCHEMA_VERSION: Int = 4
+        const val CURRENT_SCHEMA_VERSION: Int = 5
     }
 }

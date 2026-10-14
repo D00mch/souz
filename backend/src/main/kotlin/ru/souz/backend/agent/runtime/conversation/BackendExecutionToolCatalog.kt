@@ -1,5 +1,6 @@
 package ru.souz.backend.agent.runtime.conversation
 
+import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.metrics.BackendMetrics
@@ -15,6 +16,7 @@ internal fun backendExecutionToolCatalog(
     clientToolCatalog: AgentToolCatalog,
     includeFewShotExamples: Boolean,
     metrics: BackendMetrics? = null,
+    pluginToolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
 ): AgentToolCatalog {
     val selectedCompiledTools = BackendToolCapabilityPolicy.selectExecutionTools(
         processToolCatalog = compiledToolCatalog,
@@ -22,10 +24,15 @@ internal fun backendExecutionToolCatalog(
         enabledToolNames = enabledCompiledToolNames,
     )
 
+    val selectedTools = composeToolCatalogs(selectedCompiledTools, pluginToolCatalog)
+    require(pluginToolCatalog.toolsByCategory.values.flatMap { it.keys }.none { name ->
+        clientToolCatalog.toolsByCategory.values.any { name in it }
+    }) { "Plugin/client tool collision" }
+
     // Client tools intentionally win name collisions because the live client owns their execution boundary.
     val mergedTools = composeToolCatalogs(
-        if (metrics == null) selectedCompiledTools else immutableToolCatalogSnapshot(
-            selectedCompiledTools.toolsByCategory.mapValues { (category, tools) ->
+        if (metrics == null) selectedTools else immutableToolCatalogSnapshot(
+            selectedTools.toolsByCategory.mapValues { (category, tools) ->
                 tools.mapValues { (_, tool) -> metrics.instrumentTool(tool, category) }
             }
         ),

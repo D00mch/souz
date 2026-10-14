@@ -1,5 +1,8 @@
 package ru.souz.backend.e2e
 
+import ru.souz.backend.plugins.BackendPlugins
+import ru.souz.backend.plugins.BackendPluginHttp
+import java.nio.file.Path
 import ru.souz.agent.skills.SkillClassifier
 
 import ru.souz.backend.execution.service.AgentExecutionLauncher
@@ -141,6 +144,8 @@ internal fun backendE2eTest(
     clock: Clock = Clock.systemUTC(),
     hookConfig: HookConfig = HookConfig(),
     llmLimits: BackendLlmLimits = BackendLlmLimits(),
+    pluginDirectory: Path? = null,
+    pluginHttpClient: (() -> HttpClient)? = null,
     sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
     block: suspend BackendE2eScope.() -> Unit,
 ) = testApplication {
@@ -159,6 +164,8 @@ internal fun backendE2eTest(
         clock = clock,
         hookConfig = hookConfig,
         llmLimits = llmLimits,
+        pluginDirectory = pluginDirectory,
+        pluginHttpClient = pluginHttpClient,
         sandboxFactory = sandboxFactory,
     )
     application {
@@ -306,6 +313,8 @@ internal class BackendE2eBackend(
     private val clock: Clock = Clock.systemUTC(),
     private val hookConfig: HookConfig = HookConfig(),
     private val llmLimits: BackendLlmLimits = BackendLlmLimits(),
+    private val pluginDirectory: Path? = null,
+    private val pluginHttpClient: (() -> HttpClient)? = null,
     private val sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
 ) : AutoCloseable {
     private val appConfig: BackendAppConfig = postgresAppConfig(
@@ -315,7 +324,7 @@ internal class BackendE2eBackend(
         telegramTokenEncryptionKey = E2E_TELEGRAM_TOKEN_KEY.takeIf { featureFlags.telegramBot },
         vkTokenEncryptionKey = E2E_VK_TOKEN_KEY.takeIf { featureFlags.vkBot },
         includeSkillOAuthConfig = false,
-    ).copy(hindsightApiUrl = hindsightUrl, hooks = hookConfig, llmLimits = llmLimits)
+    ).copy(hindsightApiUrl = hindsightUrl, hooks = hookConfig, llmLimits = llmLimits, pluginDirectory = pluginDirectory)
     private val localChatApi = localChatApiBackedBy(llm)
     private val localAvailability = localProviderAvailability(localModels)
     private val localRuntime = relaxedLocalRuntime()
@@ -340,6 +349,9 @@ internal class BackendE2eBackend(
             bindSingleton<SettingsProvider>(overrides = true) {
                 BackendSettingsProvider(instance(), localAvailability, settingsSource, instance())
             }
+        }
+        if (pluginHttpClient != null) {
+            bindSingleton<BackendPluginHttp>(overrides = true) { BackendPluginHttp(pluginHttpClient()) }
         }
         if (providerClients != null) {
             bindSingleton<ProviderHttpClients>(overrides = true) { providerClients }
@@ -398,6 +410,8 @@ internal class BackendE2eBackend(
         }
     }
 
+    suspend fun reconcilePlugins() = di.direct.instance<BackendPlugins>().registry.reconcile()
+
     suspend fun awaitExecution(id: UUID) { di.direct.instance<AgentExecutionLauncher>().join(id) }
 
     fun <T> sql(block: (Connection) -> T): T =
@@ -435,6 +449,8 @@ internal class BackendE2eBackend(
             clock = clock,
             hookConfig = hookConfig,
             llmLimits = llmLimits,
+            pluginDirectory = pluginDirectory,
+            pluginHttpClient = pluginHttpClient,
             sandboxFactory = sandboxFactory,
         )
 
