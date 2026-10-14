@@ -17,6 +17,7 @@ import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
 import ru.souz.backend.chat.model.Chat
+import ru.souz.backend.channels.tool.SEND_MESSAGE_TO_CHANNEL_TOOL_NAME
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
@@ -103,25 +104,64 @@ class AgentExecutionService internal constructor(
                 message = "Chat already has an active execution.",
             )
         }
-        return try {
-            startPreparedChatTurn(prepared)
-        } catch (e: BackendV1Exception) {
-            throw e
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            finalizer.markFailed(
-                execution = prepared.execution,
-                errorCode = "agent_execution_failed",
-                errorMessage = e.message ?: "Agent execution failed.",
-                usage = prepared.execution.usage,
-            )
-            throw BackendV1Exception(
-                status = HttpStatusCode.InternalServerError,
-                code = "agent_execution_failed",
-                message = "Agent execution failed.",
-            )
+        return startCreatedChatTurn(prepared)
+    }
+
+    /**
+     * Only the successful insert may start this execution. A persisted ID is never relaunched,
+     * including after a crash before launch; null means another call already inserted it.
+     * A persisted failure fails every later call for the same ID.
+     */
+    internal suspend fun executeScheduledTask(
+        userId: String,
+        chatId: UUID,
+        content: String,
+        executionId: UUID,
+        dailyLaunchLimit: Int,
+        requiresDelivery: Boolean = false,
+    ): AgentExecution? {
+        // Existing occurrences remain deduplicated even if settings changed after dispatch.
+        executionRepository.get(userId, executionId)?.let { existing ->
+            checkNotFailed(existing)
+            return null
         }
+        val unmarked = prepareChatTurn(userId, chatId, content, executionId = executionId)
+        val prepared = unmarked.copy(
+            execution = unmarked.execution.copy(metadata = unmarked.execution.metadata + (METADATA_SCHEDULED_TASK to "true"))
+        )
+        check(!requiresDelivery || SEND_MESSAGE_TO_CHANNEL_TOOL_NAME in prepared.effectiveSettings.enabledTools) {
+            "Scheduled reminder requires enabled SendMessageToChannel; delivery is unavailable."
+        }
+        if (!executionRepository.createIfAbsent(prepared.execution, dailyLaunchLimit)) {
+            // A competing call inserted it after the lookup above and may already have failed it.
+            checkNotFailed(checkNotNull(executionRepository.get(userId, executionId)))
+            return null
+        }
+        return startCreatedChatTurn(prepared).execution
+    }
+
+    private fun checkNotFailed(existing: AgentExecution) {
+        check(existing.status != AgentExecutionStatus.FAILED) { existing.errorMessage ?: "Occurrence execution failed." }
+    }
+
+    private suspend fun startCreatedChatTurn(prepared: PreparedChatTurn): SendMessageResult = try {
+        startPreparedChatTurn(prepared)
+    } catch (e: BackendV1Exception) {
+        throw e
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        finalizer.markFailed(
+            execution = prepared.execution,
+            errorCode = "agent_execution_failed",
+            errorMessage = e.message ?: "Agent execution failed.",
+            usage = prepared.execution.usage,
+        )
+        throw BackendV1Exception(
+            status = HttpStatusCode.InternalServerError,
+            code = "agent_execution_failed",
+            message = "Agent execution failed.",
+        )
     }
 
     internal suspend fun prepareChatTurn(
@@ -332,7 +372,8 @@ class AgentExecutionService internal constructor(
             userId = execution.userId, chatId = execution.chatId, executionId = execution.id,
             messageRepository = messageRepository, optionRepository = optionRepository,
             eventService = eventService, toolCallRepository = toolCallRepository,
-            streamingMessagesEnabled = streaming, toolEventsEnabled = toolEvents, optionsEnabled = optionsEnabled,
+            streamingMessagesEnabled = streaming, toolEventsEnabled = toolEvents,
+            optionsEnabled = optionsEnabled && execution.metadata[METADATA_SCHEDULED_TASK] != "true",
             assistantMessageId = execution.assistantMessageId,
             publicClientThread = execution.runtimeOwner != null,
             narrateSteps = execution.metadata[METADATA_NARRATE_STEPS] == "true",
