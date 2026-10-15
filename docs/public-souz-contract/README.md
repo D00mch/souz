@@ -66,14 +66,6 @@ If the target has no device context, fail the originating operation before creat
 
 Durable replay preserves the event's original device values, including omission of `deviceType`. Other tool calls retain an optional, nullable `payload.deviceId` and have no `deviceType` field.
 
-## Plugins
-
-Trusted backend plugins appear in `GET /v1/bootstrap` under `capabilities.plugins`
-with `id`, `version`, `tools`, and effective `enabled`. Users opt out through
-`PATCH /v1/settings` with `disabledPlugins`; the default empty array enables all
-installed plugins. Changes apply to subsequent executions. See
-[plugin deployment and ownership](../../backend/docs/plugins.md).
-
 ## Intermediate assistant messages
 
 Progress is opt-in through the trusted settings API: `PATCH /v1/settings` with `{"narrateSteps":true}`. Settings responses expose the effective value, defaulting to `false`. The preference controls the additive RU/EN prompt instruction and live WebSocket, Telegram, and VK delivery independently of `streamingMessages` and `showToolEvents`. Each execution snapshots it, including option continuations; settings changes affect subsequent executions.

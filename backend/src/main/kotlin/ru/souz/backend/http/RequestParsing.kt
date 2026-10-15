@@ -29,8 +29,10 @@ internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(namedModels: 
         locale = locale?.let { parseLocale(it, fieldName = "locale") },
         timeZone = timeZone?.let { parseTimeZone(it, fieldName = "timeZone") },
         systemPrompt = systemPrompt?.trim()?.takeIf { it.isNotEmpty() },
-        enabledTools = enabledTools?.parseEnabledTools(),
-        disabledPlugins = disabledPlugins?.parseDisabledPlugins(),
+        enabledTools = enabledTools?.map { toolName ->
+            toolName.trim().takeIf { it.isNotEmpty() }
+                ?: throw invalidV1Request("enabledTools must not contain blank values.")
+        }?.toCollection(linkedSetOf()),
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
         narrateSteps = narrateSteps,
@@ -46,8 +48,10 @@ internal fun BackendV1OnboardingCompleteRequest.toUserSettingsOverrides(namedMod
         defaultModel = defaultModel?.let { parseModel(it, fieldName = "defaultModel", namedModels = namedModels) },
         locale = locale?.let { parseLocale(it, fieldName = "locale") },
         timeZone = timeZone?.let { parseTimeZone(it, fieldName = "timeZone") },
-        enabledTools = enabledTools?.parseEnabledTools(),
-        disabledPlugins = disabledPlugins?.parseDisabledPlugins(),
+        enabledTools = enabledTools?.map { toolName ->
+            toolName.trim().takeIf { it.isNotEmpty() }
+                ?: throw invalidV1Request("enabledTools must not contain blank values.")
+        }?.toCollection(linkedSetOf()),
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
         narrateSteps = narrateSteps,
@@ -139,11 +143,3 @@ private suspend inline fun <reified T : Any> ApplicationCall.receiveOrRequestErr
 
 private const val UNDEFINED_LANGUAGE = "und"
 private const val MIN_REQUEST_TIMEOUT_MILLIS = 1_000L
-
-private fun List<String>.parseDisabledPlugins(): Set<String> = toSet().onEach { id ->
-    if (!id.matches(Regex("[a-z][a-z0-9_]{0,31}"))) throw invalidV1Request("Invalid disabledPlugins ID.")
-}
-
-private fun List<String>.parseEnabledTools(): Set<String> = mapTo(linkedSetOf()) { name ->
-    name.trim().takeIf { it.isNotEmpty() } ?: throw invalidV1Request("enabledTools must not contain blank values.")
-}

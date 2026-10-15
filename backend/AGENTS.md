@@ -20,11 +20,9 @@ Before changing this module, read the relevant pain-point topics below.
 - Hook intake capacity is isolated per configured owner and survives reload. Verifier commands use the trusted owner's configured LOCAL/DOCKER sandbox through `SandboxCommandExecutor`, before Skill discovery or LLM use. They share that sandbox's permissions and do not create a separate verification container.
 - Give each ordinary HTTP route explicit OpenAPI metadata. Keep the WebSocket routes out of the generated document and maintain its schema in `docs/public-souz-contract`.
 - Keep Prometheus instrumentation in `:backend`, using repository commits and existing LLM/tool hooks. Restrict `/metrics` at ingress; its [metric reference](docs/metrics.md) defines accounting and replica semantics.
-- Trusted JAR plugins are enabled by default with per-user `disabledPlugins`; accepted executions pin artifact digests. Plugin tools join the catalog independently of compiled-tool categories.
 
 ## Pain points
 
-- [Plugins](docs/plugins.md) — live JAR generations, user storage, HTTP, and opt-outs.
 - [Named LLM connections](docs/named-llm-connections.md) — server model names, independent endpoints and keys, subagents and summarization.
 - [Metrics accounting](docs/metrics-accounting.md) — commit boundaries, bounded labels, waiting time and replica ownership; see the [metric reference](docs/metrics.md).
 - [Workspace hooks](docs/hooks.md) — trusted ownership, admission, persistent call budgets, sequential dispatch and single-process recovery.

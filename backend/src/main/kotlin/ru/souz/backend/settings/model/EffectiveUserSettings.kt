@@ -13,7 +13,6 @@ data class EffectiveUserSettings(
     val timeZone: ZoneId,
     val systemPrompt: String?,
     val enabledTools: Set<String>,
-    val disabledPlugins: Set<String> = emptySet(),
     val showToolEvents: Boolean,
     val streamingMessages: Boolean,
     val narrateSteps: Boolean = false,

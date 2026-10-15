@@ -1,6 +1,5 @@
 package ru.souz.backend.agent.model
 
-import ru.souz.plugins.runtime.PluginBinding
 
 /** Internal request model for one chat-oriented backend agent turn. */
 internal data class BackendConversationTurnRequest(
@@ -20,5 +19,4 @@ internal data class BackendConversationTurnRequest(
     val enabledTools: Set<String>? = null,
     val clientToolsEnabled: Boolean = false,
     val narrateSteps: Boolean = false,
-    val pluginBindings: List<PluginBinding> = emptyList(),
 )

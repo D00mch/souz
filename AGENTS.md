@@ -37,19 +37,11 @@ Souz is a Kotlin Multiplatform AI assistant with desktop and backend hosts over 
 - [`:desktopApp`](desktopApp/AGENTS.md) — desktop composition root, OS integrations, persistence, and packaging.
 - [`:backend`](backend/AGENTS.md) — trusted-proxy HTTP host and PostgreSQL-backed conversation runtime.
 - [`build-logic`](build-logic/AGENTS.md) — included build for repository quality checks, outside the production module graph.
-- [`:plugin-api`](plugin-api/AGENTS.md) — public trusted-plugin SDK.
-- [`:plugin-runtime`](plugin-runtime/AGENTS.md) — JAR loading and generation leases.
-- [`:plugins`](plugins/AGENTS.md) — independently packaged examples.
-- [`:plugins:saved-links`](plugins/saved-links/AGENTS.md) — saved-links example JAR.
 
 ## Production dependency boundaries
 
 Only these direct production project dependencies are allowed. Standard test-source-set dependencies are outside this policy. An unclassified configuration with a direct project dependency is rejected until its production or test role is explicit, and unlisted production source sets have no project dependencies.
 
-- `:plugin-api` `main` → none.
-- `:plugin-runtime` `main` → `:plugin-api`.
-- `:plugins` `main` → none.
-- `:plugins:saved-links` `main` → `:plugin-api`.
 - `:graph-engine` `main` → none.
 - `:llms` `main` → none.
 - `:agent` `main` → `:graph-engine`, `:llms`.
@@ -61,7 +53,7 @@ Only these direct production project dependencies are allowed. Standard test-sou
 - `:sharedLogic` `commonJvmMain` → `:agent`, `:llms`, `:skill-oauth-api`; `jvmMain` → `:native`.
 - `:ambientAgent` `jvmMain` → `:sharedLogic`.
 - `:sharedUI` `commonJvmMain` → `:ambientAgent`, `:sharedLogic`, `:agent`, `:llms`; `jvmMain` → `:native`.
-- `:backend` `main` → `:agent`, `:llms`, `:native`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`, `:job-api`, `:job-impl`, `:plugin-api`, `:plugin-runtime`.
+- `:backend` `main` → `:agent`, `:llms`, `:native`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`, `:job-api`, `:job-impl`.
 - `:desktopApp` `main` → `:ambientAgent`, `:sharedLogic`, `:sharedUI`, `:agent`, `:llms`, `:native`.
 
 ## Verification

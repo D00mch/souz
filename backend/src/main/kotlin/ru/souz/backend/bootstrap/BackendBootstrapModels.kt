@@ -17,7 +17,6 @@ data class BootstrapUser(
 data class BootstrapCapabilities(
     val models: List<BootstrapModelCapability>,
     val tools: List<BootstrapToolCapability>,
-    val plugins: List<BootstrapPluginCapability> = emptyList(),
 )
 
 data class BootstrapModelCapability(
@@ -29,12 +28,5 @@ data class BootstrapModelCapability(
 
 data class BootstrapToolCapability(
     val name: String,
-    val enabled: Boolean,
-)
-
-data class BootstrapPluginCapability(
-    val id: String,
-    val version: String,
-    val tools: List<String>,
     val enabled: Boolean,
 )

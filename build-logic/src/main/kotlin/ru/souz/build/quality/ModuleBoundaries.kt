@@ -2,10 +2,6 @@ package ru.souz.build.quality
 
 internal object ModuleBoundaries {
     private val allowedDependencies = mapOf(
-        ModuleScope(":plugin-api", "main") to emptySet(),
-        ModuleScope(":plugin-runtime", "main") to setOf(":plugin-api"),
-        ModuleScope(":plugins", "main") to emptySet(),
-        ModuleScope(":plugins:saved-links", "main") to setOf(":plugin-api"),
         ModuleScope(":graph-engine", "main") to emptySet(),
         ModuleScope(":llms", "main") to emptySet(),
         ModuleScope(":agent", "main") to setOf(":graph-engine", ":llms"),
@@ -28,8 +24,6 @@ internal object ModuleBoundaries {
             ":skill-oauth-impl",
             ":job-api",
             ":job-impl",
-            ":plugin-api",
-            ":plugin-runtime",
         ),
         ModuleScope(":desktopApp", "main") to setOf(
             ":ambientAgent",

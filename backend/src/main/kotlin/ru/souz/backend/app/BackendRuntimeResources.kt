@@ -10,12 +10,10 @@ class BackendRuntimeResources(
     closeLocalRuntime: () -> Unit = {},
     closeSkillOAuthClients: () -> Unit = {},
     closeDataSource: () -> Unit = {},
-    closePlugins: suspend () -> Unit = {},
 ) : AutoCloseable {
     private val shutdown = OrderedShutdown(
         steps = listOf(
             shutdownStep("application work", cancelAndJoinApplicationWork),
-            shutdownStep("plugins", closePlugins),
             shutdownStep("provider HTTP clients") { closeProviderClients() },
             shutdownStep("local runtime") { closeLocalRuntime() },
             shutdownStep("skill OAuth clients") { closeSkillOAuthClients() },
