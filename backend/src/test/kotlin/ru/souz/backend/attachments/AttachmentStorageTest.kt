@@ -117,7 +117,12 @@ class AttachmentStorageTest {
 }
 
 internal object AttachmentMinio {
-    val server = GenericContainer<Nothing>("quay.io/minio/minio:RELEASE.2023-09-04T19-57-37Z").apply {
+    // Public source build; pin the multi-platform index for both CI (amd64) and local arm64.
+    // Build recipe: https://github.com/coollabsio/minio
+    private const val IMAGE = "ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z" +
+        "@sha256:69b55a1c1c5dc285ce04db96689f5b2102317fc77a50680a1874ca6efd1c87f9"
+
+    val server = GenericContainer<Nothing>(IMAGE).apply {
         withEnv("MINIO_ROOT_USER", "attachment-test")
         withEnv("MINIO_ROOT_PASSWORD", "attachment-test-secret")
         withCommand("server", "/data")

@@ -29,4 +29,6 @@ The S3 client is process-owned and closes after application work stops. The impl
 
 ## Verification
 
+The test fixture uses the public [Coollabs source build of MinIO](https://github.com/coollabsio/minio), pinned to release `RELEASE.2025-10-15T17-29-55Z` and a multi-platform digest in `AttachmentStorageTest.kt`. It supports Linux amd64 and arm64 without registry credentials. Verify a fresh image pull when changing this dependency; a cached image can hide registry access failures.
+
 Run `./gradlew :backend:test --tests 'ru.souz.backend.attachments.*' --tests 'ru.souz.backend.app.BackendRuntimeResourcesTest'` with Docker available. Integration tests use real PostgreSQL and MinIO for ownership, anonymous denial, idempotency, expiry, interrupted commits and cleanup after user deletion. Apply the Flyway migration together with the backend release; use a fresh test database for this upstream migration sequence.
