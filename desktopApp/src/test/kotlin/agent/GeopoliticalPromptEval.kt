@@ -42,7 +42,8 @@ class GeopoliticalPromptEval {
     fun finish() {
         if (report.isNotEmpty()) {
             val title = "model=${support.executionModelId}, agent=${support.agentType.storageValue}"
-            val file = File("build/reports/prompt-eval/geopolitical-${support.executionModelId}-${support.agentType.storageValue}.md")
+            val modelSlug = support.executionModelId.replace(Regex("[^A-Za-z0-9._-]"), "_")
+            val file = File("build/reports/prompt-eval/geopolitical-$modelSlug-${support.agentType.storageValue}.md")
             file.parentFile.mkdirs()
             file.writeText("# Geopolitical prompt eval: $title\n$report")
             println("Prompt eval report: ${file.absolutePath}")
