@@ -1,5 +1,6 @@
 [versions]
 androidx-lifecycle = "2.9.5"
+awsSdk = "2.31.54"
 commonmark = "0.30.0"
 commonsCsv = "1.10.0"
 cronUtils = "9.2.1"
@@ -42,6 +43,8 @@ testcontainers = "1.21.4"
 [libraries]
 androidx-lifecycle-viewmodelCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
 androidx-lifecycle-runtimeCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
+aws-s3 = { module = "software.amazon.awssdk:s3", version.ref = "awsSdk" }
+aws-urlConnectionClient = { module = "software.amazon.awssdk:url-connection-client", version.ref = "awsSdk" }
 commonmark = { module = "org.commonmark:commonmark", version.ref = "commonmark" }
 commons-csv = { module = "org.apache.commons:commons-csv", version.ref = "commonsCsv" }
 cron-utils = { module = "com.cronutils:cron-utils", version.ref = "cronUtils" }

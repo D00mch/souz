@@ -10,6 +10,10 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
+import ru.souz.backend.attachments.AttachmentStorage
+import ru.souz.backend.attachments.AttachmentCleanupWorker
+import ru.souz.backend.attachments.S3AttachmentObjects
+import ru.souz.backend.storage.postgres.PostgresAttachmentRepository
 import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.backend.hooks.HookDefinitions
@@ -164,6 +168,12 @@ fun backendDiModule(
 
     bindSingleton { BackendApplicationScope() }
     bindSingleton<Clock> { Clock.systemUTC() }
+    appConfig.attachments?.let { config ->
+        bindSingleton { S3AttachmentObjects(config) }
+        bindSingleton { PostgresAttachmentRepository(instance<HikariDataSource>()) }
+        bindSingleton { AttachmentStorage(config, instance(), instance(), instance()) }
+        bindSingleton { AttachmentCleanupWorker(instance()) }
+    }
     bindSingleton<BackendFeatureFlags> { appConfig.featureFlags }
     bindSingleton { BackendMetrics() }
     bindSingleton<HikariDataSource> {
@@ -219,6 +229,7 @@ fun backendDiModule(
                 skillOAuthConfig?.providers?.values.orEmpty().filterIsInstance<AutoCloseable>().forEach { it.close() }
                 instanceOrNull<SkillOAuthGatewayImpl>()?.close()
             },
+            closeAttachmentStorage = { instanceOrNull<S3AttachmentObjects>()?.close() },
             closeDataSource = {
                 instance<HikariDataSource>().close()
                 instance<BackendMetrics>().close()

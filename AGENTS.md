@@ -69,3 +69,7 @@ Only these direct production project dependencies are allowed. Standard test-sou
 - Desktop entry point: `./gradlew :desktopApp:run`.
 - Backend entry point: `./gradlew :backend:run`.
 - For documentation-only changes, validate local links and run `git diff --check`; runtime tests are unnecessary unless source behavior also changes.
+
+## User file storage
+
+- [User file storage](docs/s3-storage.md) provides private per-user S3 buckets and ownership-scoped file access. Read [storage invariants](docs/pain-points.md) before changing it.
