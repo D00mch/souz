@@ -98,6 +98,7 @@ internal class BackendConversationRuntimeFactory(
         key: AgentConversationKey,
         request: BackendConversationTurnRequest,
         initialUsage: LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0),
+        pluginToolCatalog: AgentToolCatalog = AgentToolCatalog(),
     ): BackendConversationRuntime {
         val persistedSession = agentStateRepository.get(key.userId, key.chatId())?.toConversationSession()
         val settingsProvider = BackendConversationSettingsProvider(
@@ -165,6 +166,7 @@ internal class BackendConversationRuntimeFactory(
         val clientToolCatalog = clientSkills.catalog(clientTools)
         val executionToolCatalog = backendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
+            pluginToolCatalog = pluginToolCatalog,
             executionLlmToolCatalog = executionLlmToolCatalog.catalog,
             enabledCompiledToolNames = request.enabledTools,
             clientToolCatalog = clientToolCatalog,

@@ -1,5 +1,6 @@
 package ru.souz.backend.app
 
+import ru.souz.backend.plugins.BackendPlugins
 import org.kodein.di.DI
 import org.kodein.di.direct
 import org.kodein.di.instance
@@ -29,6 +30,7 @@ class BackendRuntime private constructor(
     private val clientThreadRecoveryService: ClientThreadRecoveryService by lazy { di.direct.instance() }
 
     fun startBackgroundServices() {
+        runBlocking { di.direct.instance<BackendPlugins>().registry.start(applicationScope) }
         runBlocking { httpDependencies.hookService.start(applicationScope) }
         // The worker keeps its first handler, so this is the only job dispatch path.
         runBlocking {

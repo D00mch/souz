@@ -1,5 +1,6 @@
 package ru.souz.backend.app
 
+import java.nio.file.Path
 import java.net.URI
 import ru.souz.backend.common.BackendConfigurationException
 import ru.souz.backend.config.BackendConfigSource
@@ -152,6 +153,8 @@ data class BackendAppConfig(
     val providerRetryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(),
     val hooks: HookConfig = HookConfig(),
     val scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
+    val pluginDirectory: Path? = null,
+    val pluginCacheDirectory: Path? = null,
 ) {
     fun validate(): BackendAppConfig {
         server.validate()
@@ -200,6 +203,10 @@ data class BackendAppConfig(
         fun load(source: BackendConfigSource = SystemBackendConfigSource): BackendAppConfig =
             BackendAppConfig(
                 featureFlags = BackendFeatureFlags.load(source),
+                pluginDirectory = source.value("SOUZ_PLUGIN_DIRECTORY", "souz.plugins.directory")
+                    ?.takeIf(String::isNotBlank)?.let(Path::of),
+                pluginCacheDirectory = source.value("SOUZ_PLUGIN_CACHE_DIRECTORY", "souz.plugins.cacheDirectory")
+                    ?.takeIf(String::isNotBlank)?.let(Path::of),
                 hooks = HookConfig(
                     owners = source.value("SOUZ_HOOK_OWNERS", "souz.hooks.owners")
                         ?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)?.toSet().orEmpty(),

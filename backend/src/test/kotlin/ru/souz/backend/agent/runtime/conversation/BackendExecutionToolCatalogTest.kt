@@ -85,7 +85,7 @@ class BackendExecutionToolCatalogTest {
     }
 
     @Test
-    fun `catalog exposes only client web search for every compiled tool selection`() {
+    fun `compiled tool selection preserves plugins and exposes only client web search`() {
         val selections = mapOf(
             null to setOf("ReadFile", "ViewImage", "GenerateImage"),
             setOf("ReadFile") to setOf("ReadFile"),
@@ -94,8 +94,9 @@ class BackendExecutionToolCatalogTest {
         )
         for ((enabled, compiled) in selections) {
             val catalog = executionCatalog(enabled)
-            assertEquals(compiled + setOf("ClientAsk", "web.search"), toolNames(catalog), "enabled=$enabled")
+            assertEquals(compiled + setOf("ClientAsk", "web.search", "fixture__version"), toolNames(catalog), "enabled=$enabled")
             assertEquals(setOf("web.search"), catalog.toolsByCategory.getValue(ToolCategory.WEB_SEARCH).keys)
+            assertEquals(setOf("fixture__version"), catalog.toolsByCategory.getValue(ToolCategory.BROWSER).keys)
         }
     }
 
@@ -150,6 +151,7 @@ class BackendExecutionToolCatalogTest {
                 ToolCategory.IMAGE_GENERATION to listOf("GenerateImage"),
             ),
             enabledCompiledToolNames = enabledCompiledToolNames,
+            pluginToolCatalog = TestToolCatalog(ToolCategory.BROWSER to listOf("fixture__version")),
             clientToolCatalog = TestToolCatalog(
                 ToolCategory.CHAT to listOf("ClientAsk"),
                 ToolCategory.WEB_SEARCH to listOf("web.search"),

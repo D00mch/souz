@@ -525,6 +525,13 @@ class BackendCompositionE2eTest {
             assertEquals("header", schemes["souzUserIdentity"]["in"].asText())
             assertEquals("X-User-Id", schemes["souzUserIdentity"]["name"].asText())
 
+            val patchSettings = document.resolveSchema(document.operation(BackendHttpRoutes.SETTINGS, "patch").jsonRequestSchema())
+            assertTrue(patchSettings["properties"]["disabledPlugins"]["description"].asText().contains("subsequent executions"))
+            val bootstrap = document.resolveSchema(document.operation(BackendHttpRoutes.BOOTSTRAP, "get").jsonResponseSchema("200"))
+            val capabilities = document.resolveSchema(bootstrap["properties"]["capabilities"])
+            val plugin = document.resolveSchema(capabilities["properties"]["plugins"]["items"])
+            assertEquals(setOf("id", "version", "tools", "enabled"), plugin["properties"].fieldNames().asSequence().toSet())
+
             val putProviderKey = document.operation(BackendHttpRoutes.PROVIDER_KEY_PATTERN, "put")
             assertEquals("putProviderKey", putProviderKey["operationId"].asText())
             assertProxySecurity(putProviderKey)

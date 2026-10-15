@@ -19,6 +19,9 @@ ktor {
 }
 
 dependencies {
+    implementation(project(":plugin-api"))
+    implementation(project(":plugin-runtime"))
+    implementation(libs.ktor.clientOkhttp)
     implementation(project(":agent"))
     implementation(project(":llms"))
     implementation(project(":native"))
@@ -54,6 +57,7 @@ dependencies {
     implementation(libs.logback)
     implementation(libs.slfj)
 
+    testImplementation(testFixtures(project(":plugin-runtime")))
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlin.testJunit5)
     testImplementation(libs.kotlinx.coroutinesTest)
@@ -99,4 +103,11 @@ tasks.withType<AbstractArchiveTask>().configureEach {
 
 tasks.named<Jar>("shadowJar") {
     isZip64 = true
+}
+
+val savedLinksJar = project(":plugins:saved-links").layout.buildDirectory.file("libs/saved-links.jar")
+tasks.test {
+    dependsOn(":plugins:saved-links:jar")
+    inputs.file(savedLinksJar)
+    systemProperty("souz.test.savedLinksJar", savedLinksJar.get().asFile.absolutePath)
 }

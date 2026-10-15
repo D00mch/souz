@@ -1,5 +1,6 @@
 package ru.souz.backend.common
 
+import ru.souz.plugins.runtime.PluginBinding
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.files.ToolGenerateImage
@@ -47,6 +48,12 @@ object BackendToolCapabilityPolicy {
             hostableTools(executionLlmToolCatalog) { it in executionBoundToolNames && isEnabled(it) },
         )
     }
+
+    /** Reviewed installed plugins are enabled independently of compiled-tool category policy. */
+    fun selectPluginBindings(
+        installed: List<PluginBinding>,
+        disabledPlugins: Set<String>,
+    ): List<PluginBinding> = installed.filterNot { it.id in disabledPlugins }
 
     /** The hostable view of a compiled catalog: safe categories only. */
     private fun hostableTools(catalog: AgentToolCatalog, allow: (String) -> Boolean = { true }): AgentToolCatalog =
