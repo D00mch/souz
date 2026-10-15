@@ -29,6 +29,10 @@ data class UserSettings(
     val locale: Locale? = null,
     val timeZone: ZoneId? = null,
     val systemPrompt: String? = null,
+    /**
+     * Null enables every tool the backend advertises, including tools added later; a selection of
+     * every advertised tool is stored as null. A set enables exactly those tools; empty enables none.
+     */
     val enabledTools: Set<String>? = null,
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,

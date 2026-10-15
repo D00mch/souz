@@ -49,7 +49,7 @@ class EffectiveSettingsResolver(
     private val localModelAvailability: LocalModelAvailability,
     val namedModelNames: Set<String> = emptySet(),
 ) {
-    private val advertisedToolNames: Set<String> =
+    val advertisedToolNames: Set<String> =
         BackendToolCapabilityPolicy.advertisedToolNames(toolCatalog)
 
     internal suspend fun defaultModel(
@@ -135,7 +135,6 @@ class EffectiveSettingsResolver(
             locale = locale,
             timeZone = ZoneId.systemDefault(),
             systemPrompt = null,
-            enabledTools = normalizeEnabledTools(null),
             showToolEvents = true,
             streamingMessages = baseSettingsProvider.useStreaming,
             interfaceLanguage = defaultInterfaceLanguage(),
