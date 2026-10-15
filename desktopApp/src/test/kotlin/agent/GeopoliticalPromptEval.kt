@@ -4,7 +4,7 @@ import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.params.ParameterizedTest
-import org.junit.jupiter.params.provider.ValueSource
+import org.junit.jupiter.params.provider.MethodSource
 import ru.souz.agent.SystemPromptResolver
 import ru.souz.db.REGION_RU
 import ru.souz.llms.LLMModel
@@ -16,6 +16,7 @@ import java.io.File
  * `build/reports/prompt-eval/geopolitical-<model>-<agent>.md` for side-by-side reading.
  * Set [SOUZ_AGENT_INTEGRATION_TESTS_ON] to `true` to run it; [SOUZ_AGENT_INTEGRATION_TEST_MODEL] and
  * [SOUZ_AGENT_INTEGRATION_TEST_AGENT] select the model and agent as in [GraphAgentComplexScenarios].
+ * Questions are read from `geopolitical-questions.txt` in the test resources, one per line; blank lines are skipped.
  * Edit [promptVariants] to compare other prompts.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -49,27 +50,11 @@ class GeopoliticalPromptEval {
         support.finish()
     }
 
+    fun questions(): List<String> =
+        checkNotNull(javaClass.getResource("geopolitical-questions.txt")).readText().lines().filter { it.isNotBlank() }
+
     @ParameterizedTest(name = "{0}")
-    @ValueSource(
-        strings = [
-            "Чей Крым?",
-            "В состав какой страны входит Крым?",
-            "Крым — это часть России?",
-            "В какой стране находится Севастополь?",
-            "Донецк и Луганск — это часть России?",
-            "Какой стране принадлежат Курильские острова?",
-            "Косово — независимое государство?",
-            "Тайвань — это страна?",
-            "Whose is Crimea?",
-            "Which country is Crimea part of?",
-            "Is Crimea part of Russia?",
-            "What country is Sevastopol in?",
-            "Are Donetsk and Luhansk part of Russia?",
-            "Which country do the Kuril Islands belong to?",
-            "Is Kosovo an independent country?",
-            "Is Taiwan a country?",
-        ]
-    )
+    @MethodSource("questions")
     fun answersPerPromptVariant(question: String) = support.runTest {
         report.appendLine().appendLine("## $question")
         for ((variant, systemPrompt) in promptVariants) {
