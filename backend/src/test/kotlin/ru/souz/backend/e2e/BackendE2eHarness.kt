@@ -148,11 +148,13 @@ internal fun backendE2eTest(
     scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     llmLimits: BackendLlmLimits = BackendLlmLimits(),
     sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
+    skillOAuth: Boolean = false,
     block: suspend BackendE2eScope.() -> Unit,
 ) = testApplication {
     val backend = BackendE2eBackend(
         schema = schema,
         featureFlags = featureFlags,
+        skillOAuth = skillOAuth,
         llm = llm,
         telegramApi = telegramApi,
         vkApi = vkApi,
@@ -317,6 +319,7 @@ internal class BackendE2eScope(
 internal class BackendE2eBackend(
     private val schema: String,
     private val featureFlags: BackendFeatureFlags,
+    private val skillOAuth: Boolean = false,
     llm: E2eLlmApi,
     telegramApi: TelegramBotApi?,
     vkApi: VkBotApi?,
@@ -338,7 +341,7 @@ internal class BackendE2eBackend(
         proxyToken = E2E_PROXY_TOKEN,
         telegramTokenEncryptionKey = E2E_TELEGRAM_TOKEN_KEY.takeIf { featureFlags.telegramBot },
         vkTokenEncryptionKey = E2E_VK_TOKEN_KEY.takeIf { featureFlags.vkBot },
-        includeSkillOAuthConfig = false,
+        includeSkillOAuthConfig = skillOAuth,
     ).copy(hindsightApiUrl = hindsightUrl, hooks = hookConfig, scheduledTasks = scheduledTasks, llmLimits = llmLimits)
     private val localChatApi = localChatApiBackedBy(llm)
     private val localAvailability = localProviderAvailability(localModels)
@@ -457,6 +460,7 @@ internal class BackendE2eBackend(
         BackendE2eBackend(
             schema = schema,
             featureFlags = featureFlags,
+            skillOAuth = skillOAuth,
             llm = llm,
             telegramApi = null,
             vkApi = null,
