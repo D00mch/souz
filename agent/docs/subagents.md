@@ -2,7 +2,7 @@
 
 ## Invariant
 
-The parent receives `SubagentTool` as an ordinary `LLMToolSetup` and awaits each `SpawnSubagent` invocation in its current coroutine. The tool constructs one isolated child context and creates a fresh `Agent` through a host-supplied factory. The default `ToolLoopGraphBasedAgent` is a reusable model/tool loop with ordinary agent lifecycle and streaming. Explicitly selected tools replace both advertised schemas and executable lookup. Children have no spawn capability or parent turn-setup nodes. Parent cancellation propagates through the child; queued parent input follows the completed tool result.
+The parent receives `SubagentTool` as an ordinary `LLMToolSetup` and awaits each `SpawnSubagent` invocation in its current coroutine. The tool constructs one isolated child context and creates a fresh `Agent` through a host-supplied factory. The default `ToolLoopGraphBasedAgent` is a reusable model/tool loop with ordinary agent lifecycle and streaming. Explicitly selected tools replace both advertised schemas and executable lookup. Host-selected command-only tools share the restricted `RunSkillCommand` path with bundles; their full discovery details and host routing instructions are included in the child prompt. Children have no spawn capability or parent turn-setup nodes. Parent cancellation propagates through the child; queued parent input follows the completed tool result.
 
 The host supplies the same LLM API and complete invocation metadata. The tool leaves child `sideEffects` uncollected and sets `AgentRuntimeEventSink.NONE`; required interactions emitted by host tools retain their existing owners. The parent records the enclosing spawn tool call and its result.
 

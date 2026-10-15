@@ -415,7 +415,7 @@ class BackendPublicWebSocketE2eTest {
             },
         ) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            val chatId = createPublicChat(userId, tools = clientToolsJson("user.ask"))
             val metrics = backend.dependencies.metrics.registry
             withPublicSocket(chatId) { session ->
                 session.send(Frame.Text(messageFrame(chatId, userId, "message-tool", null, "ask me", "device-tool")))
@@ -474,7 +474,7 @@ class BackendPublicWebSocketE2eTest {
             requestSkill("web.search", mapOf("query" to "Когда открывается музей?"))
         }) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            val chatId = createPublicChat(userId, tools = clientToolsJson("web.search"))
             withPublicSocket(chatId) { session ->
                 val submit = json.readTree(messageFrame(chatId, userId, "search", deviceId = "search-device"))
                 (submit["payload"]["device"] as ObjectNode).putArray("capabilities")
@@ -521,7 +521,7 @@ class BackendPublicWebSocketE2eTest {
             },
         ) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            val chatId = createPublicChat(userId, tools = clientToolsJson("user.ask"))
             withPublicSocket(chatId) { session ->
                 session.send(Frame.Text(messageFrame(chatId, userId, "message-timeout", null, "ask with timeout", "device-timeout")))
                 val messageAck = readJson(session)
@@ -558,7 +558,7 @@ class BackendPublicWebSocketE2eTest {
             },
         ) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            val chatId = createPublicChat(userId, tools = clientToolsJson("device.mcp.list_devices"))
             withPublicSocket(chatId) { session ->
                 session.send(Frame.Text(messageFrame(chatId, userId, "message-mcp-devices", null, "list mcp devices", "device-mcp")))
                 val messageAck = readJson(session)
@@ -594,7 +594,7 @@ class BackendPublicWebSocketE2eTest {
                 requestSkill("device.mcp.call_tool", mapOf("name" to "set_volume", "arguments" to mapOf("level" to level)))
             }) {
                 val userId = UUID.randomUUID().toString()
-                val chatId = createPublicChat(userId)
+                val chatId = createPublicChat(userId, tools = clientToolsJson("device.mcp.call_tool"))
                 withPublicSocket(chatId) { session ->
                     session.send(Frame.Text(messageFrame(chatId, userId, "message-mcp-call", deviceId = "device-mcp")))
                     val messageAck = readJson(session)
@@ -629,7 +629,7 @@ class BackendPublicWebSocketE2eTest {
             },
         ) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            val chatId = createPublicChat(userId, tools = clientToolsJson("user.ask"))
             withPublicSocket(chatId) { session ->
                 session.send(Frame.Text(messageFrame(chatId, userId, "message-cancel-tool", null, "cancel pending tool", "device-cancel")))
                 val messageAck = readJson(session)

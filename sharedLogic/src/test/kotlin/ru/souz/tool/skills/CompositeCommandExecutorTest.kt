@@ -12,6 +12,7 @@ import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.skills.registry.SkillBundleProvider
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -23,7 +24,6 @@ import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.ToolCategory
-import ru.souz.tool.immutableToolCatalogFromLists
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -72,7 +72,7 @@ class CompositeCommandExecutorTest {
             assertTrue(args.timeoutMillis in 1..4_900)
             SandboxCommandResult(0, "{\"device\":1}\n", "")
         }
-        val catalog = immutableToolCatalogFromLists(mapOf(ToolCategory.FILES to listOf(read, send)))
+        val catalog = AgentToolCatalog(mapOf(ToolCategory.FILES to listOf(read, send)))
         val provider = mockk<SkillBundleProvider> { coEvery { loadSkillBundle(meta.userId, bundle.skillId) } returns bundle }
         val detail = ToolGetSkillByName(catalog, RuntimePassThroughToolsFilter, provider)
             .invoke(LLMResponse.FunctionCall(ToolGetSkillByName.NAME, mapOf("skillId" to "skill")), meta)
@@ -142,7 +142,7 @@ class CompositeCommandExecutorTest {
     )))
 
     private fun runner(bundle: SkillBundle, tools: List<LLMToolSetup> = emptyList(), filter: AgentToolsFilter = RuntimePassThroughToolsFilter) = ToolInvokeSkill(
-        immutableToolCatalogFromLists(mapOf(ToolCategory.FILES to tools)), filter, { _, _ -> bundle }, scripts,
+        AgentToolCatalog(mapOf(ToolCategory.FILES to tools)), filter, { _, _ -> bundle }, scripts,
     )
 
     private suspend fun ToolInvokeSkill.run(inputs: Map<String, String> = emptyMap(), command: String = "run", timeout: Long = 60_000): SandboxCommandResult =

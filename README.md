@@ -352,6 +352,7 @@ The backend-safe catalog avoids desktop-only APIs and includes:
 | Web search | Internet search, internet research, optional web image search, web page text |
 | Data analytics | CSV plotting, Excel read, Excel report |
 | Calculator | Calculator |
+| Scheduling | Create, list, and cancel one-off and recurring agent tasks ([details](backend/docs/scheduled-tasks.md)) |
 
 The backend intentionally excludes desktop automation, browser control, Mail, Calendar, Notes, desktop Telegram tools, and other OS-bound tools. It separately supports Telegram bot chat bindings for text ingress into existing backend chats.
 
@@ -514,6 +515,12 @@ ENABLE_BACKEND_VK_FEATURE=false
 SOUZ_VK_POLLING_MAX_CONCURRENCY=4
 # Required when enabled; Base64 of 32 random bytes
 VK_TOKEN_ENCRYPTION_KEY=...
+
+# Scheduled tasks: planned runs per user per day, concurrent runs per process, run timeout
+# The daily value also caps launches per user per UTC day.
+SOUZ_SCHEDULED_TASK_RUNS_PER_USER_PER_DAY=100
+SOUZ_SCHEDULED_TASK_CONCURRENT_RUNS=16
+SOUZ_SCHEDULED_TASK_RUN_TIMEOUT_MILLIS=300000
 
 # Provider retries
 SOUZ_BACKEND_PROVIDER_MAX_429_RETRIES=2

@@ -21,7 +21,7 @@ class AgentModelRoutingTest {
                 firstArg<LLMModel>().let { if (it == LLMModel.OpenAICompatibleCustom) "Custom/Parent" else it.alias }
             }
         }
-        val catalog = mockk<AgentToolCatalog> { every { toolsByCategory } returns emptyMap() }
+        val catalog = AgentToolCatalog()
         val factory = AgentContextFactory(settings, mockk(), catalog)
         val facade = AgentFacade(settings, factory, mockk(), mockk(), mockk())
         val original = facade.currentContext.value

@@ -39,8 +39,10 @@ internal class LocalSandboxCommandExecutor(
                 }
             } finally {
                 if (process.isAlive) {
-                    process.descendants().use { children -> children.forEach { it.destroyForcibly() } }
+                    // Stop the parent before child exits can resume it into new work.
+                    val children = process.descendants().use { it.toList() }
                     process.destroyForcibly()
+                    children.forEach { it.destroyForcibly() }
                 }
                 output.awaitDrainedOrClose()
             }
@@ -64,7 +66,12 @@ internal class LocalSandboxCommandExecutor(
         }
 
         SandboxCommandRuntime.BASH -> scriptCommand("bash", "-lc", "script is required for BASH runtime.", inlineCommandName = "bash")
-        SandboxCommandRuntime.PYTHON -> scriptCommand("python3", "-c", "script is required for PYTHON runtime.")
+        // Windows Python installs ship python.exe; python3.exe there is the Microsoft Store stub.
+        SandboxCommandRuntime.PYTHON -> scriptCommand(
+            if (System.getProperty("os.name").startsWith("Windows")) "python" else "python3",
+            "-c",
+            "script is required for PYTHON runtime.",
+        )
         SandboxCommandRuntime.NODE -> scriptCommand("node", "-e", "script is required for NODE runtime.")
     }
 

@@ -4,7 +4,6 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.giga.toGiga
 import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
@@ -42,7 +41,7 @@ fun runtimeToolsDiModule(
     }
 
     bindRuntimeToolsFactory(includeWebImageSearch = includeWebImageSearch)
-    bindSingleton<AgentToolCatalog> { instance<RuntimeToolsFactory>() }
+    bindSingleton<AgentToolCatalog> { instance<RuntimeToolsFactory>().catalog }
 }
 
 fun DI.Builder.bindRuntimeToolsFactory(
@@ -69,23 +68,22 @@ class RuntimeToolsFactory(
     excelRead: ExcelRead,
     excelReport: ExcelReport,
     toolWebImageSearch: ToolWebImageSearch?,
-) : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
-        composeToolCatalogs(
-            portableToolsFactory,
-            immutableToolCatalogFromLists(
-                mapOf(
-                    ToolCategory.FILES to listOf(
-                        toolExtractText.toGiga(),
-                        toolReadPdfPages.toGiga(),
-                    ),
-                    ToolCategory.WEB_SEARCH to listOfNotNull(toolWebImageSearch?.toGiga()),
-                    ToolCategory.DATA_ANALYTICS to listOf(
-                        toolCreatePlotFromCsv.toGiga(),
-                        excelRead.toGiga(),
-                        excelReport.toGiga(),
-                    ),
-                )
-            ),
-        ).toolsByCategory
+) {
+    val catalog = AgentToolCatalog.compose(
+        portableToolsFactory.catalog,
+        AgentToolCatalog(
+            mapOf(
+                ToolCategory.FILES to listOf(
+                    toolExtractText.toGiga(),
+                    toolReadPdfPages.toGiga(),
+                ),
+                ToolCategory.WEB_SEARCH to listOfNotNull(toolWebImageSearch?.toGiga()),
+                ToolCategory.DATA_ANALYTICS to listOf(
+                    toolCreatePlotFromCsv.toGiga(),
+                    excelRead.toGiga(),
+                    excelReport.toGiga(),
+                ),
+            )
+        ),
+    )
 }

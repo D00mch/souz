@@ -171,7 +171,7 @@ class NodesClassificationPromptTest {
     @Test
     fun `applyFilter disables telegram tools when telegram is not connected`() {
         val toolsWithTelegram = defaultTools + (ToolCategory.TELEGRAM to mapOf("TgRead" to dummySetup("TgRead")))
-        val toolsFactory = mockk<AgentToolCatalog> { every { toolsByCategory } returns toolsWithTelegram }
+        val toolsFactory = AgentToolCatalog(toolsWithTelegram.mapValues { it.value.values })
         val toolsSettings = mockTelegramFilteredToolsSettings(telegramConnected = false)
 
         val filtered = toolsSettings.applyFilter(toolsFactory.toolsByCategory)
@@ -368,7 +368,7 @@ class NodesClassificationPromptTest {
         )
 
         assertEquals(
-            listOf("TakeScreenshot", "StartScreenRecording", "ViewImage"),
+            listOf("ViewImage", "TakeScreenshot", "StartScreenRecording"),
             result.activeTools.map { it.name }
         )
     }
@@ -387,7 +387,7 @@ class NodesClassificationPromptTest {
             logObjectMapper = ObjectMapper(),
             apiClassifier = mockk(relaxed = true),
             localClassifier = mockk(relaxed = true),
-            toolCatalog = mockk<AgentToolCatalog>(relaxed = true),
+            toolCatalog = AgentToolCatalog(),
             toolsFilter = mockk<AgentToolsFilter>(relaxed = true),
         )
 
@@ -403,7 +403,7 @@ class NodesClassificationPromptTest {
         localClassifier: UserMessageClassifier,
         apiClassifier: UserMessageClassifier,
     ): AgentContext<String> {
-        val toolsFactory = mockk<AgentToolCatalog> { every { toolsByCategory } returns tools }
+        val toolsFactory = AgentToolCatalog(tools.mapValues { it.value.values })
         val toolsSettings = mockk<AgentToolsFilter> {
             every { applyFilter(any()) } answers { firstArg() }
         }

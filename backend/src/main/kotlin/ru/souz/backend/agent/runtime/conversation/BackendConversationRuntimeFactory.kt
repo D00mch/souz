@@ -18,12 +18,14 @@ import ru.souz.backend.agent.model.chatId
 import ru.souz.backend.agent.runtime.BackendAgentErrorMessages
 import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
 import ru.souz.backend.agent.runtime.BackendNoopAgentDesktopInfoRepository
-import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.toConversationSession
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.chat.repository.MessageRepository
+import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.client.BackendClientSkills
+import ru.souz.backend.client.CLIENT_TOOL_ROUTING_INSTRUCTIONS
 import ru.souz.backend.common.backendLogContext
 import ru.souz.backend.hooks.HookLlmBudget
 import ru.souz.backend.hooks.HookLlmBudget.Companion.withProviderCall
@@ -71,8 +73,9 @@ internal class BackendConversationRuntimeFactory(
     private val messageRepository: MessageRepository,
     private val logObjectMapper: ObjectMapper,
     private val systemPrompt: String,
-    private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
-    private val clientToolCatalog: AgentToolCatalog,
+    private val toolCatalog: AgentToolCatalog = AgentToolCatalog(),
+    private val clientSkills: BackendClientSkills,
+    private val chatRepository: ChatRepository,
     private val skillBundleProvider: SkillBundleProvider,
     private val skillClassifier: SkillClassifier,
     private val commandExecutor: SkillCommandExecutor,
@@ -158,9 +161,11 @@ internal class BackendConversationRuntimeFactory(
                 withProviderCall(hookBudget, LlmProvider.OPENAI) { imageGenerationGateway.generate(input) }
             },
         )
+        val clientTools = chatRepository.clientTools(key.userId, key.chatId())
+        val clientToolCatalog = clientSkills.catalog(clientTools)
         val executionToolCatalog = backendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
-            executionLlmToolCatalog = executionLlmToolCatalog,
+            executionLlmToolCatalog = executionLlmToolCatalog.catalog,
             enabledCompiledToolNames = request.enabledTools,
             clientToolCatalog = clientToolCatalog,
             includeFewShotExamples = settingsProvider.useFewShotExamples,
@@ -205,6 +210,8 @@ internal class BackendConversationRuntimeFactory(
             skillBundleProvider = skillBundleProvider,
             commandExecutor = commandExecutor,
             configuredModels = settingsProvider.subagentModels,
+            commandToolNames = clientToolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet(),
+            commandInstructions = CLIENT_TOOL_ROUTING_INSTRUCTIONS,
         )
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,

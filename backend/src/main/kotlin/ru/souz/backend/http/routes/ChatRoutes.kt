@@ -43,9 +43,7 @@ import ru.souz.backend.client.CreateClientChatResponse
 import ru.souz.backend.client.PublicThreadStatusResponse
 import ru.souz.backend.client.supportedClientTypes
 import ru.souz.backend.http.describePublic
-import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import ru.souz.backend.http.clientFrameMapper
 import java.util.UUID
 import ru.souz.backend.chat.service.CreateClientChatResult
 
@@ -92,7 +90,7 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
     post(BackendHttpRoutes.CHATS) {
         call.requireJsonContentV1()
         val request = try {
-            publicChatMapper.readValue(call.receiveText(), CreateClientChatRequest::class.java)
+            clientFrameMapper.readValue(call.receiveText(), CreateClientChatRequest::class.java)
         } catch (_: Exception) {
             throw ru.souz.backend.http.invalidV1Request("Request body does not match CreateChatRequest.")
         }
@@ -297,6 +295,7 @@ internal suspend fun BackendHttpDependencies.createClientChat(
         requestId = requestId,
         clientType = request.clientType,
         title = request.title,
+        tools = request.tools,
     )
 }
 
@@ -316,7 +315,3 @@ private fun ClientContractException.toPublicV1Exception(): BackendV1Exception =
         code = code,
         message = message,
     )
-
-private val publicChatMapper = jacksonObjectMapper()
-    .registerKotlinModule()
-    .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)

@@ -41,6 +41,7 @@ import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
+import ru.souz.test.assumeLocalShellScripts
 import ru.souz.tool.BadInputException
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.knowledge.ToolGetKnowledge
@@ -376,6 +377,7 @@ class SkillRuntimeToolsTest {
 
     @Test
     fun `file backed invocation keeps authorization internal and preserves complete output`() = runTest {
+        assumeLocalShellScripts()
         val home = createTempDirectory("future-skill-home-")
         val stateRoot = home.resolve("state").createDirectories()
         stateRoot.resolve("skills/file-skill").createDirectories()
@@ -667,11 +669,7 @@ private class TestToolsFilter(
 
 private fun catalog(
     vararg categories: Pair<ToolCategory, List<LLMToolSetup>>,
-): AgentToolCatalog = object : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = linkedMapOf(
-        *categories.map { (category, tools) -> category to tools.associateBy { it.fn.name } }.toTypedArray()
-    )
-}
+): AgentToolCatalog = AgentToolCatalog(categories.toMap())
 
 private fun repository(vararg bundles: SkillBundle): SkillRegistryRepository {
     val bundlesById = bundles.associateBy { it.skillId.value }

@@ -51,7 +51,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"requestId\": \"{{createChatRequestId}}\",\n  \"clientType\": \"{{clientType}}\",\n  \"title\": null\n}",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"requestId\": \"{{createChatRequestId}}\",\n  \"clientType\": \"{{clientType}}\",\n  \"title\": null,\n  \"tools\": [\n    {\n      \"name\": \"user.ask\",\n      \"description\": \"Ask the user a question.\",\n      \"parameters\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"question\": {\n            \"type\": \"string\"\n          }\n        },\n        \"required\": [\n          \"question\"\n        ]\n      }\n    },\n    {\n      \"name\": \"device.media.open\",\n      \"description\": \"Open media on the client device.\",\n      \"parameters\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"query\": {\n            \"type\": \"string\"\n          }\n        },\n        \"required\": [\n          \"query\"\n        ]\n      }\n    },\n    {\n      \"name\": \"web.search\",\n      \"description\": \"Search the web and return source documents.\",\n      \"parameters\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"query\": {\n            \"type\": \"string\"\n          }\n        },\n        \"required\": [\n          \"query\"\n        ]\n      }\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -105,7 +105,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"requestId\": \"{{createChatRequestId}}\",\n  \"clientType\": \"{{clientType}}\",\n  \"title\": null\n}",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"requestId\": \"{{createChatRequestId}}\",\n  \"clientType\": \"{{clientType}}\",\n  \"title\": null,\n  \"tools\": [\n    {\n      \"name\": \"user.ask\",\n      \"description\": \"Ask the user a question.\",\n      \"parameters\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"question\": {\n            \"type\": \"string\"\n          }\n        },\n        \"required\": [\n          \"question\"\n        ]\n      }\n    },\n    {\n      \"name\": \"device.media.open\",\n      \"description\": \"Open media on the client device.\",\n      \"parameters\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"query\": {\n            \"type\": \"string\"\n          }\n        },\n        \"required\": [\n          \"query\"\n        ]\n      }\n    },\n    {\n      \"name\": \"web.search\",\n      \"description\": \"Search the web and return source documents.\",\n      \"parameters\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"query\": {\n            \"type\": \"string\"\n          }\n        },\n        \"required\": [\n          \"query\"\n        ]\n      }\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"

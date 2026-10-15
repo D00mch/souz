@@ -61,6 +61,11 @@ internal sealed interface BeginClientToolResult {
     data object Missing : BeginClientToolResult
 }
 
+/**
+ * Tracks process-local thread runtimes and tool waiters.
+ * [runtimeOwner] identifies this backend instance in PostgreSQL so lease renewals and turn commits
+ * can verify ownership. Live thread commands require sticky routing to the instance holding the runtime.
+ */
 internal class ClientThreadRuntimeRegistry(
     val runtimeOwner: String = defaultRuntimeOwner(),
 ) {

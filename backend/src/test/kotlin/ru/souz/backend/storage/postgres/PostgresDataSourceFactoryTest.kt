@@ -25,7 +25,7 @@ class PostgresDataSourceFactoryTest {
         }
 
         PostgresDataSourceFactory.create(config).use { dataSource ->
-            assertEquals(job, PostgresJobService(dataSource).listJobs(owner).single())
+            assertEquals(job, PostgresJobService(dataSource).listJobs(owner).items.single())
         }
     }
 

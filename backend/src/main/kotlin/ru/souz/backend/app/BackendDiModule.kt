@@ -34,9 +34,14 @@ import ru.souz.backend.channels.tool.BackendChannelToolCatalog
 import ru.souz.backend.channels.tool.ToolListActiveChannels
 import ru.souz.backend.channels.tool.ToolSendMessageToChannel
 import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.scheduler.ScheduledTaskRunner
+import ru.souz.backend.scheduler.ToolCreateScheduledTask
+import ru.souz.backend.scheduler.ToolDeleteScheduledTask
+import ru.souz.backend.scheduler.ToolListScheduledTasks
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
+import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.PublicClientService
@@ -93,6 +98,7 @@ import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalProviderAvailability
+import ru.souz.llms.giga.toGiga
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.runtime.di.runtimeCoreDiModule
@@ -115,7 +121,7 @@ import ru.souz.skilloauth.impl.SkillOAuthGatewayImpl
 import ru.souz.jobs.JobService
 import ru.souz.jobs.impl.PostgresJobService
 import ru.souz.tool.RuntimeToolsFactory
-import ru.souz.tool.composeToolCatalogs
+import ru.souz.tool.ToolCategory
 import ru.souz.tool.runtimeToolsDiModule
 import ru.souz.tool.portableSkillRuntimeToolsDiModule
 import ru.souz.tool.knowledge.ToolGetKnowledge
@@ -273,6 +279,8 @@ fun backendDiModule(
         ChatService(
             chatRepository = instance(),
             messageRepository = instance(),
+            serverToolNames = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG)
+                .toolsByCategory.values.flatMap { it.keys }.toSet() + BackendToolCapabilityPolicy.executionBoundToolNames,
         )
     }
     bindSingleton {
@@ -319,7 +327,8 @@ fun backendDiModule(
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
             toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
-            clientToolCatalog = instance<BackendClientSkills>(),
+            clientSkills = instance(),
+            chatRepository = instance(),
             skillBundleProvider = instance<SkillRegistryRepository>(),
             commandExecutor = instance<SkillCommandExecutor>(),
             filesToolUtil = instance<FilesToolUtil>(),
@@ -484,7 +493,25 @@ fun backendDiModule(
     bindSingleton { ToolSendMessageToChannel(registry = instance()) }
     bindSingleton { BackendChannelToolCatalog(instance(), instance()) }
     bindSingleton<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG) {
-        composeToolCatalogs(instance<RuntimeToolsFactory>(), instance<BackendChannelToolCatalog>())
+        AgentToolCatalog.compose(
+            instance<RuntimeToolsFactory>().catalog,
+            instance<BackendChannelToolCatalog>().catalog,
+            AgentToolCatalog(mapOf(ToolCategory.SCHEDULING to listOf(
+                ToolCreateScheduledTask(instance(), instance(), instance(), appConfig.scheduledTasks, instance()).toGiga(),
+                ToolListScheduledTasks(instance()).toGiga(),
+                ToolDeleteScheduledTask(instance()).toGiga(),
+            ))),
+        )
+    }
+    bindSingleton {
+        ScheduledTaskRunner(
+            chats = instance(),
+            executions = instance(),
+            launcher = instance(),
+            scope = instance<BackendApplicationScope>(),
+            config = appConfig.scheduledTasks,
+            clock = instance(),
+        )
     }
     bindSingleton {
         OptionService(

@@ -57,7 +57,8 @@ items:
                 "userId": "{{userId}}",
                 "requestId": "{{createChatRequestId}}",
                 "clientType": "{{clientType}}",
-                "title": null
+                "title": null,
+                "tools": [{"name": "user.ask", "description": "Ask the user a question.", "parameters": {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}}, {"name": "device.media.open", "description": "Open media on the client device.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}, {"name": "web.search", "description": "Search the web and return source documents.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}]
               }
         runtime:
           scripts:
@@ -102,7 +103,8 @@ items:
                 "userId": "{{userId}}",
                 "requestId": "{{createChatRequestId}}",
                 "clientType": "{{clientType}}",
-                "title": null
+                "title": null,
+                "tools": [{"name": "user.ask", "description": "Ask the user a question.", "parameters": {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}}, {"name": "device.media.open", "description": "Open media on the client device.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}, {"name": "web.search", "description": "Search the web and return source documents.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}]
               }
         runtime:
           scripts:
@@ -274,7 +276,8 @@ items:
                     "requestId": "{{createChatRequestId}}",
                     "payload": {
                       "userId": "{{userId}}",
-                      "title": null
+                      "title": null,
+                      "tools": [{"name": "user.ask", "description": "Ask the user a question.", "parameters": {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}}, {"name": "device.media.open", "description": "Open media on the client device.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}, {"name": "web.search", "description": "Search the web and return source documents.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}]
                     }
                   }
             - title: 02 chat.create B
@@ -286,7 +289,8 @@ items:
                     "requestId": "{{createChatRequestId}}",
                     "payload": {
                       "userId": "{{userIdB}}",
-                      "title": null
+                      "title": null,
+                      "tools": [{"name": "user.ask", "description": "Ask the user a question.", "parameters": {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}}, {"name": "device.media.open", "description": "Open media on the client device.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}, {"name": "web.search", "description": "Search the web and return source documents.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}]
                     }
                   }
             - title: 03 message.submit A

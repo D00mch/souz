@@ -19,6 +19,7 @@ import ru.souz.runtime.sandbox.SandboxCommandRequest
 import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxScope
+import ru.souz.test.assumeLocalShellScripts
 import ru.souz.tool.BadInputException
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
@@ -26,6 +27,7 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class LocalSandboxCommandExecutorTest {
@@ -34,6 +36,7 @@ class LocalSandboxCommandExecutorTest {
 
     @Test
     fun `executes command inside resolved sandbox working directory`() = runTest {
+        assumeLocalShellScripts()
         val home = createTempDirectory("sandbox-home-")
         val workspace = home.resolve("workspace").createDirectories()
         val sandbox = createSandbox(home)
@@ -71,6 +74,7 @@ class LocalSandboxCommandExecutorTest {
 
     @Test
     fun `executes script path with args and stdin`() = runTest {
+        assumeLocalShellScripts()
         val home = createTempDirectory("sandbox-home-")
         val scripts = home.resolve("scripts").createDirectories()
         val script = scripts.resolve("echo.sh").apply {
@@ -143,6 +147,13 @@ class LocalSandboxCommandExecutorTest {
             assertEquals(0, result.exitCode)
             assertEquals("done", result.stdout)
             assertTrue(elapsedMillis < 3_000, "Inherited streams delayed completion: ${elapsedMillis}ms")
+            // Windows hosts terminate the descendant, so its output readers must not outlive the command.
+            // POSIX hosts no longer see the orphaned descendant; its readers end when it exits.
+            if (System.getProperty("os.name").startsWith("Windows")) {
+                withTimeout(2_000) {
+                    while (Thread.getAllStackTraces().keys.any { it.name.startsWith("local-sandbox-command-") }) delay(10)
+                }
+            }
         } finally {
             if (Files.exists(pidFile)) {
                 ProcessHandle.of(Files.readString(pidFile).toLong()).ifPresent { it.destroyForcibly() }
@@ -152,6 +163,7 @@ class LocalSandboxCommandExecutorTest {
 
     @Test
     fun `timeout and cancellation terminate the process and its children`() = runBlocking {
+        assumeLocalShellScripts()
         for (cancel in listOf(false, true)) for (input in listOf(null, "x".repeat(90_000))) {
             val home = createTempDirectory("sandbox-home-")
             val sandbox = createSandbox(home)
@@ -163,8 +175,10 @@ class LocalSandboxCommandExecutorTest {
                 withTimeout(10_000) {
                     val execution = async {
                         sandbox.commandExecutor.execute(SandboxCommandRequest(
-                            runtime = SandboxCommandRuntime.BASH,
-                            script = $$"sleep 30 & printf '%s %s' \"$$\" \"$!\" > pids.tmp; mv pids.tmp pids; wait",
+                            runtime = SandboxCommandRuntime.PROCESS,
+                            command = listOf("bash", "--noprofile", "--norc", "-c",
+                                $$"sleep 30 & printf '%s %s' \"$$\" \"$!\" > pids.tmp; mv pids.tmp pids; wait"),
+                            environment = mapOf("BASH_ENV" to "/dev/null"),
                             workingDirectory = home.toString(), timeoutMillis = if (cancel) null else 1_000, stdin = input,
                         )).also { commandResult = it }
                     }
@@ -195,6 +209,52 @@ class LocalSandboxCommandExecutorTest {
                     )
                 }
             }
+        }
+    }
+
+    @Test
+    fun `terminates the parent before children can resume its startup script`() = runBlocking {
+        assumeLocalShellScripts()
+        val home = createTempDirectory("sandbox-startup-")
+        val sandbox = createSandbox(home)
+        val pidFile = home.resolve("startup-pids")
+        val continuedFile = home.resolve("continued")
+        val startup = home.resolve("startup.sh").apply {
+            writeText($$"""
+                sleep 30 &
+                first="$!"
+                pids="$$ $first"
+                for i in {1..63}; do
+                    sleep 30 &
+                    pids="$pids $!"
+                done
+                printf '%s' "$pids" > startup-pids
+                wait "$first"
+            """.trimIndent())
+        }
+        var pids = emptyList<Long>()
+        try {
+            withTimeout(10_000) {
+                val result = sandbox.commandExecutor.execute(SandboxCommandRequest(
+                    runtime = SandboxCommandRuntime.PROCESS,
+                    command = listOf("bash", "--noprofile", "--norc", "-c", "printf continued > continued"),
+                    workingDirectory = home.toString(),
+                    environment = mapOf("BASH_ENV" to startup.toString()),
+                    timeoutMillis = 2_000,
+                ))
+                assertTrue(Files.exists(pidFile), "Startup did not publish its process IDs: $result")
+                pids = Files.readString(pidFile).split(' ').map(String::toLong)
+                assertEquals(65, pids.size)
+                assertTrue(result.timedOut)
+                assertEquals(-1, result.exitCode)
+                assertFalse(Files.exists(continuedFile), "Killing a child resumed the parent after its deadline")
+                while (pids.any(::isProcessRunning)) delay(10)
+            }
+        } finally {
+            if (pids.isEmpty() && Files.exists(pidFile)) {
+                pids = Files.readString(pidFile).split(' ').map(String::toLong)
+            }
+            pids.filter(::isProcessRunning).forEach { pid -> ProcessHandle.of(pid).ifPresent { it.destroyForcibly() } }
         }
     }
 

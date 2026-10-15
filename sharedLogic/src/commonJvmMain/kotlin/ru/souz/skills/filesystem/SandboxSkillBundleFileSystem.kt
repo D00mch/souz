@@ -5,6 +5,7 @@ import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
+import kotlin.io.path.invariantSeparatorsPathString
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.souz.agent.skills.bundle.SkillBundleException
@@ -63,7 +64,7 @@ class SandboxSkillBundleFileSystem(
         root: Path,
     ): List<Path> = withContext(Dispatchers.IO) {
         val sandboxFileSystem = sandboxFileSystem(context)
-        val canonicalRoot = sandboxFileSystem.resolveExistingDirectory(root.toString())
+        val canonicalRoot = sandboxFileSystem.resolveExistingDirectory(root.invariantSeparatorsPathString)
         sandboxFileSystem.listDescendants(canonicalRoot, includeHidden = true)
             .mapNotNull { entry ->
                 ensurePathSafe(context, entry)
@@ -95,7 +96,7 @@ class SandboxSkillBundleFileSystem(
         maxBytes: Long,
     ): String = withContext(Dispatchers.IO) {
         val sandboxFileSystem = sandboxFileSystem(context)
-        val sandboxPath = sandboxFileSystem.resolveExistingFile(path.toString())
+        val sandboxPath = sandboxFileSystem.resolveExistingFile(path.invariantSeparatorsPathString)
         ensurePathSafe(context, sandboxPath)
         val size = sandboxPath.sizeBytes
             ?: throw SkillBundleException("Failed to stat skill file: $path")

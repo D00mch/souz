@@ -23,7 +23,7 @@ class PostgresJobServiceTest {
         payload.put("addedAfterCreation", true)
         service.create(userId = "bob")
 
-        val restored = PostgresJobService(db).listJobs("alice").single()
+        val restored = PostgresJobService(db).listJobs("alice").items.single()
         assertEquals(job.id, restored.id)
         assertEquals("Report", restored.title)
         assertEquals(42, restored.payload["nested"]["value"].asInt())
@@ -36,7 +36,7 @@ class PostgresJobServiceTest {
         assertNull(service.cancelJob("bob", job.id))
         assertNull(service.cancelJob("alice", UUID.randomUUID()))
         assertEquals(JobStatus.CANCELLED, service.cancelJob("alice", job.id)?.status)
-        assertEquals(service.listJobs("alice").single(), service.cancelJob("alice", job.id))
+        assertEquals(service.listJobs("alice").items.single(), service.cancelJob("alice", job.id))
         assertEquals("bob", service.store.claim()?.job?.userId)
     }
 
@@ -55,7 +55,7 @@ class PostgresJobServiceTest {
         )) {
             assertFailsWith<IllegalArgumentException> { service.create(schedule = schedule) }
         }
-        assertTrue(service.listJobs("owner").isEmpty())
+        assertTrue(service.listJobs("owner").items.isEmpty())
     }
 
     @Test
@@ -63,7 +63,7 @@ class PostgresJobServiceTest {
         val schedule = JobSchedule.Cron("* * * * *", "UTC")
         val job = service.create(schedule = schedule)
         db.execute("update jobs set scheduled_at = date_trunc('minute', clock_timestamp()) - interval '10 minutes', available_at = clock_timestamp() - interval '10 minutes' where id = ?", job.id)
-        val missed = service.listJobs("owner").single().scheduledAt
+        val missed = service.listJobs("owner").items.single().scheduledAt
         var runs = 0
 
         assertTrue(service.processNext { run ->
@@ -73,7 +73,7 @@ class PostgresJobServiceTest {
             assertEquals(1, run.attempt)
         })
 
-        val next = service.listJobs("owner").single()
+        val next = service.listJobs("owner").items.single()
         assertEquals(schedule, next.schedule)
         assertEquals(JobStatus.PENDING, next.status)
         assertEquals(0, next.attempts)
@@ -88,7 +88,7 @@ class PostgresJobServiceTest {
     fun `succeeded job cancellation is idempotent and never requeues it`() = jobTest { _, service ->
         val job = service.create()
         assertTrue(service.processNext {})
-        val succeeded = service.listJobs("owner").single()
+        val succeeded = service.listJobs("owner").items.single()
         assertEquals(JobStatus.SUCCEEDED, succeeded.status)
         assertEquals(succeeded, service.cancelJob("owner", job.id))
         assertFalse(service.processNext { error("Completed jobs cannot run again") })

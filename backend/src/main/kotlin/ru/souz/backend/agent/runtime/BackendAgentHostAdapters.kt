@@ -6,14 +6,11 @@ import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
-import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.memory.hindsight.UNSUPPORTED_MEMORY_MUTATION_NOTICE
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.findLLMModel
 import ru.souz.llms.LLMModel
-import ru.souz.llms.LLMToolSetup
-import ru.souz.tool.ToolCategory
 
 /** Request-scoped backend settings wrapper used by the shared agent/runtime code. */
 class BackendConversationSettingsProvider(
@@ -62,6 +59,7 @@ class BackendConversationSettingsProvider(
         this.regionProfile = localeToRegionProfile(request.locale)
         this.systemPrompt = listOfNotNull(
             request.systemPrompt ?: defaultSystemPrompt,
+            ru.souz.backend.client.CLIENT_TOOL_ROUTING_INSTRUCTIONS,
             UNSUPPORTED_MEMORY_MUTATION_NOTICE.takeIf { request.clientToolsEnabled },
             when {
                 !request.narrateSteps -> null
@@ -111,11 +109,6 @@ private object SettingsProviderImpl {
 /** Backend implementation for hosts without desktop indexing. */
 object BackendNoopAgentDesktopInfoRepository : AgentDesktopInfoRepository {
     override suspend fun search(query: String, limit: Int) = emptyList<ru.souz.db.StorredData>()
-}
-
-/** Backend fallback tool catalog used when no shared catalog is bound. */
-object BackendNoopAgentToolCatalog : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = emptyMap()
 }
 
 /** Backend-owned user-facing error text for shared agent failure paths. */
