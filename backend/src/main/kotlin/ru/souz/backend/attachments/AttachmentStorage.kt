@@ -26,10 +26,6 @@ class AttachmentStorage(
     // Bounds total in-memory file bytes across concurrent uploads; each save() holds one file fully buffered.
     private val uploadSlots = Semaphore(config.maxConcurrentUploads)
 
-    suspend fun ensureOwner(userId: String) {
-        repository.bucket(userId, config.bucketPrefix)
-    }
-
     suspend fun save(userId: String, sourceKey: String, name: String, input: InputStream): StoredAttachment =
         uploadSlots.withPermit { saveWithinLimit(userId, sourceKey, name, input) }
 
@@ -38,11 +34,6 @@ class AttachmentStorage(
         val bytes = runInterruptible(Dispatchers.IO) { input.use { it.readAttachmentBytes(config.maxFileBytes) } }
         val safeName = attachmentName(name)
         val mime = attachmentMime(bytes, safeName)
-        val (bucket, ready) = repository.bucket(userId, config.bucketPrefix)
-        if (!ready) {
-            objects.ensureBucket(bucket)
-            repository.bucketReady(userId)
-        }
         val file = repository.reserve(userId, sourceKey, safeName, mime, bytes.size.toLong(), bytes.sha256Hex(), clock.instant())
         if (file.state == "ready") return available(file)
         if (file.state != "pending" || !file.createdAt.plus(Duration.ofHours(24)).isAfter(clock.instant())) {

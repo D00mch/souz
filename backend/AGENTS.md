@@ -26,7 +26,7 @@ Before changing this module, read the relevant pain-point topics below.
 
 ## Pain points
 
-- [User file storage](../docs/s3-storage.md) — private per-user buckets, ownership, expiry and retryable cleanup.
+- [User file storage](../docs/s3-storage.md) — one operator-provisioned private bucket, ownership, expiry and retryable cleanup.
 
 - [Named LLM connections](docs/named-llm-connections.md) — server model names, independent endpoints and keys, subagents and summarization.
 - [Metrics accounting](docs/metrics-accounting.md) — commit boundaries, bounded labels, waiting time and replica ownership; see the [metric reference](docs/metrics.md).

@@ -7,7 +7,7 @@ import ru.souz.backend.config.BackendConfigSource
 class AttachmentStorageConfig(
     val endpoint: String,
     val region: String = "us-east-1",
-    val bucketPrefix: String = "souz-files-",
+    val bucket: String,
     val accessKey: String,
     val secretKey: String,
     val maxFileBytes: Int = 20_000_000,
@@ -25,7 +25,9 @@ class AttachmentStorageConfig(
         require(region.isNotBlank() && accessKey.isNotBlank() && secretKey.isNotBlank()) {
             "Attachment S3 region and credentials are required."
         }
-        require(bucketPrefix.matches(Regex("[a-z][a-z0-9-]{0,29}-"))) { "Invalid attachment bucket prefix." }
+        require(bucket.matches(Regex("[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]")) && !bucket.contains("..")) {
+            "Invalid attachment bucket name."
+        }
         require(maxFileBytes in 1..100_000_000) { "Attachment file limit must be between 1 and 100000000 bytes." }
         require(maxConcurrentUploads in 1..1_000) { "Attachment concurrent upload limit must be between 1 and 1000." }
     }
@@ -42,7 +44,7 @@ class AttachmentStorageConfig(
             return AttachmentStorageConfig(
                 endpoint = endpoint,
                 region = value("S3_REGION") ?: "us-east-1",
-                bucketPrefix = value("BUCKET_PREFIX") ?: "souz-files-",
+                bucket = requireNotNull(value("S3_BUCKET")) { "Attachment S3 bucket is required." },
                 accessKey = requireNotNull(value("S3_ACCESS_KEY")) { "Attachment S3 access key is required." },
                 secretKey = requireNotNull(value("S3_SECRET_KEY")) { "Attachment S3 secret key is required." },
                 maxFileBytes = parsed("MAX_FILE_BYTES", 20_000_000, "Invalid attachment file limit.", String::toIntOrNull),

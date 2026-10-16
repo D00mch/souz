@@ -15,6 +15,7 @@ class AttachmentStorageConfigTest {
         for (properties in listOf(false, true)) {
             val config = assertNotNull(AttachmentStorageConfig.load(source(settings, properties)))
             assertEquals("http://localhost:9000", config.endpoint)
+            assertEquals("souz-files", config.bucket)
             assertEquals(20_000_000, config.maxFileBytes)
             assertEquals(true, config.pathStyleAccess)
             assertEquals(16, config.maxConcurrentUploads)
@@ -24,6 +25,7 @@ class AttachmentStorageConfigTest {
 
     @Test
     fun `invalid settings fail without leaking credentials or invalid values`() {
+        assertFailsWith<IllegalArgumentException> { AttachmentStorageConfig.load(source(settings - "S3_BUCKET")) }
         for ((key, value) in listOf(
             "S3_ENDPOINT" to "http://user:test-secret@localhost:9000",
             "S3_ENDPOINT" to "http://localhost/test-secret with spaces",
@@ -35,7 +37,11 @@ class AttachmentStorageConfigTest {
             "MAX_CONCURRENT_UPLOADS" to "1001",
             "MAX_CONCURRENT_UPLOADS" to "invalid",
             "S3_PATH_STYLE" to "invalid",
-            "BUCKET_PREFIX" to "INVALID",
+            "S3_BUCKET" to "INVALID",
+            "S3_BUCKET" to "",
+            "S3_BUCKET" to "ab",
+            "S3_BUCKET" to "a/b",
+            "S3_BUCKET" to "a..b",
         )) {
             val error = assertFailsWith<IllegalArgumentException> {
                 AttachmentStorageConfig.load(source(settings + (key to value)))
@@ -52,6 +58,7 @@ class AttachmentStorageConfigTest {
 
     private val settings = mapOf(
         "S3_ENDPOINT" to "http://localhost:9000",
+        "S3_BUCKET" to "souz-files",
         "S3_ACCESS_KEY" to "test-access",
         "S3_SECRET_KEY" to "test-secret",
     )

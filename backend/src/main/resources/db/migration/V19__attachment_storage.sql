@@ -1,13 +1,7 @@
 -- Keep storage tombstones after account deletion so objects can still be removed.
-create table attachment_buckets (
-    user_id text primary key,
-    bucket text not null unique,
-    ready boolean not null default false
-);
-
 create table stored_attachments (
     id uuid primary key,
-    user_id text not null references attachment_buckets(user_id),
+    user_id text not null,
     source_key text not null,
     name text not null,
     mime_type text not null,

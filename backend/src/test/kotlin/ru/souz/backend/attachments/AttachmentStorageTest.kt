@@ -10,6 +10,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
+import java.util.UUID
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
@@ -19,6 +20,8 @@ import org.kodein.di.direct
 import org.kodein.di.instance
 import org.testcontainers.containers.GenericContainer
 import org.testcontainers.containers.wait.strategy.Wait
+import org.testcontainers.images.builder.Transferable
+import software.amazon.awssdk.services.s3.model.S3Exception
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -50,12 +53,17 @@ class AttachmentStorageTest {
     fun `private per-user objects survive restart and deny foreign reads`() = attachmentTest {
         val first = save("alice", "event", "../report.md", "# Привет")
         val second = save("bob", "event", "report.md", "# Привет")
-        assertNotEquals(first.bucket, second.bucket)
+        assertNotEquals(first.objectKey.substringBeforeLast('/'), second.objectKey.substringBeforeLast('/'))
+        val denied = AttachmentMinio.server.execInContainer("mc", "mb", "${config.accessKey}/forbidden-${config.bucket}")
+        assertTrue(denied.exitCode != 0 && denied.stderr.contains("Access Denied", ignoreCase = true), denied.stderr)
+        val another = save("alice", "another-event", "a.txt", "another")
+        assertEquals(first.objectKey.substringBeforeLast('/'), another.objectKey.substringBeforeLast('/'))
+        assertEquals(null, storage.find("bob", "another-event"))
         assertEquals("report.md", first.name)
         assertEquals("text/markdown", first.mimeType)
         assertEquals("attachment_not_found", assertFailsWith<AttachmentException> { storage.read("bob", first.id) }.code)
         val anonymous = HttpClient.newHttpClient().send(
-            HttpRequest.newBuilder(URI("${config.endpoint}/${first.bucket}/${first.objectKey}")).GET().build(),
+            HttpRequest.newBuilder(URI("${config.endpoint}/${config.bucket}/${first.objectKey}")).GET().build(),
             HttpResponse.BodyHandlers.discarding(),
         )
         assertEquals(403, anonymous.statusCode())
@@ -63,6 +71,24 @@ class AttachmentStorageTest {
         assertEquals(first, restarted.get("alice", first.id))
         assertEquals("# Привет", restarted.read("alice", first.id).decodeToString())
         assertEquals(second, restarted.find("bob", "event"))
+    }
+
+    @Test
+    fun `missing configured bucket is not created by storage`() = attachmentTest {
+        val missing = AttachmentStorageConfig(
+            endpoint = config.endpoint, bucket = "missing-${UUID.randomUUID()}",
+            accessKey = "attachment-test", secretKey = "attachment-test-secret",
+        )
+        S3AttachmentObjects(missing).use { unavailable ->
+            val storage = AttachmentStorage(missing, PostgresAttachmentRepository(dataSource), unavailable, clock)
+            val error = assertFailsWith<S3Exception> {
+                storage.save("alice", "missing-bucket", "a.txt", "bytes".byteInputStream())
+            }
+            assertEquals(404, error.statusCode())
+        }
+        assertEquals("attachment_owner_unavailable", assertFailsWith<AttachmentException> {
+            save("unknown", "event", "a.txt", "bytes")
+        }.code)
     }
 
     @Test
@@ -112,7 +138,7 @@ class AttachmentStorageTest {
         execute("delete from users where id = 'alice'")
         assertEquals(1, storage.cleanup())
         assertFailsWith<Exception> { objects.read(file, config.maxFileBytes) }
-        assertTrue(file.bucket.startsWith(config.bucketPrefix))
+        assertTrue(file.objectKey.startsWith("files/"))
     }
 }
 
@@ -129,6 +155,25 @@ internal object AttachmentMinio {
         withExposedPorts(9000)
         waitingFor(Wait.forHttp("/minio/health/live").forPort(9000))
         start()
+        check(execInContainer("mc", "alias", "set", "root", "http://localhost:9000", "attachment-test", "attachment-test-secret").exitCode == 0)
+    }
+
+    fun provision(config: AttachmentStorageConfig) {
+        val policy = """{"Version":"2012-10-17","Statement":[{"Effect":"Allow",
+            "Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],
+            "Resource":["arn:aws:s3:::${config.bucket}/*"]}]}"""
+        val path = "/tmp/${config.bucket}.json"
+        server.copyFileToContainer(Transferable.of(policy), path)
+        for (args in listOf(
+            listOf("mb", "root/${config.bucket}"),
+            listOf("admin", "user", "add", "root", config.accessKey, config.secretKey),
+            listOf("admin", "policy", "create", "root", config.bucket, path),
+            listOf("admin", "policy", "attach", "root", config.bucket, "--user", config.accessKey),
+            listOf("alias", "set", config.accessKey, "http://localhost:9000", config.accessKey, config.secretKey),
+        )) {
+            val result = server.execInContainer("mc", *args.toTypedArray())
+            check(result.exitCode == 0) { "MinIO test provisioning failed: ${result.stderr}" }
+        }
     }
 }
 
@@ -150,10 +195,14 @@ private class AttachmentFixture : AutoCloseable {
     private val appConfig = postgresAppConfig(newPostgresSchema("attachments"))
     val dataSource = PostgresDataSourceFactory.create(appConfig.postgres)
     val clock = AttachmentClock()
+    private val storageId = UUID.randomUUID().toString()
     val config = AttachmentStorageConfig(
         endpoint = "http://${AttachmentMinio.server.host}:${AttachmentMinio.server.firstMappedPort}",
-        accessKey = "attachment-test", secretKey = "attachment-test-secret", maxFileBytes = 1024,
+        bucket = "attachments-$storageId",
+        accessKey = "user-$storageId", secretKey = "attachment-user-secret", maxFileBytes = 1024,
     )
+    init { AttachmentMinio.provision(config) }
+
     val di = DI {
         import(backendDiModule("Attachment test", appConfig.copy(attachments = config), dataSourceFactory = { dataSource }))
         bindSingleton<Clock>(overrides = true) { clock }

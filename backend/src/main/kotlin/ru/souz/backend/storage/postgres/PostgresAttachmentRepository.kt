@@ -9,43 +9,12 @@ import ru.souz.backend.attachments.AttachmentException
 import ru.souz.backend.attachments.StoredAttachment
 
 class PostgresAttachmentRepository(private val dataSource: DataSource) {
-    suspend fun bucket(userId: String, prefix: String): Pair<String, Boolean> = dataSource.write { connection ->
-        val candidate = prefix + UUID.randomUUID().toString().replace("-", "")
-        connection.prepareStatement("""
-            insert into attachment_buckets(user_id, bucket)
-            select id, ? from users where id = ?
-            on conflict (user_id) do nothing
-        """.trimIndent()).use {
-            it.setString(1, candidate)
-            it.setString(2, userId)
-            it.executeUpdate()
-        }
-        connection.prepareStatement("""
-            select b.bucket, b.ready from attachment_buckets b
-            join users u on u.id = b.user_id where b.user_id = ?
-        """.trimIndent()).use {
-            it.setString(1, userId)
-            it.executeQuery().use { rows ->
-                if (!rows.next()) throw AttachmentException("attachment_owner_unavailable")
-                rows.getString(1) to rows.getBoolean(2)
-            }
-        }
-    }
-
-    suspend fun bucketReady(userId: String) = dataSource.write { connection ->
-        connection.prepareStatement("update attachment_buckets set ready = true where user_id = ?").use {
-            it.setString(1, userId)
-            it.executeUpdate()
-        }
-        Unit
-    }
-
     suspend fun reserve(
         userId: String, sourceKey: String, name: String, mimeType: String, size: Long, sha256: String, now: Instant,
     ): StoredAttachment = dataSource.write { connection ->
         connection.prepareStatement("""
             insert into stored_attachments(id, user_id, source_key, name, mime_type, size_bytes, sha256, state, created_at)
-            values (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+            select ?, ?, ?, ?, ?, ?, ?, 'pending', ? where exists (select 1 from users where id = ?)
             on conflict (user_id, source_key) do nothing
         """.trimIndent()).use {
             it.setObject(1, UUID.randomUUID())
@@ -56,13 +25,14 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
             it.setLong(6, size)
             it.setString(7, sha256)
             it.setInstant(8, now)
+            it.setString(9, userId)
             it.executeUpdate()
         }
-        connection.prepareStatement("$FILE_SELECT where f.user_id = ? and f.source_key = ?").use {
+        connection.prepareStatement("$FILE_SELECT where f.user_id = ? and f.source_key = ? and exists (select 1 from users where id = f.user_id)").use {
             it.setString(1, userId)
             it.setString(2, sourceKey)
             it.executeQuery().use { rows ->
-                check(rows.next())
+                if (!rows.next()) throw AttachmentException("attachment_owner_unavailable")
                 rows.attachment().also { file ->
                     if (file.sha256 != sha256 || file.sizeBytes != size || file.name != name || file.mimeType != mimeType) {
                         throw AttachmentException("attachment_idempotency_conflict")
@@ -117,7 +87,7 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
             ), changed as (
                 update stored_attachments f set state = 'deleting', cleanup_attempt_at = ?
                 from candidates c where f.id = c.id returning f.*
-            ) select f.*, b.bucket from changed f join attachment_buckets b on b.user_id = f.user_id
+            ) select * from changed
         """.trimIndent()).use {
             it.setInstant(1, now)
             it.setInstant(2, now.minus(Duration.ofHours(24)))
@@ -150,13 +120,13 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
     }
 
     private fun ResultSet.attachment() = StoredAttachment(
-        id = getObject("id", UUID::class.java), userId = getString("user_id"), bucket = getString("bucket"),
+        id = getObject("id", UUID::class.java), userId = getString("user_id"),
         name = getString("name"), mimeType = getString("mime_type"), sizeBytes = getLong("size_bytes"),
         sha256 = getString("sha256"), state = getString("state"), createdAt = instant("created_at"),
         storedAt = getTimestamp("stored_at")?.toInstant(), expiresAt = getTimestamp("expires_at")?.toInstant(),
     )
 
     private companion object {
-        const val FILE_SELECT = "select f.*, b.bucket from stored_attachments f join attachment_buckets b on b.user_id = f.user_id"
+        const val FILE_SELECT = "select f.* from stored_attachments f"
     }
 }
