@@ -72,7 +72,7 @@ class AttachmentStorage(
 
     suspend fun read(userId: String, id: UUID): ByteArray = transferSlots.withPermit {
         val file = get(userId, id)
-        val bytes = objects.read(file, config.maxFileBytes)
+        val bytes = objects.read(file)
         available(file)
         bytes
     }

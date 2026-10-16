@@ -5,7 +5,7 @@
 See [User file storage](s3-storage.md) for the storage contract and verification command.
 
 - Use only object read/write/delete permissions on the configured bucket. Bucket provisioning and policies belong to the operator.
-- Per-user storage quotas are not implemented. The file-size limit and shared save/read concurrency limit do not cap a user's total stored bytes; all users share the bucket's capacity. User quotas require a separate task with atomic accounting and reservations for concurrent uploads if needed.
+- Per-user storage quotas are not implemented. The upload file-size limit and shared save/read concurrency limit do not cap a user's total stored bytes; all users share the bucket's capacity. User quotas require a separate task with atomic accounting and reservations for concurrent uploads if needed.
 - User IDs are owned by the external identity system. Removing a local `users` row does not hide files, trigger cleanup or reset retention deadlines.
 - Resolve ownership and expiry on every read. An opaque file ID or matching checksum does not grant access to another user's data.
 - Keep database metadata and S3 objects recoverable across partial failures: reserve metadata before PUT, mark expiration before DELETE, and retain tombstones after file expiration. A late writer must not leave an object beyond cleanup's reach.

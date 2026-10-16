@@ -45,6 +45,21 @@ import ru.souz.backend.storage.postgres.write
 
 class AttachmentStorageTest {
     @Test
+    fun `lowering the upload limit preserves reads of previously stored files`() = attachmentTest {
+        val bytes = ByteArray(1000) { it.toByte() }
+        val file = storage.save("alice", "before-limit-change", "a.bin", bytes.inputStream())
+        val smallerConfig = AttachmentStorageConfig(
+            endpoint = config.endpoint, bucket = config.bucket,
+            accessKey = config.accessKey, secretKey = config.secretKey, maxFileBytes = 500,
+        )
+        val smallerLimit = AttachmentStorage(smallerConfig, PostgresAttachmentRepository(dataSource), objects, clock)
+        assertContentEquals(bytes, smallerLimit.read("alice", file.id))
+        assertEquals("attachment_too_large", assertFailsWith<AttachmentException> {
+            smallerLimit.save("alice", "after-limit-change", "a.bin", bytes.inputStream())
+        }.code)
+    }
+
+    @Test
     fun `reads share upload slots and cancelling a waiting read does not leak a permit`() = attachmentTest(maxConcurrentUploads = 1) {
         val file = save("alice", "readable", "a.txt", "content")
         withTimeout(10_000) {
@@ -145,7 +160,7 @@ class AttachmentStorageTest {
         assertEquals("attachment_expired", assertFailsWith<AttachmentException> { storage.get("alice", file.id) }.code)
         assertEquals(1, storage.cleanup())
         assertEquals(0, storage.cleanup())
-        assertEquals(404, assertFailsWith<S3Exception> { objects.read(file, config.maxFileBytes) }.statusCode())
+        assertEquals(404, assertFailsWith<S3Exception> { objects.read(file) }.statusCode())
     }
 
     @Test
@@ -203,7 +218,7 @@ class AttachmentStorageTest {
         assertEquals("attachment_expired", assertFailsWith<AttachmentException> { storage.read("alice", first.id) }.code)
         assertEquals(1, storage.cleanup())
         assertEquals(0, storage.cleanup())
-        assertFailsWith<Exception> { objects.read(first, config.maxFileBytes) }
+        assertFailsWith<Exception> { objects.read(first) }
         assertEquals("attachment_expired", assertFailsWith<AttachmentException> {
             save("alice", "same-event", "a.txt", "original")
         }.code)
@@ -220,7 +235,7 @@ class AttachmentStorageTest {
         execute("update stored_attachments set state = 'pending', stored_at = null, expires_at = null")
         clock.now = clock.now.plus(Duration.ofHours(24))
         assertEquals(1, storage.cleanup())
-        assertFailsWith<Exception> { objects.read(recovered, config.maxFileBytes) }
+        assertFailsWith<Exception> { objects.read(recovered) }
     }
 
     @Test
