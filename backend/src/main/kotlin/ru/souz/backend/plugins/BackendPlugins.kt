@@ -28,6 +28,7 @@ internal class BackendPlugins(
     private val source: DataSource,
     private val http: BackendPluginHttp,
     reservedNames: Set<String>,
+    private val services: BackendPluginServices,
 ) {
     private val logger = LoggerFactory.getLogger(BackendPlugins::class.java)
     val registry = PluginRegistry(directory, cache, reservedNames,
@@ -59,6 +60,9 @@ internal class BackendPlugins(
                 val context = object : PluginCallContext {
                     override val data = PostgresPluginData(source, meta.userId, tool.pluginId)
                     override val http = this@BackendPlugins.http
+                    override val oauth = services.oauth(meta)
+                    override val files = services.files(meta, tool.pluginId)
+                    override val channels = services.channels(meta)
                     override val logger = PluginLogger { message -> this@BackendPlugins.logger.info("Plugin {}: {}", tool.pluginId, message) }
                 }
                 val result = tool.handler.invoke(arguments, context)

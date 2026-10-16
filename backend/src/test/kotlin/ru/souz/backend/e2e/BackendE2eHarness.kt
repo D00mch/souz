@@ -152,6 +152,7 @@ internal fun backendE2eTest(
     llmLimits: BackendLlmLimits = BackendLlmLimits(),
     pluginDirectory: Path? = null,
     pluginHttpClient: (() -> HttpClient)? = null,
+    pluginOAuthClient: (() -> HttpClient)? = null,
     sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
     block: suspend BackendE2eScope.() -> Unit,
 ) = testApplication {
@@ -173,6 +174,7 @@ internal fun backendE2eTest(
         llmLimits = llmLimits,
         pluginDirectory = pluginDirectory,
         pluginHttpClient = pluginHttpClient,
+        pluginOAuthClient = pluginOAuthClient,
         sandboxFactory = sandboxFactory,
     )
     application {
@@ -339,6 +341,7 @@ internal class BackendE2eBackend(
     private val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     private val pluginDirectory: Path? = null,
     private val pluginHttpClient: (() -> HttpClient)? = null,
+    private val pluginOAuthClient: (() -> HttpClient)? = null,
     private val sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
 ) : AutoCloseable {
     private val appConfig: BackendAppConfig = postgresAppConfig(
@@ -377,6 +380,23 @@ internal class BackendE2eBackend(
         }
         if (pluginHttpClient != null) {
             bindSingleton<BackendPluginHttp>(overrides = true) { BackendPluginHttp(pluginHttpClient()) }
+        }
+        if (pluginOAuthClient != null) {
+            bindSingleton<ru.souz.skilloauth.impl.SkillOAuthGatewayImpl> {
+                val http = pluginOAuthClient()
+                val provider = ru.souz.skilloauth.impl.OAuthProviderCatalog.entries.single { it.name == "google" }
+                ru.souz.skilloauth.impl.SkillOAuthGatewayImpl(
+                    credentialRepository = ru.souz.skilloauth.impl.PostgresSkillOAuthCredentialRepository(instance()),
+                    pendingStateRepository = ru.souz.skilloauth.impl.PostgresSkillOAuthPendingStateRepository(instance()),
+                    crypto = ru.souz.skilloauth.impl.SkillOAuthTokenCrypto(E2E_TELEGRAM_TOKEN_KEY),
+                    providers = mapOf("google" to ru.souz.skilloauth.impl.AuthorizationCodeOAuthClient(
+                        ru.souz.skilloauth.impl.AuthorizationCodeOAuthConfig("google", provider.authorizeEndpoint,
+                            provider.tokenEndpoint, "test-client", "test-secret", "https://souz.test/oauth/callback",
+                            provider.allowedApiHosts, provider.extraAuthorizeParams, provider.authorizationScheme), http)),
+                    httpClient = http,
+                )
+            }
+            bindSingleton<ru.souz.skilloauth.SkillOAuthGateway> { instance<ru.souz.skilloauth.impl.SkillOAuthGatewayImpl>() }
         }
         if (providerClients != null) {
             bindSingleton<ProviderHttpClients>(overrides = true) { providerClients }
@@ -457,6 +477,7 @@ internal class BackendE2eBackend(
     val executionRepository: ru.souz.backend.execution.repository.AgentExecutionRepository get() = di.direct.instance()
 
     val chatRepository: ru.souz.backend.chat.repository.ChatRepository get() = di.direct.instance()
+    val oauthCredentials get() = ru.souz.skilloauth.impl.PostgresSkillOAuthCredentialRepository(dataSource)
 
     suspend fun recoverClientThreads() = di.direct.instance<ClientThreadRecoveryService>().recover()
 
@@ -487,6 +508,7 @@ internal class BackendE2eBackend(
             llmLimits = llmLimits,
             pluginDirectory = pluginDirectory,
             pluginHttpClient = pluginHttpClient,
+            pluginOAuthClient = pluginOAuthClient,
             sandboxFactory = sandboxFactory,
         )
 

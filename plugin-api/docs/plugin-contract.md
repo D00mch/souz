@@ -9,7 +9,7 @@ outside this SDK. Use cooperative cancellation and structured coroutine work.
 ## Building a plugin
 
 Publish the SDK locally with `./gradlew :plugin-api:publishToMavenLocal`, then use
-`compileOnly("ru.souz:plugin-api:1.0.0")` in a Java 21 Kotlin/JVM project. SDK 1 is
+`compileOnly("ru.souz:plugin-api:1.1.0")` in a Java 21 Kotlin/JVM project. SDK 1 is
 tested with Kotlin 2.4.10, Jackson 2.21.3, and coroutines 1.11.0. The published
 Gradle metadata/POM records the SDK dependencies and coroutine version constraint.
 Use these versions; do not embed SDK, Kotlin, Jackson, or coroutines classes in a
@@ -46,7 +46,9 @@ unloading. A failed candidate leaves its previous generation active.
 
 `PluginCallContext.data` is bound to the execution's authenticated user and the
 installed plugin ID. It provides `get`, atomic last-write-wins `put`, `delete`,
-and lexically ordered keyset `list`. Keys are nonempty UTF-8 strings up to 512
+and lexically ordered keyset `list`. `update` atomically transforms one record,
+including an absent record, under a PostgreSQL transaction. Its callback is
+short, non-suspending, and performs no IO; failure rolls back the change. Keys are nonempty UTF-8 strings up to 512
 bytes; JSON records are at most 1 MiB. Listing defaults to 20 records, permits
 1–100, and returns a cursor. There are no multi-record transactions or SQL APIs.
 State is shared across the user's conversations and plugin generations. Maintain
@@ -58,7 +60,29 @@ byte bodies, and returns status, repeated response headers and bytes. The host
 validates literals and connection-time DNS addresses, rejects private/reserved
 destinations, disables redirects/retries/shared cookies, and imposes a 30-second
 deadline and 1 MiB request/response limits. HTTP error statuses are ordinary
-responses. Authentication gateways and file downloads are outside v1.
+responses.
+
+`PluginCallContext.oauth` delegates authenticated calls to the host's existing
+OAuth gateway. Plugins supply the provider and required scopes in trusted code;
+the model does not supply credentials. Grants remain shared per user/provider,
+and the gateway enforces scopes and its HTTPS provider-host allowlist. Responses
+carry either status/body or an authorization URL. Request bodies are at most
+1 MiB and plugin response bodies at most 36 MiB, allowing base64 attachment data
+to be decoded internally. The general public HTTP client's 1 MiB limit remains
+independent. Hosts without OAuth configuration report service unavailable.
+
+`PluginCallContext.files` reads bounded UTF-8 text (1 MiB) through the invoking
+user's sandbox for explicit migration, or saves at most 25 MiB to a new
+host-generated path under `Documents/souz/plugin-files/<pluginId>/`. Plugins
+supply a validated extension, never the destination path. LOCAL/DOCKER path
+rules and forbidden folders apply. `channels.send` routes only through that
+user's configured channel providers. A false result or cancellation may mean
+uncertain delivery; persist an intent before sending and never blindly retry.
+
+These optional host services have unavailable defaults for SDK implementers;
+plugins using them require a host that implements SDK 1.1 services. They do not
+depend on the user's compiled-tool selection. Installed plugins are trusted
+operator code and must implement their own narrower product semantics.
 
 Return Jackson JSON values. Throw `PluginException` for safe, structured errors;
 propagate coroutine cancellation. Log operational messages only, never arguments,
@@ -76,3 +100,11 @@ cancellation does not save a record. The example uses the JDK HTML parser from
 
 See [backend deployment](../../backend/docs/plugins.md) and
 [generation lifecycle](../../plugin-runtime/docs/generation-lifecycle.md).
+
+## Gmail plugin
+
+Build `./gradlew :plugins:gmail:jar`. The independently loaded Gmail JAR migrates
+the Python Gmail Skill's read-only API, notifications, watch renewal and
+attachments. It uses host-owned OAuth, atomic user state, sandbox files and
+channel delivery; [workflow and migration](../../plugins/gmail/docs/gmail-workflow.md)
+describe importing existing state and replacing hook prompts.

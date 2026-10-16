@@ -44,10 +44,17 @@ class PostgresPluginDataTest {
             assertEquals(listOf("b", "same-key"), second.records.map { it.key })
             assertNull(second.nextCursor)
             assertTrue(data.get("a")!!.isNull)
+            coroutineScope {
+                (1..32).map { async { data.update("counter") { json.numberNode((it?.asInt() ?: 0) + 1) } } }.awaitAll()
+            }
+            assertEquals(32, data.get("counter")!!.asInt())
+            assertFailsWith<IllegalStateException> { data.update("counter") { error("rollback") } }
+            assertEquals(32, data.get("counter")!!.asInt())
             for (key in listOf("", "x".repeat(513), "bad\u0000key")) {
                 assertFailsWith<IllegalArgumentException> { data.put(key, json.nullNode()) }
             }
             assertFailsWith<IllegalArgumentException> { data.put("oversized", json.textNode("x".repeat(PLUGIN_MAX_BYTES))) }
+            assertNull(data.get("oversized"))
             assertFailsWith<IllegalArgumentException> { data.list(limit = 101) }
             source.connection.use { connection -> connection.prepareStatement("delete from users where id = ?").use {
                 it.setString(1, "owner"); assertEquals(1, it.executeUpdate())

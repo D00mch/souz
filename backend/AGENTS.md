@@ -24,6 +24,7 @@ Before changing this module, read the relevant pain-point topics below.
 - Give each ordinary HTTP route explicit OpenAPI metadata. Keep the WebSocket routes out of the generated document and maintain its schema in `docs/public-souz-contract`.
 - Keep Prometheus instrumentation in `:backend`, using repository commits and existing LLM/tool hooks. Restrict `/metrics` at ingress; its [metric reference](docs/metrics.md) defines accounting and replica semantics.
 - Trusted JAR plugins are enabled by default with per-user `disabledPlugins`; accepted executions pin artifact digests. Plugin tools join the catalog independently of compiled-tool categories.
+- Plugin OAuth, files, channels, and atomic data updates bind the invocation's authenticated owner. Keep tokens in the existing OAuth gateway and plugin file IO in that user's sandbox.
 
 ## Pain points
 

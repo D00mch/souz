@@ -31,19 +31,39 @@ internal class PostgresPluginData(
     }
 
     override suspend fun put(key: String, value: JsonNode) {
+        update(key) { value }
+    }
+
+    override suspend fun update(key: String, transform: (JsonNode?) -> JsonNode): JsonNode {
         validateKey(key)
-        val json = postgresStorageMapper.writeValueAsBytes(value)
-        require(json.size <= PLUGIN_MAX_BYTES) { "Plugin record exceeds 1 MiB" }
-        source.write { connection ->
+        return source.write { connection ->
             connection.prepareStatement("""
-                insert into plugin_data(user_id, plugin_id, record_key, value) values (?, ?, ?, ?)
-                on conflict (user_id, plugin_id, record_key) do update set value = excluded.value, updated_at = now()
+                insert into plugin_data(user_id, plugin_id, record_key, value) values (?, ?, ?, 'null'::jsonb)
+                on conflict (user_id, plugin_id, record_key) do nothing
             """.trimIndent()).use { statement ->
                 statement.setString(1, userId)
                 statement.setString(2, pluginId)
                 statement.setString(3, key)
-                statement.setJson(4, json.toString(Charsets.UTF_8))
-                statement.executeUpdate()
+                val inserted = statement.executeUpdate() == 1
+                connection.prepareStatement("select value from plugin_data where user_id = ? and plugin_id = ? and record_key = ? for update").use { select ->
+                    select.setString(1, userId)
+                    select.setString(2, pluginId)
+                    select.setString(3, key)
+                    select.executeQuery().use { result ->
+                        check(result.next()) { "Plugin record disappeared during update" }
+                        val value = transform(if (inserted) null else postgresStorageMapper.readTree(result.getString(1)))
+                        val json = postgresStorageMapper.writeValueAsBytes(value)
+                        require(json.size <= PLUGIN_MAX_BYTES) { "Plugin record exceeds 1 MiB" }
+                        connection.prepareStatement("update plugin_data set value = ?, updated_at = now() where user_id = ? and plugin_id = ? and record_key = ?").use { update ->
+                            update.setJson(1, json.toString(Charsets.UTF_8))
+                            update.setString(2, userId)
+                            update.setString(3, pluginId)
+                            update.setString(4, key)
+                            check(update.executeUpdate() == 1)
+                        }
+                        value.deepCopy<JsonNode>()
+                    }
+                }
             }
         }
     }

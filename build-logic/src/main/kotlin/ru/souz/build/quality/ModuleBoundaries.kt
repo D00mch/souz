@@ -6,6 +6,7 @@ internal object ModuleBoundaries {
         ModuleScope(":plugin-runtime", "main") to setOf(":plugin-api"),
         ModuleScope(":plugins", "main") to emptySet(),
         ModuleScope(":plugins:saved-links", "main") to setOf(":plugin-api"),
+        ModuleScope(":plugins:gmail", "main") to setOf(":plugin-api"),
         ModuleScope(":graph-engine", "main") to emptySet(),
         ModuleScope(":llms", "main") to emptySet(),
         ModuleScope(":agent", "main") to setOf(":graph-engine", ":llms"),

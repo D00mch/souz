@@ -105,9 +105,11 @@ tasks.named<Jar>("shadowJar") {
     isZip64 = true
 }
 
-val savedLinksJar = project(":plugins:saved-links").layout.buildDirectory.file("libs/saved-links.jar")
 tasks.test {
-    dependsOn(":plugins:saved-links:jar")
-    inputs.file(savedLinksJar)
-    systemProperty("souz.test.savedLinksJar", savedLinksJar.get().asFile.absolutePath)
+    listOf("saved-links" to "savedLinks", "gmail" to "gmail").forEach { (module, property) ->
+        val pluginJar = project(":plugins:$module").layout.buildDirectory.file("libs/$module.jar")
+        dependsOn(":plugins:$module:jar")
+        inputs.file(pluginJar)
+        systemProperty("souz.test.${property}Jar", pluginJar.get().asFile.absolutePath)
+    }
 }

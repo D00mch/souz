@@ -166,6 +166,7 @@ fun backendDiModule(
 
     bindSingleton { BackendApplicationScope() }
     bindSingleton { BackendPluginHttp() }
+    bindSingleton { ru.souz.backend.plugins.BackendPluginServices(instanceOrNull(), instance(), instance()) }
     bindSingleton {
         val compiled = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG)
         val client = instance<BackendClientSkills>().catalog(emptyList())
@@ -176,6 +177,7 @@ fun backendDiModule(
                 ru.souz.backend.common.BackendToolCapabilityPolicy.executionBoundToolNames +
                 listOf("GetSkillByName", "GetSkillsByCategory", "GetSkillsNamesByCategory", "GetKnowledge",
                     "SearchKnowledge", "SearchMemory", "RunSkillCommand", "SpawnSubagent")).toSet(),
+            services = instance(),
         )
     }
     bindSingleton<Clock> { Clock.systemUTC() }

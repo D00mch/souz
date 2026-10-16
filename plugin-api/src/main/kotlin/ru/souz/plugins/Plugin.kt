@@ -30,6 +30,9 @@ interface PluginCallContext {
     val data: PluginData
     val http: PluginHttp
     val logger: PluginLogger
+    val oauth: PluginOAuth get() = throw PluginException("plugin_service_unavailable", "OAuth is unavailable")
+    val files: PluginFiles get() = throw PluginException("plugin_service_unavailable", "Files are unavailable")
+    val channels: PluginChannels get() = throw PluginException("plugin_service_unavailable", "Channels are unavailable")
 }
 
 /** Already bound to the authenticated user and installed plugin; keys are opaque. */
@@ -38,6 +41,32 @@ interface PluginData {
     suspend fun put(key: String, value: JsonNode)
     suspend fun delete(key: String): Boolean
     suspend fun list(after: String? = null, limit: Int = 20): PluginDataPage
+    /** Atomic single-record read/modify/write. The callback must be short, pure, and non-suspending. */
+    suspend fun update(key: String, transform: (JsonNode?) -> JsonNode): JsonNode =
+        throw PluginException("plugin_service_unavailable", "Atomic storage is unavailable")
+}
+
+/** Tokens stay in the host. Required scopes widen the user's shared provider grant. */
+fun interface PluginOAuth {
+    suspend fun call(provider: String, requiredScopes: Set<String>, request: PluginHttpRequest): PluginOAuthResponse
+}
+
+data class PluginOAuthResponse(
+    val statusCode: Int? = null,
+    val body: String? = null,
+    val authorizationUrl: String? = null,
+)
+
+interface PluginFiles {
+    /** Bounded UTF-8 text in the invoking user's sandbox; null means absent. */
+    suspend fun readText(path: String): String?
+    /** A new file in the invoking user's sandbox. The host chooses its path. Maximum 25 MiB. */
+    suspend fun save(extension: String, content: ByteArray): String
+}
+
+fun interface PluginChannels {
+    /** Delivers only through the invoking user's configured channels. False may mean uncertain delivery. */
+    suspend fun send(channelType: String, channelId: String, text: String): Boolean
 }
 
 data class PluginDataRecord(val key: String, val value: JsonNode)

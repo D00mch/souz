@@ -39,14 +39,25 @@ PostgreSQL `plugin_data` stores `(user_id, plugin_id, record_key)` JSONB records
 Invocation identity comes from `ToolInvocationMeta`, never model arguments.
 Queries use the application's datasource and bind both ownership keys. Plugin state
 survives conversation deletion, disabling, and uninstall. User deletion cascades.
+Atomic single-record updates serialize state transitions and claims across
+executions, replicas, and plugin generations; callbacks perform no IO.
 
 Plugin HTTP traffic uses a dedicated application-owned Ktor/OkHttp client with
 engine-level DNS validation. The client has no provider credentials, default
 authorization, shared cookies, proxy, redirects, or automatic retries. Literal IP
 checks are performed before requests because numeric literals bypass DNS.
 
+SDK 1.1 also exposes invocation-bound OAuth, sandbox file import/export, and
+channel delivery. OAuth reuses the optional application gateway without exposing
+tokens; its provider allowlist and shared per-user grants apply. Delivery uses
+`ChannelProviderRegistry` with the authenticated owner. File operations resolve
+the current user's LOCAL/DOCKER sandbox on every call. These services remain
+available to installed plugins independently of compiled-tool preferences.
+See the [Gmail migration](../../plugins/gmail/docs/gmail-workflow.md) for importing
+Python connection state and replacing hook prompts.
+
 ## Verification
 
-Run `./gradlew :plugin-runtime:test :plugins:saved-links:test :backend:test` with
+Run `./gradlew :plugin-runtime:test :plugins:saved-links:test :plugins:gmail:test :backend:test` with
 Docker available. The production-wired plugin tests use real JAR loading and
 PostgreSQL, substituting only the external HTTP/LLM boundaries.

@@ -43,6 +43,7 @@ Backend client Skills are bundled under `backend/src/main/resources/skills/clien
 - [`:plugin-runtime`](plugin-runtime/AGENTS.md) — JAR loading and generation leases.
 - [`:plugins`](plugins/AGENTS.md) — independently packaged examples.
 - [`:plugins:saved-links`](plugins/saved-links/AGENTS.md) — saved-links example JAR.
+- [`:plugins:gmail`](plugins/gmail/AGENTS.md) — read-only Gmail and notification workflow JAR.
 
 ## Production dependency boundaries
 
@@ -52,6 +53,7 @@ Only these direct production project dependencies are allowed. Standard test-sou
 - `:plugin-runtime` `main` → `:plugin-api`.
 - `:plugins` `main` → none.
 - `:plugins:saved-links` `main` → `:plugin-api`.
+- `:plugins:gmail` `main` → `:plugin-api`.
 - `:graph-engine` `main` → none.
 - `:llms` `main` → none.
 - `:agent` `main` → `:graph-engine`, `:llms`.
