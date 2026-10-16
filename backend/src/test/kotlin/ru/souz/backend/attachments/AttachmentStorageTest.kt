@@ -38,6 +38,24 @@ import ru.souz.backend.storage.postgres.write
 
 class AttachmentStorageTest {
     @Test
+    fun `emoji at filename limit survives persistence and retries without split surrogates`() = attachmentTest {
+        val cases = listOf(
+            "😀.txt" to "😀.txt",
+            "a".repeat(178) + "😀.txt" to "a".repeat(178) + "😀",
+            "a".repeat(179) + "😀.txt" to "a".repeat(179),
+            "a".repeat(180) + "😀.txt" to "a".repeat(180),
+        )
+        for ((index, names) in cases.withIndex()) {
+            val (original, expected) = names
+            val file = save("alice", "emoji-$index", original, "content")
+            assertEquals(expected, file.name)
+            assertEquals(expected, storage.get("alice", file.id).name)
+            assertEquals(file, save("alice", "emoji-$index", original, "content"))
+            assertEquals("content", storage.read("alice", file.id).decodeToString())
+        }
+    }
+
+    @Test
     fun `account deletion during commit leaves late object eligible for cleanup`() = attachmentTest {
         execute("""create function remove_attachment_owner() returns trigger language plpgsql as
             'begin delete from users where id = new.user_id; new.state := ''deleted''; return new; end'""")

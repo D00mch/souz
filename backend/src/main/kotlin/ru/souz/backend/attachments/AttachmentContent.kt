@@ -12,7 +12,8 @@ internal fun InputStream.readAttachmentBytes(limit: Int): ByteArray {
 }
 
 internal fun attachmentName(raw: String): String = raw.substringAfterLast('/').substringAfterLast('\\')
-    .filterNot { it.isISOControl() }.trim().take(180).takeUnless { it.isBlank() || it in setOf(".", "..") }
+    .filterNot { it.isISOControl() }.trim().take(180).dropLastWhile { it.isHighSurrogate() }
+    .takeUnless { it.isBlank() || it in setOf(".", "..") }
     ?: "attachment"
 
 internal fun attachmentMime(bytes: ByteArray, name: String): String {
