@@ -16,4 +16,8 @@ create table stored_attachments (
     check (state <> 'ready' or (stored_at is not null and expires_at is not null))
 );
 
-create index stored_attachments_cleanup_idx on stored_attachments(state, expires_at, created_at);
+-- Match each cleanup branch's predicate and ordering; deleted history stays outside these indexes.
+create index stored_attachments_ready_expiry_idx on stored_attachments(expires_at) where state = 'ready';
+create index stored_attachments_pending_created_idx on stored_attachments(created_at) where state = 'pending';
+create index stored_attachments_deleting_queue_idx
+    on stored_attachments((coalesce(cleanup_attempt_at, created_at)), created_at, id) where state = 'deleting';

@@ -39,6 +39,42 @@ import ru.souz.backend.storage.postgres.write
 
 class AttachmentStorageTest {
     @Test
+    fun `cleanup batches share one limit across expired files abandoned uploads and retries`() = attachmentTest {
+        val repository = PostgresAttachmentRepository(dataSource)
+        val expected = mutableSetOf<UUID>()
+        repeat(3) { index ->
+            expected += repository.reserve(
+                "alice", "retry-$index", "a.txt", "text/plain", 0, "", clock.now.minus(Duration.ofDays(2)),
+            ).id
+        }
+        assertEquals(expected, repository.expire(clock.now, 3).map { it.id }.toSet())
+        repeat(3) { index ->
+            val old = clock.now.minus(Duration.ofDays(31))
+            val ready = repository.reserve("alice", "ready-$index", "a.txt", "text/plain", 0, "", old)
+            expected += repository.complete(ready, old).id
+            expected += repository.reserve(
+                "alice", "pending-$index", "a.txt", "text/plain", 0, "", clock.now.minus(Duration.ofHours(24)),
+            ).id
+        }
+        val fresh = repository.reserve("alice", "fresh-ready", "a.txt", "text/plain", 0, "", clock.now)
+        repository.complete(fresh, clock.now)
+        repository.reserve("alice", "fresh-pending", "a.txt", "text/plain", 0, "", clock.now)
+
+        val processed = mutableSetOf<UUID>()
+        for (size in listOf(4, 4, 1)) {
+            val batch = repository.expire(clock.now, 4)
+            assertEquals(size, batch.size)
+            for (file in batch) {
+                assertEquals("deleting", file.state)
+                assertTrue(processed.add(file.id))
+                repository.deleted(file)
+            }
+        }
+        assertEquals(expected, processed)
+        assertTrue(repository.expire(clock.now, 4).isEmpty())
+    }
+
+    @Test
     fun `emoji at filename limit survives persistence and retries without split surrogates`() = attachmentTest {
         val cases = listOf(
             "😀.txt" to "😀.txt",

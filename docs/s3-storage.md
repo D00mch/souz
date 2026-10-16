@@ -40,6 +40,8 @@ Bucket administration remains with the operator. Per-user quotas are not impleme
 
 Files expire 30 days after successful storage; retries do not extend that deadline. Access fails at expiry even before physical cleanup. Pending uploads expire after 24 hours. A background worker checks every minute, marks candidates before object deletion, and retries failed deletion. Database tombstones retain cleanup state for late writes and prevent expired source keys from being reused. Removing or recreating a local `users` row does not affect file access or retention: the external user ID identifies the owner. The bucket and tombstone records are retained.
 
+Cleanup uses three partial indexes and one atomic SQL statement to select expired ready files, stale pending uploads and deletion retries. Each branch selects at most the batch limit in index order; the combined batch is limited to 100 files. Up to 300 candidate rows may be locked until the transaction commits. Processing order is not a storage contract; the final merge sorts only the bounded candidates.
+
 The S3 client is process-owned and closes after application work stops. The implementation uses bounded in-memory transfers; it does not mount S3 or write local files. This layer exposes an internal backend service, without public upload routes, channel adapters, agent tools or model integration.
 
 ## Verification
