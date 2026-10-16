@@ -29,14 +29,16 @@ import ru.souz.tool.skills.toDetail
 /** Creates the core spawn tool with the parent's actual execution settings. */
 class SubagentToolFactory(
     private val createAgent: (maxTurns: Int) -> Agent,
-    private val toolCatalog: AgentToolCatalog,
+    toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
     private val skillBundleProvider: SkillBundleProvider,
     private val commandExecutor: SkillCommandExecutor,
     private val approvalGate: SkillApprovalGate? = null,
     private val configuredModels: Map<String, LlmProvider> = emptyMap(),
-    private val commandToolNames: Set<String> = emptySet(),
+    commandToolNames: Set<String> = emptySet(),
     private val commandInstructions: String = "",
+    private val commandToolNamesProvider: (AgentToolCatalog) -> Set<String> = { commandToolNames },
+    private val catalogProvider: () -> AgentToolCatalog = { toolCatalog },
 ) {
     fun create(parentSettings: AgentSettings): LLMToolSetup {
         val models = configuredModels + (parentSettings.model to parentSettings.provider)
@@ -53,7 +55,9 @@ class SubagentToolFactory(
         parentSettings: AgentSettings,
         meta: ToolInvocationMeta,
     ): SubagentTool.Setup {
-        val resolver = SkillResolver(toolCatalog, toolsFilter, skillBundleProvider::loadSkillBundle, approvalGate)
+        val catalog = catalogProvider()
+        val resolver = SkillResolver(catalog, toolsFilter, skillBundleProvider::loadSkillBundle, approvalGate)
+        val commandToolNames = commandToolNamesProvider(catalog)
         val tools = mutableListOf<LLMToolSetup>()
         val bundles = linkedMapOf<SkillId, SkillBundle>()
         input.skillIds.map(String::trim).distinct().forEach { id ->

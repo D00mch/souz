@@ -129,4 +129,11 @@ internal const val CLIENT_TOOL_ROUTING_INSTRUCTIONS =
     "Client Skills run on the current device by default. To target another connected device, or when there is no " +
         "current client, use ListActiveChannels and add the selected channelId to RunSkillCommand.arguments. " +
         "channelId is reserved routing metadata, omitted from the registered schema and removed before dispatch. " +
+        "To learn additional Orion capabilities, invoke orion.tools.list on the selected channel, then inspect and " +
+        "invoke the returned Skill IDs. Discovered Skills are bound to that channel for this execution. " +
+        "Discover before delegating and select the returned Skills for the child. " +
         "When delegating, include the target channelId in the task or select ListActiveChannels for the child."
+
+internal const val CLIENT_TOOL_DISCOVERY_NAME = "orion.tools.list"
+
+internal data class ClientToolDiscoveryResult(val tools: List<ClientToolDefinition>)

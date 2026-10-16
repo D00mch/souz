@@ -13,8 +13,9 @@ import ru.souz.tool.ToolCategory
 
 /** Returns exact IDs for enabled tool-backed Skills in one compiled-tool category. */
 class ToolGetSkillsNamesByCategory(
-    private val toolCatalog: AgentToolCatalog,
+    toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
+    private val catalogProvider: () -> AgentToolCatalog = { toolCatalog },
 ) : LLMToolSetup {
     data class Input(
         val category: String = "",
@@ -78,7 +79,7 @@ class ToolGetSkillsNamesByCategory(
         val canonicalCategory = category.name
 
         return try {
-            val filteredCatalog = toolsFilter.applyFilter(toolCatalog.toolsByCategory)
+            val filteredCatalog = toolsFilter.applyFilter(catalogProvider().toolsByCategory)
             CategorySkillNamesResponse(
                 category = canonicalCategory,
                 skillNames = filteredCatalog[category]

@@ -320,6 +320,47 @@ class SubagentToolFactoryTest {
         coVerify(exactly = 0) { fixture.bundles.loadSkillBundle(any(), any()) }
     }
 
+    @Test
+    fun `spawn reads refreshed command tools once and child keeps its selected snapshot`() = runTest {
+        val fixture = Fixture()
+        var current = fixture.catalog
+        var catalogReads = 0
+        var commandReads = 0
+        val spawn = fixture.factory(
+            catalogProvider = { catalogReads++; current.also { current = AgentToolCatalog() } },
+            commandToolNamesProvider = { snapshot ->
+                commandReads++
+                snapshot.toolsByCategory.values.flatMap { it.keys }.toSet()
+            },
+        ).create(fixture.parent)
+        val selected = namedTool("speaker.say", "Original schema and instructions")
+        coEvery { selected.invoke(any(), any()) } returns LLMRequest.Message(LLMMessageRole.function, "{}")
+        current = AgentToolCatalog(mapOf(ToolCategory.APPLICATIONS to listOf(selected)))
+
+        spawn.call(mapOf("task" to "Speak", "skillIds" to listOf("speaker.say")))
+        val child = fixture.context
+        assertEquals(1, catalogReads)
+        assertEquals(1, commandReads)
+        assertEquals(listOf("RunSkillCommand"), child.activeTools.map { it.name })
+        assertContains(child.systemPrompt, "Original schema and instructions")
+
+        val replacement = namedTool("speaker.say", "Refreshed schema and instructions")
+        val unselected = namedTool("new.tool")
+        current = AgentToolCatalog(mapOf(ToolCategory.APPLICATIONS to listOf(replacement, unselected)))
+        val command = child.settings.tools.byName.getValue(ToolInvokeSkill.NAME)
+        command.call(mapOf("skillId" to "speaker.say"))
+        assertEquals("skill_not_found", command.call(mapOf("skillId" to "new.tool"))["error"]["code"].asText())
+        coVerify(exactly = 1) { selected.invoke(any(), any()) }
+        coVerify(exactly = 0) { replacement.invoke(any(), any()) }
+        assertEquals(1, catalogReads)
+        assertEquals(1, commandReads)
+
+        spawn.call(mapOf("task" to "Speak again", "skillIds" to listOf("speaker.say")))
+        assertContains(fixture.context.systemPrompt, "Refreshed schema and instructions")
+        assertEquals(2, catalogReads)
+        assertEquals(2, commandReads)
+    }
+
     private class Fixture(compiled: List<LLMToolSetup> = emptyList()) {
         val catalog = AgentToolCatalog(mapOf(ToolCategory.FILES to compiled))
         val parent = AgentSettings(LLMModel.Max.alias, LLMModel.Max.provider, 0.5f, AgentTools(catalog.toolsByCategory))
@@ -334,6 +375,8 @@ class SubagentToolFactoryTest {
             configuredModels: Map<String, LlmProvider> = emptyMap(),
             commandToolNames: Set<String> = emptySet(),
             commandInstructions: String = "",
+            commandToolNamesProvider: (AgentToolCatalog) -> Set<String> = { commandToolNames },
+            catalogProvider: () -> AgentToolCatalog = { catalog },
         ) = SubagentToolFactory(
             { _ -> mockk<Agent> {
                 coEvery { execute(any(), any(), any()) } answers {
@@ -342,6 +385,7 @@ class SubagentToolFactoryTest {
                 }
             } },
             catalog, filter, bundles, commands, approvalGate, configuredModels, commandToolNames, commandInstructions,
+            commandToolNamesProvider, catalogProvider,
         )
     }
 }

@@ -132,6 +132,43 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
+    fun `discovery and invocation read the current immutable catalog once per lookup`() = runTest {
+        val initial = catalog()
+        var current = initial
+        var reads = 0
+        val provider = { reads++; current }
+        val repository = repository()
+        val filter = TestToolsFilter { tools ->
+            tools.mapValues { (_, categoryTools) -> categoryTools - "disabled" }
+        }
+        val names = ToolGetSkillsNamesByCategory(initial, filter, provider)
+        val discovery = ToolGetSkillByName(initial, filter, repository, catalogProvider = provider)
+        val runner = ToolInvokeSkill(
+            initial, filter, repository::loadSkillBundle, mockk(), catalogProvider = provider,
+        )
+        val lookup = mapOf("skillId" to "discovered")
+        val category = mapOf("category" to ToolCategory.APPLICATIONS.name)
+
+        assertTrue(names.call(category)["skillNames"].isEmpty)
+        assertEquals("skill_not_found", discovery.call(lookup)["error"]["code"].asText())
+        assertEquals(2, reads)
+
+        val discovered = RecordingTool("discovered")
+        current = catalog(ToolCategory.APPLICATIONS to listOf(discovered, RecordingTool("disabled")))
+        assertEquals(listOf("discovered"), names.call(category)["skillNames"].map { it.asText() })
+        assertEquals("discovered", discovery.call(lookup)["skill"]["skillId"].asText())
+        assertEquals(4, reads)
+        val call = LLMResponse.FunctionCall(ToolInvokeSkill.NAME, lookup + ("arguments" to mapOf("value" to 7)))
+        assertEquals("delegated-content", runner.invoke(call, ToolInvocationMeta(USER_ID)).content)
+        assertEquals(mapOf("value" to 7), discovered.lastArguments)
+        assertEquals(5, reads)
+        assertEquals("discovered", runner.delegatedToolName("discovered"))
+        assertEquals(6, reads)
+        assertNull(runner.delegatedToolName("disabled"))
+        assertTrue(initial.toolsByCategory.values.all { it.isEmpty() })
+    }
+
+    @Test
     fun `category and direct lookups return full skill descriptions and independent errors`() = runTest {
         val repository = repository(
             bundle(

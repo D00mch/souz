@@ -6,6 +6,8 @@
 
 Host factories expose their catalog through `.catalog`. `LlmBackedToolCatalog` is the single factory for `InternetSearch`, `InternetResearch`, `ViewImage`, and `GenerateImage`. Portable and JVM runtime catalogs do not contain those tools.
 
+Skill lookup, invocation, and subagent selection may read a host-supplied catalog provider. Each lookup or spawn selects one immutable snapshot; children retain only the capabilities selected at spawn, independently of later parent catalog changes.
+
 Backend execution restricts policy-hostable compiled and execution-bound LLM tools to the enabled-tool snapshot before merging persisted client tools or bundled defaults for an empty catalogue. Creation reserves server names and composition rejects collisions. Few-shot filtering happens after the final merge.
 
 ## Safe changes

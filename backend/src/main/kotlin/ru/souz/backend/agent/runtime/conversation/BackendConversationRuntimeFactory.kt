@@ -3,6 +3,7 @@ package ru.souz.backend.agent.runtime.conversation
 import com.fasterxml.jackson.databind.ObjectMapper
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.plus
 import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.AgentCoreTools
@@ -26,10 +27,15 @@ import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.client.CLIENT_TOOL_ROUTING_INSTRUCTIONS
+import ru.souz.backend.client.CLIENT_TOOL_DISCOVERY_NAME
+import ru.souz.backend.client.ClientToolDiscoveryResult
+import ru.souz.backend.client.normalizeClientTools
+import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.common.backendLogContext
 import ru.souz.backend.hooks.HookLlmBudget
 import ru.souz.backend.hooks.HookLlmBudget.Companion.withProviderCall
 import ru.souz.backend.hooks.HookStore
+import ru.souz.backend.http.clientFrameMapper
 import ru.souz.backend.config.NamedLlmModel
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.llm.ProviderCredentialResolver
@@ -40,6 +46,7 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.restJsonMapper
 import ru.souz.llms.anthropic.AnthropicVisionGateway
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.ProviderHttpClients
@@ -162,8 +169,21 @@ internal class BackendConversationRuntimeFactory(
             },
         )
         val clientTools = chatRepository.clientTools(key.userId, key.chatId())
-        val clientToolCatalog = clientSkills.catalog(clientTools)
-        val executionToolCatalog = backendExecutionToolCatalog(
+        val currentCatalog = MutableStateFlow(AgentToolCatalog())
+        val serverNames = toolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet() +
+            BackendToolCapabilityPolicy.executionBoundToolNames
+        lateinit var executionToolCatalog: AgentToolCatalog
+        val clientToolCatalog = clientSkills.catalog(clientTools, onDiscovery = { result, channelId ->
+            require(restJsonMapper.writeValueAsBytes(result.path("tools")).size <= 1_048_576)
+            val definitions = clientFrameMapper.treeToValue(result, ClientToolDiscoveryResult::class.java).tools
+                .normalizeClientTools(serverNames + CLIENT_TOOL_DISCOVERY_NAME)
+            val discovered = clientSkills.catalog(definitions, boundChannelId = UUID.fromString(channelId).toString())
+            val names = definitions.map { it.name }.toSet()
+            currentCatalog.value = AgentToolCatalog.compose(
+                executionToolCatalog.filter { _, tool -> tool.fn.name !in names }, discovered,
+            )
+        })
+        executionToolCatalog = backendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
             executionLlmToolCatalog = executionLlmToolCatalog.catalog,
             enabledCompiledToolNames = request.enabledTools,
@@ -171,17 +191,20 @@ internal class BackendConversationRuntimeFactory(
             includeFewShotExamples = settingsProvider.useFewShotExamples,
             metrics = metrics,
         )
+        currentCatalog.value = executionToolCatalog
         val toolTelemetry = metrics?.toolTelemetry(executionToolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet())
             ?: AgentTelemetry.NONE
         val requestToolsFilter = RuntimePassThroughToolsFilter
         val getSkillByNameTool = ToolGetSkillByName(
             toolCatalog = executionToolCatalog,
+            catalogProvider = { currentCatalog.value },
             toolsFilter = requestToolsFilter,
             skillBundleProvider = skillBundleProvider,
             approvalGate = null,
         )
         val getSkillsNamesByCategoryTool = ToolGetSkillsNamesByCategory(
             toolCatalog = executionToolCatalog,
+            catalogProvider = { currentCatalog.value },
             toolsFilter = requestToolsFilter,
         )
         val getSkillsByCategoryTool = ToolGetSkillsByCategory(
@@ -190,6 +213,7 @@ internal class BackendConversationRuntimeFactory(
         )
         val runtimeCommandTool = ToolInvokeSkill(
             toolCatalog = executionToolCatalog,
+            catalogProvider = { currentCatalog.value },
             toolsFilter = requestToolsFilter,
             loadBundle = skillBundleProvider::loadSkillBundle,
             commandExecutor = commandExecutor,
@@ -210,7 +234,10 @@ internal class BackendConversationRuntimeFactory(
             skillBundleProvider = skillBundleProvider,
             commandExecutor = commandExecutor,
             configuredModels = settingsProvider.subagentModels,
-            commandToolNames = clientToolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet(),
+            commandToolNamesProvider = { catalog ->
+                catalog.toolsByCategory.values.flatMap { it.keys }.toSet() - serverNames
+            },
+            catalogProvider = { currentCatalog.value.filter { _, tool -> tool.fn.name != CLIENT_TOOL_DISCOVERY_NAME } },
             commandInstructions = CLIENT_TOOL_ROUTING_INSTRUCTIONS,
         )
         val kernel = AgentExecutionKernelFactory(

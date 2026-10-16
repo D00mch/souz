@@ -39,13 +39,19 @@ internal class BackendClientSkills(
 ) {
     private val bundledGuidance = loadBundledClientSkillGuidance()
 
-    fun catalog(definitions: List<ClientToolDefinition>): AgentToolCatalog {
-        val useDefaults = definitions.isEmpty()
-        val selected = definitions.ifEmpty {
+    fun catalog(
+        definitions: List<ClientToolDefinition>,
+        boundChannelId: String? = null,
+        onDiscovery: ((JsonNode, String) -> Unit)? = null,
+    ): AgentToolCatalog {
+        val useDefaults = definitions.isEmpty() && boundChannelId == null
+        val selected = if (useDefaults) {
             bundledGuidance.map { (name, guidance) ->
-                ClientToolDefinition(name, guidance.description, LLMRequest.Parameters(type = "object"))
+                ClientToolDefinition(name, guidance.description, LLMRequest.Parameters(
+                    type = "object", additionalProperties = false.takeIf { name == CLIENT_TOOL_DISCOVERY_NAME },
+                ))
             }
-        }
+        } else definitions
         return AgentToolCatalog(
             selected.groupBy { bundledGuidance[it.name]?.category ?: ToolCategory.APPLICATIONS }
                 .mapValues { (category, tools) ->
@@ -57,6 +63,8 @@ internal class BackendClientSkills(
                         ClientWebSocketSkill(
                             enriched, category, registry, toolCallRepository, eventService, channelDeliveryService, now, metrics,
                             timeout = guidance?.timeout ?: Duration.ofMinutes(1),
+                            boundChannelId = boundChannelId,
+                            onDiscovery = onDiscovery.takeIf { definition.name == CLIENT_TOOL_DISCOVERY_NAME },
                         )
                     }
                 },
@@ -107,6 +115,8 @@ private class ClientWebSocketSkill(
     private val now: () -> Instant,
     private val metrics: BackendMetrics?,
     private val timeout: Duration,
+    private val boundChannelId: String?,
+    private val onDiscovery: ((JsonNode, String) -> Unit)?,
 ) : LLMToolSetup {
     private val metricCategory = category.name.lowercase()
 
@@ -132,6 +142,16 @@ private class ClientWebSocketSkill(
             val received = invokeClient(functionCall, meta)
             val result = if (received.status == "succeeded" && received.result?.isObject != true) {
                 failed("invalid_tool_result", "Successful client tool results must be JSON objects.")
+            } else if (received.status == "succeeded" && onDiscovery != null) {
+                try {
+                    onDiscovery.invoke(requireNotNull(received.result),
+                        (functionCall.arguments["channelId"] as? String)?.trim() ?: requireNotNull(meta.conversationId))
+                    received
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    failed("invalid_client_tool_catalogue", "Orion returned an invalid client tool catalogue; no tools were registered.")
+                }
             } else received
             outcome = when (result.status) {
                 "succeeded" -> "success"
@@ -150,8 +170,15 @@ private class ClientWebSocketSkill(
     }
 
     private suspend fun invokeClient(functionCall: LLMResponse.FunctionCall, meta: ToolInvocationMeta): ClientToolOutcome {
+        val requestedChannel = functionCall.arguments["channelId"]
+        if (boundChannelId != null && requestedChannel != null && requestedChannel != boundChannelId) {
+            return failed("client_context_mismatch", "This Skill is bound to channel $boundChannelId. Discover tools on the other channel first.")
+        }
         val arguments = restJsonMapper.valueToTree<JsonNode>(functionCall.arguments - "channelId")
         clientArgumentsError(fn.parameters, arguments)?.let { return failed("mcp_invalid_arguments", it) }
+        if (boundChannelId != null && meta.conversationId != boundChannelId) {
+            return invokeOnChannel(functionCall.copy(arguments = functionCall.arguments + ("channelId" to boundChannelId)), meta)
+        }
         if ("channelId" in functionCall.arguments) return invokeOnChannel(functionCall, meta)
         val threadId = meta.requestId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
             ?: return failed("client_context_missing", "Thread ID is unavailable.")
@@ -160,8 +187,11 @@ private class ClientWebSocketSkill(
         val toolCallId = UUID.randomUUID().toString()
         val pending = PendingClientTool(toolCallId)
         val device = when (val beginTool = registry.beginTool(threadId, pending)) {
-            BeginClientToolResult.Missing ->
-                return failed("client_context_missing", "Client device is unavailable. Use ListActiveChannels and pass channelId to reach another device.")
+            BeginClientToolResult.Missing -> return if (boundChannelId != null) {
+                invokeOnChannel(functionCall.copy(arguments = functionCall.arguments + ("channelId" to boundChannelId)), meta)
+            } else {
+                failed("client_context_missing", "Client device is unavailable. Use ListActiveChannels and pass channelId to reach another device.")
+            }
             BeginClientToolResult.Busy ->
                 return failed("client_tool_busy", "Another client tool call is already pending.")
             is BeginClientToolResult.Started -> beginTool.device
