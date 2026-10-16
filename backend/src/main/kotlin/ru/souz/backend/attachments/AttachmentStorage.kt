@@ -52,7 +52,7 @@ class AttachmentStorage(
             return get(userId, completed.id).also { committed = true }
         } finally {
             // A cancelled/late writer may finish after cleanup has already left a tombstone.
-            // Keep that object retryable even if its user was removed before complete().
+            // Keep the late object eligible for another cleanup attempt.
             if (!committed) withContext(NonCancellable) {
                 try { repository.retireLateWrite(file) }
                 catch (cancelled: CancellationException) { throw cancelled }

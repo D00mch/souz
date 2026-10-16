@@ -22,6 +22,7 @@ import org.testcontainers.containers.GenericContainer
 import org.testcontainers.containers.wait.strategy.Wait
 import org.testcontainers.images.builder.Transferable
 import software.amazon.awssdk.services.s3.model.S3Exception
+import ru.souz.backend.crypto.sha256Hex
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -56,15 +57,20 @@ class AttachmentStorageTest {
     }
 
     @Test
-    fun `account deletion during commit leaves late object eligible for cleanup`() = attachmentTest {
-        execute("""create function remove_attachment_owner() returns trigger language plpgsql as
-            'begin delete from users where id = new.user_id; new.state := ''deleted''; return new; end'""")
-        execute("""create trigger remove_attachment_owner before update on stored_attachments
-            for each row when (new.state = 'ready') execute function remove_attachment_owner()""")
-        assertFailsWith<IllegalArgumentException> { save("alice", "late-write", "private.txt", "private bytes") }
+    fun `late PUT after expired pending upload cleanup remains eligible for deletion`() = attachmentTest {
+        val repository = PostgresAttachmentRepository(dataSource)
+        val bytes = "late bytes".toByteArray()
+        val file = repository.reserve("alice", "late-write", "a.txt", "text/plain", bytes.size.toLong(), bytes.sha256Hex(), clock.now)
+        clock.now = clock.now.plus(Duration.ofHours(24))
+        assertEquals(1, storage.cleanup())
+        // Simulate an already-started PUT reaching S3 after the cleanup completed.
+        objects.put(file, bytes)
+        assertEquals("deleted", repository.complete(file, clock.now).state)
+        repository.retireLateWrite(file)
+        assertEquals("attachment_expired", assertFailsWith<AttachmentException> { storage.get("alice", file.id) }.code)
         assertEquals(1, storage.cleanup())
         assertEquals(0, storage.cleanup())
-        assertEquals(null, storage.find("alice", "late-write"))
+        assertEquals(404, assertFailsWith<S3Exception> { objects.read(file, config.maxFileBytes) }.statusCode())
     }
 
     @Test
@@ -104,9 +110,6 @@ class AttachmentStorageTest {
             }
             assertEquals(404, error.statusCode())
         }
-        assertEquals("attachment_owner_unavailable", assertFailsWith<AttachmentException> {
-            save("unknown", "event", "a.txt", "bytes")
-        }.code)
     }
 
     @Test
@@ -146,17 +149,15 @@ class AttachmentStorageTest {
     }
 
     @Test
-    fun `oversized and interrupted streams fail before persistence and user deletion cleans objects`() = attachmentTest {
+    fun `oversized and interrupted streams fail before persistence`() = attachmentTest {
         assertEquals("attachment_too_large", assertFailsWith<AttachmentException> {
             storage.save("alice", "large", "large.txt", ByteArray(config.maxFileBytes + 1).inputStream())
         }.code)
         val broken = object : InputStream() { override fun read(): Int = throw java.io.IOException("broken") }
         assertFailsWith<java.io.IOException> { storage.save("alice", "broken", "a.txt", broken) }
-        val file = save("alice", "kept", "a.txt", "private")
-        execute("delete from users where id = 'alice'")
-        assertEquals(1, storage.cleanup())
-        assertFailsWith<Exception> { objects.read(file, config.maxFileBytes) }
-        assertTrue(file.objectKey.startsWith("files/"))
+        assertEquals(null, storage.find("alice", "large"))
+        assertEquals(null, storage.find("alice", "broken"))
+        assertEquals(0, storage.cleanup())
     }
 }
 

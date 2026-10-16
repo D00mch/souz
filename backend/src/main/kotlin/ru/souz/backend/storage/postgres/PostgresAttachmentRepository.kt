@@ -14,7 +14,7 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
     ): StoredAttachment = dataSource.write { connection ->
         connection.prepareStatement("""
             insert into stored_attachments(id, user_id, source_key, name, mime_type, size_bytes, sha256, state, created_at)
-            select ?, ?, ?, ?, ?, ?, ?, 'pending', ? where exists (select 1 from users where id = ?)
+            values (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
             on conflict (user_id, source_key) do nothing
         """.trimIndent()).use {
             it.setObject(1, UUID.randomUUID())
@@ -25,14 +25,13 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
             it.setLong(6, size)
             it.setString(7, sha256)
             it.setInstant(8, now)
-            it.setString(9, userId)
             it.executeUpdate()
         }
-        connection.prepareStatement("$FILE_SELECT where f.user_id = ? and f.source_key = ? and exists (select 1 from users where id = f.user_id)").use {
+        connection.prepareStatement("$FILE_SELECT where f.user_id = ? and f.source_key = ?").use {
             it.setString(1, userId)
             it.setString(2, sourceKey)
             it.executeQuery().use { rows ->
-                if (!rows.next()) throw AttachmentException("attachment_owner_unavailable")
+                check(rows.next())
                 rows.attachment().also { file ->
                     if (file.sha256 != sha256 || file.sizeBytes != size || file.name != name || file.mimeType != mimeType) {
                         throw AttachmentException("attachment_idempotency_conflict")
@@ -60,7 +59,7 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
     }
 
     suspend fun get(userId: String, id: UUID): StoredAttachment? = dataSource.read { connection ->
-        connection.prepareStatement("$FILE_SELECT where f.user_id = ? and f.id = ? and exists (select 1 from users where id = f.user_id)").use {
+        connection.prepareStatement("$FILE_SELECT where f.user_id = ? and f.id = ?").use {
             it.setString(1, userId)
             it.setObject(2, id)
             it.executeQuery().use { rows -> if (rows.next()) rows.attachment() else null }
@@ -68,7 +67,7 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
     }
 
     suspend fun find(userId: String, sourceKey: String): StoredAttachment? = dataSource.read { connection ->
-        connection.prepareStatement("$FILE_SELECT where f.user_id = ? and f.source_key = ? and f.state = 'ready' and exists (select 1 from users where id = f.user_id)").use {
+        connection.prepareStatement("$FILE_SELECT where f.user_id = ? and f.source_key = ? and f.state = 'ready'").use {
             it.setString(1, userId)
             it.setString(2, sourceKey)
             it.executeQuery().use { rows -> if (rows.next()) rows.attachment() else null }
@@ -81,8 +80,7 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
             with candidates as (
                 select f.id from stored_attachments f where state <> 'deleted' and (
                     state = 'deleting' or expires_at <= ? or
-                    (state = 'pending' and created_at <= ?) or
-                    not exists (select 1 from users where id = f.user_id)
+                    (state = 'pending' and created_at <= ?)
                 ) order by coalesce(cleanup_attempt_at, created_at), created_at limit ? for update skip locked
             ), changed as (
                 update stored_attachments f set state = 'deleting', cleanup_attempt_at = ?
@@ -105,12 +103,11 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
         Unit
     }
 
-    /** Restore cleanup intent when a writer outlives account deletion or an expired-file cleanup. */
+    /** Restore cleanup intent when a writer outlives an expired-file cleanup. */
     suspend fun retireLateWrite(file: StoredAttachment) = dataSource.write { connection ->
         connection.prepareStatement("""
-            update stored_attachments f set state = 'deleting' where id = ? and user_id = ? and (
-                state in ('deleting', 'deleted') or not exists (select 1 from users where id = f.user_id)
-            )
+            update stored_attachments set state = 'deleting' where id = ? and user_id = ?
+                and state in ('deleting', 'deleted')
         """.trimIndent()).use {
             it.setObject(1, file.id)
             it.setString(2, file.userId)

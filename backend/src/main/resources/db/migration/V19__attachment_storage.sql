@@ -1,4 +1,4 @@
--- Keep storage tombstones after account deletion so objects can still be removed.
+-- Ownership uses the external user ID; local users row deletion is not file deletion.
 create table stored_attachments (
     id uuid primary key,
     user_id text not null,
