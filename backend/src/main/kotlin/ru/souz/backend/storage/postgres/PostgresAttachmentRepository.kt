@@ -77,36 +77,34 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
     /** Mark first, delete second; failed deletes remain retryable without granting access. */
     suspend fun expire(now: Instant, limit: Int = 100): List<StoredAttachment> = dataSource.write { connection ->
         connection.prepareStatement("""
-            with ready_candidates as materialized (
-                select id, coalesce(cleanup_attempt_at, created_at) as queued_at, created_at
-                from stored_attachments where state = 'ready' and expires_at <= ?
-                order by expires_at limit ? for update skip locked
-            ), pending_candidates as materialized (
-                select id, coalesce(cleanup_attempt_at, created_at) as queued_at, created_at
-                from stored_attachments where state = 'pending' and created_at <= ?
-                order by created_at limit ? for update skip locked
-            ), deleting_candidates as materialized (
-                select id, coalesce(cleanup_attempt_at, created_at) as queued_at, created_at
-                from stored_attachments where state = 'deleting'
-                order by queued_at, created_at, id limit ? for update skip locked
-            ), candidates as (
+            update stored_attachments f set state = 'deleting', cleanup_attempt_at = ?
+            from (
                 select id from (
-                    select * from ready_candidates union all
-                    select * from pending_candidates union all
-                    select * from deleting_candidates
+                    select * from (
+                        select id, coalesce(cleanup_attempt_at, created_at) as queued_at, created_at
+                        from stored_attachments where state = 'ready' and expires_at <= ?
+                        order by expires_at limit ? for update skip locked
+                    ) ready_candidates union all
+                    select * from (
+                        select id, coalesce(cleanup_attempt_at, created_at) as queued_at, created_at
+                        from stored_attachments where state = 'pending' and created_at <= ?
+                        order by created_at limit ? for update skip locked
+                    ) pending_candidates union all
+                    select * from (
+                        select id, coalesce(cleanup_attempt_at, created_at) as queued_at, created_at
+                        from stored_attachments where state = 'deleting'
+                        order by queued_at, created_at, id limit ? for update skip locked
+                    ) deleting_candidates
                 ) eligible order by queued_at, created_at, id limit ?
-            ), changed as (
-                update stored_attachments f set state = 'deleting', cleanup_attempt_at = ?
-                from candidates c where f.id = c.id returning f.*
-            ) select * from changed
+            ) c where f.id = c.id returning f.*
         """.trimIndent()).use {
             it.setInstant(1, now)
-            it.setInt(2, limit)
-            it.setInstant(3, now.minus(Duration.ofHours(24)))
-            it.setInt(4, limit)
+            it.setInstant(2, now)
+            it.setInt(3, limit)
+            it.setInstant(4, now.minus(Duration.ofHours(24)))
             it.setInt(5, limit)
             it.setInt(6, limit)
-            it.setInstant(7, now)
+            it.setInt(7, limit)
             it.executeQuery().use { rows -> buildList { while (rows.next()) add(rows.attachment()) } }
         }
     }
