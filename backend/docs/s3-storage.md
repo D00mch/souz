@@ -32,13 +32,15 @@ Example service-account policy (replace `souz-files` with the configured bucket)
 }
 ```
 
-Bucket administration remains with the operator. Per-user quotas are not implemented. Keep the bucket configuration stable for the lifetime of stored files; changing it does not move objects.
+Bucket administration remains with the operator. Per-user quotas are not implemented: upload size and concurrency limits do not cap a user's total stored bytes, and all users share the bucket's capacity. Quotas would require separate atomic accounting and reservations for concurrent uploads. Keep the bucket configuration stable for the lifetime of stored files; changing it does not move objects.
 
 ## Internal operations
 
 `AttachmentStorage.save(userId, sourceKey, name, input)` returns a `StoredAttachment`. Reusing a source key for identical content and metadata returns the same file; different content or metadata fails. `get`, `find` and `read` resolve files within the owner scope. Filenames are sanitized, MIME is detected from bytes, and reads verify size and SHA-256. Source keys must be stable per input operation and are scoped to the user.
 
 Files expire 30 days after successful storage; retries do not extend that deadline. Access fails at expiry even before physical cleanup. Pending uploads expire after 24 hours. A background worker checks every minute, marks candidates before object deletion, and retries failed deletion. Database tombstones retain cleanup state for late writes and prevent expired source keys from being reused. Removing or recreating a local `users` row does not affect file access or retention: the external user ID identifies the owner. The bucket and tombstone records are retained.
+
+Reserve metadata before PUT and mark expiration before DELETE so partial failures and late writes remain recoverable by cleanup. Never log S3 exception bodies, credentials or signed transport details.
 
 Cleanup uses three partial indexes and one atomic SQL statement to select expired ready files, stale pending uploads and deletion retries. Each branch selects at most the batch limit in index order; the combined batch is limited to 100 files. Up to 300 candidate rows may be locked until the transaction commits. Processing order is not a storage contract; the final merge sorts only the bounded candidates.
 
