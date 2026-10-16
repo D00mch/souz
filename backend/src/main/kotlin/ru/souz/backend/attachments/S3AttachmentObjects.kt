@@ -31,7 +31,8 @@ class S3AttachmentObjects(config: AttachmentStorageConfig) : AutoCloseable {
 
     suspend fun put(file: StoredAttachment, bytes: ByteArray) = runInterruptible(Dispatchers.IO) {
         client.putObject({ it.bucket(bucket).key(file.objectKey).contentType(file.mimeType)
-            .metadata(mapOf("sha256" to file.sha256)) }, RequestBody.fromBytes(bytes))
+            .metadata(mapOf("sha256" to file.sha256)) },
+            RequestBody.fromContentProvider({ bytes.inputStream() }, bytes.size.toLong(), file.mimeType))
         val head = client.headObject { it.bucket(bucket).key(file.objectKey) }
         check(head.contentLength() == file.sizeBytes && head.metadata()["sha256"] == file.sha256) {
             "Attachment object verification failed."

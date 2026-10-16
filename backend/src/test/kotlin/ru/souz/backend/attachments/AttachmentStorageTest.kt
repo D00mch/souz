@@ -11,9 +11,15 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.direct
@@ -38,6 +44,39 @@ import ru.souz.backend.storage.postgres.postgresAppConfig
 import ru.souz.backend.storage.postgres.write
 
 class AttachmentStorageTest {
+    @Test
+    fun `reads share upload slots and cancelling a waiting read does not leak a permit`() = attachmentTest(maxConcurrentUploads = 1) {
+        val file = save("alice", "readable", "a.txt", "content")
+        withTimeout(10_000) {
+            coroutineScope {
+                val entered = CompletableDeferred<Unit>()
+                // InputStream.read is a blocking JVM boundary, called on Dispatchers.IO.
+                val release = CountDownLatch(1)
+                val input = object : InputStream() {
+                    override fun read(): Int {
+                        entered.complete(Unit)
+                        release.await()
+                        return -1
+                    }
+                }
+                val upload = async { storage.save("alice", "blocked", "empty.txt", input) }
+                try {
+                    entered.await()
+                    val cancelled = async(start = CoroutineStart.UNDISPATCHED) { storage.read("alice", file.id) }
+                    cancelled.cancelAndJoin()
+                    val read = async(start = CoroutineStart.UNDISPATCHED) { storage.read("alice", file.id) }
+                    assertEquals(null, withTimeoutOrNull(250) { read.await() })
+                    release.countDown()
+                    upload.await()
+                    assertEquals("content", read.await().decodeToString())
+                    assertEquals("content", storage.read("alice", file.id).decodeToString())
+                } finally {
+                    release.countDown()
+                }
+            }
+        }
+    }
+
     @Test
     fun `cleanup batches share one limit across expired files abandoned uploads and retries`() = attachmentTest {
         val repository = PostgresAttachmentRepository(dataSource)
@@ -238,15 +277,15 @@ private class AttachmentClock(var now: Instant = Instant.parse("2026-10-13T00:00
     override fun withZone(zone: ZoneId): Clock = this
 }
 
-private fun attachmentTest(block: suspend AttachmentFixture.() -> Unit) = runBlocking {
-    AttachmentFixture().use { fixture ->
+private fun attachmentTest(maxConcurrentUploads: Int = 16, block: suspend AttachmentFixture.() -> Unit) = runBlocking {
+    AttachmentFixture(maxConcurrentUploads).use { fixture ->
         PostgresUserRepository(fixture.dataSource).ensureUser("alice")
         PostgresUserRepository(fixture.dataSource).ensureUser("bob")
         fixture.block()
     }
 }
 
-private class AttachmentFixture : AutoCloseable {
+private class AttachmentFixture(maxConcurrentUploads: Int) : AutoCloseable {
     private val appConfig = postgresAppConfig(newPostgresSchema("attachments"))
     val dataSource = PostgresDataSourceFactory.create(appConfig.postgres)
     val clock = AttachmentClock()
@@ -255,6 +294,7 @@ private class AttachmentFixture : AutoCloseable {
         endpoint = "http://${AttachmentMinio.server.host}:${AttachmentMinio.server.firstMappedPort}",
         bucket = "attachments-$storageId",
         accessKey = "user-$storageId", secretKey = "attachment-user-secret", maxFileBytes = 1024,
+        maxConcurrentUploads = maxConcurrentUploads,
     )
     init { AttachmentMinio.provision(config) }
 

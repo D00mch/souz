@@ -23,11 +23,12 @@ class AttachmentStorage(
     private val objects: S3AttachmentObjects,
     private val clock: Clock,
 ) {
-    // Bounds total in-memory file bytes across concurrent uploads; each save() holds one file fully buffered.
-    private val uploadSlots = Semaphore(config.maxConcurrentUploads)
+    // Shared cap on active saves/reads, not a heap budget: buffering may copy bytes,
+    // and callers can retain returned read arrays after the permit is released.
+    private val transferSlots = Semaphore(config.maxConcurrentUploads)
 
     suspend fun save(userId: String, sourceKey: String, name: String, input: InputStream): StoredAttachment =
-        uploadSlots.withPermit { saveWithinLimit(userId, sourceKey, name, input) }
+        transferSlots.withPermit { saveWithinLimit(userId, sourceKey, name, input) }
 
     private suspend fun saveWithinLimit(userId: String, sourceKey: String, name: String, input: InputStream): StoredAttachment {
         require(userId.isNotBlank() && sourceKey.isNotBlank() && sourceKey.length <= 512)
@@ -69,11 +70,11 @@ class AttachmentStorage(
         return repository.find(userId, sourceKey)?.let(::available)
     }
 
-    suspend fun read(userId: String, id: UUID): ByteArray {
+    suspend fun read(userId: String, id: UUID): ByteArray = transferSlots.withPermit {
         val file = get(userId, id)
         val bytes = objects.read(file, config.maxFileBytes)
         available(file)
-        return bytes
+        bytes
     }
 
     suspend fun cleanup(): Int {

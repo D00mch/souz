@@ -12,6 +12,7 @@ class AttachmentStorageConfig(
     val secretKey: String,
     val maxFileBytes: Int = 20_000_000,
     val pathStyleAccess: Boolean = true,
+    // Shared concurrency limit for saves and reads.
     val maxConcurrentUploads: Int = 16,
 ) {
     init {
