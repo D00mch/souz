@@ -505,6 +505,10 @@ SOUZ_APP_LOG_LEVEL=INFO
 # Optional proxy-allowlisted User-Agent for outbound web tools.
 SOUZ_WEB_USER_AGENT=ProxyApprovedClient/1.0
 
+# Optional system prompts: the default one and operator rules appended to every chat's prompt.
+SOUZ_BACKEND_SYSTEM_PROMPT=...
+SOUZ_BACKEND_POLICY_PROMPT=...
+
 # Telegram bot
 SOUZ_TELEGRAM_POLLING_MAX_CONCURRENCY=4
 # Generate once with: openssl rand -base64 32
@@ -540,7 +544,7 @@ SOUZ_BACKEND_DB_MAX_POOL_SIZE=10
 SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS=30000
 ```
 
-The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `POSTGRES_DSN` must be a PostgreSQL JDBC URL and, when set, replaces `SOUZ_BACKEND_DB_HOST`, `SOUZ_BACKEND_DB_PORT`, and `SOUZ_BACKEND_DB_NAME`; user and password still come from `SOUZ_BACKEND_DB_USER` and `SOUZ_BACKEND_DB_PASSWORD`. `SOUZ_MASTER_KEY` is required for backend startup. Backend Logback writes one-line JSON records to stdout, including timestamp, level, logger, thread, message, formatted message, MDC, SLF4J key-value pairs, and throwable details. `LOG_LEVEL` controls the root logger, while `SOUZ_APP_LOG_LEVEL` keeps Souz application diagnostics such as public WebSocket request flow visible even when third-party logging is quieter. `SOUZ_WEB_USER_AGENT` overrides the browser-like default sent by web tools, including the HTTPS CONNECT request when a JVM HTTP proxy is selected. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled and must be Base64 that decodes to exactly 32 bytes; generate one with `openssl rand -base64 32`. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
+The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `POSTGRES_DSN` must be a PostgreSQL JDBC URL and, when set, replaces `SOUZ_BACKEND_DB_HOST`, `SOUZ_BACKEND_DB_PORT`, and `SOUZ_BACKEND_DB_NAME`; user and password still come from `SOUZ_BACKEND_DB_USER` and `SOUZ_BACKEND_DB_PASSWORD`. `SOUZ_MASTER_KEY` is required for backend startup. Backend Logback writes one-line JSON records to stdout, including timestamp, level, logger, thread, message, formatted message, MDC, SLF4J key-value pairs, and throwable details. `LOG_LEVEL` controls the root logger, while `SOUZ_APP_LOG_LEVEL` keeps Souz application diagnostics such as public WebSocket request flow visible even when third-party logging is quieter. `SOUZ_WEB_USER_AGENT` overrides the browser-like default sent by web tools, including the HTTPS CONNECT request when a JVM HTTP proxy is selected. `SOUZ_BACKEND_SYSTEM_PROMPT` replaces the built-in default system prompt, and a prompt from user settings or a request replaces it in turn. `SOUZ_BACKEND_POLICY_PROMPT` follows that prompt in every chat; users cannot replace or remove it through settings or requests. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled and must be Base64 that decodes to exactly 32 bytes; generate one with `openssl rand -base64 32`. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
 
 Backend executions snapshot each user's effective `enabledTools`. The snapshot filters compiled tool-backed Skills once and is retained when an execution resumes from an option. Built-in Client-Souz Skills are merged afterward only for public client executions. The backend model sees only Skill core tools and reaches catalog capabilities through inventory, discovery, and `RunSkillCommand`.
 

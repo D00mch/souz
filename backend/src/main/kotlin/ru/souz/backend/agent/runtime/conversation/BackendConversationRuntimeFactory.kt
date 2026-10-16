@@ -73,6 +73,7 @@ internal class BackendConversationRuntimeFactory(
     private val messageRepository: MessageRepository,
     private val logObjectMapper: ObjectMapper,
     private val systemPrompt: String,
+    private val policyPrompt: String?,
     private val toolCatalog: AgentToolCatalog = AgentToolCatalog(),
     private val clientSkills: BackendClientSkills,
     private val chatRepository: ChatRepository,
@@ -103,6 +104,7 @@ internal class BackendConversationRuntimeFactory(
         val settingsProvider = BackendConversationSettingsProvider(
             delegate = baseSettingsProvider,
             defaultSystemPrompt = request.systemPrompt ?: systemPrompt,
+            policyPrompt = policyPrompt,
             locale = persistedSession?.locale ?: request.locale,
             useFewShotExamples = request.useFewShotExamples ?: baseSettingsProvider.useFewShotExamples,
             requestTimeoutMillis = request.requestTimeoutMillis ?: baseSettingsProvider.requestTimeoutMillis,
