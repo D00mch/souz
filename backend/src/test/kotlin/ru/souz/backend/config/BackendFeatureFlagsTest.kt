@@ -383,6 +383,20 @@ class BackendAppConfigTest {
             BackendAppConfig.load(MapBackendConfigSource(env = mapOf("HINDSIGHT_RETAIN_ASYNC" to "sometimes")))
         }
     }
+
+    @Test
+    fun `policy prompt is unset unless configured`() {
+        assertNull(BackendAppConfig.load(MapBackendConfigSource()).policyPrompt)
+        assertNull(BackendAppConfig.load(MapBackendConfigSource(env = mapOf("SOUZ_BACKEND_POLICY_PROMPT" to "  "))).policyPrompt)
+        assertEquals(
+            "Env rule.",
+            BackendAppConfig.load(MapBackendConfigSource(env = mapOf("SOUZ_BACKEND_POLICY_PROMPT" to " Env rule.\n"))).policyPrompt,
+        )
+        assertEquals(
+            "Property rule.",
+            BackendAppConfig.load(MapBackendConfigSource(properties = mapOf("souz.backend.policyPrompt" to "Property rule."))).policyPrompt,
+        )
+    }
 }
 
 private class MapBackendConfigSource(

@@ -16,6 +16,7 @@ import ru.souz.llms.LLMModel
 class BackendConversationSettingsProvider(
     private val delegate: SettingsProvider,
     private val defaultSystemPrompt: String,
+    private val policyPrompt: String?,
     locale: String,
     useFewShotExamples: Boolean = delegate.useFewShotExamples,
     requestTimeoutMillis: Long = delegate.requestTimeoutMillis,
@@ -59,6 +60,7 @@ class BackendConversationSettingsProvider(
         this.regionProfile = localeToRegionProfile(request.locale)
         this.systemPrompt = listOfNotNull(
             request.systemPrompt ?: defaultSystemPrompt,
+            policyPrompt,
             ru.souz.backend.client.CLIENT_TOOL_ROUTING_INSTRUCTIONS,
             UNSUPPORTED_MEMORY_MUTATION_NOTICE.takeIf { request.clientToolsEnabled },
             when {
