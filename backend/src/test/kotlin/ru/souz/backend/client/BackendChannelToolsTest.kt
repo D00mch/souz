@@ -131,6 +131,7 @@ class BackendChannelToolsTest {
         val registry = ClientThreadRuntimeRegistry()
         val startedAt = Instant.now()
         val skill = BackendClientSkills(registry, tools, events, ChannelDeliveryService(chats, mockk(), events),
+            dispatcher = LiveClientToolDispatcher(registry, events, now = { startedAt }, metrics = metrics),
             now = { startedAt }, metrics = metrics)
             .catalog(listOf(ClientToolDefinition("orion.call", "Control device", ru.souz.llms.LLMRequest.Parameters("object"))))
             .toolsByCategory.values.firstNotNullOf { it["orion.call"] }

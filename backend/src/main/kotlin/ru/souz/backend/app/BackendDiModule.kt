@@ -291,6 +291,7 @@ fun backendDiModule(
             toolCallRepository = instance(),
             eventService = instance(),
             channelDeliveryService = instance(),
+            dispatcher = instance(),
             metrics = instance(),
         )
     }
@@ -496,8 +497,8 @@ fun backendDiModule(
     bindSingleton { ToolListActiveChannels(registry = instance()) }
     bindSingleton { ToolSendMessageToChannel(registry = instance()) }
     bindSingleton { BackendChannelToolCatalog(instance(), instance()) }
-    bindSingleton { LiveClientToolDispatcher(instance(), instance(), instance(), metrics = instance()) }
-    bindSingleton { PersonalitySync(instance(), instance()) }
+    bindSingleton { LiveClientToolDispatcher(instance(), instance(), metrics = instance()) }
+    bindSingleton { PersonalitySync(instance(), instance(), instance(), instance()) }
     bindSingleton<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG) {
         AgentToolCatalog.compose(
             instance<RuntimeToolsFactory>().catalog,

@@ -5,12 +5,19 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
+import ru.souz.backend.channels.ChannelDeliveryService
+import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.client.LiveClientToolDispatcher
 import ru.souz.backend.settings.model.PersonalitySnapshot
 import ru.souz.backend.settings.repository.UserSettingsRepository
 
-internal class PersonalitySync(private val repository: UserSettingsRepository, private val dispatcher: LiveClientToolDispatcher) {
+internal class PersonalitySync(
+    private val repository: UserSettingsRepository,
+    private val dispatcher: LiveClientToolDispatcher,
+    private val channels: ChannelDeliveryService,
+    private val events: AgentEventService,
+) {
     suspend fun connected(chat: Chat) {
         if (chat.clientType != "backend") return
         try {
@@ -24,7 +31,7 @@ internal class PersonalitySync(private val repository: UserSettingsRepository, p
         repeat(3) { attempt ->
             if (attempt > 0) delay(attempt * 1_000L)
             try {
-                val chat = dispatcher.orionChannel(userId, null, preferred) ?: return "pending"
+                val chat = orionChannel(userId, preferred) ?: return "pending"
                 val reply = dispatcher.call(chat, "prompt.personality.set", mapOf(
                     "prompt" to snapshot.prompt.orEmpty(), "revision" to snapshot.revision,
                 ), Duration.ofSeconds(10), sourceExecution = threadId, sourceThreadId = threadId)
@@ -44,6 +51,14 @@ internal class PersonalitySync(private val repository: UserSettingsRepository, p
             catch (_: Exception) { /* Unknown delivery: retry this snapshot, not the mutation. */ }
         }
         return "pending"
+    }
+
+    private suspend fun orionChannel(userId: String, preferred: UUID?): Chat? {
+        val ids = (listOfNotNull(preferred) + events.liveChatIds(userId)).distinct()
+        val owned = channels.resolveTargets(userId, ids)
+        return ids.asSequence().mapNotNull(owned::get).firstOrNull {
+            it.clientType == "backend" && events.hasLiveSubscriber(userId, it.id)
+        }
     }
 
     private fun warn(chat: UUID, outcome: String) = LoggerFactory.getLogger(javaClass)
