@@ -157,6 +157,7 @@ class BackendCompositionE2eTest {
 
             assertEquals(HttpStatusCode.OK, patch.status)
             val settings = patch.jsonBody()["settings"]
+            assertEquals(0, settings["enabledTools"].size())
             assertEquals(E2E_LOCAL_MODEL.alias, settings["defaultModel"].asText())
             assertEquals("he-IL", settings["locale"].asText())
             assertTrue(settings["narrateSteps"].asBoolean())
@@ -259,9 +260,19 @@ class BackendCompositionE2eTest {
                 }.jsonBody()["items"].takeIf { it.size() == 2 }
             }
             assertEquals(2, persistedMessages.size())
+            val allTools = client.get(BackendHttpRoutes.SETTINGS) { trusted("all-tools-user") }.jsonBody()["settings"]["enabledTools"]
+            client.patch(BackendHttpRoutes.SETTINGS) { trusted("all-tools-user"); jsonBody("""{"enabledTools":$allTools}""") }
         }
 
-        backendE2eTest(schemaPrefix = "e2e_restart_second", schema = schema) {
+        // Skill OAuth adds tools after settings were saved; users who never narrowed the default receive them.
+        backendE2eTest(schemaPrefix = "e2e_restart_second", schema = schema, skillOAuth = true) {
+            val advertised = client.get(BackendHttpRoutes.BOOTSTRAP) { trusted(userId) }
+                .jsonBody()["capabilities"]["tools"].map { it["name"].asText() }
+            assertTrue(advertised.containsAll(listOf("ConnectOAuthProvider", "SafeApiCall")))
+            for (user in listOf(userId, "all-tools-user")) {
+                val enabled = client.get(BackendHttpRoutes.SETTINGS) { trusted(user) }.jsonBody()["settings"]["enabledTools"]
+                assertEquals(advertised, enabled.map { it.asText() }, user)
+            }
             val list = client.get(BackendHttpRoutes.CHATS) {
                 trusted(userId)
             }
