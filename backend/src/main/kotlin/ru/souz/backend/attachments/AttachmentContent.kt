@@ -21,7 +21,6 @@ internal fun attachmentMime(bytes: ByteArray, name: String): String {
     // Filename only refines already-detected text; it cannot turn executable bytes into a document.
     return when {
         detected == "text/plain" && name.endsWith(".md", ignoreCase = true) -> "text/markdown"
-        detected == "application/ogg" && bytes.take(256).toByteArray().toString(Charsets.ISO_8859_1).contains("OpusHead") -> "audio/ogg"
         else -> detected
     }
 }
