@@ -2,7 +2,6 @@ package ru.souz.backend.attachments
 
 import java.io.InputStream
 import java.time.Clock
-import java.time.Duration
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -37,7 +36,7 @@ class AttachmentStorage(
         val mime = attachmentMime(bytes, safeName)
         val file = repository.reserve(userId, sourceKey, safeName, mime, bytes.size.toLong(), bytes.sha256Hex(), clock.instant())
         if (file.state == "ready") return available(file)
-        if (file.state != "pending" || !file.createdAt.plus(Duration.ofHours(24)).isAfter(clock.instant())) {
+        if (file.state != "pending" || !file.createdAt.plus(ATTACHMENT_PENDING_LIFETIME).isAfter(clock.instant())) {
             throw AttachmentException("attachment_expired")
         }
         currentCoroutineContext().ensureActive()

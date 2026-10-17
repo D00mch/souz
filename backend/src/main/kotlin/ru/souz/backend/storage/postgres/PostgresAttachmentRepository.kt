@@ -1,10 +1,11 @@
 package ru.souz.backend.storage.postgres
 
 import java.sql.ResultSet
-import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
+import ru.souz.backend.attachments.ATTACHMENT_PENDING_LIFETIME
+import ru.souz.backend.attachments.ATTACHMENT_RETENTION
 import ru.souz.backend.attachments.AttachmentException
 import ru.souz.backend.attachments.StoredAttachment
 
@@ -48,10 +49,10 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
                 where id = ? and user_id = ? and state = 'pending' and created_at > ?
             """.trimIndent()).use {
                 it.setInstant(1, now)
-                it.setInstant(2, now.plus(Duration.ofDays(30)))
+                it.setInstant(2, now.plus(ATTACHMENT_RETENTION))
                 it.setObject(3, file.id)
                 it.setString(4, file.userId)
-                it.setInstant(5, now.minus(Duration.ofHours(24)))
+                it.setInstant(5, now.minus(ATTACHMENT_PENDING_LIFETIME))
                 it.executeUpdate()
             }
         }
@@ -101,7 +102,7 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
             it.setInstant(1, now)
             it.setInstant(2, now)
             it.setInt(3, limit)
-            it.setInstant(4, now.minus(Duration.ofHours(24)))
+            it.setInstant(4, now.minus(ATTACHMENT_PENDING_LIFETIME))
             it.setInt(5, limit)
             it.setInt(6, limit)
             it.setInt(7, limit)

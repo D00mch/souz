@@ -1,8 +1,12 @@
 package ru.souz.backend.attachments
 
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import ru.souz.backend.crypto.sha256Hex
+
+internal val ATTACHMENT_RETENTION = Duration.ofDays(30)
+internal val ATTACHMENT_PENDING_LIFETIME = Duration.ofHours(24)
 
 data class StoredAttachment(
     val id: UUID,
