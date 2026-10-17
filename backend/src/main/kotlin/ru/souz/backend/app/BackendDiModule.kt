@@ -337,6 +337,7 @@ fun backendDiModule(
             messageRepository = instance(),
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
+            policyPrompt = appConfig.policyPrompt,
             toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
             clientSkills = instance(),
             chatRepository = instance(),

@@ -39,7 +39,7 @@ class BackendTelegramE2eTest {
             llm = E2eLlmApi { request ->
                 val enabled = request.conversationPrompt() == "enabled"
                 val system = request.messages.first().content
-                assertTrue("custom base" in system)
+                assertTrue("custom base\n\n$E2E_POLICY_PROMPT" in system)
                 assertEquals(enabled, "Before every tool call" in system)
                 if (request.messages.last().role == LLMMessageRole.function) {
                     if (enabled) delivered.await()

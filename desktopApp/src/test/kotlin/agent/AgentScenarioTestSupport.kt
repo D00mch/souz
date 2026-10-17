@@ -61,9 +61,11 @@ import kotlin.time.Duration.Companion.minutes
 class AgentScenarioTestSupport(
     private val selectedModel: LLMModel,
 ) {
-    private val agentType: AgentId = parseScenarioAgentId(readEnvironment(SOUZ_AGENT_INTEGRATION_TEST_AGENT))
+    val agentType: AgentId = parseScenarioAgentId(readEnvironment(SOUZ_AGENT_INTEGRATION_TEST_AGENT))
     val filesUtil: FilesToolUtil by lazy { FilesToolUtil(spySettings) }
     private var fewShotExamplesEnabled: Boolean = true
+    private var systemPromptOverride: String? = null
+    val executionModelId: String get() = spySettings.executionModelId(selectedModel)
 
     private val spySettings: SettingsProviderImpl by lazy {
         spyk(SettingsProviderImpl(ConfigStore)) {
@@ -75,7 +77,7 @@ class AgentScenarioTestSupport(
             every { requestTimeoutMillis } returns 60_000L
             every { temperature } returns 0f
             every { getSystemPromptForAgentModel(any(), any()) } answers {
-                scenarioSystemPrompt(firstArg())
+                systemPromptOverride ?: scenarioSystemPrompt(firstArg())
             }
         }
     }
@@ -192,13 +194,16 @@ class AgentScenarioTestSupport(
         userPrompt: String,
         mockedTools: List<LLMToolSetup>,
         useFewShotExamples: Boolean = false,
-    ) {
+        systemPrompt: String? = null,
+    ): String {
         val previousFewShotExamplesEnabled = fewShotExamplesEnabled
         fewShotExamplesEnabled = useFewShotExamples
+        systemPromptOverride = systemPrompt
         try {
-            runAgent(createScenarioDi(mockedTools), userPrompt)
+            return runAgent(createScenarioDi(mockedTools), userPrompt)
         } finally {
             fewShotExamplesEnabled = previousFewShotExamplesEnabled
+            systemPromptOverride = null
         }
     }
 
@@ -255,12 +260,12 @@ class AgentScenarioTestSupport(
         }
     }
 
-    private suspend fun runAgent(di: DI, userPrompt: String) {
+    private suspend fun runAgent(di: DI, userPrompt: String): String {
         val contextFactory: AgentContextFactory = di.direct.instance()
         val executor: AgentExecutor = di.direct.instance()
         val toolCalls = mutableListOf<ScenarioToolCall>()
         try {
-            executor.execute(
+            return executor.execute(
                 agentId = agentType,
                 context = contextFactory.create(agentType),
                 input = userPrompt,
@@ -271,7 +276,7 @@ class AgentScenarioTestSupport(
                         }
                     }
                 },
-            )
+            ).output
         } finally {
             println("[agent=${agentType.storageValue}] Tool calls: ${toolCalls.joinToString { it.traceLabel() }}")
         }

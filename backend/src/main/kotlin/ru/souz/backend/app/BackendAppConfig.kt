@@ -154,6 +154,7 @@ data class BackendAppConfig(
     val hooks: HookConfig = HookConfig(),
     val scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     val attachments: AttachmentStorageConfig? = null,
+    val policyPrompt: String? = null,
 ) {
     fun validate(): BackendAppConfig {
         server.validate()
@@ -340,6 +341,10 @@ data class BackendAppConfig(
                         ),
                     )
                 },
+                policyPrompt = source.value(
+                    envKey = "SOUZ_BACKEND_POLICY_PROMPT",
+                    propertyKey = "souz.backend.policyPrompt",
+                )?.trim()?.takeIf { it.isNotEmpty() },
             )
     }
 }

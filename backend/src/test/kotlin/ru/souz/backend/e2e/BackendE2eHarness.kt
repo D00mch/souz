@@ -89,6 +89,7 @@ import kotlin.time.Duration.Companion.milliseconds
 internal const val E2E_PROXY_TOKEN = "proxy-secret"
 internal const val E2E_TELEGRAM_TOKEN_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 internal const val E2E_VK_TOKEN_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+internal const val E2E_POLICY_PROMPT = "Follow the E2E operator policy."
 internal val E2E_LOCAL_MODEL: LLMModel = LLMModel.LocalQwen3_4B_Instruct_2507
 
 internal fun historyFrame(chatId: String, requestId: String, role: String, text: String): String =
@@ -342,7 +343,13 @@ internal class BackendE2eBackend(
         telegramTokenEncryptionKey = E2E_TELEGRAM_TOKEN_KEY.takeIf { featureFlags.telegramBot },
         vkTokenEncryptionKey = E2E_VK_TOKEN_KEY.takeIf { featureFlags.vkBot },
         includeSkillOAuthConfig = skillOAuth,
-    ).copy(hindsightApiUrl = hindsightUrl, hooks = hookConfig, scheduledTasks = scheduledTasks, llmLimits = llmLimits)
+    ).copy(
+        hindsightApiUrl = hindsightUrl,
+        hooks = hookConfig,
+        scheduledTasks = scheduledTasks,
+        llmLimits = llmLimits,
+        policyPrompt = E2E_POLICY_PROMPT,
+    )
     private val localChatApi = localChatApiBackedBy(llm)
     private val localAvailability = localProviderAvailability(localModels)
     private val localRuntime = relaxedLocalRuntime()
