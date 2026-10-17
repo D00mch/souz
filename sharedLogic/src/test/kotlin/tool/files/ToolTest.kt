@@ -29,7 +29,6 @@ import ru.souz.tool.files.ToolModifyFile
 import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
-import ru.souz.tool.files.ToolReadFile
 import ru.souz.tool.files.ToolReadPdfPages
 import java.io.File
 import java.nio.file.Files
@@ -153,25 +152,6 @@ class ToolTest {
         } finally {
             forbiddenDir.deleteRecursively()
         }
-    }
-
-    @Test
-    fun `test ToolReadFile`() {
-        val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
-        val fixture = copyFixtureToTempDirectory("test.txt")
-
-        val result = ToolReadFile(filesToolUtil)
-            .invoke(ToolReadFile.Input(fixture.absolutePath))
-        assertEquals("Test content\n", result)
-
-        val extracted = ToolExtractText(filesToolUtil)
-            .invoke(ToolExtractText.Input(fixture.absolutePath))
-        assertContains(extracted, "=== METADATA ===")
-        assertContains(extracted, "Filename: test.txt")
-        assertContains(extracted, "=== CONTENT ===")
-        assertContains(extracted, "Test content")
-
-        fixture.parentFile?.deleteRecursively()
     }
 
     @Test
@@ -327,8 +307,7 @@ class ToolTest {
 
             // create new file
             ToolNewFile(filesToolUtil).invoke(ToolNewFile.Input(path, text = content))
-            val fileContent = ToolReadFile(filesToolUtil).invoke(ToolReadFile.Input(path))
-            assertEquals(content, fileContent)
+            assertEquals(content, File(path).readText())
 
             // modify new
             val newContent = "New\n"
@@ -342,8 +321,7 @@ class ToolTest {
 
             // move
             ToolMoveFile(filesToolUtil).invoke(ToolMoveFile.Input(path, movedPath))
-            val movedContent = ToolReadFile(filesToolUtil).invoke(ToolReadFile.Input(movedPath))
-            assertEquals(newContent, movedContent)
+            assertEquals(newContent, File(movedPath).readText())
 
             // find
             val findResult = ToolFindTextInFiles(filesToolUtil)
@@ -352,9 +330,7 @@ class ToolTest {
 
             // delete
             ToolDeleteFile(filesToolUtil).invoke(ToolDeleteFile.Input(movedPath))
-            assertFailsWith<BadInputException> {
-                ToolReadFile(filesToolUtil).invoke(ToolReadFile.Input(movedPath))
-            }
+            assertFalse(File(movedPath).exists())
         } finally {
             tempDir.deleteRecursively()
         }

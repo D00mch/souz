@@ -24,13 +24,6 @@ This document describes shared file-tool behavior and path conventions.
 
 ## Tool Guarantees
 
-### `ReadFile`
-
-- Accepts any safe path that resolves to an existing regular file.
-- Rejects directories and missing paths.
-- Returns the entire file as text.
-- If content exceeds `25000` characters, it returns a size-limit error instead of partial content.
-
 ### `ListFiles`
 
 - Accepts any safe path that resolves to an existing directory.

@@ -50,7 +50,6 @@ class ChatAgentActionFormatter(
             "ExtractTextFromFile" -> format(Res.string.chat_action_extract_text_from_file, pathArg(args, "filePath", "path"))
             "FindFilesByName" -> format(Res.string.chat_action_find_files_by_name, textArg(args, "fileName"))
             "ReadPdfPages" -> format(Res.string.chat_action_read_pdf_pages, pathArg(args, "filePath", "path"))
-            "ReadFile" -> format(Res.string.chat_action_read_file, pathArg(args, "path"))
             "FindFolders" -> format(Res.string.chat_action_find_folders, textArg(args, "name"))
             "Open" -> format(Res.string.chat_action_open, displayTarget(args["target"]))
             "CreateNewBrowserTab" -> format(Res.string.chat_action_create_browser_tab, textArg(args, "url"))

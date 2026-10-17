@@ -265,7 +265,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolRunBashCommand }
     bindSingleton { ToolGetClipboard() }
     bindSingleton { ToolListFiles(instance()) }
-    bindSingleton { ToolReadFile(instance()) }
     bindSingleton { ToolFindInFiles(instance()) }
     bindSingleton { ToolNewFile(instance()) }
     bindSingleton { ToolDeleteFile(instance(), instance()) }

@@ -566,7 +566,6 @@
     <string name="chat_action_extract_text_from_file">Extracting text from file: %1$s</string>
     <string name="chat_action_find_files_by_name">Searching for file: %1$s</string>
     <string name="chat_action_read_pdf_pages">Reading PDF: %1$s</string>
-    <string name="chat_action_read_file">Reading file: %1$s</string>
     <string name="chat_action_find_folders">Searching for folder: %1$s</string>
     <string name="chat_action_open">Opening: %1$s</string>
     <string name="chat_action_create_browser_tab">Opening tab: %1$s</string>

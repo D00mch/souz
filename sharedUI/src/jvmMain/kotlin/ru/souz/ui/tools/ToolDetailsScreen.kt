@@ -420,13 +420,13 @@ private fun ToolDetailsScreenPreview() {
         ToolDetailsScreen(
             state = ToolDetailsState(
                 category = ToolCategory.FILES,
-                toolName = "ReadFile",
+                toolName = "ExtractTextFromFile",
                 description = "Read a file",
                 enabled = true,
                 examples = listOf(
-                    ToolExampleUi("1", "Read file", "{\"path\": \"/tmp/test.txt\"}")
+                    ToolExampleUi("1", "Read file", "{\"filePath\": \"/tmp/test.txt\"}")
                 ),
-                defaultExamples = listOf(FewShotExample("Read file", mapOf("path" to "example.txt"))),
+                defaultExamples = listOf(FewShotExample("Read file", mapOf("filePath" to "example.txt"))),
             ),
             onDescriptionChange = {},
             onToggleEnabled = {},
