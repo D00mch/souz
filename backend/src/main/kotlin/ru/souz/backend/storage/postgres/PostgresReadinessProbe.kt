@@ -42,6 +42,8 @@ internal class PostgresReadinessProbe(
     // Logs never include the SQL exception message: the driver puts host names into it.
     private fun queryWritable(): Boolean = try {
         dataSource.connection.use { connection ->
+            // Ends a read on a dead socket so the lock is not held until the OS gives up; Hikari resets it on return.
+            connection.setNetworkTimeout(Runnable::run, timeout.inWholeMilliseconds.toInt())
             connection.createStatement().use { statement ->
                 val result = statement.executeQuery("show transaction_read_only")
                 result.next()
