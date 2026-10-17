@@ -50,8 +50,13 @@ class BackendPublicThreadStartupE2eTest {
                 val socket = mockk<DefaultWebSocketServerSession> {
                     every { this@mockk.incoming } returns incoming
                     coEvery { send(any()) } coAnswers {
-                        writing.complete(Unit)
-                        outgoing.send(firstArg())
+                        val frame = firstArg<Frame>()
+                        val personalitySync = frame is Frame.Text && json.readTree(frame.readText())
+                            .path("payload").path("name").asText() == "prompt.personality.set"
+                        if (!personalitySync) {
+                            writing.complete(Unit)
+                            outgoing.send(frame)
+                        }
                     }
                 }
                 val chat = backend.dependencies.publicClientService.requireChat(UUID.fromString(chatId), "backend")

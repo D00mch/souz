@@ -199,8 +199,29 @@ internal class BackendE2eScope(
         return created.jsonBody()["chat"]["id"].asText()
     }
 
-    suspend fun readJson(session: DefaultClientWebSocketSession): JsonNode =
+    suspend fun readRawJson(session: DefaultClientWebSocketSession): JsonNode =
         json.readTree((session.incoming.receive() as Frame.Text).readText())
+
+    private val personalityCalls = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /** Unrelated workflows emulate the Orion settings handler; personality tests use readRawJson. */
+    suspend fun readJson(session: DefaultClientWebSocketSession): JsonNode {
+        while (true) {
+            val frame = readRawJson(session)
+            if (frame.path("payload").path("name").asText() == "prompt.personality.set") {
+                val id = frame["payload"]["toolCallId"].asText()
+                personalityCalls.add(id)
+                session.send(Frame.Text(json.writeValueAsString(mapOf(
+                    "kind" to "tool.result", "chatId" to frame["chatId"].asText(),
+                    "threadId" to frame["threadId"].asText(), "toolCallId" to id,
+                    "status" to "succeeded", "result" to mapOf("outcome" to "applied",
+                        "revision" to frame["payload"]["arguments"]["revision"].longValue()),
+                ))))
+            } else if (!personalityCalls.contains(frame.path("toolCallId").asText())) {
+                return frame
+            }
+        }
+    }
 
     suspend fun <T> withPublicSocket(chatId: String, block: suspend (DefaultClientWebSocketSession) -> T): T =
         withSocket("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend", block)

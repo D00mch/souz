@@ -287,6 +287,11 @@ internal class PublicClientConnection(
                 socketLogger.info("WebSocket subscription closed")
             }
         }
+        // The stream is registered before reading settings: concurrent saves cannot fall into a gap.
+        // Run separately so the receive loop can accept tool.result while synchronization awaits it.
+        scope.launch(backendLogContext("socketId" to socketId, "userId" to chat.userId, "chatId" to chat.id)) {
+            deps.personalitySync.connected(chat)
+        }
         return replayDone
     }
 

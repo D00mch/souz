@@ -55,7 +55,7 @@ class BackendChannelDeliveryE2eTest {
                 val delivery = sendTurn(sourceChatId, userId, deliveryPrompt)
                 assertEquals(HttpStatusCode.OK, delivery.status)
                 val pushed = withTimeout(5_000.milliseconds) {
-                    json.readTree((session.incoming.receive() as Frame.Text).readText())
+                    readJson(session)
                 }
                 assertEquals("event", pushed["kind"].asText())
                 assertEquals("message.created", pushed["type"].asText())

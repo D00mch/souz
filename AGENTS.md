@@ -58,6 +58,10 @@ Only these direct production project dependencies are allowed. Standard test-sou
 - `:backend` `main` → `:agent`, `:llms`, `:native`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`, `:job-api`, `:job-impl`.
 - `:desktopApp` `main` → `:ambientAgent`, `:sharedLogic`, `:sharedUI`, `:agent`, `:llms`, `:native`.
 
+## Optional backend capabilities
+
+- [User personality](docs/personality-settings.md) is independent of the system prompt and synchronizes to Orion.
+
 ## Verification
 
 - Use the Gradle wrapper and the Java 21 toolchain configured by the build.

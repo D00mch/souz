@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.backend.personality.PersonalityTool
 import ru.souz.backend.testutil.TestToolCatalog
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.web.ToolWebImageSearch
@@ -15,7 +16,7 @@ class BackendToolCapabilityPolicyTest {
 
         assertFalse(ToolCategory.WEB_SEARCH in BackendToolCapabilityPolicy.safeCategories)
         assertEquals(
-            setOf("ReadFile", "ListActiveChannels", "SendMessageToChannel", "ViewImage", "GenerateImage"),
+            setOf("ReadFile", "ListActiveChannels", "SendMessageToChannel", "ViewImage", "GenerateImage", PersonalityTool.NAME),
             names,
         )
         assertEquals(names, executionToolNames(enabledToolNames = null))
@@ -49,6 +50,7 @@ class BackendToolCapabilityPolicyTest {
                 ToolCategory.WEB_SEARCH to listOf("InternetSearch", "InternetResearch"),
                 ToolCategory.IMAGE to listOf("ViewImage"),
                 ToolCategory.IMAGE_GENERATION to listOf("GenerateImage"),
+                ToolCategory.CONFIG to listOf(PersonalityTool.NAME, "UnsafeLocalSettings"),
             ),
             enabledToolNames = enabledToolNames,
         ).toolNames()

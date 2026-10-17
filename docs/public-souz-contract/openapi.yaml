@@ -1056,7 +1056,7 @@ components:
           type: string
           enum: [event]
         seq:
-          description: Null for live-only cross-channel calls; never use null as a replay cursor.
+          description: Null for live-only cross-channel calls and personality synchronization; never use null as a replay cursor.
           anyOf:
             - $ref: "#/components/schemas/EventSeq"
             - type: "null"
@@ -1067,11 +1067,23 @@ components:
           $ref: "#/components/schemas/UUID"
         threadId:
           $ref: "#/components/schemas/UUID"
-          description: For seq-null calls, a correlation ID to echo in tool.result, not a persisted thread.
+          description: For seq-null calls, echo this correlation ID in tool.result. It can be the initiating thread ID or a technical UUID with no persisted thread.
         payload:
           $ref: "#/components/schemas/ToolCallStartedPayload"
         createdAt:
           $ref: "#/components/schemas/DateTime"
+    PersonalitySetArguments:
+      type: object
+      additionalProperties: false
+      required: [prompt, revision]
+      properties:
+        prompt:
+          type: string
+          description: Complete user personality, at most 16384 UTF-16 code units. Empty clears the preference.
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
     ToolCallStartedPayload:
       description: >-
         For user.ask, deviceId is required and identifies the destination device;
@@ -1084,6 +1096,15 @@ components:
       type: object
       additionalProperties: false
       required: [toolCallId, name, arguments]
+      allOf:
+        - if:
+            properties:
+              name:
+                const: prompt.personality.set
+          then:
+            properties:
+              arguments:
+                $ref: "#/components/schemas/PersonalitySetArguments"
       if:
         properties:
           name:
@@ -1107,7 +1128,7 @@ components:
           $ref: "#/components/schemas/DeviceType"
         arguments:
           $ref: "#/components/schemas/ArbitraryJson"
-          description: Operation arguments; web.search uses the documented WebSearchArguments shape.
+          description: Operation arguments; web.search uses WebSearchArguments, prompt.personality.set uses PersonalitySetArguments.
         deadlineAt:
           anyOf:
             - $ref: "#/components/schemas/DateTime"

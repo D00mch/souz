@@ -47,6 +47,7 @@ class AgentExecutionKernelFactory(
     private val captureScope: CoroutineScope,
     private val automaticMemoryRecall: Boolean = true,
     private val skillClassifier: SkillClassifier? = null,
+    private val conversationLlmApi: LLMChatAPI = llmApi,
 ) {
     fun create(): AgentExecutionKernel {
         val agentToolExecutor = AgentToolExecutor(telemetry)
@@ -67,7 +68,7 @@ class AgentExecutionKernelFactory(
             knowledgeStore = knowledgeStore,
         )
         val nodesMemory = NodesMemory(memoryRuntime, captureScope, automaticMemoryRecall)
-        val nodesLLM = NodesLLM(llmApi = llmApi, settingsProvider = settingsProvider)
+        val nodesLLM = NodesLLM(llmApi = conversationLlmApi, settingsProvider = settingsProvider)
         val nodesErrorHandling = NodesErrorHandling(errorMessages)
         val nodesSummarization = NodesSummarization(
             llmApi = llmApi,

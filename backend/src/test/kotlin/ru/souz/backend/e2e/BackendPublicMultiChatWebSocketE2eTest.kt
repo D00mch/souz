@@ -52,7 +52,7 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     assertEquals(terminals[0], readJson(socket))
                     assertEquals(terminals[2], readJson(socket))
                     eventually("live and replay event logs") {
-                        logs.count { (message, _) -> message == "WebSocket event sent" }.takeIf { it == 5 }
+                        logs.count { (message, fields) -> message == "WebSocket event sent" && fields["type"] != "tool.call.started" }.takeIf { it == 5 }
                     }
 
                     val owners = chats.zip(users).toMap()
@@ -71,7 +71,9 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     }
                     acknowledgements.filter { (_, fields) -> fields["clientRequestId"] in setOf("create", "history", "subscribe") }
                         .forEach { (_, fields) -> assertFalse(fields.containsKey("threadId")) }
-                    logs.filter { (message, _) -> message == "WebSocket event sent" || message.startsWith("Public client event stored") }
+                    logs.filter { (message, fields) ->
+                        (message == "WebSocket event sent" && fields["type"] != "tool.call.started") || message.startsWith("Public client event stored")
+                    }
                         .forEach { (_, fields) ->
                             assertEquals(threadChats[fields["threadId"]], fields["chatId"])
                             assertEquals(owners[fields["chatId"]], fields["userId"])
@@ -467,11 +469,15 @@ class BackendPublicMultiChatWebSocketE2eTest {
                 val foreign = request(socket, createFrame(UUID.randomUUID().toString()))["chatId"].asText()
                 llm.requestSkillForPrompt("local", "user.ask", mapOf("question" to "Continue?"))
                 val local = submit(socket, target, user, "local", "local")
-                for (http in listOf(false, true)) {
-                    val prompt = "remote-$http"
-                    val source = if (http) createPublicChat(user, prompt, tools = clientToolsJson("orion.call"))
-                        else request(socket, createFrame(user, prompt, tools = clientToolsJson("orion.call")))["chatId"].asText()
-                    llm.requestSkillForPrompt(prompt, "orion.call", mapOf("channelId" to target, "utterance" to "включи Pink Floyd"))
+                for ((http, skillId) in listOf(false to "orion.call", true to "orion.call", true to "web.search")) {
+                    val prompt = "$skillId-$http"
+                    val arguments = if (skillId == "web.search") mapOf("query" to "Pink Floyd albums")
+                        else mapOf("utterance" to "включи Pink Floyd")
+                    val result = if (skillId == "web.search") """{"documents":[{"text":"The Wall"}]}"""
+                        else """{"reply":"Включаю Pink Floyd"}"""
+                    val source = if (http) createPublicChat(user, prompt, tools = clientToolsJson(skillId))
+                        else request(socket, createFrame(user, prompt, tools = clientToolsJson(skillId)))["chatId"].asText()
+                    llm.requestSkillForPrompt(prompt, skillId, arguments + ("channelId" to target))
                     val sourceThread = if (http) {
                         client.post(BackendHttpRoutes.chatMessages(source)) {
                             trusted(user)
@@ -492,8 +498,8 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     assertTrue(remote["seq"].isNull)
                     assertNotEquals(local["threadId"], remote["threadId"])
                     assertNotEquals(sourceThread, remote["threadId"].asText())
-                    assertEquals("orion.call", remote["payload"]["name"].asText())
-                    assertEquals(json.readTree("""{"utterance":"включи Pink Floyd"}"""), remote["payload"]["arguments"])
+                    assertEquals(skillId, remote["payload"]["name"].asText())
+                    assertEquals(json.valueToTree<JsonNode>(arguments), remote["payload"]["arguments"])
                     assertFalse(remote["payload"].has("target"))
                     assertEquals(HttpStatusCode.NotFound, client.get(
                         "${BackendHttpRoutes.chatThread(target, remote["threadId"].asText())}?clientType=backend",
@@ -502,7 +508,7 @@ class BackendPublicMultiChatWebSocketE2eTest {
                         val wrongResult = toolResult(remote).replace(target, wrongChat)
                         assertEquals("tool_call_not_found", request(socket, wrongResult, status = "rejected")["error"]["code"].asText())
                     }
-                    request(socket, toolResult(remote, """{"reply":"Включаю Pink Floyd"}"""))
+                    request(socket, toolResult(remote, result))
                     if (http) {
                         eventually("HTTP tool result") {
                             client.get(BackendHttpRoutes.chatMessages(source)) { trusted(user) }.jsonBody()["items"]
@@ -513,7 +519,7 @@ class BackendPublicMultiChatWebSocketE2eTest {
                         assertEquals("thread.completed", completed["type"].asText())
                         assertEquals(sourceThread, completed["threadId"].asText())
                     }
-                    assertTrue(llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content.contains("Включаю Pink Floyd"))
+                    assertEquals(json.readTree(result), json.readTree(llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content))
                     assertEquals("tool_call_not_found", request(socket, toolResult(remote), status = "rejected")["error"]["code"].asText())
                 }
                 request(socket, toolResult(local))
