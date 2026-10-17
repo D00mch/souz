@@ -23,7 +23,7 @@ import kotlin.jvm.java
  * [ru.souz.llms.giga.toGiga].
  */
 class ToolInvokeSkill(
-    private val toolCatalog: AgentToolCatalog,
+    private val catalogProvider: () -> AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
     private val loadBundle: suspend (userId: String, skillId: SkillId) -> SkillBundle?,
     private val commandExecutor: SkillCommandExecutor,
@@ -88,7 +88,7 @@ class ToolInvokeSkill(
     fun delegatedToolName(skillId: String): String? =
         skillId.trim().takeIf { it.isNotEmpty() }?.let { resolver().enabledTools.byName[it]?.fn?.name }
 
-    private fun resolver() = SkillResolver(toolCatalog, toolsFilter, loadBundle, approvalGate)
+    private fun resolver() = SkillResolver(catalogProvider(), toolsFilter, loadBundle, approvalGate)
 
     private fun errorMessage(functionName: String, code: String, message: String) =
         resultMessage(functionName, mapOf("error" to mapOf("code" to code, "message" to message)))
