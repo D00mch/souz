@@ -2,6 +2,7 @@ package ru.souz.backend.agent.runtime.conversation
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.plus
 import ru.souz.ToolLoopGraphBasedAgent
@@ -26,11 +27,18 @@ import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.client.CLIENT_TOOL_ROUTING_INSTRUCTIONS
+import ru.souz.backend.client.CLIENT_TOOL_DISCOVERY_NAME
+import ru.souz.backend.client.ClientError
+import ru.souz.backend.client.ClientToolDiscoveryResult
+import ru.souz.backend.client.DiscoveredClientTools
+import ru.souz.backend.client.normalizeClientTools
+import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.common.backendLogContext
 import ru.souz.backend.hooks.HookLlmBudget
 import ru.souz.backend.hooks.HookLlmBudget.Companion.withProviderCall
 import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.config.NamedLlmModel
+import ru.souz.backend.http.clientFrameMapper
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
@@ -164,8 +172,34 @@ internal class BackendConversationRuntimeFactory(
             },
         )
         val clientTools = chatRepository.clientTools(key.userId, key.chatId())
-        val clientToolCatalog = clientSkills.catalog(clientTools)
-        val executionToolCatalog = backendExecutionToolCatalog(
+        val serverNames = toolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet() +
+            BackendToolCapabilityPolicy.executionBoundToolNames
+        lateinit var baseCatalog: AgentToolCatalog
+        lateinit var executionToolCatalog: AgentToolCatalog
+        fun withDiscovered(discovered: DiscoveredClientTools?): AgentToolCatalog {
+            if (discovered == null) return baseCatalog
+            val names = discovered.tools.map { it.name }.toSet()
+            return AgentToolCatalog.compose(
+                baseCatalog.filter { _, tool -> tool.fn.name !in names },
+                clientSkills.catalog(discovered.tools, boundChannelId = discovered.channelId),
+            )
+        }
+        val clientToolCatalog = clientSkills.catalog(clientTools, onDiscovery = { result, channelId ->
+            val replacement = try {
+                val definitions = clientFrameMapper.treeToValue(result, ClientToolDiscoveryResult::class.java).tools
+                    .normalizeClientTools(serverNames + CLIENT_TOOL_DISCOVERY_NAME)
+                val discovered = DiscoveredClientTools(channelId, definitions)
+                discovered to withDiscovered(discovered)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                return@catalog ClientError("invalid_client_tool_catalogue", "Orion returned an invalid catalogue; the previous tools remain available.")
+            }
+            chatRepository.replaceDiscoveredClientTools(key.userId, key.chatId(), replacement.first)
+            executionToolCatalog = replacement.second
+            null
+        })
+        baseCatalog = backendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
             executionLlmToolCatalog = executionLlmToolCatalog.catalog,
             enabledCompiledToolNames = request.enabledTools,
@@ -173,17 +207,18 @@ internal class BackendConversationRuntimeFactory(
             includeFewShotExamples = settingsProvider.useFewShotExamples,
             metrics = metrics,
         )
+        executionToolCatalog = withDiscovered(chatRepository.discoveredClientTools(key.userId, key.chatId()))
         val toolTelemetry = metrics?.toolTelemetry(executionToolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet())
             ?: AgentTelemetry.NONE
         val requestToolsFilter = RuntimePassThroughToolsFilter
         val getSkillByNameTool = ToolGetSkillByName(
-            toolCatalog = executionToolCatalog,
+            catalogProvider = { executionToolCatalog },
             toolsFilter = requestToolsFilter,
             skillBundleProvider = skillBundleProvider,
             approvalGate = null,
         )
         val getSkillsNamesByCategoryTool = ToolGetSkillsNamesByCategory(
-            toolCatalog = executionToolCatalog,
+            catalogProvider = { executionToolCatalog },
             toolsFilter = requestToolsFilter,
         )
         val getSkillsByCategoryTool = ToolGetSkillsByCategory(
@@ -191,7 +226,7 @@ internal class BackendConversationRuntimeFactory(
             getSkillsNamesByCategory = getSkillsNamesByCategoryTool,
         )
         val runtimeCommandTool = ToolInvokeSkill(
-            toolCatalog = executionToolCatalog,
+            catalogProvider = { executionToolCatalog },
             toolsFilter = requestToolsFilter,
             loadBundle = skillBundleProvider::loadSkillBundle,
             commandExecutor = commandExecutor,
@@ -207,12 +242,12 @@ internal class BackendConversationRuntimeFactory(
                     telemetry = toolTelemetry,
                 )
             },
-            toolCatalog = executionToolCatalog,
+            catalogProvider = { executionToolCatalog.filter { _, tool -> tool.fn.name != CLIENT_TOOL_DISCOVERY_NAME } },
             toolsFilter = requestToolsFilter,
             skillBundleProvider = skillBundleProvider,
             commandExecutor = commandExecutor,
             configuredModels = settingsProvider.subagentModels,
-            commandToolNames = clientToolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet(),
+            commandToolNamesProvider = { catalog -> catalog.toolsByCategory.values.flatMap { it.keys }.toSet() - serverNames },
             commandInstructions = CLIENT_TOOL_ROUTING_INSTRUCTIONS,
         )
         val kernel = AgentExecutionKernelFactory(

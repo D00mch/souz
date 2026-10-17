@@ -5,3 +5,4 @@ device-mcp-list-tools
 device-mcp-call-tool
 web-search
 orion-call
+orion-tools-list

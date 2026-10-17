@@ -21,7 +21,7 @@ import ru.souz.llms.restJsonMapper
  * Compiled tools take precedence over stored bundles with the same ID.
  */
 class ToolGetSkillByName(
-    private val toolCatalog: AgentToolCatalog,
+    private val catalogProvider: () -> AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
     private val skillBundleProvider: SkillBundleProvider,
     private val approvalGate: SkillApprovalGate? = null,
@@ -85,7 +85,7 @@ class ToolGetSkillByName(
         }
 
         return try {
-            val resolver = SkillResolver(toolCatalog, toolsFilter, skillBundleProvider::loadSkillBundle, approvalGate)
+            val resolver = SkillResolver(catalogProvider(), toolsFilter, skillBundleProvider::loadSkillBundle, approvalGate)
             when (val resolved = resolver.resolve(SkillId(skillId), meta.userId)) {
                 is SkillResolution.Compiled -> SkillLookupResponse(skill = resolved.tool.toDetail())
                 is SkillResolution.Bundle -> SkillLookupResponse(

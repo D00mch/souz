@@ -57,7 +57,7 @@ class BackendExecutionToolCatalogTest {
                     includeFewShotExamples = false,
                     metrics = metrics,
                 )
-                val helper = ToolInvokeSkill(catalog, RuntimePassThroughToolsFilter, { _, _ -> null }, mockk())
+                val helper = ToolInvokeSkill({ catalog }, RuntimePassThroughToolsFilter, { _, _ -> null }, mockk())
                 val executor = AgentToolExecutor(metrics.toolTelemetry(toolNames(catalog)))
                 val settings = AgentSettings("test", LlmProvider.OPENAI, 0f, catalog.toolsByCategory)
                 for ((index, delegated) in listOf(true, false).withIndex()) {
