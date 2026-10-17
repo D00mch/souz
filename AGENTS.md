@@ -2,7 +2,7 @@
 
 Souz is a Kotlin Multiplatform AI assistant with desktop and backend hosts over shared agent and runtime modules.
 
-Backend client Skills are bundled under `backend/src/main/resources/skills/client/` and provide defaults for chats without tool declarations; nonempty declarations define that chat's tools and input schemas. `orion.tools.list` can add channel-bound tools for one execution without changing the stored chat catalogue.
+Backend client Skills are bundled under `backend/src/main/resources/skills/client/` and provide defaults for every chat; client declarations override matching names and preserve the other defaults. `orion.tools.list` can add channel-bound tools for one execution without changing the stored chat catalogue.
 
 - Read and maintain this file before changing the repository. Before editing a module, read its linked `AGENTS.md`, any applicable nested instructions, and relevant topics linked in its `Pain points` section.
 - Keep runtime documentation and `docs/public-souz-contract/` concise and current-state only. Do not write change-history phrases such as “now we do”.

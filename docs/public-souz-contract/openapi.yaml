@@ -112,8 +112,9 @@ components:
       maxItems: 256
       default: []
       description: >-
-        Immutable chat catalogue, at most 1 MiB. Omission and [] use the seven legacy
-        client Skills plus orion.tools.list; nonempty declarations replace those defaults.
+        Immutable client declarations, at most 1 MiB. Every chat includes the seven legacy
+        client Skills plus orion.tools.list. Declarations override matching names and add
+        custom tools; undeclared defaults remain available. Omission and [] use all defaults.
         Definitions are normalized for shared HTTP/WS creation idempotency; changed definitions conflict.
       items:
         $ref: "#/components/schemas/ClientToolDefinition"

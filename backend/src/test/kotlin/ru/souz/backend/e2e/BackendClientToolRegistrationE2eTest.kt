@@ -69,7 +69,7 @@ class BackendClientToolRegistrationE2eTest {
         }
 
     @Test
-    fun `nonempty declarations replace defaults while preserving schemas and bundled instructions`() =
+    fun `declarations override matching defaults and retain undeclared client Skills`() =
         backendE2eTest("e2e_bundled_declared") {
             val owner = UUID.randomUUID().toString()
             val parameters = LLMRequest.Parameters(
@@ -78,32 +78,36 @@ class BackendClientToolRegistrationE2eTest {
             )
             val tools = json.writeValueAsString(listOf(ClientToolDefinition("orion.call", "Custom Orion description", parameters)))
             val chat = createPublicChat(owner, tools = tools)
-            llm.requestSkillForPrompt("declared", "orion.call", mapOf("utterance" to "stop"))
+            val cases = listOf<Triple<String, Map<String, Any>, String>>(
+                Triple("orion.call", mapOf("utterance" to "stop"), """{"reply":"stopped"}"""),
+                Triple("web.search", mapOf("query" to "news"), """{"documents":[]}"""),
+                Triple("orion.tools.list", emptyMap(), """{"tools":[]}"""),
+            )
             withMultiChatSocket { socket ->
-                socket.send(Frame.Text(messageFrame(chat, owner, "declared", text = "declared")))
-                assertEquals("accepted", readJson(socket)["status"].asText())
-                readJson(socket)
-                val started = readJson(socket)
-                assertEquals("orion.call", started["payload"]["name"].asText())
-                val detail = json.readTree(llm.requests.last().messages.last { it.name == "GetSkillByName" }.content)["skill"]
-                assertTrue(detail["description"].asText().startsWith("Custom Orion description\n\n"))
-                assertTrue("# Orion voice commands" in detail["description"].asText())
-                assertEquals(json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(parameters), detail["inputSchema"])
-                socket.send(Frame.Text("""{"kind":"tool.result","chatId":"$chat","threadId":${started["threadId"]},"toolCallId":${started["payload"]["toolCallId"]},"status":"succeeded","result":{"reply":"stopped"}}"""))
-                assertEquals("accepted", readJson(socket)["status"].asText())
-                assertEquals("thread.completed", readJson(socket)["type"].asText())
-                for ((name, arguments, code) in listOf(
-                    Triple("web.search", mapOf("query" to "news"), "skill_not_found"),
-                    Triple("orion.call", mapOf("text" to "wrong schema"), "mcp_invalid_arguments"),
-                )) {
-                    llm.requestSkillForPrompt(code, name, arguments)
-                    socket.send(Frame.Text(messageFrame(chat, owner, code, text = code)))
+                for ((name, arguments, result) in cases) {
+                    llm.requestSkillForPrompt(name, name, arguments)
+                    socket.send(Frame.Text(messageFrame(chat, owner, name, text = name)))
                     assertEquals("accepted", readJson(socket)["status"].asText())
                     readJson(socket)
+                    val started = readJson(socket)
+                    assertEquals(name, started["payload"]["name"].asText())
+                    val detail = json.readTree(llm.requests.last().messages.last { it.name == "GetSkillByName" }.content)["skill"]
+                    assertTrue("RunSkillCommand" in detail["description"].asText())
+                    if (name == "orion.call") {
+                        assertTrue(detail["description"].asText().startsWith("Custom Orion description\n\n"))
+                        assertEquals(json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(parameters), detail["inputSchema"])
+                    }
+                    socket.send(Frame.Text("""{"kind":"tool.result","chatId":"$chat","threadId":${started["threadId"]},"toolCallId":${started["payload"]["toolCallId"]},"status":"succeeded","result":$result}"""))
+                    assertEquals("accepted", readJson(socket)["status"].asText())
                     assertEquals("thread.completed", readJson(socket)["type"].asText())
-                    val result = llm.requests.last().messages.last { it.name == "RunSkillCommand" }
-                    assertEquals(code, json.readTree(result.content)["error"]["code"].asText())
                 }
+                llm.requestSkillForPrompt("invalid", "orion.call", mapOf("text" to "wrong schema"))
+                socket.send(Frame.Text(messageFrame(chat, owner, "invalid", text = "invalid")))
+                assertEquals("accepted", readJson(socket)["status"].asText())
+                readJson(socket)
+                assertEquals("thread.completed", readJson(socket)["type"].asText())
+                val result = llm.requests.last().messages.last { it.name == "RunSkillCommand" }
+                assertEquals("mcp_invalid_arguments", json.readTree(result.content)["error"]["code"].asText())
             }
         }
 

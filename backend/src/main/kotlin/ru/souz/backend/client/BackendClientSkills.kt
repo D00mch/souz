@@ -44,20 +44,19 @@ internal class BackendClientSkills(
         boundChannelId: String? = null,
         onDiscovery: ((JsonNode, String) -> Unit)? = null,
     ): AgentToolCatalog {
-        val useDefaults = definitions.isEmpty() && boundChannelId == null
-        val selected = if (useDefaults) {
+        val selected = (definitions + if (boundChannelId == null) {
             bundledGuidance.map { (name, guidance) ->
                 ClientToolDefinition(name, guidance.description, LLMRequest.Parameters(
                     type = "object", additionalProperties = false.takeIf { name == CLIENT_TOOL_DISCOVERY_NAME },
                 ))
             }
-        } else definitions
+        } else emptyList()).distinctBy { it.name }
         return AgentToolCatalog(
             selected.groupBy { bundledGuidance[it.name]?.category ?: ToolCategory.APPLICATIONS }
                 .mapValues { (category, tools) ->
                     tools.map { definition ->
                         val guidance = bundledGuidance[definition.name]
-                        val enriched = if (useDefaults || guidance == null) definition else definition.copy(
+                        val enriched = if (definition !in definitions || guidance == null) definition else definition.copy(
                             description = "${definition.description}\n\n${guidance.description}",
                         )
                         ClientWebSocketSkill(
