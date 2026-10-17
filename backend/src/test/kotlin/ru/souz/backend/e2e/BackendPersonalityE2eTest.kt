@@ -29,7 +29,7 @@ class BackendPersonalityE2eTest {
 
     @Test fun `replace append rejection and reset affect this turn and synchronize without replay`() =
         backendE2eTest("personality", llm = personalityApi(), featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = true)) {
-            patch("""{"systemPrompt":"BASE","streamingMessages":true}""")
+            patch("""{"systemPrompt":"BASE","streamingMessages":true,"contextSize":4096}""")
             val chat = createPublicChat(owner)
             withPublicSocket(chat) { socket ->
                 acknowledge(socket, snapshot(socket), "", 1)
@@ -66,6 +66,7 @@ class BackendPersonalityE2eTest {
                     assertEquals(revision, settings()["personalityRevision"].asLong())
                 }
             }
+            assertEquals(setOf(4096), llm.requests.filter { it.messages.first().content == VALIDATION_PROMPT }.map { it.maxTokens }.toSet())
             withPublicSocket(chat) { acknowledge(it, snapshot(it), "", 5) }
             assertFalse(client.get(BackendHttpRoutes.chatEvents(chat)) { trusted(owner) }.jsonBody().toString().contains("prompt.personality.set"))
         }

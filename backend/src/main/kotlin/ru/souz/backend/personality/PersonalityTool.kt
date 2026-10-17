@@ -76,7 +76,7 @@ internal class PersonalityTool(
     private suspend fun normalize(wish: String, current: String?, append: Boolean): JsonNode {
         val model = settings.gigaModel
         val result = llm.message(LLMRequest.Chat(model = settings.executionModelId(model), provider = model.provider,
-            temperature = 0f, messages = listOf(
+            maxTokens = settings.contextSize, temperature = 0f, messages = listOf(
                 LLMRequest.Message(LLMMessageRole.system, VALIDATION_PROMPT),
                 LLMRequest.Message(LLMMessageRole.user, restJsonMapper.writeValueAsString(mapOf(
                     "mode" to if (append) "append" else "replace", "currentPersonality" to current.orEmpty(), "request" to wish,

@@ -9,7 +9,7 @@ both; conversational changes use the enabled tool-backed Skill `personality.upda
   the rest ("а еще", "все ок, только"). The validator rejects append without that explicit intent.
 - `reset`: clear it; omit `request`.
 
-Validation is a separate call using the current execution's model, credentials and accounting.
+Validation is a separate call using the current execution's model, token limit, credentials and accounting.
 Replacement receives only the new wish; append also receives the saved personality. The result must
 be a reusable style for both speech and text. Any unsuitable part rejects the entire request.
 The check is model-based. JSON may have one Markdown fence, but extra fields/text are rejected.
