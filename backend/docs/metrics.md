@@ -45,7 +45,7 @@ Live-event losses cover command queue rejection, queue eviction, abandoned queue
 
 ## Host meters
 
-Ktor exports `ktor_http_server_requests_seconds` (histogram/count/sum) with `method`, `route`, `status`, `address`, `throwable`, and `ktor_http_server_requests_active` (gauge). Routes use templates; unknown routes share one series, `address="backend"`, and exceptions use `none`/`error`. `/health` and `/metrics` are excluded.
+Ktor exports `ktor_http_server_requests_seconds` (histogram/count/sum) with `method`, `route`, `status`, `address`, `throwable`, and `ktor_http_server_requests_active` (gauge). Routes use templates; unknown routes share one series, `address="backend"`, and exceptions use `none`/`error`. `/health`, `/ready`, and `/metrics` are excluded.
 
 JVM/process binders export memory (`jvm_memory_*`), GC (`jvm_gc_*`), threads (`jvm_threads_*`), loaded classes (`jvm_classes_*`), CPU (`process_cpu_usage`, `system_cpu_*`) and uptime (`process_uptime_seconds`). Hikari exports pool gauges `hikaricp_connections{,_active,_idle,_max,_min,_pending}`, acquisition/creation/usage timers `hikaricp_connections_{acquire,creation,usage}_seconds`, and `hikaricp_connections_timeout_total`, labelled by the fixed pool name.
 

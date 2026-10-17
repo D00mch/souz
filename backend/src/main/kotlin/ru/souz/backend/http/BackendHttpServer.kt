@@ -37,12 +37,19 @@ import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.routes.v1Routes
 import ru.souz.backend.http.routes.hookRoutes
 import ru.souz.backend.security.RequestIdentityPlugin
+import ru.souz.backend.storage.postgres.PostgresReadinessProbe
 import ru.souz.skilloauth.impl.installSkillOAuthRoutes
 
 /** Health-check response returned by `GET /health`. */
 data class HealthResponse(
     val status: String,
     val model: String,
+)
+
+/** Readiness response returned by `GET /ready`. */
+data class ReadinessResponse(
+    val status: String,
+    val database: String,
 )
 
 /** Root endpoint response describing the available backend routes. */
@@ -106,7 +113,9 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
         meterBinders = emptyList() // Backend resources own the JVM binders and their shutdown.
         registerDistributionStatisticConfig = false
         distinctNotRegisteredRoutes = false
-        filter { it.request.path() != BackendHttpRoutes.HEALTH && it.request.path() != BackendHttpRoutes.METRICS }
+        filter {
+            it.request.path() !in setOf(BackendHttpRoutes.HEALTH, BackendHttpRoutes.READY, BackendHttpRoutes.METRICS)
+        }
         timers { call, cause ->
             tag("address", "backend")
             tag("throwable", if (cause == null) "none" else "error")
@@ -221,6 +230,32 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
             }
         }
 
+        get(BackendHttpRoutes.READY) {
+            val database = dependencies.readinessProbe.check()
+            val ready = database == PostgresReadinessProbe.State.WRITABLE
+            call.respond(
+                if (ready) HttpStatusCode.OK else HttpStatusCode.ServiceUnavailable,
+                ReadinessResponse(
+                    status = if (ready) "ready" else "not_ready",
+                    database = database.name.lowercase(),
+                ),
+            )
+        }.describePublic(
+            operationId = "getReadiness",
+            tag = BackendOpenApiTags.SYSTEM,
+            summary = "Get backend readiness",
+            description = "Checks that PostgreSQL accepts writes within a bounded timeout. " +
+                "Use it for the readiness probe; the liveness probe stays on the process-only health route.",
+        ) {
+            responses {
+                jsonResponse<ReadinessResponse>(HttpStatusCode.OK, "PostgreSQL is reachable and writable.")
+                jsonResponse<ReadinessResponse>(
+                    HttpStatusCode.ServiceUnavailable,
+                    "PostgreSQL is unavailable, read-only, or did not answer within the readiness timeout.",
+                )
+            }
+        }
+
         v1Routes(dependencies)
         hookRoutes(dependencies.hookService)
         dependencies.skillOAuthGatewayImpl?.let { installSkillOAuthRoutes(it, BackendHttpRoutes.OAUTH_CALLBACK) }
@@ -245,6 +280,7 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
 private fun rootEndpoints(featureFlags: BackendFeatureFlags): List<String> =
     buildList {
         add("GET ${BackendHttpRoutes.HEALTH}")
+        add("GET ${BackendHttpRoutes.READY}")
         add("GET ${BackendHttpRoutes.METRICS}")
         add("GET ${BackendHttpRoutes.DOCS}")
         add("GET ${BackendHttpRoutes.BOOTSTRAP}")
