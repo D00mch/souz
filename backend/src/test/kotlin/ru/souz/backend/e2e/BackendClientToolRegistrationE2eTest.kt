@@ -137,7 +137,7 @@ class BackendClientToolRegistrationE2eTest {
                     "[${definition.replace("speaker.say", "ConnectOAuthProvider")}]",
                     "[${definition.replace("speaker.say", "SafeApiCall")}]",
                     "[${definition.replace("speaker.say", "RunSkillCommand")}]",
-                    "[${definition.replace("speaker.say", "ReadFile")}]",
+                    "[${definition.replace("speaker.say", "ExtractTextFromFile")}]",
                     "[${definition.replace("speaker.say", "bad name")}]",
                     "[${definition.replace("Speak text", " ")}]",
                     "[${definition.replace("\"Speak text\"", "123")}]",

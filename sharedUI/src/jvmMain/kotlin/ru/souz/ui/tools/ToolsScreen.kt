@@ -443,7 +443,7 @@ private fun ToolsScreenPreview() {
                         category = ToolCategory.FILES,
                         enabled = true,
                         tools = listOf(
-                            ToolUi("ReadFile", "Read a file", true),
+                            ToolUi("ExtractTextFromFile", "Read a file", true),
                             ToolUi("ListFiles", "List project files", false),
                         )
                     ),
