@@ -54,7 +54,11 @@ internal class PersonalitySync(
     }
 
     private suspend fun orionChannel(userId: String, preferred: UUID?): Chat? {
-        val ids = (listOfNotNull(preferred) + events.liveChatIds(userId)).distinct()
+        if (preferred != null) {
+            val chat = channels.resolveTarget(userId, preferred)
+            if (chat?.clientType == "backend" && events.hasLiveSubscriber(userId, chat.id)) return chat
+        }
+        val ids = events.liveChatIds(userId)
         val owned = channels.resolveTargets(userId, ids)
         return ids.asSequence().mapNotNull(owned::get).firstOrNull {
             it.clientType == "backend" && events.hasLiveSubscriber(userId, it.id)
