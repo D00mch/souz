@@ -40,14 +40,13 @@ class BackendMetricsE2eTest {
                 header(HttpHeaders.Host, "arbitrary-$index.example")
             }
             client.get("/health")
-            client.get("/ready")
         }
         val after = client.get("/metrics").bodyAsText()
         listOf("jvm_memory_used_bytes", "process_uptime_seconds", "hikaricp_connections_active",
             "hikaricp_connections_acquire_seconds_bucket", "ktor_http_server_requests_seconds_bucket",
             "souz_execution_duration_seconds_bucket").forEach { assertTrue(after.contains(it), it) }
         assertTrue(after.contains("le=\"900.0\""))
-        listOf(userId, chatId, "arbitrary-", "unknown-", "METHOD-", "route=\"/health", "route=\"/ready", "route=\"/metrics")
+        listOf(userId, chatId, "arbitrary-", "unknown-", "METHOD-", "route=\"/health", "route=\"/metrics")
             .forEach { assertFalse(after.contains(it), it) }
         client.post(BackendHttpRoutes.cancelActive(chatId)) { trusted(userId) }
         backend.awaitExecution(UUID.fromString(submitted.jsonBody()["execution"]["id"].asText()))

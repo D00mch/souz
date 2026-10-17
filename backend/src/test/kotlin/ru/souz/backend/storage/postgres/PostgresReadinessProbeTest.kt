@@ -2,50 +2,54 @@ package ru.souz.backend.storage.postgres
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import java.sql.Connection
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import javax.sql.DataSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.measureTime
 import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import ru.souz.backend.storage.postgres.PostgresReadinessProbe.State
 
 class PostgresReadinessProbeTest {
     @Test
-    fun `read-only session is not ready`() = runBlocking {
-        containerPool { connectionInitSql = "set default_transaction_read_only = on" }.use { dataSource ->
-            assertEquals(State.READ_ONLY, PostgresReadinessProbe(dataSource).check())
-        }
+    fun `read-only and unreachable databases are not writable`() = runBlocking {
+        mapOf(
+            "read-only" to containerPool { connectionInitSql = "set default_transaction_read_only = on" },
+            "unreachable" to containerPool {
+                jdbcUrl = "jdbc:postgresql://127.0.0.1:1/souz"
+                connectionTimeout = 250L
+                initializationFailTimeout = -1L
+            },
+        ).forEach { (name, pool) -> pool.use { assertFalse(PostgresReadinessProbe(it).isWritable(), name) } }
     }
 
     @Test
-    fun `unreachable database is unavailable`() = runBlocking {
-        containerPool {
-            jdbcUrl = "jdbc:postgresql://127.0.0.1:1/souz"
-            connectionTimeout = 250L
-            initializationFailTimeout = -1L
-        }.use { dataSource ->
-            assertEquals(State.UNAVAILABLE, PostgresReadinessProbe(dataSource).check())
-        }
-    }
-
-    @Test
-    fun `concurrent probes on an exhausted pool wait for one connection and time out on schedule`() = runBlocking {
-        containerPool { maximumPoolSize = 1 }.use { dataSource ->
-            val probe = PostgresReadinessProbe(dataSource, timeout = 1.seconds)
-            dataSource.connection.use {
-                val elapsed = measureTime {
-                    val probes = List(2) { async { probe.check() } }
-                    delay(500.milliseconds)
-                    assertEquals(1, dataSource.hikariPoolMXBean.threadsAwaitingConnection)
-                    assertEquals(listOf(State.TIMED_OUT, State.TIMED_OUT), probes.map { it.await() })
+    fun `concurrent probes on a stalled database make one connection attempt and answer on schedule`() = runBlocking {
+        containerPool().use { pool ->
+            val release = CountDownLatch(1)
+            val attempts = AtomicInteger()
+            // A database that stops answering; it gives up after 5 s so a regression fails instead of hanging.
+            val stalled = object : DataSource by pool {
+                override fun getConnection(): Connection {
+                    attempts.incrementAndGet()
+                    release.await(5, TimeUnit.SECONDS)
+                    return pool.connection
                 }
-                assertTrue(elapsed < 3.seconds, "Probes ignored the 1 s deadline: $elapsed")
             }
-            assertEquals(State.WRITABLE, probe.check())
+            val probe = PostgresReadinessProbe(stalled, timeout = 1.seconds)
+            val elapsed = measureTime {
+                assertEquals(listOf(false, false), List(2) { async { probe.isWritable() } }.map { it.await() })
+            }
+            assertTrue(elapsed < 3.seconds, "Probes ignored the 1 s deadline: $elapsed")
+            assertEquals(1, attempts.get())
+            release.countDown()
+            assertTrue(probe.isWritable())
         }
     }
 
@@ -57,7 +61,6 @@ class PostgresReadinessProbeTest {
                 username = container.username
                 password = container.password
                 maximumPoolSize = 2
-                connectionTimeout = 5_000L
                 configure()
             },
         )

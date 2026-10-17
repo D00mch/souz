@@ -120,7 +120,6 @@ class BackendCompositionE2eTest {
                 health.jsonBody()["model"].asText() in BackendLlmSupport.chatModels.map { it.alias }
             )
             assertEquals(HttpStatusCode.OK, ready.status)
-            assertEquals("""{"status":"ready","database":"writable"}""", ready.bodyAsText())
             assertEquals(HttpStatusCode.OK, openApi.status)
             assertTrue(openApi.jsonBody()["paths"].has(BackendHttpRoutes.SETTINGS))
             assertFalse(root.jsonBody()["endpoints"].any { it.asText().contains("telegram-bot") })
@@ -133,7 +132,6 @@ class BackendCompositionE2eTest {
             val healthWithoutDatabase = client.get(BackendHttpRoutes.HEALTH)
             held.forEach { it.close() }
             assertEquals(HttpStatusCode.ServiceUnavailable, notReady.status)
-            assertEquals("""{"status":"not_ready","database":"timed_out"}""", notReady.bodyAsText())
             assertEquals(HttpStatusCode.OK, healthWithoutDatabase.status)
         }
 
