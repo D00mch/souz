@@ -29,6 +29,7 @@ class BackendRuntimeResourcesTest {
                 throw firstFailure
             },
             closeLocalRuntime = { closed += "local-runtime" },
+            closeAttachmentStorage = { closed += "attachment-storage" },
             closeDataSource = {
                 closed += "database"
                 throw secondFailure
@@ -50,7 +51,7 @@ class BackendRuntimeResourcesTest {
             assertEquals(listOf("database close failed"), observed.suppressed.map { it.message })
         }
         assertEquals(
-            listOf("application-work", "provider-http", "local-runtime", "database"),
+            listOf("application-work", "provider-http", "local-runtime", "attachment-storage", "database"),
             closed,
         )
     }
