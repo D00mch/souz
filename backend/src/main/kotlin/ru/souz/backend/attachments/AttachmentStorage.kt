@@ -50,7 +50,7 @@ class AttachmentStorage(
                 objects.delete(file)
                 throw AttachmentException("attachment_expired")
             }
-            return get(userId, completed.id).also { committed = true }
+            return available(completed).also { committed = true }
         } finally {
             // A cancelled/late writer may finish after cleanup has already left a tombstone.
             // Keep the late object eligible for another cleanup attempt.
