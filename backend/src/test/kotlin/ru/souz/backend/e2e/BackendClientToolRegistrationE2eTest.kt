@@ -24,10 +24,10 @@ class BackendClientToolRegistrationE2eTest {
         backendE2eTest("e2e_bundled_defaults") {
             val owner = UUID.randomUUID().toString()
             val parameters = LLMRequest.Parameters(
-                "object", mapOf("utterance" to LLMRequest.Property("string")),
-                required = listOf("utterance"), additionalProperties = false,
+                "object", mapOf("query" to LLMRequest.Property("string")),
+                required = listOf("query"), additionalProperties = false,
             )
-            val tools = json.writeValueAsString(listOf(ClientToolDefinition("orion.call", "Custom Orion description", parameters)))
+            val tools = json.writeValueAsString(listOf(ClientToolDefinition("device.media.open", "Custom media description", parameters)))
             val cases = listOf<Triple<String, Map<String, Any>, Long>>(
                 Triple("user.ask", mapOf("question" to "Which genre?"), 300),
                 Triple("device.media.open", mapOf("query" to "The Thing"), 60),
@@ -35,7 +35,6 @@ class BackendClientToolRegistrationE2eTest {
                 Triple("device.mcp.list_tools", mapOf("target" to "speaker"), 30),
                 Triple("device.mcp.call_tool", mapOf("name" to "set_volume", "arguments" to mapOf("level" to 7)), 60),
                 Triple("web.search", mapOf("query" to "Kotlin release"), 60),
-                Triple("orion.call", mapOf("utterance" to "включи Pink Floyd"), 60),
                 Triple("orion.tools.list", emptyMap(), 30),
             )
             val chat = createPublicChat(owner, tools = tools)
@@ -52,9 +51,9 @@ class BackendClientToolRegistrationE2eTest {
                     assertTrue(deadline >= before.plusSeconds(seconds) && deadline <= after.plusSeconds(seconds))
                     val detail = json.readTree(llm.requests.last().messages.last { it.name == "GetSkillByName" }.content)["skill"]
                     assertTrue("RunSkillCommand" in detail["description"].asText())
-                    if (name == "orion.call") {
-                        assertTrue(detail["description"].asText().startsWith("Custom Orion description\n\n"))
-                        assertTrue("# Orion voice commands" in detail["description"].asText())
+                    if (name == "device.media.open") {
+                        assertTrue(detail["description"].asText().startsWith("Custom media description\n\n"))
+                        assertTrue("# Open media" in detail["description"].asText())
                         assertEquals(json.valueToTree<JsonNode>(parameters), detail["inputSchema"])
                     } else if (name != "orion.tools.list") {
                         assertEquals(json.valueToTree<JsonNode>(LLMRequest.Parameters("object")), detail["inputSchema"])
@@ -62,7 +61,7 @@ class BackendClientToolRegistrationE2eTest {
                     val result = if (name == "orion.tools.list") """{"tools":[]}""" else """{"ok":true}"""
                     assertEquals("thread.completed", answer(socket, started, result)["type"].asText())
                 }
-                llm.requestSkillForPrompt("invalid schema", "orion.call", mapOf("text" to "wrong schema"))
+                llm.requestSkillForPrompt("invalid schema", "device.media.open", mapOf("text" to "wrong schema"))
                 assertEquals("thread.completed", submit(socket, chat, owner, "invalid schema")["type"].asText())
                 assertEquals("mcp_invalid_arguments", output()["error"]["code"].asText())
             }
@@ -70,15 +69,11 @@ class BackendClientToolRegistrationE2eTest {
                 socket.send(Frame.Text("""{"kind":"chat.create","requestId":"empty-tools","payload":{"userId":"$owner","tools":[]}}"""))
                 val created = readJson(socket)
                 assertEquals("accepted", created["status"].asText())
-                llm.requestSkillForPrompt("empty array", "orion.call", emptyMap())
-                socket.send(Frame.Text(messageFrame(created["chatId"].asText(), owner, "empty-array", text = "empty array")))
-                assertEquals("accepted", readJson(socket)["status"].asText())
-                readJson(socket)
-                val started = readJson(socket)
-                assertEquals("orion.call", started["payload"]["name"].asText())
-                socket.send(Frame.Text("""{"kind":"tool.result","chatId":${created["chatId"]},"threadId":${started["threadId"]},"toolCallId":${started["payload"]["toolCallId"]},"status":"succeeded","result":{"reply":"done"}}"""))
-                assertEquals("accepted", readJson(socket)["status"].asText())
-                assertEquals("thread.completed", readJson(socket)["type"].asText())
+                llm.requestSkillForPrompt("empty array", "device.media.open", emptyMap(), "orion.call" to emptyMap())
+                val started = submit(socket, created["chatId"].asText(), owner, "empty array")
+                assertEquals("device.media.open", started["payload"]["name"].asText())
+                assertEquals("thread.completed", answer(socket, started)["type"].asText())
+                assertEquals("skill_not_found", output()["error"]["code"].asText())
             }
         }
 
@@ -161,12 +156,13 @@ class BackendClientToolRegistrationE2eTest {
                 val orion = answer(socket, replacement, """{"tools":[${speaker.replace("speaker.say", "orion.call")}]}""")
                 assertEquals(second, orion["chatId"].asText())
                 assertEquals("orion.call", orion["payload"]["name"].asText())
+                assertEquals("Discovered speaker", json.readTree(llm.requests.last().messages.last { it.name == "GetSkillByName" }.content)["skill"]["description"].asText())
                 assertEquals("thread.completed", answer(socket, orion)["type"].asText())
                 assertEquals("skill_not_found", output()["error"]["code"].asText())
 
                 llm.requestSkillForPrompt(
                     "empty refresh", "orion.tools.list", mapOf("channelId" to second),
-                    "speaker.say" to speech, "orion.call" to mapOf("utterance" to "stop"),
+                    "speaker.say" to speech, "device.media.open" to mapOf("query" to "The Thing"), "orion.call" to emptyMap(),
                 )
                 val empty = submit(socket, source, owner, "empty refresh")
                 val declared = answer(socket, empty, """{"tools":[]}""")
@@ -175,8 +171,9 @@ class BackendClientToolRegistrationE2eTest {
                 assertEquals("Speak text", json.readTree(llm.requests.last().messages.last { it.name == "GetSkillByName" }.content)["skill"]["description"].asText())
                 val bundled = answer(socket, declared)
                 assertEquals(source, bundled["chatId"].asText())
-                assertEquals("orion.call", bundled["payload"]["name"].asText())
+                assertEquals("device.media.open", bundled["payload"]["name"].asText())
                 assertEquals("thread.completed", answer(socket, bundled)["type"].asText())
+                assertEquals("skill_not_found", output()["error"]["code"].asText())
             }
         }
 

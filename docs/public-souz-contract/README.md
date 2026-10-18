@@ -30,7 +30,7 @@ With `HINDSIGHT_API_URL` configured and `SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL
 
 ## Client tool catalogue
 
-HTTP `POST /v1/chats` and WS `chat.create.payload` accept optional `tools`, an array of `{name, description, parameters}` definitions. Bundled client Skills are always available: `user.ask`, `device.media.open`, `device.mcp.list_devices`, `device.mcp.list_tools`, `device.mcp.call_tool`, `web.search`, `orion.call`, and `orion.tools.list`. Declarations override matching defaults. Missing `tools` and `[]` are equivalent; explicit `null` is invalid. Server tools keep their existing policy.
+HTTP `POST /v1/chats` and WS `chat.create.payload` accept optional `tools`, an array of `{name, description, parameters}` definitions. Bundled client Skills are always available: `user.ask`, `device.media.open`, `device.mcp.list_devices`, `device.mcp.list_tools`, `device.mcp.call_tool`, `web.search`, and `orion.tools.list`. Orion command tools come from declarations or discovery. Declarations override matching defaults. Missing `tools` and `[]` are equivalent; explicit `null` is invalid. Server tools keep their existing policy.
 
 Delegated client Skills also use `RunSkillCommand`; their exact names and full schemas are included in the child's instructions. Only explicitly selected Skills are callable. Local discovery preserves schemas in full; the selected model's context window must still fit them.
 
@@ -62,11 +62,6 @@ receipt: the first result reserved before `deadlineAt` wins and waits for its AC
 deadline. Further results, including those after timeout or caller cancellation, are rejected as
 `tool_call_not_found`. A failed ACK write releases the caller with `client_tool_failed`. Disconnect
 does not replay the call; if no result arrives before `deadlineAt`, the caller receives `client_tool_timed_out`.
-
-`orion.call` accepts `{"utterance":"включи Pink Floyd"}` and returns `{"reply":"Включаю Pink Floyd"}`.
-It handles Orion music, playback, volume, timer and alarm commands, with a one-minute deadline.
-An unrecognized command can return an ordinary apology in `reply`; transport errors use
-`orion_call_failed` or `client_tool_timed_out`.
 
 Active-thread submit/tool/cancel operations must reach the runtime owner in multi-replica deployments. Durable replay and thread status can be read from any process.
 
