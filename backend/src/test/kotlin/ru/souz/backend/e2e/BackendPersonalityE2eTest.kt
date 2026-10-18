@@ -21,7 +21,6 @@ import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.personality.PersonalityTool
 import ru.souz.backend.personality.VALIDATION_PROMPT
 import ru.souz.backend.storage.postgres.newPostgresSchema
-import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.restJsonMapper
 
 class BackendPersonalityE2eTest {
@@ -193,14 +192,9 @@ private fun personalityApi(before: suspend (String, String) -> Unit = { _, _ -> 
         }
         reply(body, "```json\n$output\n```")
     } else {
-        val turn = body.messages.drop(body.messages.indexOfLast { it.role == LLMMessageRole.user })
         val wish = body.conversationPrompt()
-        when {
-            turn.any { it.name == "RunSkillCommand" } -> reply(body, "Done")
-            turn.any { it.name == "GetSkillByName" } -> toolCallReply(body, "RunSkillCommand", mapOf("skillId" to PersonalityTool.NAME,
-                "arguments" to if (wish == "reset") mapOf("action" to "reset")
-                else mapOf("action" to if (wish.startsWith("also ")) "append" else "update", "request" to wish)))
-            else -> toolCallReply(body, "GetSkillByName", mapOf("skillId" to PersonalityTool.NAME))
-        }
+        val arguments = if (wish == "reset") mapOf("action" to "reset")
+            else mapOf("action" to if (wish.startsWith("also ")) "append" else "update", "request" to wish)
+        scriptedSkillReply(body, PersonalityTool.NAME, arguments)
     }
 }

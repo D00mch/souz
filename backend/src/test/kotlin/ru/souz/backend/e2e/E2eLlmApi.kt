@@ -109,7 +109,7 @@ internal class E2eLlmApi(
         releaseGate?.await()
         promptReleaseGates[prompt]?.await()
         return response?.invoke(body)
-            ?: (promptSkills[prompt] ?: skill)?.let { scriptedSkillReply(body, it) }
+            ?: (promptSkills[prompt] ?: skill)?.let { scriptedSkillReply(body, it.skillId, it.arguments) }
             ?: reply(body, "assistant reply to $prompt")
     }
 
@@ -129,7 +129,7 @@ internal class E2eLlmApi(
             return@flow
         }
         (promptSkills[prompt] ?: skill)?.let {
-            emit(scriptedSkillReply(body, it))
+            emit(scriptedSkillReply(body, it.skillId, it.arguments))
             return@flow
         }
         val chunks = streamingChunks ?: listOf("assistant ", "reply ", "to $prompt")
@@ -175,9 +175,10 @@ private data class SkillScript(
     val arguments: Map<String, Any>,
 )
 
-private fun scriptedSkillReply(
+internal fun scriptedSkillReply(
     body: LLMRequest.Chat,
-    script: SkillScript,
+    skillId: String,
+    arguments: Map<String, Any>,
 ): LLMResponse.Chat.Ok {
     val latestUserIndex = body.messages.indexOfLast { it.role == LLMMessageRole.user }
     val currentTurn = body.messages.drop(latestUserIndex.coerceAtLeast(0))
@@ -189,10 +190,10 @@ private fun scriptedSkillReply(
             toolCallReply(
                 body = body,
                 name = "RunSkillCommand",
-                arguments = mapOf("skillId" to script.skillId, "arguments" to script.arguments),
+                arguments = mapOf("skillId" to skillId, "arguments" to arguments),
             )
 
-        else -> toolCallReply(body, "GetSkillByName", mapOf("skillId" to script.skillId))
+        else -> toolCallReply(body, "GetSkillByName", mapOf("skillId" to skillId))
     }
 }
 
