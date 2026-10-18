@@ -201,6 +201,13 @@ internal class BackendE2eScope(
     suspend fun readRawJson(session: DefaultClientWebSocketSession): JsonNode =
         json.readTree((session.incoming.receive() as Frame.Text).readText())
 
+    fun toolResultFrame(frame: JsonNode, status: String, resultOrError: Map<String, Any>): String =
+        json.writeValueAsString(mapOf(
+            "kind" to "tool.result", "chatId" to frame["chatId"].asText(),
+            "threadId" to frame["threadId"].asText(), "toolCallId" to frame["payload"]["toolCallId"].asText(),
+            "status" to status, (if (status == "succeeded") "result" else "error") to resultOrError,
+        ))
+
     private val personalityCalls = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     /** Unrelated workflows emulate the Orion settings handler; personality tests use readRawJson. */
@@ -210,11 +217,8 @@ internal class BackendE2eScope(
             if (frame.path("payload").path("name").asText() == "prompt.personality.set") {
                 val id = frame["payload"]["toolCallId"].asText()
                 personalityCalls.add(id)
-                session.send(Frame.Text(json.writeValueAsString(mapOf(
-                    "kind" to "tool.result", "chatId" to frame["chatId"].asText(),
-                    "threadId" to frame["threadId"].asText(), "toolCallId" to id,
-                    "status" to "succeeded", "result" to mapOf("outcome" to "applied",
-                        "revision" to frame["payload"]["arguments"]["revision"].longValue()),
+                session.send(Frame.Text(toolResultFrame(frame, "succeeded", mapOf(
+                    "outcome" to "applied", "revision" to frame["payload"]["arguments"]["revision"].longValue(),
                 ))))
             } else if (!personalityCalls.contains(frame.path("toolCallId").asText())) {
                 return frame

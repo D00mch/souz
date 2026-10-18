@@ -166,13 +166,9 @@ class BackendPersonalityE2eTest {
         assertEquals(setOf("prompt", "revision"), arguments.fieldNames().asSequence().toSet())
         assertEquals(prompt, arguments["prompt"].asText())
         assertEquals(revision, arguments["revision"].asLong())
-        val outcome = if (failed) mapOf("error" to mapOf("code" to "client_tool_timed_out", "message" to "unknown"))
-            else mapOf("result" to mapOf("outcome" to "applied", "revision" to revision))
-        socket.send(Frame.Text(json.writeValueAsString(mapOf(
-            "kind" to "tool.result", "chatId" to frame["chatId"].asText(),
-            "threadId" to frame["threadId"].asText(), "toolCallId" to frame["payload"]["toolCallId"].asText(),
-            "status" to if (failed) "timed_out" else "succeeded",
-        ) + outcome)))
+        val outcome = if (failed) mapOf("code" to "client_tool_timed_out", "message" to "unknown")
+            else mapOf("outcome" to "applied", "revision" to revision)
+        socket.send(Frame.Text(toolResultFrame(frame, if (failed) "timed_out" else "succeeded", outcome)))
     }
 }
 
