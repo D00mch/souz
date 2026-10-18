@@ -86,11 +86,17 @@ class BackendExecutionToolCatalogTest {
     }
 
     @Test
-    fun `catalog exposes only client web search for every compiled tool selection`() {
+    fun `catalog filters compiled tools by the enabled snapshot and exposes only client web search`() {
+        val webTools = setOf("InternetSearch", "InternetResearch", "WebPageText", ToolWebImageSearch.NAME, "FutureWebTool")
+        val unsafeTools = setOf("ControlBrowser", "UnsafeLocalSettings")
         val selections = mapOf(
-            null to setOf("ReadFile", "ViewImage", "GenerateImage", PersonalityTool.NAME),
+            null to setOf("ReadFile", "ListActiveChannels", "SendMessageToChannel", "ViewImage", "GenerateImage", PersonalityTool.NAME),
             setOf("ReadFile") to setOf("ReadFile"),
-            setOf("InternetSearch", "InternetResearch", "WebPageText", "FutureWebTool") to emptySet(),
+            setOf("ReadFile", "ViewImage", PersonalityTool.NAME) + unsafeTools to setOf("ReadFile", "ViewImage", PersonalityTool.NAME),
+            setOf("GenerateImage") to setOf("GenerateImage"),
+            webTools to emptySet(),
+            webTools + "ReadFile" to setOf("ReadFile"),
+            unsafeTools to emptySet(),
             emptySet<String>() to emptySet(),
         )
         for ((enabled, compiled) in selections) {
@@ -143,6 +149,7 @@ class BackendExecutionToolCatalogTest {
             compiledToolCatalog = TestToolCatalog(
                 ToolCategory.FILES to listOf("ReadFile"),
                 ToolCategory.WEB_SEARCH to listOf("WebPageText", ToolWebImageSearch.NAME, "FutureWebTool"),
+                ToolCategory.CHANNEL_MESSAGING to listOf("ListActiveChannels", "SendMessageToChannel"),
                 ToolCategory.BROWSER to listOf("ControlBrowser"),
             ),
             executionLlmToolCatalog = TestToolCatalog(
