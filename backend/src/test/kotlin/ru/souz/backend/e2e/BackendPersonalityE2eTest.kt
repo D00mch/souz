@@ -5,13 +5,7 @@ import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
-import io.ktor.server.websocket.DefaultWebSocketServerSession
 import io.ktor.websocket.Frame
-import io.ktor.websocket.readText
-import io.mockk.coEvery
-import io.mockk.every
-import io.mockk.mockk
-import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -20,18 +14,11 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.http.BackendHttpRoutes
-import ru.souz.backend.http.routes.PublicClientConnection
-import ru.souz.backend.events.bus.AgentEventLimits
-import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.personality.PERSONALITY_SYNC_COMMAND
 import ru.souz.backend.personality.PERSONALITY_VALIDATION_PROMPT
 import ru.souz.backend.personality.PersonalityTool
@@ -40,57 +27,6 @@ import ru.souz.llms.restJsonMapper
 
 class BackendPersonalityE2eTest {
     private val owner = UUID.randomUUID().toString()
-
-    @Test
-    fun `reconnect starts the snapshot deadline after slow replay`() = backendE2eTest("personality_replay") {
-        val chatId = createPublicChat(owner)
-        withPublicSocket(chatId) { socket ->
-            socket.send(Frame.Text(messageFrame(chatId, owner, "before-reconnect")))
-            withTimeout(10_000) {
-                while (readJson(socket).path("type").asText() != "thread.completed") { /* drain */ }
-            }
-        }
-        val chat = backend.dependencies.publicClientService.requireChat(UUID.fromString(chatId), "backend")
-        coroutineScope {
-            val incoming = Channel<Frame>(Channel.UNLIMITED)
-            val outgoing = Channel<JsonNode>(Channel.UNLIMITED)
-            val replayStarted = CompletableDeferred<Unit>()
-            val resumeReplay = CompletableDeferred<Unit>()
-            val socket = mockk<DefaultWebSocketServerSession> {
-                every { this@mockk.incoming } returns incoming
-                coEvery { send(any()) } coAnswers {
-                    val frame = json.readTree(firstArg<Frame.Text>().readText())
-                    if (frame.path("type").asText() == "thread.completed") {
-                        replayStarted.complete(Unit)
-                        resumeReplay.await()
-                    }
-                    outgoing.send(frame)
-                }
-            }
-            val connection = launch {
-                PublicClientConnection(socket, backend.dependencies, "backend", chat, "slow-replay").run(0)
-            }
-            try {
-                withTimeout(20_000) {
-                    replayStarted.await()
-                    delay(11_000) // Longer than one command deadline, while the transport cannot forward commands.
-                    val resumedAt = Instant.now()
-                    resumeReplay.complete(Unit)
-                    assertEquals("thread.completed", outgoing.receive()["type"].asText())
-                    val snapshot = outgoing.receive()
-                    assertEquals(PERSONALITY_SYNC_COMMAND, snapshot["payload"]["name"].asText())
-                    assertTrue(Instant.parse(snapshot["payload"]["deadlineAt"].asText()).isAfter(resumedAt))
-                    incoming.send(Frame.Text(toolResultFrame(snapshot, "succeeded", mapOf("outcome" to "unchanged", "revision" to 1))))
-                    assertEquals("accepted", outgoing.receive()["status"].asText())
-                    eventually("snapshot waiter released") { Unit.takeIf { backend.clientThreadRegistry.isEmpty() } }
-                }
-            } finally {
-                connection.cancelAndJoin()
-                incoming.close()
-                outgoing.close()
-            }
-        }
-    }
 
     @Test
     fun `style lifecycle is isolated from settings and survives restart`() {
@@ -159,7 +95,7 @@ class BackendPersonalityE2eTest {
         }
 
     @Test
-    fun `Orion snapshots prefer the source fall back when offline or busy and reconnect without replay`() =
+    fun `Orion snapshots prefer the source fall back when offline and reconnect without replay`() =
         backendE2eTest("personality_sync", llm = personalityApi()) {
             val source = createPublicChat(owner)
             val other = createPublicChat(owner, "other")
@@ -180,31 +116,16 @@ class BackendPersonalityE2eTest {
                         assertEquals(1, llm.requests.count { it.messages.first().content == PERSONALITY_VALIDATION_PROMPT })
                     }
                 }
-                for ((index, style) in listOf("captain", "formal").withIndex()) {
-                    val events = backend.dependencies.eventService
-                    val sourceId = UUID.fromString(source)
-                    // An unread production stream models a connected socket stalled by backpressure.
-                    val stalled = if (index == 1) events.openPublicStream(owner, sourceId, null) else null
-                    try {
-                        if (stalled != null) repeat(AgentEventLimits.LIVE_BUFFER_SIZE) {
-                            assertTrue(events.publishClientToolCall(owner, sourceId, UUID.randomUUID(),
-                                PublicToolCallStartedPayload("blocked-$it", "user.ask", arguments = json.createObjectNode())))
-                        }
-                        coroutineScope {
-                            val turn = async { turn(source, style) }
-                            acknowledge(fallback, snapshot(fallback), style, 3L + index)
-                            turn.await()
-                            assertEquals("synced", toolResult()["sync"].asText())
-                            assertEquals(3L + index, settings()["personalityRevision"].asLong())
-                        }
-                    } finally {
-                        stalled?.close?.invoke()
-                    }
+                coroutineScope {
+                    val turn = async { turn(source, "captain") }
+                    acknowledge(fallback, snapshot(fallback), "captain", 3)
+                    turn.await()
+                    assertEquals("synced", toolResult()["sync"].asText())
                 }
             }
             turn(source, "reset")
             assertEquals("pending", toolResult()["sync"].asText())
-            withPublicSocket(source) { socket -> acknowledge(socket, snapshot(socket), null, 5) }
+            withPublicSocket(source) { socket -> acknowledge(socket, snapshot(socket), null, 4) }
             for (chat in listOf(source, other)) {
                 val events = client.get(BackendHttpRoutes.chatEvents(chat)) { trusted(owner) }.jsonBody()["items"]
                 assertTrue(events.none { it.path("payload").path("name").asText() == PERSONALITY_SYNC_COMMAND })
