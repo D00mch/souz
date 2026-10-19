@@ -11,7 +11,8 @@ class AttachmentCleanupWorker(private val storage: AttachmentStorage) {
     fun start(scope: CoroutineScope) = scope.launch {
         while (isActive) {
             try {
-                storage.cleanup()
+                // cleanup counts successful deletes; any per-file failure keeps the count below a full batch.
+                if (storage.cleanup() == ATTACHMENT_CLEANUP_BATCH_SIZE) continue
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {

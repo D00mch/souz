@@ -7,6 +7,7 @@ import ru.souz.backend.crypto.sha256Hex
 
 internal val ATTACHMENT_RETENTION = Duration.ofDays(30)
 internal val ATTACHMENT_PENDING_LIFETIME = Duration.ofHours(24)
+internal const val ATTACHMENT_CLEANUP_BATCH_SIZE = 100
 
 data class StoredAttachment(
     val id: UUID,

@@ -5,6 +5,7 @@ import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.attachments.ATTACHMENT_PENDING_LIFETIME
+import ru.souz.backend.attachments.ATTACHMENT_CLEANUP_BATCH_SIZE
 import ru.souz.backend.attachments.ATTACHMENT_RETENTION
 import ru.souz.backend.attachments.AttachmentException
 import ru.souz.backend.attachments.StoredAttachment
@@ -76,7 +77,7 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
     }
 
     /** Mark first, delete second; failed deletes remain retryable without granting access. */
-    suspend fun expire(now: Instant, limit: Int = 100): List<StoredAttachment> = dataSource.write { connection ->
+    suspend fun expire(now: Instant, limit: Int = ATTACHMENT_CLEANUP_BATCH_SIZE): List<StoredAttachment> = dataSource.write { connection ->
         connection.prepareStatement("""
             update stored_attachments f set state = 'deleting', cleanup_attempt_at = ?
             from (
