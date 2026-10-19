@@ -7,7 +7,7 @@ create table stored_attachments (
     mime_type text not null,
     size_bytes bigint not null check (size_bytes >= 0),
     sha256 text not null,
-    state text not null check (state in ('pending', 'ready', 'deleting', 'deleted')),
+    state text not null check (state in ('pending', 'ready', 'deleting')),
     created_at timestamptz not null,
     stored_at timestamptz,
     expires_at timestamptz,
@@ -16,7 +16,7 @@ create table stored_attachments (
     check (state <> 'ready' or (stored_at is not null and expires_at is not null))
 );
 
--- Match each cleanup branch's predicate and ordering; deleted history stays outside these indexes.
+-- Match each cleanup branch's predicate and ordering.
 create index stored_attachments_ready_expiry_idx on stored_attachments(expires_at) where state = 'ready';
 create index stored_attachments_pending_created_idx on stored_attachments(created_at) where state = 'pending';
 create index stored_attachments_deleting_queue_idx

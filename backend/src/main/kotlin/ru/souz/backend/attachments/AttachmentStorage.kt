@@ -37,29 +37,18 @@ class AttachmentStorage(
         val mime = attachmentMime(bytes, safeName)
         val file = repository.reserve(userId, sourceKey, safeName, mime, bytes.size.toLong(), bytes.sha256Hex(), clock.instant())
         if (file.state == "ready") return available(file)
-        if (file.state != "pending" || !file.createdAt.plus(ATTACHMENT_PENDING_LIFETIME).isAfter(clock.instant())) {
-            throw AttachmentException("attachment_expired")
-        }
-        currentCoroutineContext().ensureActive()
-        var committed = false
+        var completed = false
         try {
+            currentCoroutineContext().ensureActive()
             objects.put(file, bytes)
-            val completed = repository.complete(file, clock.instant())
-            if (completed.state != "ready") {
-                repository.retireLateWrite(file)
-                objects.delete(file)
-                throw AttachmentException("attachment_expired")
-            }
-            return available(completed).also { committed = true }
+            return available(repository.complete(file, clock.instant())).also { completed = true }
         } finally {
-            // A cancelled/late writer may finish after cleanup has already left a tombstone.
-            // Keep the late object eligible for another cleanup attempt.
-            if (!committed) withContext(NonCancellable) {
-                try { repository.retireLateWrite(file) }
+            if (!completed) withContext(NonCancellable) {
+                try { repository.failUpload(file) }
                 catch (cancelled: CancellationException) { throw cancelled }
-                catch (error: Exception) {
-                    logger.warn("Late attachment write cleanup scheduling failed for file {}: exceptionClass={}",
-                        file.id, error.javaClass.name)
+                catch (cleanupError: Exception) {
+                    logger.warn("Attachment cleanup scheduling failed for file {}: exceptionClass={}",
+                        file.id, cleanupError.javaClass.name)
                 }
             }
         }
@@ -85,7 +74,7 @@ class AttachmentStorage(
         for (file in repository.expire(clock.instant())) {
             try {
                 objects.delete(file)
-                repository.deleted(file)
+                repository.remove(file)
                 removed++
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -100,7 +89,7 @@ class AttachmentStorage(
     }
 
     private fun available(file: StoredAttachment): StoredAttachment {
-        if (file.state in setOf("deleting", "deleted") || file.expiresAt?.isAfter(clock.instant()) == false) {
+        if (file.state == "deleting" || file.expiresAt?.isAfter(clock.instant()) == false) {
             throw AttachmentException("attachment_expired")
         }
         if (file.state != "ready") throw AttachmentException("attachment_not_ready")

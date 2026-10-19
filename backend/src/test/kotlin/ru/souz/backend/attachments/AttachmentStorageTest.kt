@@ -50,9 +50,7 @@ import ru.souz.backend.storage.postgres.write
 
 class AttachmentStorageTest {
     @Test
-    fun `failed S3 cleanup logs safe diagnostics and remains retryable`() = attachmentTest {
-        val file = save("alice", "cleanup-failure", "a.txt", "content")
-        clock.now = file.expiresAt!!
+    fun `missing bucket fails uploads and cleanup with safe diagnostics`() = attachmentTest {
         val missing = AttachmentStorageConfig(
             endpoint = config.endpoint, bucket = "missing-${UUID.randomUUID()}",
             accessKey = "attachment-test", secretKey = "attachment-test-secret",
@@ -62,9 +60,13 @@ class AttachmentStorageTest {
         logger.addAppender(logs)
         try {
             S3AttachmentObjects(missing).use { unavailable ->
-                val failedStorage = AttachmentStorage(missing, PostgresAttachmentRepository(dataSource), unavailable, clock)
+                val failedStorage = AttachmentStorage(missing, repository, unavailable, clock)
+                assertEquals(404, assertFailsWith<S3Exception> {
+                    failedStorage.save("alice", "missing-bucket", "a.txt", "bytes".byteInputStream())
+                }.statusCode())
                 assertEquals(0, failedStorage.cleanup())
             }
+            val file = repository.expire(clock.now).single()
             val failure = logs.list.single()
             assertTrue(failure.formattedMessage.contains("file ${file.id}: exceptionClass=software.amazon.awssdk.services.s3.model."))
             assertTrue(failure.formattedMessage.contains("statusCode=404, s3ErrorCode=NoSuchBucket"))
@@ -73,7 +75,7 @@ class AttachmentStorageTest {
                 assertTrue(!failure.formattedMessage.contains(privateValue))
             }
             assertEquals(1, storage.cleanup())
-            assertEquals(404, assertFailsWith<S3Exception> { objects.read(file) }.statusCode())
+            assertNull(repository.get("alice", file.id))
             assertEquals(0, storage.cleanup())
         } finally {
             logger.detachAppender(logs)
@@ -89,7 +91,7 @@ class AttachmentStorageTest {
             endpoint = config.endpoint, bucket = config.bucket,
             accessKey = config.accessKey, secretKey = config.secretKey, maxFileBytes = 500,
         )
-        val smallerLimit = AttachmentStorage(smallerConfig, PostgresAttachmentRepository(dataSource), objects, clock)
+        val smallerLimit = AttachmentStorage(smallerConfig, repository, objects, clock)
         assertContentEquals(bytes, smallerLimit.read("alice", file.id))
         assertEquals("attachment_too_large", assertFailsWith<AttachmentException> {
             smallerLimit.save("alice", "after-limit-change", "a.bin", bytes.inputStream())
@@ -131,7 +133,6 @@ class AttachmentStorageTest {
 
     @Test
     fun `cleanup batches share one limit across expired files abandoned uploads and retries`() = attachmentTest {
-        val repository = PostgresAttachmentRepository(dataSource)
         val expected = mutableSetOf<UUID>()
         repeat(3) { index ->
             expected += repository.reserve(
@@ -144,7 +145,7 @@ class AttachmentStorageTest {
             val ready = repository.reserve("alice", "ready-$index", "a.txt", "text/plain", 0, "", old)
             expected += repository.complete(ready, old).id
             expected += repository.reserve(
-                "alice", "pending-$index", "a.txt", "text/plain", 0, "", clock.now.minus(Duration.ofHours(24)),
+                "alice", "pending-$index", "a.txt", "text/plain", 0, "", clock.now.minus(Duration.ofMinutes(10)),
             ).id
         }
         val fresh = repository.reserve("alice", "fresh-ready", "a.txt", "text/plain", 0, "", clock.now)
@@ -158,7 +159,7 @@ class AttachmentStorageTest {
             for (file in batch) {
                 assertEquals("deleting", file.state)
                 assertTrue(processed.add(file.id))
-                repository.deleted(file)
+                repository.remove(file)
             }
         }
         assertEquals(expected, processed)
@@ -184,20 +185,21 @@ class AttachmentStorageTest {
     }
 
     @Test
-    fun `late PUT after expired pending upload cleanup remains eligible for deletion`() = attachmentTest {
-        val repository = PostgresAttachmentRepository(dataSource)
-        val bytes = "late bytes".toByteArray()
-        val file = repository.reserve("alice", "late-write", "a.txt", "text/plain", bytes.size.toLong(), bytes.sha256Hex(), clock.now)
-        clock.now = clock.now.plus(Duration.ofHours(24))
-        assertEquals(1, storage.cleanup())
-        // Simulate an already-started PUT reaching S3 after the cleanup completed.
-        objects.put(file, bytes)
-        assertEquals("deleted", repository.complete(file, clock.now).state)
-        repository.retireLateWrite(file)
-        assertEquals("attachment_expired", assertFailsWith<AttachmentException> { storage.get("alice", file.id) }.code)
-        assertEquals(1, storage.cleanup())
-        assertEquals(0, storage.cleanup())
+    fun `pending upload cannot be resumed and is removed at ten minutes`() = attachmentTest {
+        val bytes = "pending bytes".toByteArray()
+        val file = repository.reserve("alice", "pending", "a.txt", "text/plain", bytes.size.toLong(), bytes.sha256Hex(), clock.now)
+        assertEquals("attachment_not_ready", assertFailsWith<AttachmentException> {
+            storage.save("alice", "pending", "a.txt", bytes.inputStream())
+        }.code)
         assertEquals(404, assertFailsWith<S3Exception> { objects.read(file) }.statusCode())
+        clock.now = clock.now.plus(Duration.ofMinutes(10)).minusSeconds(1)
+        assertEquals(0, storage.cleanup())
+        clock.now = clock.now.plusSeconds(1)
+        assertEquals(1, storage.cleanup())
+        assertNull(repository.get("alice", file.id))
+        assertEquals("attachment_expired", assertFailsWith<AttachmentException> { repository.complete(file, clock.now) }.code)
+        assertEquals("attachment_not_found", assertFailsWith<AttachmentException> { storage.get("alice", file.id) }.code)
+        assertEquals(0, storage.cleanup())
     }
 
     @Test
@@ -225,26 +227,13 @@ class AttachmentStorageTest {
     }
 
     @Test
-    fun `missing configured bucket is not created by storage`() = attachmentTest {
-        val missing = AttachmentStorageConfig(
-            endpoint = config.endpoint, bucket = "missing-${UUID.randomUUID()}",
-            accessKey = "attachment-test", secretKey = "attachment-test-secret",
-        )
-        S3AttachmentObjects(missing).use { unavailable ->
-            val storage = AttachmentStorage(missing, PostgresAttachmentRepository(dataSource), unavailable, clock)
-            val error = assertFailsWith<S3Exception> {
-                storage.save("alice", "missing-bucket", "a.txt", "bytes".byteInputStream())
-            }
-            assertEquals(404, error.statusCode())
-        }
-    }
-
-    @Test
-    fun `concurrent retry preserves identity bytes and expiry without prolongation`() = attachmentTest {
-        val first = coroutineScope {
+    fun `ready duplicates preserve identity and expiry while cleanup releases the source key`() = attachmentTest {
+        val first = save("alice", "same-event", "a.txt", "original")
+        coroutineScope {
             val a = async { save("alice", "same-event", "a.txt", "original") }
             val b = async { save("alice", "same-event", "a.txt", "original") }
-            a.await().also { assertEquals(it, b.await()) }
+            assertEquals(first, a.await())
+            assertEquals(first, b.await())
         }
         clock.now = clock.now.plus(Duration.ofDays(29))
         assertEquals(first, save("alice", "same-event", "a.txt", "original"))
@@ -255,24 +244,34 @@ class AttachmentStorageTest {
         assertEquals("attachment_expired", assertFailsWith<AttachmentException> { storage.read("alice", first.id) }.code)
         assertEquals(1, storage.cleanup())
         assertEquals(0, storage.cleanup())
-        assertFailsWith<Exception> { objects.read(first) }
-        assertEquals("attachment_expired", assertFailsWith<AttachmentException> {
-            save("alice", "same-event", "a.txt", "original")
-        }.code)
+        assertEquals(404, assertFailsWith<S3Exception> { objects.read(first) }.statusCode())
+        assertNull(repository.get("alice", first.id))
+        assertEquals("attachment_not_found", assertFailsWith<AttachmentException> { storage.get("alice", first.id) }.code)
+        val replacement = save("alice", "same-event", "a.txt", "original")
+        assertNotEquals(first.id, replacement.id)
+        assertEquals("original", storage.read("alice", replacement.id).decodeToString())
     }
 
     @Test
-    fun `failed database commit after PUT recovers and abandoned uploads are cleaned`() = attachmentTest {
+    fun `failed upload and deletion commits leave the file eligible for cleanup`() = attachmentTest {
         execute("""create function reject_attachment() returns trigger language plpgsql as 'begin raise exception ''test failure''; end'""")
-        execute("""create constraint trigger reject_attachment after update on stored_attachments deferrable initially deferred for each row execute function reject_attachment()""")
+        execute("""create constraint trigger reject_attachment after update on stored_attachments deferrable initially deferred for each row when (new.state = 'ready') execute function reject_attachment()""")
         assertFailsWith<java.sql.SQLException> { save("alice", "interrupted", "a.txt", "persisted") }
         execute("drop trigger reject_attachment on stored_attachments")
-        val recovered = save("alice", "interrupted", "a.txt", "persisted")
-        assertContentEquals("persisted".toByteArray(), storage.read("alice", recovered.id))
-        execute("update stored_attachments set state = 'pending', stored_at = null, expires_at = null")
-        clock.now = clock.now.plus(Duration.ofHours(24))
+        assertEquals("attachment_expired", assertFailsWith<AttachmentException> {
+            save("alice", "interrupted", "a.txt", "persisted")
+        }.code)
+        val failed = repository.expire(clock.now).single()
+        assertEquals("deleting", failed.state)
+        assertContentEquals("persisted".toByteArray(), objects.read(failed))
+        execute("""create constraint trigger reject_delete after delete on stored_attachments deferrable initially deferred for each row execute function reject_attachment()""")
+        assertEquals(0, storage.cleanup())
+        assertEquals(404, assertFailsWith<S3Exception> { objects.read(failed) }.statusCode())
+        assertEquals("deleting", repository.get("alice", failed.id)?.state)
+        execute("drop trigger reject_delete on stored_attachments")
         assertEquals(1, storage.cleanup())
-        assertFailsWith<Exception> { objects.read(recovered) }
+        assertNull(repository.get("alice", failed.id))
+        assertEquals(0, storage.cleanup())
     }
 
     @Test
@@ -356,6 +355,7 @@ private class AttachmentFixture(maxConcurrentUploads: Int) : AutoCloseable {
     }.direct
     val storage: AttachmentStorage = di.instance()
     val objects: S3AttachmentObjects = di.instance()
+    val repository: PostgresAttachmentRepository = di.instance()
     suspend fun save(user: String, key: String, name: String, text: String) = storage.save(user, key, name, text.byteInputStream())
     suspend fun execute(sql: String) = dataSource.write { it.createStatement().use { statement -> statement.execute(sql) } }
     override fun close() { objects.close(); dataSource.close() }

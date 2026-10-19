@@ -14,7 +14,7 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
     suspend fun reserve(
         userId: String, sourceKey: String, name: String, mimeType: String, size: Long, sha256: String, now: Instant,
     ): StoredAttachment = dataSource.write { connection ->
-        connection.prepareStatement("""
+        val inserted = connection.prepareStatement("""
             insert into stored_attachments(id, user_id, source_key, name, mime_type, size_bytes, sha256, state, created_at)
             values (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
             on conflict (user_id, source_key) do nothing
@@ -27,14 +27,16 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
             it.setLong(6, size)
             it.setString(7, sha256)
             it.setInstant(8, now)
-            it.executeUpdate()
+            it.executeUpdate() == 1
         }
         connection.prepareStatement("$FILE_SELECT where f.user_id = ? and f.source_key = ?").use {
             it.setString(1, userId)
             it.setString(2, sourceKey)
             it.executeQuery().use { rows ->
-                check(rows.next())
+                if (!rows.next()) throw AttachmentException("attachment_not_found")
                 rows.attachment().also { file ->
+                    if (file.state == "deleting") throw AttachmentException("attachment_expired")
+                    if (!inserted && file.state == "pending") throw AttachmentException("attachment_not_ready")
                     if (file.sha256 != sha256 || file.sizeBytes != size || file.name != name || file.mimeType != mimeType) {
                         throw AttachmentException("attachment_idempotency_conflict")
                     }
@@ -43,21 +45,22 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
         }
     }
 
-    suspend fun complete(file: StoredAttachment, now: Instant): StoredAttachment {
-        dataSource.write { connection ->
-            connection.prepareStatement("""
-                update stored_attachments set state = 'ready', stored_at = ?, expires_at = ?
-                where id = ? and user_id = ? and state = 'pending' and created_at > ?
-            """.trimIndent()).use {
-                it.setInstant(1, now)
-                it.setInstant(2, now.plus(ATTACHMENT_RETENTION))
-                it.setObject(3, file.id)
-                it.setString(4, file.userId)
-                it.setInstant(5, now.minus(ATTACHMENT_PENDING_LIFETIME))
-                it.executeUpdate()
+    suspend fun complete(file: StoredAttachment, now: Instant): StoredAttachment = dataSource.write { connection ->
+        connection.prepareStatement("""
+            update stored_attachments set state = 'ready', stored_at = ?, expires_at = ?
+            where id = ? and user_id = ? and state = 'pending' and created_at > ?
+            returning *
+        """.trimIndent()).use {
+            it.setInstant(1, now)
+            it.setInstant(2, now.plus(ATTACHMENT_RETENTION))
+            it.setObject(3, file.id)
+            it.setString(4, file.userId)
+            it.setInstant(5, now.minus(ATTACHMENT_PENDING_LIFETIME))
+            it.executeQuery().use { rows ->
+                if (!rows.next()) throw AttachmentException("attachment_expired")
+                rows.attachment()
             }
         }
-        return requireNotNull(get(file.userId, file.id))
     }
 
     suspend fun get(userId: String, id: UUID): StoredAttachment? = dataSource.read { connection ->
@@ -111,19 +114,19 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
         }
     }
 
-    suspend fun deleted(file: StoredAttachment) = dataSource.write { connection ->
-        connection.prepareStatement("update stored_attachments set state = 'deleted' where id = ? and state = 'deleting'").use {
+    suspend fun remove(file: StoredAttachment) = dataSource.write { connection ->
+        connection.prepareStatement("delete from stored_attachments where id = ? and state = 'deleting'").use {
             it.setObject(1, file.id)
             it.executeUpdate()
         }
         Unit
     }
 
-    /** Restore cleanup intent when a writer outlives an expired-file cleanup. */
-    suspend fun retireLateWrite(file: StoredAttachment) = dataSource.write { connection ->
+    /** Failed uploads are cleaned up, never resumed by a subsequent save. */
+    suspend fun failUpload(file: StoredAttachment) = dataSource.write { connection ->
         connection.prepareStatement("""
             update stored_attachments set state = 'deleting' where id = ? and user_id = ?
-                and state in ('deleting', 'deleted')
+                and state = 'pending'
         """.trimIndent()).use {
             it.setObject(1, file.id)
             it.setString(2, file.userId)
