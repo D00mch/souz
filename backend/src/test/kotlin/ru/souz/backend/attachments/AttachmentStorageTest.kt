@@ -84,7 +84,7 @@ class AttachmentStorageTest {
     }
 
     @Test
-    fun `lowering the upload limit preserves reads of previously stored files`() = attachmentTest {
+    fun `reads ignore the upload limit but verify stored size and checksum`() = attachmentTest {
         val bytes = ByteArray(1000) { it.toByte() }
         val file = storage.save("alice", "before-limit-change", "a.bin", bytes.inputStream())
         val smallerConfig = AttachmentStorageConfig(
@@ -96,6 +96,19 @@ class AttachmentStorageTest {
         assertEquals("attachment_too_large", assertFailsWith<AttachmentException> {
             smallerLimit.save("alice", "after-limit-change", "a.bin", bytes.inputStream())
         }.code)
+        for (replacement in listOf(
+            bytes.copyOf().apply { this[0] = 1 },
+            bytes.copyOf(bytes.size - 1),
+            bytes.copyOf(bytes.size + 1),
+        )) {
+            // Change the S3 object without changing the original PostgreSQL metadata.
+            objects.put(file, replacement)
+            assertEquals("attachment_corrupt", assertFailsWith<AttachmentException> {
+                smallerLimit.read("alice", file.id)
+            }.code, "Replacement size: ${replacement.size}")
+        }
+        objects.put(file, bytes)
+        assertContentEquals(bytes, smallerLimit.read("alice", file.id))
     }
 
     @Test
@@ -167,8 +180,17 @@ class AttachmentStorageTest {
     }
 
     @Test
-    fun `emoji at filename limit survives persistence and retries without split surrogates`() = attachmentTest {
+    fun `sanitized filenames and emoji boundaries survive persistence and retries`() = attachmentTest {
         val cases = listOf(
+            "../report.txt" to "report.txt",
+            "C:\\tmp\\report.txt" to "report.txt",
+            "\u0000re\tport\r\n.txt\u007f" to "report.txt",
+            "  report.txt  " to "report.txt",
+            "" to "attachment",
+            " \t\r\n " to "attachment",
+            "." to "attachment",
+            ".." to "attachment",
+            "a".repeat(181) to "a".repeat(180),
             "😀.txt" to "😀.txt",
             "a".repeat(178) + "😀.txt" to "a".repeat(178) + "😀",
             "a".repeat(179) + "😀.txt" to "a".repeat(179),
@@ -176,10 +198,10 @@ class AttachmentStorageTest {
         )
         for ((index, names) in cases.withIndex()) {
             val (original, expected) = names
-            val file = save("alice", "emoji-$index", original, "content")
+            val file = save("alice", "filename-$index", original, "content")
             assertEquals(expected, file.name)
             assertEquals(expected, storage.get("alice", file.id).name)
-            assertEquals(file, save("alice", "emoji-$index", original, "content"))
+            assertEquals(file, save("alice", "filename-$index", original, "content"))
             assertEquals("content", storage.read("alice", file.id).decodeToString())
         }
     }
@@ -191,7 +213,9 @@ class AttachmentStorageTest {
         assertEquals("attachment_not_ready", assertFailsWith<AttachmentException> {
             storage.save("alice", "pending", "a.txt", bytes.inputStream())
         }.code)
-        assertEquals(404, assertFailsWith<S3Exception> { objects.read(file) }.statusCode())
+        val missing = assertFailsWith<S3Exception> { objects.read(file) }
+        assertEquals(404, missing.statusCode())
+        assertEquals("NoSuchKey", missing.awsErrorDetails().errorCode())
         clock.now = clock.now.plus(Duration.ofMinutes(10)).minusSeconds(1)
         assertEquals(0, storage.cleanup())
         clock.now = clock.now.plusSeconds(1)
@@ -244,7 +268,9 @@ class AttachmentStorageTest {
         assertEquals("attachment_expired", assertFailsWith<AttachmentException> { storage.read("alice", first.id) }.code)
         assertEquals(1, storage.cleanup())
         assertEquals(0, storage.cleanup())
-        assertEquals(404, assertFailsWith<S3Exception> { objects.read(first) }.statusCode())
+        val missing = assertFailsWith<S3Exception> { objects.read(first) }
+        assertEquals(404, missing.statusCode())
+        assertEquals("NoSuchKey", missing.awsErrorDetails().errorCode())
         assertNull(repository.get("alice", first.id))
         assertEquals("attachment_not_found", assertFailsWith<AttachmentException> { storage.get("alice", first.id) }.code)
         val replacement = save("alice", "same-event", "a.txt", "original")
@@ -266,7 +292,9 @@ class AttachmentStorageTest {
         assertContentEquals("persisted".toByteArray(), objects.read(failed))
         execute("""create constraint trigger reject_delete after delete on stored_attachments deferrable initially deferred for each row execute function reject_attachment()""")
         assertEquals(0, storage.cleanup())
-        assertEquals(404, assertFailsWith<S3Exception> { objects.read(failed) }.statusCode())
+        val missing = assertFailsWith<S3Exception> { objects.read(failed) }
+        assertEquals(404, missing.statusCode())
+        assertEquals("NoSuchKey", missing.awsErrorDetails().errorCode())
         assertEquals("deleting", repository.get("alice", failed.id)?.state)
         execute("drop trigger reject_delete on stored_attachments")
         assertEquals(1, storage.cleanup())
