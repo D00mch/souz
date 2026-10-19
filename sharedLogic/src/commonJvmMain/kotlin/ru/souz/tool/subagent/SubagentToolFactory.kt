@@ -29,13 +29,13 @@ import ru.souz.tool.skills.toDetail
 /** Creates the core spawn tool with the parent's actual execution settings. */
 class SubagentToolFactory(
     private val createAgent: (maxTurns: Int) -> Agent,
-    private val toolCatalog: AgentToolCatalog,
+    private val catalogProvider: () -> AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
     private val skillBundleProvider: SkillBundleProvider,
     private val commandExecutor: SkillCommandExecutor,
     private val approvalGate: SkillApprovalGate? = null,
     private val configuredModels: Map<String, LlmProvider> = emptyMap(),
-    private val commandToolNames: Set<String> = emptySet(),
+    private val commandToolNamesProvider: (AgentToolCatalog) -> Set<String> = { emptySet() },
     private val commandInstructions: String = "",
 ) {
     fun create(parentSettings: AgentSettings): LLMToolSetup {
@@ -53,7 +53,9 @@ class SubagentToolFactory(
         parentSettings: AgentSettings,
         meta: ToolInvocationMeta,
     ): SubagentTool.Setup {
-        val resolver = SkillResolver(toolCatalog, toolsFilter, skillBundleProvider::loadSkillBundle, approvalGate)
+        val catalog = catalogProvider()
+        val resolver = SkillResolver(catalog, toolsFilter, skillBundleProvider::loadSkillBundle, approvalGate)
+        val commandToolNames = commandToolNamesProvider(catalog)
         val tools = mutableListOf<LLMToolSetup>()
         val bundles = linkedMapOf<SkillId, SkillBundle>()
         input.skillIds.map(String::trim).distinct().forEach { id ->
@@ -93,8 +95,9 @@ class SubagentToolFactory(
         tools: List<LLMToolSetup>,
         commandTools: List<LLMToolSetup>,
     ): LLMToolSetup {
+        val catalog = AgentToolCatalog(mapOf(ToolCategory.CHAT to tools))
         val command = ToolInvokeSkill(
-            toolCatalog = AgentToolCatalog(mapOf(ToolCategory.CHAT to tools)),
+            catalogProvider = { catalog },
             toolsFilter = RuntimePassThroughToolsFilter,
             loadBundle = { userId, skillId ->
                 bundles[skillId].takeIf { userId == ownerId }

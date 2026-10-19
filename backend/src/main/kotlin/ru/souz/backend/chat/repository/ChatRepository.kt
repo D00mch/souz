@@ -4,6 +4,7 @@ import java.time.Instant
 import java.util.UUID
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.client.ClientToolDefinition
+import ru.souz.backend.client.DiscoveredClientTools
 
 class ChatRequestConflictException(
     val userId: String,
@@ -17,6 +18,8 @@ interface ChatRepository {
     /** Deletes a scheduled-task chat with no execution or message, after a concurrent admission commits. */
     suspend fun deleteEmptyScheduledChat(userId: String, chatId: UUID): Boolean
     suspend fun clientTools(userId: String, chatId: UUID): List<ClientToolDefinition>
+    suspend fun discoveredClientTools(userId: String, chatId: UUID): DiscoveredClientTools?
+    suspend fun replaceDiscoveredClientTools(userId: String, chatId: UUID, tools: DiscoveredClientTools)
     suspend fun get(userId: String, chatId: UUID): Chat?
     suspend fun getById(chatId: UUID): Chat?
     suspend fun getByIds(chatIds: List<UUID>): List<Chat>

@@ -109,7 +109,7 @@ class ProviderStreamingFlowTest {
                     val api = TokenLoggingChatApi(router, mockk(relaxed = true))
                     val spawn = SubagentToolFactory(
                         createAgent = { ToolLoopGraphBasedAgent(api, settings, it) },
-                        toolCatalog = AgentToolCatalog(),
+                        catalogProvider = { AgentToolCatalog() },
                         toolsFilter = RuntimePassThroughToolsFilter,
                         skillBundleProvider = mockk(), commandExecutor = mockk(),
                         configuredModels = mapOf(model to provider),

@@ -41,7 +41,7 @@ internal class E2eLlmApi(
     private var hangAfterStreaming = false
     private var skill: SkillScript? = null
     private val promptReleaseGates = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
-    private val promptSkills = ConcurrentHashMap<String, SkillScript>()
+    private val promptSkills = ConcurrentHashMap<String, List<SkillScript>>()
 
     fun hangUntilCancelled() {
         hang = true
@@ -78,8 +78,12 @@ internal class E2eLlmApi(
         skill = SkillScript(skillId, arguments)
     }
 
-    fun requestSkillForPrompt(prompt: String, skillId: String, arguments: Map<String, Any>) {
-        promptSkills[prompt] = SkillScript(skillId, arguments)
+    fun requestSkillForPrompt(
+        prompt: String, skillId: String, arguments: Map<String, Any>,
+        vararg subsequentSkills: Pair<String, Map<String, Any>>,
+    ) {
+        promptSkills[prompt] = listOf(SkillScript(skillId, arguments)) +
+            subsequentSkills.map { (name, args) -> SkillScript(name, args) }
     }
 
     fun pausePromptUntilReleased(prompt: String) {
@@ -109,7 +113,7 @@ internal class E2eLlmApi(
         releaseGate?.await()
         promptReleaseGates[prompt]?.await()
         return response?.invoke(body)
-            ?: (promptSkills[prompt] ?: skill)?.let { scriptedSkillReply(body, it) }
+            ?: (promptSkills[prompt] ?: skill?.let(::listOf))?.let { scriptedSkillReply(body, it) }
             ?: reply(body, "assistant reply to $prompt")
     }
 
@@ -128,7 +132,7 @@ internal class E2eLlmApi(
             emit(reply)
             return@flow
         }
-        (promptSkills[prompt] ?: skill)?.let {
+        (promptSkills[prompt] ?: skill?.let(::listOf))?.let {
             emit(scriptedSkillReply(body, it))
             return@flow
         }
@@ -177,15 +181,14 @@ private data class SkillScript(
 
 private fun scriptedSkillReply(
     body: LLMRequest.Chat,
-    script: SkillScript,
+    scripts: List<SkillScript>,
 ): LLMResponse.Chat.Ok {
     val latestUserIndex = body.messages.indexOfLast { it.role == LLMMessageRole.user }
     val currentTurn = body.messages.drop(latestUserIndex.coerceAtLeast(0))
+    val completed = currentTurn.count { it.role == LLMMessageRole.function && it.name == "RunSkillCommand" }
+    val script = scripts.getOrNull(completed) ?: return reply(body, "client tool completed")
     return when {
-        currentTurn.any { it.role == LLMMessageRole.function && it.name == "RunSkillCommand" } ->
-            reply(body, "client tool completed")
-
-        currentTurn.any { it.role == LLMMessageRole.function && it.name == "GetSkillByName" } ->
+        currentTurn.count { it.role == LLMMessageRole.function && it.name == "GetSkillByName" } > completed ->
             toolCallReply(
                 body = body,
                 name = "RunSkillCommand",

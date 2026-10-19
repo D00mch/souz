@@ -112,11 +112,27 @@ components:
       maxItems: 256
       default: []
       description: >-
-        Immutable chat catalogue, at most 1 MiB. Omission and [] use the seven bundled
-        client Skills; nonempty declarations replace those defaults.
+        Immutable creation declarations, at most 1 MiB. Bundled client Skills are always
+        available; declarations override matching defaults. Omission and [] are equivalent.
         Definitions are normalized for shared HTTP/WS creation idempotency; changed definitions conflict.
       items:
         $ref: "#/components/schemas/ClientToolDefinition"
+    ClientToolDiscoveryResult:
+      type: object
+      additionalProperties: false
+      required: [tools]
+      description: >-
+        Successful orion.tools.list result. Replaces the source conversation's remembered
+        discovered tools, bound to the supplying channel, without changing creation declarations.
+        Discovered definitions override matching declarations and defaults; an empty list restores
+        that baseline. The discovery tool itself is excluded. The deadline is 30 seconds.
+      properties:
+        tools:
+          type: array
+          maxItems: 256
+          description: At most 1 MiB; the same definition validation as chat creation applies.
+          items:
+            $ref: "#/components/schemas/ClientToolDefinition"
     ClientToolDefinition:
       type: object
       additionalProperties: false

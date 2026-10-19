@@ -16,7 +16,7 @@ Keep this module UI-free. Compose resources and UI adapters belong in `:sharedUI
 - Keep skill registry and skill-tool DI opt-in; general runtime modules must not install them implicitly.
 - Resolve filesystem and command access from each `ToolInvocationMeta`; do not retain user-specific paths in singleton tools.
 - Keep the skill registry and `RunSkillCommand` on the same single-user bundle layout so activation and execution resolve the same bundle.
-- Composite Skill steps use the invoking tool's filtered catalog snapshot; child snapshots contain only explicitly selected capabilities.
+- Skill lookups and invocations resolve a host-provided catalog snapshot. Composite steps use that same filtered snapshot; children retain only the capabilities selected at spawn, independently of parent refreshes.
 - Use sandbox filesystem abstractions for tool and skill IO whenever they are available.
 
 ## Pain points

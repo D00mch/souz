@@ -1,6 +1,7 @@
 package ru.souz.backend.client
 
 import com.fasterxml.jackson.databind.JsonNode
+import java.util.UUID
 import ru.souz.backend.http.invalidV1Request
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.restJsonMapper
@@ -10,6 +11,12 @@ data class ClientToolDefinition(
     val description: String,
     val parameters: LLMRequest.Parameters,
 )
+
+data class DiscoveredClientTools(val channelId: UUID, val tools: List<ClientToolDefinition>)
+
+internal data class ClientToolDiscoveryResult(val tools: List<ClientToolDefinition>)
+
+internal const val CLIENT_TOOL_DISCOVERY_NAME = "orion.tools.list"
 
 internal fun List<ClientToolDefinition>.normalizeClientTools(
     serverNames: Set<String>
@@ -129,4 +136,7 @@ internal const val CLIENT_TOOL_ROUTING_INSTRUCTIONS =
     "Client Skills run on the current device by default. To target another connected device, or when there is no " +
         "current client, use ListActiveChannels and add the selected channelId to RunSkillCommand.arguments. " +
         "channelId is reserved routing metadata, omitted from the registered schema and removed before dispatch. " +
+        "To discover additional Orion capabilities, invoke orion.tools.list on the selected channel. " +
+        "Discovered Skills remain bound to that channel and are remembered in this conversation until the next discovery. " +
+        "If the channel is unavailable, select a live channel and rediscover. Discover before delegating selected Skills. " +
         "When delegating, include the target channelId in the task or select ListActiveChannels for the child."

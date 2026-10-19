@@ -150,7 +150,7 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
                     telemetry = instanceOrNull<AgentTelemetry>() ?: AgentTelemetry.NONE,
                 )
             },
-            toolCatalog = instance(),
+            catalogProvider = { instance() },
             toolsFilter = instance(),
             skillBundleProvider = instance<SkillRegistryRepository>(),
             commandExecutor = instance(),
@@ -160,7 +160,7 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
     }
     bindSingleton {
         ToolGetSkillByName(
-            toolCatalog = instance(),
+            catalogProvider = { instance() },
             toolsFilter = instance(),
             skillBundleProvider = instance<SkillRegistryRepository>(),
             approvalGate = instanceOrNull<SkillApprovalGate>(),
@@ -168,7 +168,7 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
     }
     bindSingleton {
         ToolGetSkillsNamesByCategory(
-            toolCatalog = instance(),
+            catalogProvider = { instance() },
             toolsFilter = instance(),
         )
     }
@@ -180,7 +180,7 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
     }
     bindSingleton {
         ToolInvokeSkill(
-            toolCatalog = instance(),
+            catalogProvider = { instance() },
             toolsFilter = instance(),
             loadBundle = instance<SkillRegistryRepository>()::loadSkillBundle,
             commandExecutor = instance(),
