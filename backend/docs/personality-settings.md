@@ -19,7 +19,8 @@ three attempts. After commit, delivery belongs to the application scope and surv
 Orion receives `prompt.personality.set` through live `tool.call.started` / `tool.result` transport, with
 `seq:null` and exactly `{"prompt":"...","revision":2}` as arguments. Empty prompt clears the style.
 The initiating owned, unarchived backend channel is preferred; otherwise any owned live backend channel
-is used. Every subscription/reconnection sends the current snapshot, including the empty initial state.
+is used. Every subscription/reconnection sends the current snapshot after durable replay completes,
+including the empty initial state; replay time does not consume command deadlines.
 The thread ID is the source execution or a technical UUID on connection. These calls create no target
 execution, durable result receipt or replay event.
 

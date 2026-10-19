@@ -5,7 +5,13 @@ import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.server.websocket.DefaultWebSocketServerSession
 import io.ktor.websocket.Frame
+import io.ktor.websocket.readText
+import io.mockk.coEvery
+import io.mockk.every
+import io.mockk.mockk
+import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -14,11 +20,16 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.http.BackendHttpRoutes
+import ru.souz.backend.http.routes.PublicClientConnection
 import ru.souz.backend.personality.PERSONALITY_SYNC_COMMAND
 import ru.souz.backend.personality.PERSONALITY_VALIDATION_PROMPT
 import ru.souz.backend.personality.PersonalityTool
@@ -27,6 +38,57 @@ import ru.souz.llms.restJsonMapper
 
 class BackendPersonalityE2eTest {
     private val owner = UUID.randomUUID().toString()
+
+    @Test
+    fun `reconnect starts the snapshot deadline after slow replay`() = backendE2eTest("personality_replay") {
+        val chatId = createPublicChat(owner)
+        withPublicSocket(chatId) { socket ->
+            socket.send(Frame.Text(messageFrame(chatId, owner, "before-reconnect")))
+            withTimeout(10_000) {
+                while (readJson(socket).path("type").asText() != "thread.completed") { /* drain */ }
+            }
+        }
+        val chat = backend.dependencies.publicClientService.requireChat(UUID.fromString(chatId), "backend")
+        coroutineScope {
+            val incoming = Channel<Frame>(Channel.UNLIMITED)
+            val outgoing = Channel<JsonNode>(Channel.UNLIMITED)
+            val replayStarted = CompletableDeferred<Unit>()
+            val resumeReplay = CompletableDeferred<Unit>()
+            val socket = mockk<DefaultWebSocketServerSession> {
+                every { this@mockk.incoming } returns incoming
+                coEvery { send(any()) } coAnswers {
+                    val frame = json.readTree(firstArg<Frame.Text>().readText())
+                    if (frame.path("type").asText() == "thread.completed") {
+                        replayStarted.complete(Unit)
+                        resumeReplay.await()
+                    }
+                    outgoing.send(frame)
+                }
+            }
+            val connection = launch {
+                PublicClientConnection(socket, backend.dependencies, "backend", chat, "slow-replay").run(0)
+            }
+            try {
+                withTimeout(20_000) {
+                    replayStarted.await()
+                    delay(11_000) // Longer than one command deadline, while the transport cannot forward commands.
+                    val resumedAt = Instant.now()
+                    resumeReplay.complete(Unit)
+                    assertEquals("thread.completed", outgoing.receive()["type"].asText())
+                    val snapshot = outgoing.receive()
+                    assertEquals(PERSONALITY_SYNC_COMMAND, snapshot["payload"]["name"].asText())
+                    assertTrue(Instant.parse(snapshot["payload"]["deadlineAt"].asText()).isAfter(resumedAt))
+                    incoming.send(Frame.Text(toolResultFrame(snapshot, "succeeded", mapOf("outcome" to "unchanged", "revision" to 1))))
+                    assertEquals("accepted", outgoing.receive()["status"].asText())
+                    eventually("snapshot waiter released") { Unit.takeIf { backend.clientThreadRegistry.isEmpty() } }
+                }
+            } finally {
+                connection.cancelAndJoin()
+                incoming.close()
+                outgoing.close()
+            }
+        }
+    }
 
     @Test
     fun `style lifecycle is isolated from settings and survives restart`() {
