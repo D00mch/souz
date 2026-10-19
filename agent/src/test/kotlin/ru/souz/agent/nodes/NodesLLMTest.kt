@@ -6,6 +6,7 @@ import io.mockk.mockk
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -29,6 +30,56 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 
 class NodesLLMTest {
+    @Test
+    fun `host instructions budget the request without entering history or summaries`() = runTest {
+        for (provider in listOf(LlmProvider.LOCAL, LlmProvider.OPENAI)) for (streaming in listOf(false, true)) {
+            val calls = mutableListOf<LLMRequest.Chat>()
+            val api = mockk<LLMChatAPI> {
+                coEvery { message(any()) } answers {
+                    calls += firstArg<LLMRequest.Chat>()
+                    block(0, if (calls.last().isSummarization) "compact history" else "answer")
+                }
+                coEvery { messageStream(any()) } answers {
+                    calls += firstArg<LLMRequest.Chat>()
+                    flow { emit(block(0, "answer")) }
+                }
+            }
+            val style = "style ".repeat(2600)
+            val nodes = NodesLLM(api, mockk { every { useStreaming } returns streaming }, prepareRequest = { body ->
+                body.copy(messages = listOf(body.messages.first().copy(content = "system\n$style")) + body.messages.drop(1))
+            })
+            val activeTurn = listOf(
+                LLMRequest.Message(LLMMessageRole.user, "current request"),
+                LLMRequest.Message(LLMMessageRole.assistant, "", functionCall = LLMRequest.FunctionCall("work", "{}"), functionsStateId = "call"),
+                LLMRequest.Message(LLMMessageRole.function, "result", name = "work", functionsStateId = "call"),
+            )
+            val ctx = context(listOf(LLMRequest.Message(LLMMessageRole.system, "system"),
+                LLMRequest.Message(LLMMessageRole.user, "old ".repeat(10000)),
+                LLMRequest.Message(LLMMessageRole.assistant, "old answer")) + activeTurn).let {
+                it.copy(settings = it.settings.copy(provider = provider, contextSize = 16000))
+            }
+            val result = nodes.chat().execute(ctx, GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10))
+            assertEquals(2, calls.size)
+            assertTrue(calls.first().isSummarization)
+            assertTrue(calls.first().messages.none { style in it.content || it.content == "current request" })
+            val request = calls.last()
+            assertTrue(style in request.messages.first().content)
+            assertEquals(activeTurn, request.messages.takeLast(activeTurn.size))
+            assertTrue(request.estimatedInputTokens() < 16000 * 0.8)
+            assertEquals(16000, if (provider == LlmProvider.LOCAL) request.maxTokens else request.maxTokens + request.estimatedInputTokens())
+            assertTrue(result.history.none { style in it.content })
+            assertEquals(activeTurn, result.history.dropLast(1).takeLast(activeTurn.size))
+            assertTrue(result.history.any { "compact history" in it.content })
+
+            calls.clear()
+            val tooSmall = ctx.copy(history = listOf(ctx.history.first()) + activeTurn,
+                settings = ctx.settings.copy(contextSize = 1024))
+            val rejected = nodes.chat().execute(tooSmall, GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10))
+            assertTrue(rejected.input is LLMResponse.Chat.Error)
+            assertTrue(calls.isEmpty(), "Do not send an oversized active turn or discard its tool exchange.")
+        }
+    }
+
     @Test
     fun `chat retries only LLM exceptions and respects the attempt limit`() = runTest {
         val failures = listOf(

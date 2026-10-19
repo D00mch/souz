@@ -108,7 +108,7 @@ class BackendPersonalityE2eTest {
                 assertEquals(revision, stored["personalityRevision"].asLong())
                 assertEquals("Base prompt", stored["systemPrompt"].asText())
                 assertEquals(!rejected, toolResult()["saved"].asBoolean())
-                val prompt = llm.requests.last().messages.first().content
+                val prompt = llm.requests.last { !it.isSummarization }.messages.first().content
                 assertEquals(expected != null, "Current user communication style" in prompt)
                 if (expected != null) assertTrue(prompt.endsWith(expected))
                 patch("""{"temperature":0.2,"streamingMessages":true}""")
@@ -133,6 +133,28 @@ class BackendPersonalityE2eTest {
             assertEquals(6, settings()["personalityRevision"].asLong())
         }
     }
+
+    @Test
+    fun `long personality leaves room for conversation after reducing the context size`() =
+        backendE2eTest("personality_budget", llm = personalityApi()) {
+            val chat = createPublicChat(owner)
+            val style = "friendly ".repeat(1500).trim()
+            patch("""{"contextSize":32768}""")
+            turn(chat, style)
+            patch("""{"contextSize":16384,"streamingMessages":true}""")
+            val before = llm.requests.size
+            turn(chat, "also brief")
+            val requests = llm.requests.drop(before)
+            assertTrue(requests.first().isSummarization, "Budget the existing style before the next conversation call.")
+            assertTrue(requests.filter { it.isSummarization }.all { request ->
+                request.messages.none { "Current user communication style" in it.content }
+            })
+            val conversation = requests.last { !it.isSummarization }
+            assertTrue(conversation.messages.first().content.endsWith("$style; brief"))
+            assertEquals(16384, conversation.maxTokens, "Keep the local model's context window unchanged.")
+            assertEquals("$style; brief", settings()["personalityPrompt"].asText())
+            assertTrue(toolResult()["saved"].asBoolean())
+        }
 
     @Test
     fun `Orion snapshots prefer the source channel retry without mutation and reconnect without replay`() =
@@ -196,7 +218,7 @@ class BackendPersonalityE2eTest {
     }
     private suspend fun BackendE2eScope.settings(user: String = owner) =
         client.get(BackendHttpRoutes.SETTINGS) { trusted(user) }.jsonBody()["settings"]
-    private fun BackendE2eScope.toolResult() = json.readTree(llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content)
+    private fun BackendE2eScope.toolResult() = json.readTree(llm.requests.last { !it.isSummarization }.messages.last { it.name == "RunSkillCommand" }.content)
     private suspend fun BackendE2eScope.turn(chat: String, wish: String) {
         val result = client.post(BackendHttpRoutes.chatMessages(chat)) {
             trusted(owner); jsonBody("""{"content":"$wish","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
@@ -220,7 +242,8 @@ class BackendPersonalityE2eTest {
 }
 
 private fun personalityApi(before: suspend (String, String) -> Unit = { _, _ -> }) = E2eLlmApi { body ->
-    if (body.messages.first().content == PERSONALITY_VALIDATION_PROMPT) {
+    if (body.isSummarization) reply(body, "Earlier conversation summarized.")
+    else if (body.messages.first().content == PERSONALITY_VALIDATION_PROMPT) {
         val input = restJsonMapper.readTree(body.messages.last().content)
         val current = input["currentPersonality"].asText()
         val wish = input["request"].asText()

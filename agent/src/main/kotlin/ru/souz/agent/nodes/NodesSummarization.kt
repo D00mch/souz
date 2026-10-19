@@ -6,7 +6,6 @@ import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
 import ru.souz.agent.graph.buildGraph
 import ru.souz.agent.spi.AgentSettingsProvider
-import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMException
 import ru.souz.llms.LLMRequest
@@ -14,6 +13,7 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.toMessage
 import ru.souz.llms.toSystemPromptMessage
+import ru.souz.llms.restJsonMapper
 
 /**
  * Nodes responsible for summarizing conversation history.
@@ -21,6 +21,7 @@ import ru.souz.llms.toSystemPromptMessage
 internal class NodesSummarization(
     private val llmApi: LLMChatAPI,
     private val settingsProvider: AgentSettingsProvider,
+    private val prepareConversationRequest: suspend (LLMRequest.Chat) -> LLMRequest.Chat = { it },
 ) {
     private val l = LoggerFactory.getLogger(NodesSummarization::class.java)
 
@@ -39,7 +40,7 @@ internal class NodesSummarization(
         // graph
         nodeInput.edgeTo { ctx ->
             val contextWindow = minOf(ctx.settings.contextSize, settingsProvider.summarizationContextSize ?: Int.MAX_VALUE)
-            if (ctx.historyIsTooBig(contextWindow)) summarize else respToString
+            if (prepareConversationRequest(ctx.toGigaRequest(ctx.history)).exceedsContextBudget(contextWindow)) summarize else respToString
         }
         summarize.edgeTo(summaryToHistory)
         summaryToHistory.edgeTo(nodeFinish)
@@ -49,39 +50,54 @@ internal class NodesSummarization(
     /** Updates [AgentContext.input] based on [AgentContext.history]. */
     private fun nodeSummarize(name: String = "llmSummarize"): Node<LLMResponse.Chat.Ok, LLMResponse.Chat.Ok> =
         Node(name, retryable = true) { ctx ->
-            val summaryResponse: LLMResponse.Chat = withContext(Dispatchers.IO) {
-                val conversation = ctx.history + LLMRequest.Message(LLMMessageRole.user, SUMMARIZATION_PROMPT)
-                val request = ctx.toGigaRequest(conversation).copy(functions = emptyList(), isSummarization = true)
-                llmApi.message(request)
-            }
-
-            when (summaryResponse) {
-                is LLMResponse.Chat.Error -> throw LLMException(summaryResponse)
-                is LLMResponse.Chat.Ok -> ctx.map { summaryResponse }
-            }
+            ctx.map { summarizeRequest(ctx.toGigaRequest(ctx.history)) }
         }
+
+    /** Compact only completed history; retain the current user input and its whole tool exchange. */
+    suspend fun compactHistory(request: LLMRequest.Chat): List<LLMRequest.Message> {
+        val currentTurn = request.messages.indexOfLast { it.role == LLMMessageRole.user }
+        if (currentTurn <= 0) return request.messages
+        val previous = request.messages.take(currentTurn)
+        if (previous.none { it.role != LLMMessageRole.system }) return request.messages
+        val summary = summarizeRequest(request.copy(messages = previous)).toSummary()
+        return previous.filter { it.role == LLMMessageRole.system } + summary + request.messages.drop(currentTurn)
+    }
+
+    private suspend fun summarizeRequest(body: LLMRequest.Chat): LLMResponse.Chat.Ok {
+        val response = withContext(Dispatchers.IO) {
+            llmApi.message(body.copy(
+                messages = body.messages + LLMRequest.Message(LLMMessageRole.user, SUMMARIZATION_PROMPT),
+                functions = emptyList(), isSummarization = true,
+            ))
+        }
+        return when (response) {
+            is LLMResponse.Chat.Error -> throw LLMException(response)
+            is LLMResponse.Chat.Ok -> response
+        }
+    }
 
     private fun summaryToHistory(name: String = "summary->history"): Node<LLMResponse.Chat.Ok, String> =
         Node(name) { ctx ->
-            val message = ctx.input.choices.mapNotNull { it.toMessage() }.last()
-            val summary = message.copy(content = "$SUMMARIZATION_PREFIX:\n${message.content}")
+            val summary = ctx.input.toSummary()
             val response = ctx.history.last()
             l.info("Summarization\n\n{}", summary.content)
             ctx.map(history = listOf(ctx.systemPrompt.toSystemPromptMessage(), summary, response)) { response.content }
         }
 }
 
-private const val HISTORY_SUMMARIZE_THRESHOLD = 0.8
+private fun LLMResponse.Chat.Ok.toSummary(): LLMRequest.Message =
+    choices.mapNotNull { it.toMessage() }.last().let { it.copy(content = "$SUMMARIZATION_PREFIX:\n${it.content}") }
 
-private fun String.estimateTokenCount(): Int = (length + 3) / 4
+// Include tool schemas and call arguments as well as text; leave 20% for the reply and estimation error.
+internal fun LLMRequest.Chat.estimatedInputTokens(): Int =
+    (messages.sumOf { message ->
+        16 + message.content.length + message.name.orEmpty().length +
+            (message.functionCall?.let { it.name.length + it.arguments.length } ?: 0)
+    } +
+        restJsonMapper.writeValueAsString(functions).length + 3) / 4
 
-private fun AgentContext<*>.historyIsTooBig(
-    contextWindow: Int,
-    threshold: Double = HISTORY_SUMMARIZE_THRESHOLD,
-): Boolean {
-    val estimatedTokens = history.sumOf { it.content.estimateTokenCount() }
-    return estimatedTokens >= contextWindow * threshold
-}
+internal fun LLMRequest.Chat.exceedsContextBudget(contextWindow: Int = maxTokens): Boolean =
+    estimatedInputTokens() >= contextWindow * 0.8
 
 private const val SUMMARIZATION_PROMPT = """
 Ты — модуль управления памятью для автономного AI-агента.

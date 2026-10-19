@@ -11,6 +11,11 @@ execution's credentials, context limit and usage accounting. Only conversational
 latest saved style, including subsequent calls in the same turn; base prompts, persisted history,
 classification, summaries and subagents remain independent.
 
+Personality instructions count toward conversational context budgeting before every model call.
+If necessary, completed history is summarized without the personality before sending; the current
+user/tool exchange stays intact. If that exchange and the style still cannot fit, the call returns a
+context-budget error. The style never enters persisted history or auxiliary summary requests.
+
 Separate PostgreSQL columns prevent ordinary settings writes from overwriting personality. Revisions
 start at 1 and increase on every update/reset, up to 9,007,199,254,740,991. Prompts are limited to 16,384
 UTF-16 units. Validation runs outside transactions; a competing write triggers revalidation, at most

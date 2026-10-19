@@ -1,21 +1,16 @@
 package ru.souz.backend.personality
 
 import ru.souz.backend.settings.repository.UserSettingsRepository
-import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 
-/** Only the conversational loop uses this adapter; saved history and auxiliary calls stay untouched. */
-internal class PersonalityLlmApi(
-    private val delegate: LLMChatAPI,
+/** Ephemeral conversational instructions, prepared before budgeting without mutating saved history. */
+internal class PersonalityInstructions(
     private val settings: UserSettingsRepository,
     private val userId: String,
     private val canUpdate: Boolean,
-) : LLMChatAPI by delegate {
-    override suspend fun message(body: LLMRequest.Chat) = delegate.message(prepare(body))
-    override suspend fun messageStream(body: LLMRequest.Chat) = delegate.messageStream(prepare(body))
-
-    private suspend fun prepare(body: LLMRequest.Chat): LLMRequest.Chat {
+) {
+    suspend fun prepare(body: LLMRequest.Chat): LLMRequest.Chat {
         val instructions = listOfNotNull(
             UPDATE_INSTRUCTION.takeIf { canUpdate },
             settings.personality(userId).prompt?.let {
