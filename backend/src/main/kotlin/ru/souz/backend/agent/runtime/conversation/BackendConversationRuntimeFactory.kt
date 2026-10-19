@@ -43,7 +43,7 @@ import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.metrics.BackendMetrics
-import ru.souz.backend.personality.PersonalityInstructions
+import ru.souz.backend.personality.personalityInstructions
 import ru.souz.backend.personality.PersonalitySync
 import ru.souz.backend.personality.PersonalityTool
 import ru.souz.backend.settings.repository.UserSettingsRepository
@@ -287,8 +287,10 @@ internal class BackendConversationRuntimeFactory(
             telemetry = toolTelemetry,
             errorMessages = BackendAgentErrorMessages,
             llmApi = executionApi,
-            prepareConversationRequest = PersonalityInstructions(userSettingsRepository, key.userId,
-                canUpdate = PersonalityTool.NAME in baseCatalog.toolsByCategory[ToolCategory.CONFIG].orEmpty())::prepare,
+            conversationInstructions = {
+                userSettingsRepository.personalityInstructions(key.userId,
+                    canUpdate = PersonalityTool.NAME in baseCatalog.toolsByCategory[ToolCategory.CONFIG].orEmpty())
+            },
             skillClassifier = skillClassifier,
             memoryRuntime = memoryRuntime,
             automaticMemoryRecall = automaticMemoryRecall,

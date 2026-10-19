@@ -6,14 +6,15 @@
 
 Continuation ordering, reserved publication, response acceptance, and stream revisions follow [Execution lifecycle](execution-lifecycle.md).
 
-Hosts may supply `prepareConversationRequest` to add ephemeral instructions before conversational
-context budgeting. The prepared message text, tool arguments and schemas share the context estimate;
+Hosts may supply `conversationInstructions` to add ephemeral system instructions. The agent reads one
+snapshot per conversational call and reuses it after compaction; the next call reads fresh instructions.
+The prepared message text, tool arguments and schemas share the context estimate;
 transport JSON escaping does not increase the text estimate.
 When augmentation exceeds the 80% budget, the existing summarizer compacts completed history before
 the call, preserving the current user/tool exchange. An oversized remaining turn returns an error.
 Remote completion limits use the remaining window; local requests retain their configured context size.
 Finalization also counts the prepared instructions. Skill selection and summaries use the ordinary
-`llmApi` without host augmentation; preparation must not mutate stored context.
+`llmApi` without host augmentation. Merging instructions leaves stored context unchanged.
 
 `NodesSkillInventory` owns Skill inventory prompt augmentation. `AgentContext.withOnlyTools` replaces advertised and executable tools at the skills-graph boundary through the list-based `AgentTools` factory shared with subagent selection. This factory rejects duplicate names and retains only explicitly supplied categories for selected tools. `SteerableChatNode` owns execution-scoped continuation boundaries. `NodesCommon` enriches history with host context. `NodesPlain` is a stateless object providing history, response, and tool-execution helpers. `NodesToolUseWithKnowledge` composes tool execution with Knowledge-aware result handling.
 

@@ -22,7 +22,6 @@ import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.llms.LLMChatAPI
-import ru.souz.llms.LLMRequest
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.NoopConversationMemoryRuntime
 
@@ -44,7 +43,7 @@ class AgentExecutionKernelFactory(
     private val telemetry: AgentTelemetry,
     private val errorMessages: AgentErrorMessages,
     private val llmApi: LLMChatAPI,
-    private val prepareConversationRequest: suspend (LLMRequest.Chat) -> LLMRequest.Chat = { it },
+    private val conversationInstructions: suspend () -> String = { "" },
     private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
     private val captureScope: CoroutineScope,
     private val automaticMemoryRecall: Boolean = true,
@@ -73,9 +72,9 @@ class AgentExecutionKernelFactory(
         val nodesSummarization = NodesSummarization(
             llmApi = llmApi,
             settingsProvider = settingsProvider,
-            prepareConversationRequest = prepareConversationRequest,
+            conversationInstructions = conversationInstructions,
         )
-        val nodesLLM = NodesLLM(llmApi, settingsProvider, prepareConversationRequest, nodesSummarization)
+        val nodesLLM = NodesLLM(llmApi, settingsProvider, conversationInstructions, nodesSummarization)
         val availableAgents = listOf(AgentId.SKILLS_GRAPH)
         val contextFactory = AgentContextFactory(
             settingsProvider = settingsProvider,

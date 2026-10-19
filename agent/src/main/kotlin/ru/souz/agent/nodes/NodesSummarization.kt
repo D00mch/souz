@@ -21,7 +21,7 @@ import ru.souz.llms.restJsonMapper
 internal class NodesSummarization(
     private val llmApi: LLMChatAPI,
     private val settingsProvider: AgentSettingsProvider,
-    private val prepareConversationRequest: suspend (LLMRequest.Chat) -> LLMRequest.Chat = { it },
+    private val conversationInstructions: suspend () -> String = { "" },
 ) {
     private val l = LoggerFactory.getLogger(NodesSummarization::class.java)
 
@@ -40,7 +40,8 @@ internal class NodesSummarization(
         // graph
         nodeInput.edgeTo { ctx ->
             val contextWindow = minOf(ctx.settings.contextSize, settingsProvider.summarizationContextSize ?: Int.MAX_VALUE)
-            if (prepareConversationRequest(ctx.toGigaRequest(ctx.history)).exceedsContextBudget(contextWindow)) summarize else respToString
+            val request = ctx.toGigaRequest(ctx.history).withConversationInstructions(conversationInstructions())
+            if (request.exceedsContextBudget(contextWindow)) summarize else respToString
         }
         summarize.edgeTo(summaryToHistory)
         summaryToHistory.edgeTo(nodeFinish)

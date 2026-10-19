@@ -148,3 +148,13 @@ internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>
         reasoningEffort = ctx.settings.reasoningEffort,
     )
 }
+
+/** Merge ephemeral host instructions without changing the stored conversation. */
+internal fun LLMRequest.Chat.withConversationInstructions(instructions: String): LLMRequest.Chat {
+    if (instructions.isEmpty()) return this
+    val system = messages.indexOfFirst { it.role == LLMMessageRole.system }
+    val prepared = messages.toMutableList()
+    if (system < 0) prepared.add(0, LLMRequest.Message(LLMMessageRole.system, instructions))
+    else prepared[system] = prepared[system].copy(content = prepared[system].content + "\n\n" + instructions)
+    return copy(messages = prepared)
+}

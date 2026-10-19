@@ -25,7 +25,7 @@ import ru.souz.llms.toMessage
 internal class NodesLLM(
     private val llmApi: LLMChatAPI,
     private val settingsProvider: AgentSettingsProvider,
-    private val prepareRequest: suspend (LLMRequest.Chat) -> LLMRequest.Chat = { it },
+    private val conversationInstructions: suspend () -> String = { "" },
     private val summarization: NodesSummarization = NodesSummarization(llmApi, settingsProvider),
 ) {
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
@@ -45,19 +45,19 @@ internal class NodesLLM(
     ): Node<String, LLMResponse.Chat> =
         Node(name, retryable = true) { ctx: AgentContext<String> ->
             var currentHistory = ctx.history
-            var body = prepareRequest(ctx.toGigaRequest(currentHistory))
-            // Host instructions are ephemeral, but must share the conversation's context budget.
-            val augmented = body.messages != currentHistory
-            if (augmented && body.exceedsContextBudget()) {
+            // Read once for this call, including any compaction; the next call gets fresh instructions.
+            val instructions = conversationInstructions()
+            var body = ctx.toGigaRequest(currentHistory).withConversationInstructions(instructions)
+            if (instructions.isNotEmpty() && body.exceedsContextBudget()) {
                 currentHistory = summarization.compactHistory(ctx.toGigaRequest(currentHistory))
-                body = prepareRequest(ctx.toGigaRequest(currentHistory))
+                body = ctx.toGigaRequest(currentHistory).withConversationInstructions(instructions)
             }
-            val response = if (augmented && body.exceedsContextBudget()) {
+            val response = if (instructions.isNotEmpty() && body.exceedsContextBudget()) {
                 LLMResponse.Chat.Error(-1, "The current message and communication style exceed the context budget. " +
                     "Shorten them or increase the context size.")
             } else {
                 // Local inference interprets maxTokens as its context window, remote APIs as an output limit.
-                if (augmented && body.provider != LlmProvider.LOCAL) {
+                if (instructions.isNotEmpty() && body.provider != LlmProvider.LOCAL) {
                     body = body.copy(maxTokens = (body.maxTokens - body.estimatedInputTokens()).coerceAtLeast(1))
                 }
                 request(ctx, body, streamRevision)

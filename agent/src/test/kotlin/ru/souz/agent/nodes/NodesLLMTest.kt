@@ -34,9 +34,13 @@ class NodesLLMTest {
     fun `host instructions budget the request without entering history or summaries`() = runTest {
         for (provider in listOf(LlmProvider.LOCAL, LlmProvider.OPENAI)) for (streaming in listOf(false, true)) {
             val calls = mutableListOf<LLMRequest.Chat>()
+            val style = "style ".repeat(2600)
+            var savedInstructions = style
+            var instructionReads = 0
             val api = mockk<LLMChatAPI> {
                 coEvery { message(any()) } answers {
                     calls += firstArg<LLMRequest.Chat>()
+                    if (calls.last().isSummarization) savedInstructions = "updated style"
                     block(0, if (calls.last().isSummarization) "compact history" else "answer")
                 }
                 coEvery { messageStream(any()) } answers {
@@ -44,9 +48,9 @@ class NodesLLMTest {
                     flow { emit(block(0, "answer")) }
                 }
             }
-            val style = "style ".repeat(2600)
-            val nodes = NodesLLM(api, mockk { every { useStreaming } returns streaming }, prepareRequest = { body ->
-                body.copy(messages = listOf(body.messages.first().copy(content = "system\n$style")) + body.messages.drop(1))
+            val nodes = NodesLLM(api, mockk { every { useStreaming } returns streaming }, conversationInstructions = {
+                instructionReads++
+                savedInstructions
             })
             val activeTurn = listOf(
                 LLMRequest.Message(LLMMessageRole.user, "current request"),
@@ -60,10 +64,11 @@ class NodesLLMTest {
             }
             val result = nodes.chat().execute(ctx, GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10))
             assertEquals(2, calls.size)
+            assertEquals(1, instructionReads, "Reuse the instructions snapshot when compaction rebuilds the request.")
             assertTrue(calls.first().isSummarization)
             assertTrue(calls.first().messages.none { style in it.content || it.content == "current request" })
             val request = calls.last()
-            assertTrue(style in request.messages.first().content)
+            assertEquals("system\n\n$style", request.messages.first().content)
             assertEquals(activeTurn, request.messages.takeLast(activeTurn.size))
             assertTrue(request.estimatedInputTokens() < 16000 * 0.8)
             assertEquals(16000, if (provider == LlmProvider.LOCAL) request.maxTokens else request.maxTokens + request.estimatedInputTokens())
@@ -72,6 +77,13 @@ class NodesLLMTest {
             assertTrue(result.history.any { "compact history" in it.content })
 
             calls.clear()
+            nodes.chat().execute(ctx.copy(history = result.history.filter { it.role != LLMMessageRole.system }),
+                GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10))
+            assertEquals(2, instructionReads, "The next conversational call reads fresh instructions.")
+            assertEquals(LLMRequest.Message(LLMMessageRole.system, "updated style"), calls.single().messages.first())
+
+            calls.clear()
+            savedInstructions = style
             val tooSmall = ctx.copy(history = listOf(ctx.history.first()) + activeTurn,
                 settings = ctx.settings.copy(contextSize = 1024))
             val rejected = nodes.chat().execute(tooSmall, GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10))

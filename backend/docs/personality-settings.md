@@ -12,6 +12,7 @@ latest saved style, including subsequent calls in the same turn; base prompts, p
 classification, summaries and subagents remain independent.
 
 Personality instructions count toward conversational context budgeting before every model call.
+Each call reads one snapshot, reused if history needs compaction; the next call reads fresh settings.
 If necessary, completed history is summarized without the personality before sending; the current
 user/tool exchange stays intact. If that exchange and the style still cannot fit, the call returns a
 context-budget error. The style never enters persisted history or auxiliary summary requests.
