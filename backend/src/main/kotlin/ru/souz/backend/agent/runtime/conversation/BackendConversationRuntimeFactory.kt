@@ -43,6 +43,10 @@ import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.metrics.BackendMetrics
+import ru.souz.backend.personality.PersonalityLlmApi
+import ru.souz.backend.personality.PersonalitySync
+import ru.souz.backend.personality.PersonalityTool
+import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
@@ -61,6 +65,7 @@ import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.LlmBackedToolCatalog
+import ru.souz.tool.ToolCategory
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsByCategory
@@ -71,6 +76,8 @@ import ru.souz.tool.web.internal.WebResearchClient
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
 internal class BackendConversationRuntimeFactory(
+    private val userSettingsRepository: UserSettingsRepository,
+    private val personalitySync: PersonalitySync,
     private val baseSettingsProvider: SettingsProvider,
     private val credentialResolver: ProviderCredentialResolver,
     private val retryPolicy: BackendProviderRetryPolicy,
@@ -171,17 +178,18 @@ internal class BackendConversationRuntimeFactory(
                 withProviderCall(hookBudget, LlmProvider.OPENAI) { imageGenerationGateway.generate(input) }
             },
         )
-        val clientTools = chatRepository.clientTools(key.userId, key.chatId())
+        val clientTools = chatRepository.clientTools(key.userId, key.chatId()).filter { it.name != PersonalityTool.NAME }
         val serverNames = toolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet() +
             BackendToolCapabilityPolicy.executionBoundToolNames
         lateinit var baseCatalog: AgentToolCatalog
         lateinit var executionToolCatalog: AgentToolCatalog
         fun withDiscovered(discovered: DiscoveredClientTools?): AgentToolCatalog {
             if (discovered == null) return baseCatalog
-            val names = discovered.tools.map { it.name }.toSet()
+            val tools = discovered.tools.filter { it.name != PersonalityTool.NAME }
+            val names = tools.map { it.name }.toSet()
             return AgentToolCatalog.compose(
                 baseCatalog.filter { _, tool -> tool.fn.name !in names },
-                clientSkills.catalog(discovered.tools, boundChannelId = discovered.channelId),
+                clientSkills.catalog(tools, boundChannelId = discovered.channelId),
             )
         }
         val clientToolCatalog = clientSkills.catalog(clientTools, onDiscovery = { result, channelId ->
@@ -201,7 +209,11 @@ internal class BackendConversationRuntimeFactory(
         })
         baseCatalog = backendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
-            executionLlmToolCatalog = executionLlmToolCatalog.catalog,
+            executionLlmToolCatalog = AgentToolCatalog.compose(executionLlmToolCatalog.catalog,
+                AgentToolCatalog(mapOf(ToolCategory.CONFIG to listOf(
+                    PersonalityTool(userSettingsRepository, personalitySync, executionApi, settingsProvider, agentBackgroundScope),
+                ))),
+            ),
             enabledCompiledToolNames = request.enabledTools,
             clientToolCatalog = clientToolCatalog,
             includeFewShotExamples = settingsProvider.useFewShotExamples,
@@ -275,6 +287,8 @@ internal class BackendConversationRuntimeFactory(
             telemetry = toolTelemetry,
             errorMessages = BackendAgentErrorMessages,
             llmApi = executionApi,
+            conversationLlmApi = PersonalityLlmApi(executionApi, userSettingsRepository, key.userId,
+                canUpdate = PersonalityTool.NAME in baseCatalog.toolsByCategory[ToolCategory.CONFIG].orEmpty()),
             skillClassifier = skillClassifier,
             memoryRuntime = memoryRuntime,
             automaticMemoryRecall = automaticMemoryRecall,

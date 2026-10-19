@@ -174,12 +174,12 @@ internal class E2eLlmApi(
         mutex.withLock { gates.getOrPut(prompt) { CompletableDeferred() } }
 }
 
-private data class SkillScript(
+internal data class SkillScript(
     val skillId: String,
     val arguments: Map<String, Any>,
 )
 
-private fun scriptedSkillReply(
+internal fun scriptedSkillReply(
     body: LLMRequest.Chat,
     scripts: List<SkillScript>,
 ): LLMResponse.Chat.Ok {

@@ -87,7 +87,8 @@ class BackendExecutionToolCatalogTest {
     @Test
     fun `catalog exposes only client web search for every compiled tool selection`() {
         val selections = mapOf(
-            null to setOf("ReadFile", "ViewImage", "GenerateImage"),
+            null to setOf("ReadFile", "ViewImage", "GenerateImage", "personality.update"),
+            setOf("ViewImage", "personality.update", "ControlBrowser", "UnsafeConfig") to setOf("ViewImage", "personality.update"),
             setOf("ReadFile") to setOf("ReadFile"),
             setOf("InternetSearch", "InternetResearch", "WebPageText", "FutureWebTool") to emptySet(),
             emptySet<String>() to emptySet(),
@@ -143,11 +144,13 @@ class BackendExecutionToolCatalogTest {
                 ToolCategory.FILES to listOf("ReadFile"),
                 ToolCategory.WEB_SEARCH to listOf("WebPageText", ToolWebImageSearch.NAME, "FutureWebTool"),
                 ToolCategory.BROWSER to listOf("ControlBrowser"),
+                ToolCategory.CONFIG to listOf("UnsafeConfig"),
             ),
             executionLlmToolCatalog = TestToolCatalog(
                 ToolCategory.WEB_SEARCH to listOf("InternetSearch", "InternetResearch"),
                 ToolCategory.IMAGE to listOf("ViewImage"),
                 ToolCategory.IMAGE_GENERATION to listOf("GenerateImage"),
+                ToolCategory.CONFIG to listOf("personality.update", "UnsafeConfig"),
             ),
             enabledCompiledToolNames = enabledCompiledToolNames,
             clientToolCatalog = TestToolCatalog(

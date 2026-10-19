@@ -10,12 +10,14 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
+import ru.souz.backend.client.LiveClientToolDispatcher
 import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.backend.hooks.HookDefinitions
 import ru.souz.backend.hooks.HookService
 import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.hooks.HookVerifier
+import ru.souz.backend.personality.PersonalitySync
 import ru.souz.backend.storage.postgres.PostgresConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
@@ -283,8 +285,11 @@ fun backendDiModule(
                 .toolsByCategory.values.flatMap { it.keys }.toSet() + BackendToolCapabilityPolicy.executionBoundToolNames,
         )
     }
+    bindSingleton { LiveClientToolDispatcher(instance(), instance(), instance()) }
+    bindSingleton { PersonalitySync(instance(), instance(), instance(), instance()) }
     bindSingleton {
         BackendClientSkills(
+            liveTools = instance(),
             registry = instance(),
             toolCallRepository = instance(),
             eventService = instance(),
@@ -314,6 +319,8 @@ fun backendDiModule(
     }
     bindSingleton {
         BackendConversationRuntimeFactory(
+            userSettingsRepository = instance(),
+            personalitySync = instance(),
             namedModels = instance<NamedLlmConfig>().models,
             skillClassifier = instance(),
             baseSettingsProvider = instance(),
@@ -562,6 +569,7 @@ fun backendDiModule(
         val settingsResolver = instance<EffectiveSettingsResolver>()
         val userRepository = instance<UserRepository>()
         BackendHttpDependencies(
+            personalitySync = instance(),
             bootstrapService = instance(),
             metrics = instance(),
             skillOAuthGatewayImpl = if (skillOAuthConfig != null) instance() else null,

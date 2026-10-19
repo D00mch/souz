@@ -261,6 +261,7 @@ internal class PublicClientConnection(
             start = CoroutineStart.UNDISPATCHED,
         ) {
             try {
+                launch { deps.personalitySync.connected(chat) }
                 stream.forwardPublicEvents(replayDone, onDrop = { deps.metrics.dropped(it) }) { event ->
                     withBackendLogContext(
                         "threadId" to event.executionId, "seq" to event.seq, "type" to event.type.value,

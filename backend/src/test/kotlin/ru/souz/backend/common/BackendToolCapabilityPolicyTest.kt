@@ -10,48 +10,15 @@ import ru.souz.tool.web.ToolWebImageSearch
 
 class BackendToolCapabilityPolicyTest {
     @Test
-    fun `advertised names exclude unsafe tools and match default execution selection`() {
+    fun `advertised names exclude unsafe tools and include execution-bound tools`() {
         val names = BackendToolCapabilityPolicy.advertisedToolNames(processCatalog())
 
         assertFalse(ToolCategory.WEB_SEARCH in BackendToolCapabilityPolicy.safeCategories)
         assertEquals(
-            setOf("ReadFile", "ListActiveChannels", "SendMessageToChannel", "ViewImage", "GenerateImage"),
+            setOf("ReadFile", "ListActiveChannels", "SendMessageToChannel", "ViewImage", "GenerateImage", "personality.update"),
             names,
         )
-        assertEquals(names, executionToolNames(enabledToolNames = null))
     }
-
-    @Test
-    fun `execution selection narrows compiled and execution-bound tools to the enabled snapshot`() {
-        val executionBoundTool = BackendToolCapabilityPolicy.executionBoundToolNames.first()
-
-        val selected = executionToolNames(
-            enabledToolNames = setOf("ReadFile", executionBoundTool, "ControlBrowser"),
-        )
-
-        assertEquals(setOf("ReadFile", executionBoundTool), selected)
-    }
-
-    @Test
-    fun `explicitly enabled compiled web skills remain unavailable`() {
-        val webTools = setOf("InternetSearch", "InternetResearch", "WebPageText", ToolWebImageSearch.NAME, "FutureWebTool")
-        for (enabled in listOf(webTools, webTools + "ReadFile", emptySet())) {
-            assertEquals(enabled intersect setOf("ReadFile"), executionToolNames(enabled), "enabled=$enabled")
-        }
-    }
-
-    private fun executionToolNames(
-        enabledToolNames: Set<String>?,
-    ): Set<String> =
-        BackendToolCapabilityPolicy.selectExecutionTools(
-            processToolCatalog = processCatalog(),
-            executionLlmToolCatalog = TestToolCatalog(
-                ToolCategory.WEB_SEARCH to listOf("InternetSearch", "InternetResearch"),
-                ToolCategory.IMAGE to listOf("ViewImage"),
-                ToolCategory.IMAGE_GENERATION to listOf("GenerateImage"),
-            ),
-            enabledToolNames = enabledToolNames,
-        ).toolNames()
 
     private fun processCatalog(): AgentToolCatalog = TestToolCatalog(
         ToolCategory.FILES to listOf("ReadFile"),
@@ -60,6 +27,4 @@ class BackendToolCapabilityPolicyTest {
         ToolCategory.BROWSER to listOf("ControlBrowser"),
     )
 
-    private fun AgentToolCatalog.toolNames(): Set<String> =
-        toolsByCategory.values.flatMapTo(linkedSetOf()) { tools -> tools.keys }
 }

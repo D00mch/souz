@@ -4,9 +4,7 @@ import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.http.HttpStatusCode
-import io.ktor.websocket.Frame
 import io.ktor.websocket.close
-import io.ktor.websocket.readText
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -55,7 +53,7 @@ class BackendChannelDeliveryE2eTest {
                 val delivery = sendTurn(sourceChatId, userId, deliveryPrompt)
                 assertEquals(HttpStatusCode.OK, delivery.status)
                 val pushed = withTimeout(5_000.milliseconds) {
-                    json.readTree((session.incoming.receive() as Frame.Text).readText())
+                    readJson(session)
                 }
                 assertEquals("event", pushed["kind"].asText())
                 assertEquals("message.created", pushed["type"].asText())
