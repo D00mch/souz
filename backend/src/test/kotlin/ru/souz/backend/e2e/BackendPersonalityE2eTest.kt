@@ -30,6 +30,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.http.routes.PublicClientConnection
+import ru.souz.backend.events.bus.AgentEventLimits
+import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.personality.PERSONALITY_SYNC_COMMAND
 import ru.souz.backend.personality.PERSONALITY_VALIDATION_PROMPT
 import ru.souz.backend.personality.PersonalityTool
@@ -157,7 +159,7 @@ class BackendPersonalityE2eTest {
         }
 
     @Test
-    fun `Orion snapshots prefer the source channel retry without mutation and reconnect without replay`() =
+    fun `Orion snapshots prefer the source fall back when offline or busy and reconnect without replay`() =
         backendE2eTest("personality_sync", llm = personalityApi()) {
             val source = createPublicChat(owner)
             val other = createPublicChat(owner, "other")
@@ -178,16 +180,31 @@ class BackendPersonalityE2eTest {
                         assertEquals(1, llm.requests.count { it.messages.first().content == PERSONALITY_VALIDATION_PROMPT })
                     }
                 }
-                coroutineScope {
-                    val turn = async { turn(source, "captain") }
-                    acknowledge(fallback, snapshot(fallback), "captain", 3)
-                    turn.await()
-                    assertEquals("synced", toolResult()["sync"].asText())
+                for ((index, style) in listOf("captain", "formal").withIndex()) {
+                    val events = backend.dependencies.eventService
+                    val sourceId = UUID.fromString(source)
+                    // An unread production stream models a connected socket stalled by backpressure.
+                    val stalled = if (index == 1) events.openPublicStream(owner, sourceId, null) else null
+                    try {
+                        if (stalled != null) repeat(AgentEventLimits.LIVE_BUFFER_SIZE) {
+                            assertTrue(events.publishClientToolCall(owner, sourceId, UUID.randomUUID(),
+                                PublicToolCallStartedPayload("blocked-$it", "user.ask", arguments = json.createObjectNode())))
+                        }
+                        coroutineScope {
+                            val turn = async { turn(source, style) }
+                            acknowledge(fallback, snapshot(fallback), style, 3L + index)
+                            turn.await()
+                            assertEquals("synced", toolResult()["sync"].asText())
+                            assertEquals(3L + index, settings()["personalityRevision"].asLong())
+                        }
+                    } finally {
+                        stalled?.close?.invoke()
+                    }
                 }
             }
             turn(source, "reset")
             assertEquals("pending", toolResult()["sync"].asText())
-            withPublicSocket(source) { socket -> acknowledge(socket, snapshot(socket), null, 4) }
+            withPublicSocket(source) { socket -> acknowledge(socket, snapshot(socket), null, 5) }
             for (chat in listOf(source, other)) {
                 val events = client.get(BackendHttpRoutes.chatEvents(chat)) { trusted(owner) }.jsonBody()["items"]
                 assertTrue(events.none { it.path("payload").path("name").asText() == PERSONALITY_SYNC_COMMAND })

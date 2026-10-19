@@ -32,13 +32,15 @@ internal class PersonalitySync(
     }
 
     suspend fun deliver(userId: String, snapshot: PersonalitySnapshot, preferred: UUID?, execution: UUID? = null): String {
+        val busyChannels = mutableSetOf<UUID>()
         repeat(3) { attempt ->
             if (attempt > 0) delay(attempt * 1_000L)
             try {
-                val chat = channel(userId, preferred) ?: return "pending"
+                val chat = channel(userId, preferred, busyChannels) ?: return "pending"
                 val reply = dispatcher.call(chat, PERSONALITY_SYNC_COMMAND,
                     mapOf("prompt" to snapshot.prompt.orEmpty(), "revision" to snapshot.revision),
                     Duration.ofSeconds(10), execution, threadId = execution ?: UUID.randomUUID())
+                if (reply.error?.code == "client_tool_busy") busyChannels += chat.id
                 if (reply.error?.code in permanentErrors) return "failed"
                 if (reply.status != "succeeded") return@repeat
                 val result = reply.result ?: return@repeat
@@ -59,9 +61,11 @@ internal class PersonalitySync(
         return "pending"
     }
 
-    private suspend fun channel(userId: String, preferred: UUID?): Chat? {
-        if (preferred != null) channels.resolveTarget(userId, preferred)?.takeIf(::available)?.let { return it }
-        return channels.resolveTargets(userId, events.liveChatIds(userId)).values.firstOrNull(::available)
+    private suspend fun channel(userId: String, preferred: UUID?, busyChannels: Set<UUID>): Chat? {
+        val available = channels.resolveTargets(userId, events.liveChatIds(userId)).values
+            .filter(::available).sortedBy { it.id != preferred }
+        // Try another channel after rejected publication; a lone busy channel can recover on retry.
+        return available.firstOrNull { it.id !in busyChannels } ?: available.firstOrNull()
     }
 
     private fun available(chat: Chat) = chat.clientType == "backend" && events.hasLiveSubscriber(chat.userId, chat.id)
