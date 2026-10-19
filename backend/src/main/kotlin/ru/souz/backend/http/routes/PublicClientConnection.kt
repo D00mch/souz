@@ -261,11 +261,10 @@ internal class PublicClientConnection(
             start = CoroutineStart.UNDISPATCHED,
         ) {
             try {
-                launch {
-                    replayDone.await()
-                    deps.personalitySync.connected(chat)
-                }
-                stream.forwardPublicEvents(replayDone, onDrop = { deps.metrics.dropped(it) }) { event ->
+                stream.forwardPublicEvents(onReplayComplete = {
+                    replayDone.complete(Unit)
+                    launch { deps.personalitySync.connected(chat) }
+                }, onDrop = { deps.metrics.dropped(it) }) { event ->
                     withBackendLogContext(
                         "threadId" to event.executionId, "seq" to event.seq, "type" to event.type.value,
                         "toolCallId" to (event.payload as? PublicToolCallStartedPayload)?.toolCallId,
@@ -344,7 +343,7 @@ internal class PublicClientConnection(
 // Drop accounting is synchronous; cancellation and send failures immediately propagate.
 @Suppress("SuspendFunSwallowedCancellation")
 internal suspend fun AgentEventStream.forwardPublicEvents(
-    replayDone: CompletableDeferred<Unit>,
+    onReplayComplete: () -> Unit = {},
     onDrop: (String) -> Unit = {},
     send: suspend (AgentEventEnvelope) -> Unit,
 ) {
@@ -357,12 +356,9 @@ internal suspend fun AgentEventStream.forwardPublicEvents(
             }
         }
     }
-    try {
-        sendDurableEvents(replay)
-        sendDurableEvents(replayAfter(lastSeq))
-    } finally {
-        replayDone.complete(Unit)
-    }
+    sendDurableEvents(replay)
+    sendDurableEvents(replayAfter(lastSeq))
+    onReplayComplete()
     while (true) {
         val event = receiveLive() ?: break
         try {
