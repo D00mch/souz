@@ -1,5 +1,8 @@
 package ru.souz.backend.attachments
 
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import java.io.InputStream
 import java.net.URI
 import java.net.http.HttpClient
@@ -24,6 +27,7 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
+import org.slf4j.LoggerFactory
 import org.testcontainers.containers.GenericContainer
 import org.testcontainers.containers.wait.strategy.Wait
 import org.testcontainers.images.builder.Transferable
@@ -34,6 +38,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import ru.souz.backend.app.backendDiModule
 import ru.souz.backend.storage.postgres.PostgresAttachmentRepository
@@ -44,6 +49,38 @@ import ru.souz.backend.storage.postgres.postgresAppConfig
 import ru.souz.backend.storage.postgres.write
 
 class AttachmentStorageTest {
+    @Test
+    fun `failed S3 cleanup logs safe diagnostics and remains retryable`() = attachmentTest {
+        val file = save("alice", "cleanup-failure", "a.txt", "content")
+        clock.now = file.expiresAt!!
+        val missing = AttachmentStorageConfig(
+            endpoint = config.endpoint, bucket = "missing-${UUID.randomUUID()}",
+            accessKey = "attachment-test", secretKey = "attachment-test-secret",
+        )
+        val logger = LoggerFactory.getLogger(AttachmentStorage::class.java) as Logger
+        val logs = ListAppender<ILoggingEvent>().apply { start() }
+        logger.addAppender(logs)
+        try {
+            S3AttachmentObjects(missing).use { unavailable ->
+                val failedStorage = AttachmentStorage(missing, PostgresAttachmentRepository(dataSource), unavailable, clock)
+                assertEquals(0, failedStorage.cleanup())
+            }
+            val failure = logs.list.single()
+            assertTrue(failure.formattedMessage.contains("file ${file.id}: exceptionClass=software.amazon.awssdk.services.s3.model."))
+            assertTrue(failure.formattedMessage.contains("statusCode=404, s3ErrorCode=NoSuchBucket"))
+            assertNull(failure.throwableProxy)
+            for (privateValue in listOf(missing.endpoint, missing.bucket, missing.accessKey, missing.secretKey)) {
+                assertTrue(!failure.formattedMessage.contains(privateValue))
+            }
+            assertEquals(1, storage.cleanup())
+            assertEquals(404, assertFailsWith<S3Exception> { objects.read(file) }.statusCode())
+            assertEquals(0, storage.cleanup())
+        } finally {
+            logger.detachAppender(logs)
+            logs.stop()
+        }
+    }
+
     @Test
     fun `lowering the upload limit preserves reads of previously stored files`() = attachmentTest {
         val bytes = ByteArray(1000) { it.toByte() }

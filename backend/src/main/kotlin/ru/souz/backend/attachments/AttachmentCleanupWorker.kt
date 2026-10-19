@@ -15,8 +15,10 @@ class AttachmentCleanupWorker(private val storage: AttachmentStorage) {
                 if (storage.cleanup() == ATTACHMENT_CLEANUP_BATCH_SIZE) continue
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
-                LoggerFactory.getLogger(AttachmentCleanupWorker::class.java).warn("Attachment cleanup iteration failed")
+            } catch (error: Exception) {
+                LoggerFactory.getLogger(AttachmentCleanupWorker::class.java).warn(
+                    "Attachment cleanup iteration failed: exceptionClass={}", error.javaClass.name,
+                )
             }
             delay(60_000)
         }

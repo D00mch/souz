@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.storage.postgres.PostgresAttachmentRepository
+import software.amazon.awssdk.services.s3.model.S3Exception
 
 class AttachmentStorage(
     private val config: AttachmentStorageConfig,
@@ -56,7 +57,10 @@ class AttachmentStorage(
             if (!committed) withContext(NonCancellable) {
                 try { repository.retireLateWrite(file) }
                 catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { logger.warn("Late attachment write cleanup scheduling failed for file {}", file.id) }
+                catch (error: Exception) {
+                    logger.warn("Late attachment write cleanup scheduling failed for file {}: exceptionClass={}",
+                        file.id, error.javaClass.name)
+                }
             }
         }
     }
@@ -85,9 +89,11 @@ class AttachmentStorage(
                 removed++
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
-                // Never log S3 exception messages: they can carry signed request details.
-                logger.warn("Attachment cleanup failed for file {}", file.id)
+            } catch (error: Exception) {
+                // Log diagnostics only, never the throwable, response body or signed request details.
+                val s3 = error as? S3Exception
+                logger.warn("Attachment cleanup failed for file {}: exceptionClass={}, statusCode={}, s3ErrorCode={}",
+                    file.id, error.javaClass.name, s3?.statusCode(), s3?.awsErrorDetails()?.errorCode())
             }
         }
         return removed
