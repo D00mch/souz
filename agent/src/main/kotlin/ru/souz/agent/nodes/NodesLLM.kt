@@ -16,7 +16,6 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.LlmProvider
 import ru.souz.llms.toMessage
 
 /**
@@ -26,7 +25,7 @@ internal class NodesLLM(
     private val llmApi: LLMChatAPI,
     private val settingsProvider: AgentSettingsProvider,
     private val conversationInstructions: suspend () -> String = { "" },
-    private val summarization: NodesSummarization = NodesSummarization(llmApi, settingsProvider),
+    private val summarization: NodesSummarization = NodesSummarization(llmApi),
 ) {
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
 
@@ -44,31 +43,37 @@ internal class NodesLLM(
         streamRevision: Long = 0L,
     ): Node<String, LLMResponse.Chat> =
         Node(name, retryable = true) { ctx: AgentContext<String> ->
-            var currentHistory = ctx.history
-            // Read once for this call, including any compaction; the next call gets fresh instructions.
-            val instructions = conversationInstructions()
-            var body = ctx.toGigaRequest(currentHistory).withConversationInstructions(instructions)
-            if (instructions.isNotEmpty() && body.exceedsContextBudget()) {
-                currentHistory = summarization.compactHistory(ctx.toGigaRequest(currentHistory))
-                body = ctx.toGigaRequest(currentHistory).withConversationInstructions(instructions)
-            }
-            val response = if (instructions.isNotEmpty() && body.exceedsContextBudget()) {
-                LLMResponse.Chat.Error(-1, "The current message and communication style exceed the context budget. " +
-                    "Shorten them or increase the context size.")
-            } else {
-                // Local inference interprets maxTokens as its context window, remote APIs as an output limit.
-                if (instructions.isNotEmpty() && body.provider != LlmProvider.LOCAL) {
-                    body = body.copy(maxTokens = (body.maxTokens - body.estimatedInputTokens()).coerceAtLeast(1))
-                }
-                request(ctx, body, streamRevision)
-            }
-            val history = ArrayList(currentHistory).apply {
+            val prepared = prepareRequest(ctx)
+            val response = prepared.input?.let { request(ctx, it, streamRevision) }
+                ?: LLMResponse.Chat.Error(-1, "The current message, instructions and tools exceed the context budget. " +
+                    "Shorten the request or increase the configured context size.")
+            val history = ArrayList(prepared.history).apply {
                 if (response is LLMResponse.Chat.Ok) {
                     addAll(response.choices.mapNotNull { it.toMessage() })
                 }
             }
             ctx.map(history = history) { response }
         }
+
+    private suspend fun prepareRequest(ctx: AgentContext<*>): AgentContext<LLMRequest.Chat?> {
+        // Reuse one personality snapshot if compaction requires rebuilding this call.
+        val instructions = conversationInstructions()
+        fun build(history: List<LLMRequest.Message>) =
+            ctx.toChatRequest(history, maxOutputTokens = CHAT_MAX_OUTPUT_TOKENS)
+                .withConversationInstructions(instructions)
+
+        var history = ctx.history
+        var request = build(history)
+        if (request.exceedsContextBudget(ctx.settings.contextSize)) {
+            history = summarization.compactHistory(
+                ctx.toChatRequest(history, maxOutputTokens = SUMMARIZATION_MAX_OUTPUT_TOKENS),
+            )
+            request = build(history)
+        }
+        return ctx.map(history = history) {
+            request.takeUnless { it.exceedsContextBudget(ctx.settings.contextSize) }
+        }
+    }
 
     private suspend fun request(
         ctx: AgentContext<*>,

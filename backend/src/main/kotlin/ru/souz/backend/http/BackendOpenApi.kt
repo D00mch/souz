@@ -251,7 +251,6 @@ internal object BackendOpenApiSchemas {
     fun settingsPatch(schema: JsonSchema): JsonSchema =
         schema
             .withModelAliases("defaultModel")
-            .withPositiveNumber("contextSize", "Must be a positive integer.")
             .withPropertyDescription("temperature", "Must be a finite JSON number.")
             .withNonBlankString("locale", "A recognized BCP 47 language tag.")
             .withNonBlankString("timeZone", "An IANA time-zone identifier.")
@@ -287,7 +286,6 @@ internal object BackendOpenApiSchemas {
             .withProperty("options") { options ->
                 options
                     .withModelAliases("model")
-                    .withPositiveNumber("contextSize", "Must be a positive integer.")
                     .withPropertyDescription("temperature", "Must be a finite JSON number.")
                     .withNonBlankString("locale", "A recognized BCP 47 language tag.")
                     .withNonBlankString("timeZone", "An IANA time-zone identifier.")

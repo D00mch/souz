@@ -2,7 +2,7 @@ package ru.souz.agent
 
 import io.mockk.every
 import io.mockk.mockk
-import ru.souz.agent.nodes.toGigaRequest
+import ru.souz.agent.nodes.toChatRequest
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.llms.LLMModel
@@ -27,9 +27,11 @@ class AgentModelRoutingTest {
         val original = facade.currentContext.value
         assertEquals("Custom/Parent", original.settings.model)
         assertEquals(LlmProvider.OPENAI, original.settings.provider)
-        val request = original.toGigaRequest(emptyList())
+        val request = original.toChatRequest(emptyList(), maxOutputTokens = 512)
         assertEquals(original.settings.model, request.model)
         assertEquals(original.settings.provider, request.provider)
+        assertEquals(512, request.maxTokens)
+        assertEquals(original.settings.contextSize, request.contextSize)
 
         facade.setModel(LLMModel.AnthropicSonnet45)
         val changed = facade.currentContext.value.settings

@@ -140,7 +140,7 @@ internal class BackendConversationRuntimeFactory(
 
         val testApi = testLlmApiFactory?.invoke(settingsProvider)
         val hookBudget = request.executionId?.let { id -> hookStore.find(key.userId, UUID.fromString(id)) }
-            ?.let { HookLlmBudget(it, hookStore, executionQuotas, settingsProvider.openaiSummarizationParameters) }
+            ?.let { HookLlmBudget(it, hookStore, executionQuotas) }
         val executionApi = BackendExecutionLlmChatApi(
             namedModels = namedModels,
             userId = key.userId,

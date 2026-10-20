@@ -8,6 +8,7 @@ import io.ktor.client.request.post
 import io.ktor.websocket.Frame
 import java.util.UUID
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
@@ -33,7 +34,7 @@ class BackendPersonalityE2eTest {
         val schema = newPostgresSchema("personality_lifecycle")
         backendE2eTest("personality_lifecycle", schema = schema, llm = personalityApi()) {
             val chat = createPublicChat(owner)
-            patch("""{"systemPrompt":"Base prompt","contextSize":4096}""")
+            patch("""{"systemPrompt":"Base prompt"}""")
             val cases = listOf("formal" to "formal", "captain" to "captain", "also brief" to "captain; brief",
                 "reject" to "captain; brief", "malformed" to "captain; brief", "reset" to null)
             var revision = 1L
@@ -73,23 +74,26 @@ class BackendPersonalityE2eTest {
     }
 
     @Test
-    fun `long personality leaves room for conversation after reducing the context size`() =
-        backendE2eTest("personality_budget", llm = personalityApi()) {
+    fun `personality uses the server context window independently of legacy user overrides`() =
+        backendE2eTest("personality_budget", llm = personalityApi(), settingsSource = object : ru.souz.backend.config.BackendConfigSource {
+            override fun env(key: String): String? = if (key == "CONTEXT_SIZE") "32000" else null
+            override fun property(key: String): String? = null
+        }) {
             val chat = createPublicChat(owner)
             val style = "friendly ".repeat(1500).trim()
-            patch("""{"contextSize":32768}""")
             turn(chat, style)
-            patch("""{"contextSize":16384,"streamingMessages":true}""")
+            patch("""{"contextSize":1,"streamingMessages":true}""")
+            assertFalse(settings().has("contextSize"))
             val before = llm.requests.size
             turn(chat, "also brief")
             val requests = llm.requests.drop(before)
-            assertTrue(requests.first().isSummarization, "Budget the existing style before the next conversation call.")
             assertTrue(requests.filter { it.isSummarization }.all { request ->
                 request.messages.none { "Current user communication style" in it.content }
             })
             val conversation = requests.last { !it.isSummarization }
             assertTrue(conversation.messages.first().content.endsWith("$style; brief"))
-            assertEquals(16384, conversation.maxTokens, "Keep the local model's context window unchanged.")
+            assertEquals(32000, conversation.contextSize)
+            assertEquals(4096, conversation.maxTokens)
             assertEquals("$style; brief", settings()["personalityPrompt"].asText())
             assertTrue(toolResult()["saved"].asBoolean())
         }

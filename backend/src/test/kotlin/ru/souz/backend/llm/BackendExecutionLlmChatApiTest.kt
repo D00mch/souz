@@ -13,6 +13,7 @@ import io.mockk.mockk
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
@@ -186,16 +187,17 @@ class BackendExecutionLlmChatApiTest {
             openaiSummarizationModel = "Summary/Deployment"
             openaiSummarizationBaseUrl = "https://summary.test/v1"
             openaiSummarizationApiKey = "summary-key"
-            openaiSummarizationParameters = """{"model":"ignored","max_completion_tokens":512}"""
+            openaiSummarizationParameters = """{"model":"ignored","max_tokens":512,"max_completion_tokens":512}"""
         }
         facadeFixture(settingsProvider = settings, providerApiOverride = null, client = recordingClient(requests)).use { fixture ->
-            val request = chat("Parent/Deployment").copy(provider = LlmProvider.ANTHROPIC, isSummarization = true)
+            val request = chat("Parent/Deployment").copy(provider = LlmProvider.ANTHROPIC, isSummarization = true, maxTokens = 1024)
             assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
             val outbound = requests.single()
             assertEquals("https://summary.test/v1/chat/completions", outbound.url)
             assertEquals("Bearer summary-key", outbound.authorization)
             assertEquals("Summary/Deployment", outbound.body["model"].asText())
-            assertEquals(512, outbound.body["max_completion_tokens"].asInt())
+            assertEquals(1024, outbound.body["max_completion_tokens"].asInt())
+            assertFalse(outbound.body.has("max_tokens"))
             assertEquals(0, fixture.credentialResolver.calls.get())
             assertEquals(usage(1, 1, 2, 0), fixture.api.cumulativeUsage())
             assertEquals(1.0, fixture.metrics.registry.get("souz.llm.requests")
@@ -354,9 +356,9 @@ class BackendExecutionLlmChatApiTest {
                 val quotas = ExecutionQuotaManager(BackendLlmLimits(globalProviderConcurrency = 1))
                 val budget = HookLlmBudget(receipt, store, quotas)
                 for (limit in listOf(512, 8192)) {
-                    val summaryBudget = HookLlmBudget(receipt, store, quotas, """{"max_completion_tokens":$limit}""")
+                    val summaryBudget = HookLlmBudget(receipt, store, quotas)
                     assertEquals(minOf(limit, 4096), summaryBudget.limitRequest(
-                        chat("summary").copy(isSummarization = true, maxTokens = 0),
+                        chat("summary").copy(isSummarization = true, maxTokens = limit),
                     ).maxTokens)
                 }
                 val model = if (kind == "upload") LLMModel.AnthropicSonnet45 else LLMModel.OpenAIGpt52

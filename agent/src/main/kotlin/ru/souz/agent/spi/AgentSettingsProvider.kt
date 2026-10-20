@@ -38,9 +38,6 @@ interface AgentSettingsProvider {
     /** Max context window to request from the model. */
     var contextSize: Int
 
-    /** Dedicated summarization model context window, or null to use [contextSize]. */
-    val summarizationContextSize: Int? get() = null
-
     /** Sampling temperature for model requests. */
     var temperature: Float
 }

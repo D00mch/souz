@@ -13,7 +13,7 @@ Set `SOUZ_LLM_CONFIG_FILE` to a JSON file readable by the backend, and supply th
     "tv-agent": {"connection": "router", "modelId": "provider/model"}
   },
   "subagentModels": ["tv-agent"],
-  "summarization": {"model": "tv-agent", "contextSize": 32000}
+  "summarization": {"model": "tv-agent"}
 }
 ```
 
@@ -21,7 +21,11 @@ All configured model names are advertised in `/v1/bootstrap`; no per-user allowl
 
 `GET /health` reports the server default using the same selection policy, without user settings or user-managed keys.
 
-`subagentModels` and `summarization` are optional. A child without an explicit model inherits the parent's named selection. Dedicated summarization uses its own connection and preserves `OPENAI_SUMMARIZATION_PARAMETERS`; its optional `contextSize` controls the summary context window. Existing `OPENAI_*`, `OPENAI_SUMMARIZATION_*` and `SUBAGENT_MODELS_JSON` settings remain usable when no named override is configured.
+`subagentModels` and `summarization` are optional. A child without an explicit model inherits the parent's named selection. Dedicated summarization uses its own connection and preserves `OPENAI_SUMMARIZATION_PARAMETERS`. Existing `OPENAI_*`, summarization model/connection/parameter settings and `SUBAGENT_MODELS_JSON` remain usable when no named override is configured.
+
+`CONTEXT_SIZE` is the single server context window for conversation, subagents and summaries (default `125000`). It must be a positive integer and is validated at startup. All configured models must support that window. Users and HTTP request options cannot override it, and continuations use the running server value.
+
+Conversation requests reserve 4,096 output tokens and a 512-token safety margin. Summaries reserve 1,024 output tokens and the same margin; classification uses a 512-token output limit. Completed history is compacted before a conversational call only when necessary. Summary requests merge bounded history excerpts when the full history cannot fit. `OPENAI_SUMMARIZATION_PARAMETERS` still controls other provider parameters; the explicit request output limit takes precedence.
 
 Names are case-sensitive, nonblank, trimmed and must not collide with built-in selectors, legacy subagent IDs or the trimmed `OPENAI_MODEL` value. These collisions reject startup; shared upstream `modelId` values remain valid. Invalid URLs (including ports outside 1–65535), unknown fields, duplicate JSON keys, missing secrets and unresolved references reject startup. Only environment variable names belong in the JSON file.
 

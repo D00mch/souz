@@ -79,7 +79,7 @@ internal class PersonalityTool(
         val model = settings.gigaModel
         val result = llm.message(LLMRequest.Chat(
             model = settings.executionModelId(model), provider = model.provider,
-            maxTokens = settings.contextSize, temperature = 0f,
+            maxTokens = 4_096, contextSize = settings.contextSize, temperature = 0f,
             messages = listOf(
                 LLMRequest.Message(LLMMessageRole.system, PERSONALITY_VALIDATION_PROMPT),
                 LLMRequest.Message(LLMMessageRole.user, restJsonMapper.writeValueAsString(mapOf(

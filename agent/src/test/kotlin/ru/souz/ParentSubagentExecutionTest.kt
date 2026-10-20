@@ -22,7 +22,6 @@ import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkillInventory
-import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesPlain
 import ru.souz.agent.runtime.AgentToolExecutor
@@ -240,8 +239,6 @@ private class ParentHarness(
                 ctx.map(history = ctx.history + response.choices.mapNotNull { it.toMessage() }) { response }
             }
         }
-        val nodesSummarization = mockk<NodesSummarization>()
-        every { nodesSummarization.summarize() } returns NodesPlain.responseToString()
         val nodesMemory = NodesMemory(NoopConversationMemoryRuntime, captureScope)
         val nodesErrorHandling = NodesErrorHandling(mockk(relaxed = true))
         val nodesToolUse = NodesToolUseWithKnowledge(AgentToolExecutor(), knowledgeStore = null)
@@ -267,7 +264,7 @@ private class ParentHarness(
         }
         agent = if (id == AgentId.SKILLS_GRAPH) {
             SkillsGraphBasedAgent(
-                restJsonMapper, nodesLLM, nodesCommon, nodesErrorHandling, nodesSummarization,
+                restJsonMapper, nodesLLM, nodesCommon, nodesErrorHandling,
                 nodesMemory, inventory, nodesToolUse, coreTools,
             )
         } else {
@@ -277,14 +274,14 @@ private class ParentHarness(
             val mcp = mockk<NodesMCP> { every { nodeProvideMcpTools(any()) } returns Node("MCP") { it } }
             GraphBasedAgent(
                 restJsonMapper, nodesLLM, nodesCommon, classification, nodesErrorHandling,
-                nodesSummarization, mcp, inventory, nodesToolUse, nodesMemory, coreTools,
+                mcp, inventory, nodesToolUse, nodesMemory, coreTools,
             )
         }
     }
 
     fun context(model: String = "parent-model") = AgentContext(
         input = "delegate this task",
-        settings = AgentSettings(model = model, provider = LlmProvider.OPENAI, temperature = 0.7f, toolsByCategory = catalogTools, contextSize = 4096),
+        settings = AgentSettings(model = model, provider = LlmProvider.OPENAI, temperature = 0.7f, toolsByCategory = catalogTools, contextSize = 16_000),
         history = emptyList(),
         activeTools = catalogTools.values.flatMap { tools -> tools.values.map { it.fn } },
         systemPrompt = "parent instructions",

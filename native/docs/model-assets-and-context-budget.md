@@ -6,7 +6,7 @@ A chat profile's required download set includes its main GGUF, the linked local 
 
 Projectors share the chat model's storage directory. `mmproj-F16.gguf` is the canonical download name; resolution also accepts the upstream BF16 name and the legacy aliases declared by each profile. Keep `visionProjectorCandidates` as the source of truth.
 
-Context size is capped by the selected profile. Completion budget is reserved from tokenized prompt size, and multimodal generation recalculates it after `mtmd_tokenize` using the actual text-and-image token count.
+`LLMRequest.Chat.contextSize` explicitly carries the configured local window; `maxTokens` is only the output limit. Neither output size nor request type implicitly selects a configured context window. Context size is capped by the selected profile (including the vision cap). Completion budget is reserved from tokenized prompt size, and multimodal generation recalculates it after `mtmd_tokenize` using the actual text-and-image token count.
 
 ## Why this is fragile
 

@@ -7,7 +7,6 @@ data class EffectiveUserSettings(
     val userId: String,
     val defaultModel: String,
     val reasoningEffort: String? = null,
-    val contextSize: Int,
     val temperature: Float,
     val locale: Locale,
     val timeZone: ZoneId,

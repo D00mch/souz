@@ -14,7 +14,6 @@ import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
-import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.INJECTED_MEMORY_MESSAGE_NAME
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
 import ru.souz.agent.nodes.isInjectedMemoryContextMessage
@@ -42,7 +41,6 @@ class GraphBasedAgentTest {
         val nodesCommon = mockk<NodesCommon>()
         val nodesClassify = mockk<NodesClassification>()
         val nodesErrorHandling = mockk<NodesErrorHandling>()
-        val nodesSummarization = mockk<NodesSummarization>()
         val nodesMCP = mockk<NodesMCP>()
         val nodesSkillInventory = mockk<NodesSkillInventory>()
         val nodesToolUseWithKnowledge = mockk<NodesToolUseWithKnowledge>()
@@ -91,7 +89,6 @@ class GraphBasedAgentTest {
         every { nodesLLM.chat("LLM") } returns chatNode("LLM")
         every { nodesErrorHandling.chatErrorToFinish() } returns errorNode()
         every { nodesToolUseWithKnowledge.node(any(), any()) } returns toolUseNode()
-        every { nodesSummarization.summarize() } returns summaryNode()
 
         val agent = GraphBasedAgent(
             logObjectMapper = restJsonMapper,
@@ -99,7 +96,6 @@ class GraphBasedAgentTest {
             nodesCommon = nodesCommon,
             nodesClassify = nodesClassify,
             nodesErrorHandling = nodesErrorHandling,
-            nodesSummarization = nodesSummarization,
             nodesMCP = nodesMCP,
             nodesSkillInventory = nodesSkillInventory,
             nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
@@ -138,7 +134,7 @@ class GraphBasedAgentTest {
             if (nodeName == CLASSIFY_NODE_NAME) historyAtClassification = from.history
         }
 
-        assertEquals("final", result.output)
+        assertEquals("assistant reply", result.output)
         assertEquals(expectedRun, executed)
         val classifierHistory = requireNotNull(historyAtClassification)
         assertFalse(classifierHistory.any { it.content.contains("Previous memory") })
@@ -167,10 +163,6 @@ class GraphBasedAgentTest {
                 usage = LLMResponse.Usage(1, 1, 2, 0),
             )
         }
-    }
-
-    private fun summaryNode(): Node<LLMResponse.Chat.Ok, String> = Node("Summary") { ctx ->
-        ctx.map { "final" }
     }
 
     private fun toolUseNode(): Node<LLMResponse.Chat.Ok, String> = Node("toolUse") { ctx ->

@@ -110,7 +110,6 @@ class PostgresRepositoriesTest {
             assertNotNull(stored)
             assertEquals("legacy-user", stored.userId)
             assertEquals(LLMModel.Max.alias, stored.defaultModel)
-            assertEquals(12_000, stored.contextSize)
             assertEquals(0.2f, stored.temperature)
             assertEquals(Locale.forLanguageTag("en-US"), stored.locale)
             assertEquals(ZoneId.of("Europe/Amsterdam"), stored.timeZone)
@@ -138,7 +137,6 @@ class PostgresRepositoriesTest {
             defaultModel = LLMModel.Max.alias,
             reasoningEffort = "low",
             narrateSteps = true,
-            contextSize = 16_000,
             temperature = 0.7f,
             locale = Locale.forLanguageTag("en-US"),
             timeZone = ZoneId.of("UTC"),
@@ -1151,7 +1149,6 @@ class PostgresRepositoriesTest {
         UserSettings(
             userId = userId,
             defaultModel = defaultModel.alias,
-            contextSize = 16_000,
             temperature = 0.7f,
             locale = Locale.forLanguageTag("ru-RU"),
             timeZone = ZoneId.of("Europe/Moscow"),

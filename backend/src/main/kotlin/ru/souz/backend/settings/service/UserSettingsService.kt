@@ -36,7 +36,6 @@ class UserSettingsService(
         userSettingsRepository.save(
             existing.copy(
                 defaultModel = overrides.defaultModel ?: existing.defaultModel,
-                contextSize = overrides.contextSize ?: existing.contextSize,
                 temperature = overrides.temperature ?: existing.temperature,
                 locale = overrides.locale ?: existing.locale,
                 timeZone = overrides.timeZone ?: existing.timeZone,

@@ -1301,7 +1301,8 @@ class LocalInferenceSupportTest {
                 LLMRequest.Chat(
                     model = LocalModelProfiles.GEMMA4_E2B_IT.gigaModel.alias,
                     messages = listOf(LLMRequest.Message(LLMMessageRole.function, detail, name = name)),
-                    maxTokens = 4_096,
+                    contextSize = 4_096,
+                    maxTokens = 256,
                 ),
                 LocalModelProfiles.GEMMA4_E2B_IT,
             )
@@ -1356,7 +1357,8 @@ class LocalInferenceSupportTest {
                         name = "ToolTelegramReadInbox",
                     ),
                 ),
-                maxTokens = 4_096,
+                contextSize = 4_096,
+                    maxTokens = 256,
             ),
             profile = LocalModelProfiles.GEMMA4_E2B_IT,
         )
@@ -1382,7 +1384,8 @@ class LocalInferenceSupportTest {
                 body = LLMRequest.Chat(
                     model = LocalModelProfiles.GEMMA4_E2B_IT.gigaModel.alias,
                     messages = emptyList(),
-                    maxTokens = 4096,
+                    contextSize = 4096,
+                    maxTokens = 256,
                 ),
                 profile = LocalModelProfiles.GEMMA4_E2B_IT,
                 prompt = "Короткий prompt",
@@ -1394,7 +1397,8 @@ class LocalInferenceSupportTest {
                 body = LLMRequest.Chat(
                     model = LocalModelProfiles.GEMMA4_E4B_IT.gigaModel.alias,
                     messages = emptyList(),
-                    maxTokens = 256_000,
+                    contextSize = 256_000,
+                    maxTokens = 256,
                 ),
                 profile = LocalModelProfiles.GEMMA4_E4B_IT,
                 prompt = "x".repeat(60_000),
@@ -1406,7 +1410,8 @@ class LocalInferenceSupportTest {
                 body = LLMRequest.Chat(
                     model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
                     messages = emptyList(),
-                    maxTokens = 16000,
+                    contextSize = 16000,
+                    maxTokens = 512,
                 ),
                 profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
                 prompt = "x".repeat(20_000),
@@ -1437,6 +1442,11 @@ class LocalInferenceSupportTest {
             maxTokens = 16_000,
         )
 
+        val configuredVision = visionBody.copy(contextSize = 16_000, maxTokens = 128)
+        assertTrue(runtime.usesConfiguredContextWindow(configuredVision))
+        assertEquals(4096, runtime.resolveContextSize(configuredVision, LocalModelProfiles.GEMMA4_E4B_IT, "prompt"))
+        assertEquals(128, runtime.resolveCompletionBudget(configuredVision, "prompt", 4096))
+        assertNull(runtime.resolveExpansionContextSize(configuredVision, LocalModelProfiles.GEMMA4_E4B_IT))
         assertFalse(runtime.usesConfiguredContextWindow(visionBody))
         assertEquals(
             2048,
@@ -1504,14 +1514,15 @@ class LocalInferenceSupportTest {
             LLMRequest.Chat(
                 model = profile.gigaModel.alias,
                 messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
-                maxTokens = 4096,
+                contextSize = 4096,
+                    maxTokens = 256,
             )
         )
 
         assertIs<LLMResponse.Chat.Ok>(response)
         val request = restJsonMapper.readValue(requestSlot.captured, LocalLlamaRuntime.LocalGenerationRequest::class.java)
         assertEquals(4096, request.contextSize)
-        assertEquals(1024, request.maxTokens)
+        assertEquals(256, request.maxTokens)
         verify(exactly = 1) { bridge.generate(runtimePointer, modelPointer, any()) }
     }
 

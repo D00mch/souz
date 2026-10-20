@@ -19,6 +19,19 @@ import ru.souz.db.SUBAGENT_MODELS_JSON
 
 class BackendSettingsProviderTest {
     @Test
+    fun `one server context window is loaded and validated at startup`() {
+        assertEquals(125_000, provider().contextSize)
+        assertEquals(64_000, provider(properties = mapOf("CONTEXT_SIZE" to "64000")).contextSize)
+        assertEquals(125_000, provider(env = mapOf("CONTEXT_SIZE" to " 125000 "),
+            properties = mapOf("CONTEXT_SIZE" to "64000")).contextSize)
+        for (value in listOf("0", "-1", "1.5", "invalid", "", " ", "2147483648")) {
+            assertFailsWith<IllegalArgumentException> { provider(env = mapOf("CONTEXT_SIZE" to value)) }
+        }
+        // The removed summary setting cannot change the server window.
+        assertEquals(125_000, provider(env = mapOf("OPENAI_SUMMARIZATION_CONTEXT_SIZE" to "1")).contextSize)
+    }
+
+    @Test
     fun `named models load independent connections and reject broken configuration`() {
         withNamedLlmConfig { source ->
             val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source)
@@ -27,7 +40,6 @@ class BackendSettingsProviderTest {
             assertEquals("https://router.test/v1", settings.openaiSummarizationBaseUrl)
             assertEquals("router-secret", settings.openaiSummarizationApiKey)
             assertEquals("shared-model", settings.openaiSummarizationModel)
-            assertEquals(32000, settings.summarizationContextSize)
         }
         val valid = NAMED_LLM_CONFIG
         for (port in listOf(1, 65535)) {
@@ -38,10 +50,9 @@ class BackendSettingsProviderTest {
         }
         listOf(
             valid.replace("EXPERIMENT_KEY", "MISSING_KEY"),
+            valid.replace("\"summarization\": {", "\"summarization\": {\"contextSize\":32000,"),
             valid.replace("\"connection\":\"experiment\"", "\"connection\":\"missing\""),
             valid.replace("test-chat", "QwenMax"),
-            valid.replace("32000", "0"),
-            valid.replace("32000", "1.5"),
             valid.replace("\"model\":\"tv-agent\"", "\"model\":\"missing\""),
             valid.replace("\"models\":", "\"unknownField\":{},\"models\":"),
             valid + " {}",
@@ -118,7 +129,6 @@ class BackendSettingsProviderTest {
                 "OPENAI_MODEL" to "custom-model",
                 "OPENAI_SUMMARIZATION_API_KEY" to "  summary-key  ",
                 "OPENAI_SUMMARIZATION_BASE_URL" to "  https://summary.test/v1/  ",
-                "OPENAI_SUMMARIZATION_CONTEXT_SIZE" to "  1000000  ",
                 "OPENAI_SUMMARIZATION_MODEL" to "  provider-summary-model  ",
                 "OPENAI_SUMMARIZATION_PARAMETERS" to """{"reasoning_effort":"low","anotherOne":false}""",
                 "REQUEST_TIMEOUT_MILLIS" to "45000",
@@ -131,16 +141,12 @@ class BackendSettingsProviderTest {
         assertEquals("custom-model", provider.openaiModel)
         assertEquals("summary-key", provider.openaiSummarizationApiKey)
         assertEquals("https://summary.test/v1/", provider.openaiSummarizationBaseUrl)
-        assertEquals(1_000_000, provider.summarizationContextSize)
         assertEquals("provider-summary-model", provider.openaiSummarizationModel)
         assertEquals("""{"reasoning_effort":"low","anotherOne":false}""", provider.openaiSummarizationParameters)
         assertEquals(45_000L, provider.requestTimeoutMillis)
         assertTrue(provider.hasKey(LlmProvider.OPENAI))
         assertNull(provider(env = mapOf("OPENAI_SUMMARIZATION_API_KEY" to "  ")).openaiSummarizationApiKey)
         assertNull(provider(env = mapOf("OPENAI_SUMMARIZATION_BASE_URL" to "  ")).openaiSummarizationBaseUrl)
-        assertNull(
-            provider(env = mapOf("OPENAI_SUMMARIZATION_CONTEXT_SIZE" to "1000000")).summarizationContextSize
-        )
         assertNull(provider(env = mapOf("OPENAI_SUMMARIZATION_MODEL" to "  ")).openaiSummarizationModel)
         assertNull(provider(env = mapOf("OPENAI_SUMMARIZATION_PARAMETERS" to "  ")).openaiSummarizationParameters)
     }

@@ -24,7 +24,6 @@ import ru.souz.llms.LocalModelAvailability
 
 data class UserSettingsOverrides(
     val defaultModel: String? = null,
-    val contextSize: Int? = null,
     val temperature: Float? = null,
     val locale: Locale? = null,
     val timeZone: ZoneId? = null,
@@ -104,7 +103,6 @@ class EffectiveSettingsResolver(
             userId = userId,
             reasoningEffort = persisted.reasoningEffort,
             defaultModel = defaultModel,
-            contextSize = requestOverrides?.contextSize ?: persisted.contextSize ?: baseSettingsProvider.contextSize,
             temperature = requestOverrides?.temperature ?: persisted.temperature ?: baseSettingsProvider.temperature,
             locale = locale,
             timeZone = timeZone,
@@ -132,7 +130,6 @@ class EffectiveSettingsResolver(
         return UserSettings(
             userId = userId,
             defaultModel = defaultModel(userManagedProviders),
-            contextSize = baseSettingsProvider.contextSize,
             temperature = baseSettingsProvider.temperature,
             locale = locale,
             timeZone = ZoneId.systemDefault(),

@@ -33,7 +33,6 @@ class BackendConversationSettingsProvider(
     override var useFewShotExamples: Boolean = useFewShotExamples
     override var useStreaming: Boolean = false
     override var requestTimeoutMillis: Long = requestTimeoutMillis
-    override var contextSize: Int = delegate.contextSize
     override var temperature: Float = delegate.temperature
 
     override fun getSystemPromptForAgentModel(agentId: AgentId, model: LLMModel): String = systemPrompt
@@ -55,7 +54,6 @@ class BackendConversationSettingsProvider(
         val builtin = findLLMModel(request.model)
         this.namedModel = request.model.takeIf { builtin == null }
         this.gigaModel = builtin ?: LLMModel.OpenAICompatibleCustom
-        this.contextSize = request.contextSize
         this.temperature = request.temperature ?: temperature
         this.regionProfile = localeToRegionProfile(request.locale)
         this.systemPrompt = listOfNotNull(

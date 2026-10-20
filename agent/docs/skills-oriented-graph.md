@@ -22,6 +22,8 @@ Tool results larger than 8,192 UTF-8 bytes are stored in conversation-scoped Kno
 
 Knowledge entries use UTF-16 offsets and lengths because they retain Kotlin strings. `GetKnowledge` returns all retained content: a complete read returns its text, while a truncated read exposes the retained head and tail with their original ranges and the omitted range. `SearchKnowledge` searches retained segments independently, so it never matches across an omitted middle. A match without additional context omits its redundant excerpt and excerpt offsets. Knowledge is temporary and belongs to the exact tool-invocation conversation scope.
 
+`NodesLLM` prepares every conversational call, including tool-loop and subagent calls without personality. It reads one instruction snapshot, builds the full request with tool schemas, and checks `contextSize - maxTokens - 512`. If needed it compacts completed history and checks again. The current user/tool exchange stays intact. Summaries use bounded history excerpts without personality; turn finalization only converts the accepted answer and schedules memory capture.
+
 ## Why this is fragile
 
 Advertising a small tool list without replacing executable lookup would let a fabricated call reach a catalog tool. Offloading skill discovery would replace model-consumable schemas and instructions with avoidable Knowledge references. Re-offloading Knowledge reads could create an endless chain of references. Measuring the boundary in Kotlin characters would incorrectly treat multibyte UTF-8 results.

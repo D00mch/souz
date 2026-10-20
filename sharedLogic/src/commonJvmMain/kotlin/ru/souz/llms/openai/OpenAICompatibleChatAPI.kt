@@ -205,6 +205,8 @@ class OpenAICompatibleChatAPI(
                 body.temperature?.let { put("temperature", it) }
             }
             if (body.maxTokens > 0) {
+                remove("max_tokens")
+                remove("max_completion_tokens")
                 val field = when (provider) {
                     LlmProvider.OPENAI -> "max_completion_tokens"
                     LlmProvider.AI_TUNNEL,

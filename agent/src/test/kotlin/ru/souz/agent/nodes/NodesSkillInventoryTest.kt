@@ -251,7 +251,7 @@ class NodesSkillInventoryTest {
             assertContains(prompt, "- skillId: \"paper\"")
         }
         coVerify(exactly = 3) { api.message(match {
-            it.maxTokens == 2048 && it.provider == LlmProvider.LOCAL && it.messages[1].content == "Use the paper Skill."
+            it.maxTokens == CLASSIFICATION_MAX_OUTPUT_TOKENS && it.contextSize == 2048 && it.provider == LlmProvider.LOCAL && it.messages[1].content == "Use the paper Skill."
         }) }
         coEvery { api.message(any()) } throws CancellationException("cancelled")
         assertFailsWith<CancellationException> { node.execute(contextWithCatalog(), runtime()) }

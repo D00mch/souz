@@ -59,12 +59,8 @@ internal class NodesMemory(
         ctx.map(history = history)
     }
 
-    /**
-     * Snapshots the completed turn before summarization can compact history, then schedules capture
-     * only after the existing finalization node succeeds.
-     */
+    /** Captures the completed exchange after accepting its final response. */
     fun finalizeTurn(
-        summarization: Node<LLMResponse.Chat.Ok, String>,
         name: String = "Memory-aware finalization",
     ): Node<LLMResponse.Chat.Ok, String> = object : Node<LLMResponse.Chat.Ok, String> {
         override val name: String = name
@@ -74,7 +70,7 @@ internal class NodesMemory(
             runtime: GraphRuntime,
         ): AgentContext<String> {
             val draft = if (memoryRuntime === NoopConversationMemoryRuntime) null else snapshotCompletedTurn(ctx)
-            val finalizedContext = summarization.execute(ctx, runtime)
+            val finalizedContext = NodesPlain.responseToString().execute(ctx, runtime)
             draft?.let { scheduleCapture(it.copy(assistantMessage = finalizedContext.input)) }
             return finalizedContext
         }

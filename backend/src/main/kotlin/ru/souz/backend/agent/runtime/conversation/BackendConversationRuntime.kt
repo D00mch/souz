@@ -48,7 +48,7 @@ internal class BackendConversationRuntime(
             agentId = AgentId.SKILLS_GRAPH,
             history = persistedSession?.history.orEmpty() + initialMessages,
             model = settingsProvider.gigaModel,
-            contextSize = request.contextSize,
+            contextSize = settingsProvider.contextSize,
             temperature = settingsProvider.temperature,
             toolInvocationMeta = ToolInvocationMeta(
                 userId = key.userId,

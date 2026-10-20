@@ -9,7 +9,6 @@ import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkillInventory
-import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.skills.registry.SkillBundleProvider
@@ -69,12 +68,7 @@ class AgentExecutionKernelFactory(
         )
         val nodesMemory = NodesMemory(memoryRuntime, captureScope, automaticMemoryRecall)
         val nodesErrorHandling = NodesErrorHandling(errorMessages)
-        val nodesSummarization = NodesSummarization(
-            llmApi = llmApi,
-            settingsProvider = settingsProvider,
-            conversationInstructions = conversationInstructions,
-        )
-        val nodesLLM = NodesLLM(llmApi, settingsProvider, conversationInstructions, nodesSummarization)
+        val nodesLLM = NodesLLM(llmApi, settingsProvider, conversationInstructions)
         val availableAgents = listOf(AgentId.SKILLS_GRAPH)
         val contextFactory = AgentContextFactory(
             settingsProvider = settingsProvider,
@@ -87,7 +81,6 @@ class AgentExecutionKernelFactory(
             nodesLLM = nodesLLM,
             nodesCommon = nodesCommon,
             nodesErrorHandling = nodesErrorHandling,
-            nodesSummarization = nodesSummarization,
             nodesMemory = nodesMemory,
             nodesSkillInventory = nodesSkillInventory,
             nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,

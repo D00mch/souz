@@ -329,13 +329,8 @@ class LocalPromptRenderer {
     }
 
     private fun resolveEffectiveContextBudget(body: LLMRequest.Chat, profile: LocalModelProfile): Int =
-        if (body.maxTokens >= MIN_CONTEXT_THRESHOLD) {
-            body.maxTokens
-                .coerceAtLeast(MIN_CONTEXT_THRESHOLD)
-                .coerceAtMost(profile.maxContextSize)
-        } else {
-            profile.defaultContextSize.coerceAtMost(profile.maxContextSize)
-        }
+        body.contextSize?.coerceIn(MIN_CONTEXT_THRESHOLD, profile.maxContextSize)
+            ?: profile.defaultContextSize.coerceAtMost(profile.maxContextSize)
 
     private data class RenderedMessage(
         val role: String,

@@ -19,7 +19,6 @@ import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
-import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
 import ru.souz.agent.nodes.NodesPlain
 import ru.souz.agent.runtime.GraphExecutionDelegate
@@ -33,7 +32,6 @@ class GraphBasedAgent internal constructor(
     private val nodesCommon: NodesCommon,
     private val nodesClassify: NodesClassification,
     private val nodesErrorHandling: NodesErrorHandling,
-    private val nodesSummarization: NodesSummarization,
     private val nodesMCP: NodesMCP,
     private val nodesSkillInventory: NodesSkillInventory,
     private val nodesToolUseWithKnowledge: NodesToolUseWithKnowledge,
@@ -66,9 +64,7 @@ class GraphBasedAgent internal constructor(
         val toolUse: Node<LLMResponse.Chat.Ok, String> = nodesToolUseWithKnowledge.node(
             alwaysInlineToolNames = alwaysInlineResultTools.mapTo(mutableSetOf()) { it.fn.name },
         )
-        val finalizeTurn: Node<LLMResponse.Chat.Ok, String> = nodesMemory.finalizeTurn(
-            summarization = nodesSummarization.summarize(),
-        )
+        val finalizeTurn: Node<LLMResponse.Chat.Ok, String> = nodesMemory.finalizeTurn()
 
         nodeInput.edgeTo(inputToHistory)
         inputToHistory.edgeTo(memoryRecall)

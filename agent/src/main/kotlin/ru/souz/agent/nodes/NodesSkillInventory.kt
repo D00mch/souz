@@ -72,7 +72,8 @@ internal class NodesSkillInventory(
             val request = LLMRequest.Chat(
                 model = ctx.settings.model,
                 provider = ctx.settings.provider,
-                maxTokens = ctx.settings.contextSize,
+                maxTokens = CLASSIFICATION_MAX_OUTPUT_TOKENS,
+                contextSize = ctx.settings.contextSize,
                 functions = emptyList(),
                 messages = listOf(LLMRequest.Message(LLMMessageRole.system, """
                     Select Skills useful for the latest user request, considering every step.

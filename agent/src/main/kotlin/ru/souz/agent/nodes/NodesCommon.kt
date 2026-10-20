@@ -136,7 +136,10 @@ internal class NodesCommon(
         type.toString().replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
 }
 
-internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>): LLMRequest.Chat {
+internal fun <T> AgentContext<T>.toChatRequest(
+    history: List<LLMRequest.Message>,
+    maxOutputTokens: Int,
+): LLMRequest.Chat {
     val ctx = this
     return LLMRequest.Chat(
         model = ctx.settings.model,
@@ -144,7 +147,8 @@ internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>
         messages = history,
         functions = ctx.activeTools,
         temperature = ctx.settings.temperature,
-        maxTokens = ctx.settings.contextSize,
+        maxTokens = maxOutputTokens,
+        contextSize = ctx.settings.contextSize,
         reasoningEffort = ctx.settings.reasoningEffort,
     )
 }

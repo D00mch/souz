@@ -240,8 +240,13 @@ object LLMRequest {
         @field:JsonInclude(JsonInclude.Include.NON_NULL)
         @field:JsonProperty("top_p") val topP: Float? = null,
         val stream: Boolean = false,
+        /** Maximum generated output tokens, independent of the context window. */
         @field:JsonProperty("max_tokens")
         val maxTokens: Int = DEFAULT_MAX_TOKENS,
+        /** Context window for local inference; never serialized to provider APIs. */
+        @get:JsonIgnore
+        @field:JsonIgnore
+        val contextSize: Int? = null,
         @field:JsonInclude(JsonInclude.Include.NON_NULL)
         @field:JsonProperty("repetition_penalty") val repetitionPenalty: Float? = null,
         @field:JsonProperty("update_interval") val updateInterval: Int? = 0,
