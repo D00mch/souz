@@ -394,6 +394,8 @@ internal fun ResultSet.toUserSettings(): UserSettings {
         locale = payload.locale.toLocaleOrNull(),
         timeZone = payload.timeZone.toZoneIdOrNull(),
         systemPrompt = payload.systemPrompt,
+        personalityPrompt = getString("personality_prompt"),
+        personalityRevision = getLong("personality_revision"),
         enabledTools = payload.enabledTools,
         showToolEvents = payload.showToolEvents,
         streamingMessages = payload.streamingMessages,

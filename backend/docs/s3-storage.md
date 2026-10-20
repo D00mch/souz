@@ -32,4 +32,3 @@ Configure an operator-managed bucket lifecycle beyond retention plus upload grac
 Transfers buffer files in memory. Concurrency limits are not heap-byte budgets: buffering may copy data and callers can retain returned arrays. Per-user quotas are outside this service. The S3 client closes after application work stops. This layer has no public upload routes, channel adapters, agent tools or model integration.
 
 Backend credentials are not forwarded to Docker sandboxes. LOCAL child commands inherit the backend environment; LOCAL credential isolation is tracked in [#903](https://github.com/D00mch/souz/issues/903).
-

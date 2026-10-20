@@ -2,6 +2,10 @@
 
 Draft contract for Souz Cloud. Exact fields are in [OpenAPI](openapi.yaml); [happy-path.jsonl](examples/happy-path.jsonl) shows two users' chats, a creation retry, history before and during execution, continued and new threads, client tools, a forwarded message, unsubscribe and resubscribe with replay per chat. Each line is a complete WebSocket frame: Souz sends `ack`, `status` and `event`; the client sends the other kinds. Local setup: [Postman](postman/) / [Bruno](bruno/).
 
+Orion handles server-driven [`prompt.personality.set`](../../backend/docs/personality-settings.md) snapshots
+on subscription/reconnection and after a user style change. These live commands use `seq:null` and the
+normal `tool.result` acknowledgement, independently of the tool catalogue.
+
 ## Connection
 
 Connect to `/v1/ws?clientType=backend`. One WebSocket can serve multiple users' chats; chat-scoped frames carry `chatId`. Each chat's `clientType` must match the connection.

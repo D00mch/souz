@@ -1,6 +1,7 @@
 package ru.souz.backend.storage.postgres
 
 import javax.sql.DataSource
+import ru.souz.backend.settings.model.PersonalitySnapshot
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
 
@@ -27,14 +28,36 @@ class PostgresUserSettingsRepository(
             set settings_json = excluded.settings_json,
                 created_at = excluded.created_at,
                 updated_at = excluded.updated_at
+            returning *
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, settings.userId)
             statement.setJson(2, settings.toSettingsJson())
             statement.setInstant(3, settings.createdAt)
             statement.setInstant(4, settings.updatedAt)
-            statement.executeUpdate()
+            statement.executeQuery().use { rows ->
+                check(rows.next())
+                rows.toUserSettings()
+            }
         }
-        settings
+    }
+
+    override suspend fun compareAndSetPersonality(userId: String, revision: Long, prompt: String?): PersonalitySnapshot? {
+        require(prompt == null || prompt.isNotBlank() && prompt.length <= PersonalitySnapshot.MAX_PROMPT_LENGTH)
+        return dataSource.write { connection ->
+            connection.prepareStatement("""
+                update user_settings
+                set personality_prompt = ?, personality_revision = personality_revision + 1, updated_at = now()
+                where user_id = ? and personality_revision = ? and personality_revision < 9007199254740991
+                returning personality_revision
+            """.trimIndent()).use { statement ->
+                statement.setString(1, prompt)
+                statement.setString(2, userId)
+                statement.setLong(3, revision)
+                statement.executeQuery().use { rows ->
+                    if (rows.next()) PersonalitySnapshot(prompt, rows.getLong(1)) else null
+                }
+            }
+        }
     }
 }

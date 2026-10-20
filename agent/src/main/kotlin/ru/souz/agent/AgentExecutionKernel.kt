@@ -43,6 +43,7 @@ class AgentExecutionKernelFactory(
     private val telemetry: AgentTelemetry,
     private val errorMessages: AgentErrorMessages,
     private val llmApi: LLMChatAPI,
+    private val conversationInstructions: suspend () -> String = { "" },
     private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
     private val captureScope: CoroutineScope,
     private val automaticMemoryRecall: Boolean = true,
@@ -67,12 +68,13 @@ class AgentExecutionKernelFactory(
             knowledgeStore = knowledgeStore,
         )
         val nodesMemory = NodesMemory(memoryRuntime, captureScope, automaticMemoryRecall)
-        val nodesLLM = NodesLLM(llmApi = llmApi, settingsProvider = settingsProvider)
         val nodesErrorHandling = NodesErrorHandling(errorMessages)
         val nodesSummarization = NodesSummarization(
             llmApi = llmApi,
             settingsProvider = settingsProvider,
+            conversationInstructions = conversationInstructions,
         )
+        val nodesLLM = NodesLLM(llmApi, settingsProvider, conversationInstructions, nodesSummarization)
         val availableAgents = listOf(AgentId.SKILLS_GRAPH)
         val contextFactory = AgentContextFactory(
             settingsProvider = settingsProvider,

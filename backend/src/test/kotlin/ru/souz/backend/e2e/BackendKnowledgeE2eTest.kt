@@ -1,11 +1,13 @@
 package ru.souz.backend.e2e
 
+import io.ktor.client.request.patch
 import io.ktor.websocket.Frame
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.restJsonMapper
 
@@ -88,6 +90,11 @@ class BackendKnowledgeE2eTest {
         ) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId, tools = clientToolsJson("user.ask"))
+            // Exercise Knowledge's retention bounds with enough model context for the large fixture.
+            client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted(userId)
+                jsonBody("""{"contextSize":524288}""")
+            }
             if (failWrites) backend.sql { connection ->
                 connection.createStatement().use {
                     it.execute("alter table conversation_knowledge add constraint reject_knowledge_writes check (false)")

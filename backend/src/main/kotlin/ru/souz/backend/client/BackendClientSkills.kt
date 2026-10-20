@@ -36,6 +36,7 @@ internal class BackendClientSkills(
     private val channelDeliveryService: ChannelDeliveryService,
     private val now: () -> Instant = Instant::now,
     private val metrics: BackendMetrics? = null,
+    private val liveTools: LiveClientToolDispatcher = LiveClientToolDispatcher(registry, eventService, metrics, now),
 ) {
     private val bundledGuidance = loadBundledClientSkillGuidance()
 
@@ -62,6 +63,7 @@ internal class BackendClientSkills(
                         ClientWebSocketSkill(
                             enriched, category, registry, toolCallRepository, eventService, channelDeliveryService, now, metrics,
                             timeout = guidance?.timeout ?: Duration.ofMinutes(1),
+                            liveTools = liveTools,
                             boundChannelId = boundChannelId?.toString(),
                             onDiscovery = onDiscovery.takeIf { definition.name == CLIENT_TOOL_DISCOVERY_NAME },
                         )
@@ -114,6 +116,7 @@ private class ClientWebSocketSkill(
     private val now: () -> Instant,
     private val metrics: BackendMetrics?,
     private val timeout: Duration,
+    private val liveTools: LiveClientToolDispatcher,
     private val boundChannelId: String?,
     private val onDiscovery: (suspend (JsonNode, UUID) -> ClientError?)?,
 ) : LLMToolSetup {
@@ -254,29 +257,8 @@ private class ClientWebSocketSkill(
         if (!eventService.hasLiveSubscriber(chat.userId, chat.id)) {
             return failed("client_context_missing", "No device is connected on that channel.")
         }
-        val threadId = UUID.randomUUID()
-        val context = ToolCallContext(meta.userId, chatId.toString(), threadId.toString(), UUID.randomUUID().toString())
-        val deadlineAt = now().plus(timeout)
-        return registry.withChannelTool(context, deadlineAt) { pending ->
-            val published = eventService.publishClientToolCall(
-                userId = meta.userId,
-                chatId = chatId,
-                executionId = threadId,
-                payload = PublicToolCallStartedPayload(
-                    toolCallId = context.toolCallId,
-                    name = fn.name,
-                    arguments = restJsonMapper.valueToTree(functionCall.arguments - "channelId"),
-                    deadlineAt = deadlineAt.toString(),
-                ),
-            )
-            if (!published) return@withChannelTool failed(
-                "client_tool_busy", "Device command queues are full or disconnected.",
-            )
-            val sourceExecution = meta.requestId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
-            sourceExecution?.let { metrics?.executions?.beginClientWait(it) }.use {
-                pending.awaitResult(now())
-            }
-        }
+        return liveTools.call(chat, fn.name, functionCall.arguments - "channelId", timeout,
+            meta.requestId?.let { runCatching { UUID.fromString(it) }.getOrNull() })
     }
 
     private fun outcomeMessage(functionName: String, outcome: ClientToolOutcome): LLMRequest.Message =

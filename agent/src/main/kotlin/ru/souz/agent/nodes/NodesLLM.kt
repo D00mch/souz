@@ -16,6 +16,7 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.toMessage
 
 /**
@@ -24,6 +25,8 @@ import ru.souz.llms.toMessage
 internal class NodesLLM(
     private val llmApi: LLMChatAPI,
     private val settingsProvider: AgentSettingsProvider,
+    private val conversationInstructions: suspend () -> String = { "" },
+    private val summarization: NodesSummarization = NodesSummarization(llmApi, settingsProvider),
 ) {
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
 
@@ -41,8 +44,25 @@ internal class NodesLLM(
         streamRevision: Long = 0L,
     ): Node<String, LLMResponse.Chat> =
         Node(name, retryable = true) { ctx: AgentContext<String> ->
-            val response = request(ctx, streamRevision)
-            val history = ArrayList(ctx.history).apply {
+            var currentHistory = ctx.history
+            // Read once for this call, including any compaction; the next call gets fresh instructions.
+            val instructions = conversationInstructions()
+            var body = ctx.toGigaRequest(currentHistory).withConversationInstructions(instructions)
+            if (instructions.isNotEmpty() && body.exceedsContextBudget()) {
+                currentHistory = summarization.compactHistory(ctx.toGigaRequest(currentHistory))
+                body = ctx.toGigaRequest(currentHistory).withConversationInstructions(instructions)
+            }
+            val response = if (instructions.isNotEmpty() && body.exceedsContextBudget()) {
+                LLMResponse.Chat.Error(-1, "The current message and communication style exceed the context budget. " +
+                    "Shorten them or increase the context size.")
+            } else {
+                // Local inference interprets maxTokens as its context window, remote APIs as an output limit.
+                if (instructions.isNotEmpty() && body.provider != LlmProvider.LOCAL) {
+                    body = body.copy(maxTokens = (body.maxTokens - body.estimatedInputTokens()).coerceAtLeast(1))
+                }
+                request(ctx, body, streamRevision)
+            }
+            val history = ArrayList(currentHistory).apply {
                 if (response is LLMResponse.Chat.Ok) {
                     addAll(response.choices.mapNotNull { it.toMessage() })
                 }
@@ -52,19 +72,19 @@ internal class NodesLLM(
 
     private suspend fun request(
         ctx: AgentContext<*>,
+        request: LLMRequest.Chat,
         streamRevision: Long,
     ): LLMResponse.Chat {
         l.debug("LLM input is {}", ctx.input)
         val response = withContext(Dispatchers.IO) {
-            val req = ctx.toGigaRequest(ctx.history)
             if (settingsProvider.useStreaming) {
                 streamResponse(
-                    request = req.copy(stream = true),
+                    request = request.copy(stream = true),
                     eventSink = ctx.runtimeEventSink,
                     streamRevision = streamRevision,
                 )
             } else {
-                llmApi.message(req)
+                llmApi.message(request)
             }
         }
         l.debug("LLM response is {}", response)

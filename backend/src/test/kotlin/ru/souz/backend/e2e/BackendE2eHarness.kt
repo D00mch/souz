@@ -199,8 +199,30 @@ internal class BackendE2eScope(
         return created.jsonBody()["chat"]["id"].asText()
     }
 
-    suspend fun readJson(session: DefaultClientWebSocketSession): JsonNode =
+    suspend fun readRawJson(session: DefaultClientWebSocketSession): JsonNode =
         json.readTree((session.incoming.receive() as Frame.Text).readText())
+
+    fun toolResultFrame(frame: JsonNode, status: String, result: Map<String, Any>): String =
+        json.writeValueAsString(mapOf(
+            "kind" to "tool.result", "chatId" to frame["chatId"].asText(), "threadId" to frame["threadId"].asText(),
+            "toolCallId" to frame["payload"]["toolCallId"].asText(), "status" to status,
+            (if (status == "succeeded") "result" else "error") to result,
+        ))
+
+    private val personalityCalls = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    // Emulate Orion's settings handler in unrelated workflows. Protocol tests read raw frames.
+    suspend fun readJson(session: DefaultClientWebSocketSession): JsonNode {
+        while (true) {
+            val frame = readRawJson(session)
+            if (frame.path("payload").path("name").asText() == ru.souz.backend.personality.PERSONALITY_SYNC_COMMAND) {
+                personalityCalls.add(frame["payload"]["toolCallId"].asText())
+                session.send(Frame.Text(toolResultFrame(frame, "succeeded", mapOf(
+                    "outcome" to "applied", "revision" to frame["payload"]["arguments"]["revision"].longValue(),
+                ))))
+            } else if (frame.path("toolCallId").asText() !in personalityCalls) return frame
+        }
+    }
 
     suspend fun <T> withPublicSocket(chatId: String, block: suspend (DefaultClientWebSocketSession) -> T): T =
         withSocket("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend", block)

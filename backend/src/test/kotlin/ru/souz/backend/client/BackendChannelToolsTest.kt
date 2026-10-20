@@ -26,6 +26,9 @@ import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.metrics.BackendMetrics
+import ru.souz.backend.personality.PERSONALITY_SYNC_COMMAND
+import ru.souz.backend.personality.PersonalitySync
+import ru.souz.backend.settings.model.PersonalitySnapshot
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.llms.LLMResponse
@@ -35,7 +38,7 @@ import ru.souz.llms.restJsonMapper
 @OptIn(ExperimentalCoroutinesApi::class)
 class BackendChannelToolsTest {
     @Test
-    fun `channel publication is independent of source delivery and HTTP runtime`() = runTest {
+    fun `channel publication is independent of source delivery and personality sync recovers from full queues`() = runTest {
         with(Fixture(backgroundScope)) {
             val subscription = bus.subscribe(target.userId, target.id)
             registry.register(source, ClientDevice(target.userId, "device", "tv_box", emptySet()))
@@ -52,6 +55,34 @@ class BackendChannelToolsTest {
                 repeat(AgentEventLimits.LIVE_BUFFER_SIZE) { assertTrue(bus.publishCommand(command)) }
                 assertTrue(skill.invoke(call, meta).content.contains("client_tool_busy"))
                 assertTrue(registry.isEmpty())
+
+                val sync = PersonalitySync(mockk(), ChannelDeliveryService(chats, mockk(), events), events,
+                    LiveClientToolDispatcher(registry, events))
+                for (hasFallback in listOf(true, false)) {
+                    val receivingChat = if (hasFallback) target.copy(id = UUID.randomUUID()) else target
+                    val receiver = if (hasFallback) bus.subscribe(target.userId, receivingChat.id) else subscription
+                    coEvery { chats.getByIds(any()) } returns listOf(target, receivingChat).distinct()
+                    try {
+                        val started = testScheduler.currentTime
+                        val syncing = async(start = CoroutineStart.UNDISPATCHED) {
+                            sync.deliver(target.userId, PersonalitySnapshot("brief", 2), target.id, source)
+                        }
+                        // A lone channel can accept the retry after its stalled queue drains.
+                        if (!hasFallback) repeat(AgentEventLimits.LIVE_BUFFER_SIZE) { subscription.commands.receive() }
+                        val snapshot = assertIs<PublicToolCallStartedPayload>(receiver.commands.receive().payload)
+                        assertTrue(testScheduler.currentTime > started, "The full source queue must trigger a retry.")
+                        assertEquals(PERSONALITY_SYNC_COMMAND, snapshot.name)
+                        assertEquals("brief", snapshot.arguments["prompt"].asText())
+                        assertEquals(2L, snapshot.arguments["revision"].asLong())
+                        service.handleToolResult(receivingChat, ToolResultFrame("tool.result", receivingChat.id.toString(),
+                            source.toString(), snapshot.toolCallId, "succeeded",
+                            restJsonMapper.readTree("""{"outcome":"applied","revision":2}"""))).afterSend()
+                        assertEquals("synced", syncing.await())
+                        assertTrue(registry.isEmpty())
+                    } finally {
+                        if (hasFallback) receiver.close()
+                    }
+                }
             } finally {
                 subscription.close()
             }
