@@ -41,7 +41,9 @@ internal class NodesSkillInventory(
             skillBundleProvider.listSkillInventoryIds(ctx.toolInvocationMeta.userId)
                 .filterNot { it.value in compiledIds }.distinct().sortedBy { it.value }
         }
-        val descriptions = if (classifySkills && ids.isNotEmpty()) selectedDescriptions(ctx, ids) else emptyMap()
+        val descriptions = if (classifySkills && ids.isNotEmpty() && !isThanksOrGreeting(ctx.input)) {
+            selectedDescriptions(ctx, ids)
+        } else emptyMap()
         val message = "${ctx.systemPrompt}\n\n${inventoryBlock(tools, ids, descriptions)}".toSystemPromptMessage()
         ctx.map(
             settings = ctx.settings.copy(

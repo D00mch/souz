@@ -14,6 +14,14 @@ The measurement reference is [PR #852](https://github.com/D00mch/souz/pull/852).
 The classic `GraphBasedAgent` can select multiple tool categories with Jev independently of its conversational
 model. The skills graph, including backend conversations, selects relevant file-backed Skill descriptions with Jev and execution-LLM fallback; it does not classify tool categories. Inventory keeps every exact ID and adds only selected descriptions as bounded, escaped metadata. Full instructions and supporting files load on demand with approval where enabled.
 
+`JevClassifier` sends the conversation as plain text built by `jevState`: the new user message first, then earlier
+non-empty user and assistant messages newest first, each cut to its first 300 characters. Every category and Skill gets one
+yes/no question naming it with its description; the shared `true` and `false` sides say that a step of the request
+must need it and that a mentioned topic alone does not count. Categories use the classic graph's history window,
+Skills the last two earlier messages. A whole message of up to five words
+that only thanks, greets or says goodbye skips both selections: it gets no direct tools and no Skill descriptions.
+Confirmations such as "да" or "ок" are still classified, since they may approve an offered action.
+
 | Variable | Behavior |
 | --- | --- |
 | `SOUZ_CLASSIFIER` | Unset or `llm`: existing LLM classifier with regex fallback. `jev`: Jev classifier. |
@@ -47,7 +55,8 @@ suspend fun needsCalendar(jev: JevClient, message: String): Double {
 }
 ```
 
-Callers can pass credentials and a model to `JevClient(http, token, model)`. The client validates probabilities
+Optional `criteria` describe a question's `true` and `false` sides. Callers can pass credentials and a model to
+`JevClient(http, token, model)`. The client validates probabilities
 but leaves selection policy to callers and never closes the supplied transport.
 
 Regular tests use mock HTTP responses. Run the opt-in hosted test with the same `JEV_TOKEN`:

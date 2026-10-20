@@ -14,8 +14,7 @@ class LocalRegexClassifierTest {
         model = "m",
         messages = listOf(
             LLMRequest.Message(LLMMessageRole.system, ""),
-            LLMRequest.Message(LLMMessageRole.user, "History:\n"),
-            LLMRequest.Message(LLMMessageRole.user, "New message:\n$text"),
+            LLMRequest.Message(LLMMessageRole.user, text),
         ),
     )
 

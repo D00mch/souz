@@ -16,9 +16,9 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.runtime.JevClassifier
+import ru.souz.llms.runtime.jevState
 import ru.souz.tool.ToolCategory
 import kotlin.test.Test
-import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
@@ -28,39 +28,54 @@ class JevClassifierTest {
         model = "conversational-model",
         messages = listOf(
             LLMRequest.Message(LLMMessageRole.system, "LLM formatting instructions"),
-            LLMRequest.Message(LLMMessageRole.user, "History:\nUSER: Prepare for today's meetings"),
-            LLMRequest.Message(LLMMessageRole.user, "New message:\nCheck my calendar and email the agenda"),
+            LLMRequest.Message(LLMMessageRole.user, "Prepare for today's meetings"),
+            LLMRequest.Message(LLMMessageRole.user, "Summarize them"),
+            LLMRequest.Message(LLMMessageRole.assistant, "", functionCall = LLMRequest.FunctionCall("ListEvents", "{}")),
+            LLMRequest.Message(LLMMessageRole.function, "private tool result"),
+            LLMRequest.Message(LLMMessageRole.assistant, " You have two meetings. " + "x".repeat(400)),
+            LLMRequest.Message(LLMMessageRole.user, "Check my calendar and email the agenda"),
         ),
     )
     private val categories = mapOf(
         ToolCategory.CALENDAR to "Read and edit calendar events",
         ToolCategory.MAIL to "Read and send email",
         ToolCategory.FILES to "Read and edit files",
+        ToolCategory.DESKTOP to "Capture the screen",
+        ToolCategory.IMAGE to "Analyze images",
+    )
+    private val sides = mapOf(
+        "true" to "the request or at least one of its steps needs it",
+        "false" to "no step of the request needs this; a mentioned topic alone does not count",
     )
 
     @Test
-    fun `selects exact Skill IDs by description using the shared transport`() = runTest {
-        val paper = SkillId("Paper.S17")
-        val music = SkillId("music")
-        val descriptions = mapOf(paper to "Summarize papers.", music to "Compose music.")
-        val engine = MockEngine { httpRequest ->
-            val payload = restJsonMapper.readTree(httpRequest.body.toByteArray())
-            assertEquals(descriptions.keys.map { it.value }.toSet(), payload["questions"].fieldNames().asSequence().toSet())
-            assertContains(payload["questions"][paper.value]["instructions"].asText(), descriptions.getValue(paper))
-            assertEquals(request.messages.drop(1).map { it.content }, payload["state"].map { it["content"].asText() })
-            respond("""{"answers":{"Paper.S17":{"type":"noul","noul":0.9},"music":{"type":"noul","noul":0.5}}}""")
-        }
-        HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
-            val client = JevClient(http, "test-token")
-            assertEquals(setOf(paper), JevClassifier(client, 0.5).selectSkills(request, descriptions))
-            assertEquals(emptySet(), JevClassifier(client, 0.95).selectSkills(request, descriptions))
-            assertEquals(emptySet(), JevClassifier(client).selectSkills(request, emptyMap()))
-            assertEquals(2, engine.requestHistory.size)
-        }
+    fun `state puts the new message first and earlier non-empty ones newest first, cut to 300 characters`() {
+        val assistant = ("You have two meetings. " + "x".repeat(400)).take(299)
+        assertEquals(
+            "New user message:\nCheck my calendar and email the agenda\n\nPrevious messages, newest first:\n" +
+                "Assistant: $assistant\nUser: Summarize them\nUser: Prepare for today's meetings",
+            jevState(request.messages),
+        )
+        assertEquals(
+            "New user message:\nCheck my calendar and email the agenda\n\nPrevious messages, newest first:\n" +
+                "Assistant: $assistant\nUser: Summarize them",
+            jevState(request.messages, historyLimit = 2),
+        )
+        assertEquals("Check my calendar", jevState(listOf(request.messages[0], LLMRequest.Message(LLMMessageRole.user, "Check my calendar"))))
     }
 
     @Test
-    fun `request uses Jev configuration and filtered history with independent category thresholds`() = runTest {
+    fun `categories are Noul questions selected strictly above the threshold`() = runTest {
+        val screen = "; understanding the current screen needs both screen capture and image analysis, " +
+            "unless a path to an existing image was supplied"
+        val expectedQuestions = categories.entries.associate { (category, description) ->
+            val rule = if (category in setOf(ToolCategory.DESKTOP, ToolCategory.IMAGE)) screen else ""
+            category.name to mapOf(
+                "instructions" to "Does fulfilling the latest user request require this tool category: ${category.name} ($description$rule)?",
+                "type" to "noul",
+                "criteria" to sides,
+            )
+        }
         val engine = MockEngine { httpRequest ->
             assertEquals("https://api.typesafe.ai/v1/systemone", httpRequest.url.toString())
             assertEquals(HttpMethod.Post, httpRequest.method)
@@ -68,21 +83,19 @@ class JevClassifierTest {
             assertEquals(2_000L, httpRequest.getCapabilityOrNull(HttpTimeoutCapability)?.requestTimeoutMillis)
             val payload = restJsonMapper.readTree(httpRequest.body.toByteArray())
             assertEquals("jev-configured", payload["model"].asText())
-            assertEquals(request.messages.drop(1).map { it.content }, payload["state"].map { it["content"].asText() })
-            assertEquals(listOf("user", "user"), payload["state"].map { it["role"].asText() })
-            assertEquals(categories.keys.map { it.name }.toSet(), payload["questions"].fieldNames().asSequence().toSet())
-            categories.forEach { (category, description) ->
-                assertEquals("noul", payload["questions"][category.name]["type"].asText())
-                assertContains(payload["questions"][category.name]["instructions"].asText(), description)
-            }
-            respond("""{"answers":{"CALENDAR":{"type":"noul","noul":0.4},"MAIL":{"type":"noul","noul":0.3},"FILES":{"type":"noul","noul":0}}}""")
+            assertEquals(jevState(request.messages), payload["state"].asText())
+            assertEquals(restJsonMapper.valueToTree<JsonNode>(expectedQuestions), payload["questions"])
+            respond(
+                """{"answers":{"CALENDAR":{"type":"noul","noul":0.9},"MAIL":{"type":"noul","noul":0.5},""" +
+                    """"FILES":{"type":"noul","noul":0.51},"DESKTOP":{"type":"noul","noul":0.2},"IMAGE":{"type":"noul","noul":0}}}""",
+            )
         }
         HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
             val client = JevClient(http, "test-token", "jev-configured")
             val cases = mapOf(
-                0.0 to listOf(ToolCategory.CALENDAR, ToolCategory.MAIL),
-                0.3 to listOf(ToolCategory.CALENDAR),
-                0.5 to emptyList(),
+                0.0 to listOf(ToolCategory.CALENDAR, ToolCategory.MAIL, ToolCategory.FILES, ToolCategory.DESKTOP),
+                0.5 to listOf(ToolCategory.CALENDAR, ToolCategory.FILES),
+                0.9 to emptyList(),
             )
             cases.forEach { (threshold, expected) ->
                 val result = JevClassifier(client, threshold).classify(request, categories)
@@ -91,6 +104,34 @@ class JevClassifierTest {
             }
             assertEquals(emptyList(), JevClassifier(client).classify(request, emptyMap()).categories)
             assertEquals(cases.size, engine.requestHistory.size)
+        }
+    }
+
+    @Test
+    fun `Skills are Noul questions over the last two messages`() = runTest {
+        val paper = SkillId("Paper.S17")
+        val music = SkillId("music")
+        val descriptions = mapOf(paper to "Summarize papers.", music to "Compose music.")
+        val engine = MockEngine { httpRequest ->
+            val payload = restJsonMapper.readTree(httpRequest.body.toByteArray())
+            assertEquals(jevState(request.messages, historyLimit = 2), payload["state"].asText())
+            assertEquals(
+                restJsonMapper.valueToTree<JsonNode>(descriptions.entries.associate { (id, description) ->
+                    id.value to mapOf(
+                        "instructions" to "Does fulfilling the latest user request require this Skill: ${id.value} ($description)?",
+                        "type" to "noul",
+                        "criteria" to sides,
+                    )
+                }),
+                payload["questions"],
+            )
+            respond("""{"answers":{"Paper.S17":{"type":"noul","noul":0.9},"music":{"type":"noul","noul":0.5}}}""")
+        }
+        HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
+            val client = JevClient(http, "test-token")
+            assertEquals(setOf(paper), JevClassifier(client).selectSkills(request, descriptions))
+            assertEquals(emptySet(), JevClassifier(client).selectSkills(request, emptyMap()))
+            assertEquals(1, engine.requestHistory.size)
         }
     }
 

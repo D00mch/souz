@@ -263,6 +263,18 @@ class NodesSkillInventoryTest {
         coVerify(exactly = 4) { api.message(any()) }
     }
 
+    @Test
+    fun `thanks and greetings skip Skill selection`() = runTest {
+        val api = mockk<LLMChatAPI>()
+        val node = node(catalog(), repository = repository("paper" to "Summarize papers."), llmApi = api,
+            classifier = SkillClassifier { _, _ -> error("Skill selection must be skipped") })
+            .node(emptyList(), classifySkills = true)
+        val prompt = node.execute(contextWithCatalog().copy(input = "Спасибо большое!"), runtime()).history.first().content
+        assertContains(prompt, "- skillId: \"paper\"\n")
+        assertFalse(prompt.contains("; description:"))
+        coVerify(exactly = 0) { api.message(any()) }
+    }
+
     private fun node(
         catalog: AgentToolCatalog,
         toolsFilter: AgentToolsFilter = PassThroughToolsFilter,
@@ -278,7 +290,7 @@ class NodesSkillInventoryTest {
     )
 
     private fun contextWithCatalog(vararg tools: LLMToolSetup): AgentContext<String> = AgentContext(
-        input = "hello",
+        input = "summarize the paper",
         settings = AgentSettings(
             model = "test",
             provider = LlmProvider.OPENAI,
