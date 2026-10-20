@@ -6,6 +6,7 @@ import io.mockk.mockk
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -13,6 +14,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
 import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.RetryPolicy
@@ -30,11 +33,19 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 
 class NodesLLMTest {
-    @Test
-    fun `host instructions budget the request without entering history or summaries`() = runTest {
+    @ParameterizedTest(name = "{0}")
+    @CsvSource(
+        "personality-triggered compaction, 9000, 2600",
+        "multi-chunk compaction without personality, 40000, 0",
+    )
+    fun `compaction budgets requests and preserves the active tool exchange`(
+        scenario: String,
+        historyRepetitions: Int,
+        instructionRepetitions: Int,
+    ) = runTest {
         for (provider in listOf(LlmProvider.LOCAL, LlmProvider.OPENAI)) for (streaming in listOf(false, true)) {
             val calls = mutableListOf<LLMRequest.Chat>()
-            val style = "style ".repeat(2600)
+            val style = "style ".repeat(instructionRepetitions)
             var savedInstructions = style
             var instructionReads = 0
             val api = mockk<LLMChatAPI> {
@@ -58,30 +69,36 @@ class NodesLLMTest {
                 LLMRequest.Message(LLMMessageRole.function, "result", name = "work", functionsStateId = "call"),
             )
             val ctx = context(listOf(LLMRequest.Message(LLMMessageRole.system, "system"),
-                LLMRequest.Message(LLMMessageRole.user, "old ".repeat(9000)),
+                LLMRequest.Message(LLMMessageRole.user, "old ".repeat(historyRepetitions)),
                 LLMRequest.Message(LLMMessageRole.assistant, "old answer")) + activeTurn).let {
                 it.copy(settings = it.settings.copy(provider = provider, contextSize = 16000))
             }
-            val result = nodes.chat().execute(ctx, GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10))
-            assertEquals(2, calls.size)
+            val runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10)
+            assertEquals(style.isEmpty(), ctx.toChatRequest(ctx.history, CHAT_MAX_OUTPUT_TOKENS)
+                .exceedsContextBudget(16000), scenario)
+            val result = nodes.chat().execute(ctx, runtime)
+            val summaries = calls.dropLast(1)
+            if (style.isEmpty()) assertTrue(summaries.size > 1, scenario)
+            else assertEquals(1, summaries.size, scenario)
             assertEquals(1, instructionReads, "Reuse the instructions snapshot when compaction rebuilds the request.")
-            assertTrue(calls.first().isSummarization)
-            assertTrue(calls.first().messages.none { style in it.content || it.content == "current request" })
+            assertTrue(summaries.all { it.isSummarization && it.functions.isEmpty() })
+            assertTrue(summaries.all { it.maxTokens == SUMMARIZATION_MAX_OUTPUT_TOKENS })
+            assertTrue(summaries.none { request -> request.messages.any {
+                (style.isNotEmpty() && style in it.content) || "current request" in it.content || "result" in it.content
+            } })
+            assertTrue(calls.all { !it.exceedsContextBudget(16000) }, "Every request must fit, including summary chunks.")
             val request = calls.last()
-            assertEquals("system\n\n$style", request.messages.first().content)
+            assertFalse(request.isSummarization)
+            assertEquals(if (style.isEmpty()) "system" else "system\n\n$style", request.messages.first().content)
             assertEquals(activeTurn, request.messages.takeLast(activeTurn.size))
-            assertTrue(!request.exceedsContextBudget(16000))
             assertEquals(CHAT_MAX_OUTPUT_TOKENS, request.maxTokens)
             assertEquals(16000, request.contextSize)
-            assertEquals(SUMMARIZATION_MAX_OUTPUT_TOKENS, calls.first().maxTokens)
-            assertTrue(!calls.first().exceedsContextBudget(16000))
-            assertTrue(result.history.none { style in it.content })
+            assertTrue(result.history.none { style.isNotEmpty() && style in it.content })
             assertEquals(activeTurn, result.history.dropLast(1).takeLast(activeTurn.size))
             assertTrue(result.history.any { "compact history" in it.content })
 
             calls.clear()
-            nodes.chat().execute(ctx.copy(history = result.history.filter { it.role != LLMMessageRole.system }),
-                GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10))
+            nodes.chat().execute(ctx.copy(history = result.history.filter { it.role != LLMMessageRole.system }), runtime)
             assertEquals(2, instructionReads, "The next conversational call reads fresh instructions.")
             assertEquals(LLMRequest.Message(LLMMessageRole.system, "updated style"), calls.single().messages.first())
 
@@ -89,9 +106,17 @@ class NodesLLMTest {
             savedInstructions = style
             val tooSmall = ctx.copy(history = listOf(ctx.history.first()) + activeTurn,
                 settings = ctx.settings.copy(contextSize = 1024))
-            val rejected = nodes.chat().execute(tooSmall, GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10))
+            val rejected = nodes.chat().execute(tooSmall, runtime)
             assertTrue(rejected.input is LLMResponse.Chat.Error)
             assertTrue(calls.isEmpty(), "Do not send an oversized active turn or discard its tool exchange.")
+
+            // The next model call must budget newly returned tool output as well.
+            val oversizedTurn = ctx.copy(history = listOf(ctx.history.first()) +
+                activeTurn.dropLast(1) + activeTurn.last().copy(content = "result ".repeat(12000)))
+            val rejectedToolOutput = nodes.chat().execute(oversizedTurn, runtime)
+            assertTrue(rejectedToolOutput.input is LLMResponse.Chat.Error)
+            assertEquals(oversizedTurn.history, rejectedToolOutput.history)
+            assertTrue(calls.isEmpty())
         }
     }
 
@@ -181,50 +206,6 @@ class NodesLLMTest {
         assertEquals(2, attempts)
         assertEquals(listOf("Let me check", "Second"), events.filterIsInstance<AgentRuntimeEvent.AssistantMessage>().map { it.content })
         assertEquals(listOf("Let me check", "Second", ""), result.history.map { it.content })
-    }
-
-    @Test
-    fun `requests without personality compact oversized history in bounded chunks before tool loops`() = runTest {
-        val calls = mutableListOf<LLMRequest.Chat>()
-        val api = mockk<LLMChatAPI> {
-            coEvery { message(any()) } answers {
-                val request = firstArg<LLMRequest.Chat>()
-                assertTrue(!request.exceedsContextBudget(16000), "Every request must fit, including summary chunks.")
-                calls += request
-                block(0, if (request.isSummarization) "merged summary" else "answer")
-            }
-        }
-        val nodes = NodesLLM(api, mockk { every { useStreaming } returns false })
-        val active = listOf(
-            LLMRequest.Message(LLMMessageRole.user, "current"),
-            LLMRequest.Message(LLMMessageRole.assistant, "", functionsStateId = "call",
-                functionCall = LLMRequest.FunctionCall("work", "{}")),
-            LLMRequest.Message(LLMMessageRole.function, "result", functionsStateId = "call", name = "work"),
-        )
-        val original = context(listOf(
-            LLMRequest.Message(LLMMessageRole.system, "system"),
-            LLMRequest.Message(LLMMessageRole.user, "old ".repeat(40000)),
-            LLMRequest.Message(LLMMessageRole.assistant, "completed"),
-        ) + active)
-        val runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10)
-        val result = nodes.chat().execute(original, runtime)
-        assertTrue(calls.count { it.isSummarization } > 1)
-        assertTrue(calls.dropLast(1).all { it.isSummarization && it.functions.isEmpty() })
-        assertTrue(calls.filter { it.isSummarization }.none { request ->
-            request.messages.any { "current" in it.content || "result" in it.content }
-        })
-        assertEquals(active, calls.last().messages.takeLast(active.size))
-        assertEquals(active, result.history.dropLast(1).takeLast(active.size))
-        assertEquals(CHAT_MAX_OUTPUT_TOKENS, calls.last().maxTokens)
-
-        // The next model call must budget newly returned tool output as well.
-        calls.clear()
-        val oversizedTurn = original.copy(history = listOf(original.history.first()) +
-            active.dropLast(1) + active.last().copy(content = "result ".repeat(12000)))
-        val rejected = nodes.chat().execute(oversizedTurn, runtime)
-        assertTrue(rejected.input is LLMResponse.Chat.Error)
-        assertEquals(oversizedTurn.history, rejected.history)
-        assertTrue(calls.isEmpty())
     }
 
     @Test
