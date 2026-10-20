@@ -25,7 +25,6 @@ internal class NodesLLM(
     private val llmApi: LLMChatAPI,
     private val settingsProvider: AgentSettingsProvider,
     private val conversationInstructions: suspend () -> String = { "" },
-    private val summarization: NodesSummarization = NodesSummarization(llmApi),
 ) {
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
 
@@ -65,7 +64,7 @@ internal class NodesLLM(
         var history = ctx.history
         var request = build(history)
         if (request.exceedsContextBudget(ctx.settings.contextSize)) {
-            history = summarization.compactHistory(
+            history = llmApi.compactHistory(
                 ctx.toChatRequest(history, maxOutputTokens = SUMMARIZATION_MAX_OUTPUT_TOKENS),
             )
             request = build(history)
