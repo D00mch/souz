@@ -1,6 +1,7 @@
 package ru.souz.agent.nodes
 
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlin.test.Test
@@ -101,22 +102,41 @@ class NodesLLMTest {
             nodes.chat().execute(ctx.copy(history = result.history.filter { it.role != LLMMessageRole.system }), runtime)
             assertEquals(2, instructionReads, "The next conversational call reads fresh instructions.")
             assertEquals(LLMRequest.Message(LLMMessageRole.system, "updated style"), calls.single().messages.first())
+        }
+    }
 
-            calls.clear()
-            savedInstructions = style
-            val tooSmall = ctx.copy(history = listOf(ctx.history.first()) + activeTurn,
-                settings = ctx.settings.copy(contextSize = 1024))
-            val rejected = nodes.chat().execute(tooSmall, runtime)
-            assertTrue(rejected.input is LLMResponse.Chat.Error)
-            assertTrue(calls.isEmpty(), "Do not send an oversized active turn or discard its tool exchange.")
+    @ParameterizedTest(name = "{0}")
+    @CsvSource(
+        "instructions, 10000, 1, 1",
+        "tool output, 1, 12000, 1",
+        "tool schemas, 1, 1, 10000",
+    )
+    fun `oversized requests preserve history and never call the provider`(
+        scenario: String,
+        instructionRepetitions: Int,
+        toolOutputRepetitions: Int,
+        schemaRepetitions: Int,
+    ) = runTest {
+        for (provider in listOf(LlmProvider.LOCAL, LlmProvider.OPENAI)) for (streaming in listOf(false, true)) {
+            val api = mockk<LLMChatAPI>()
+            val nodes = NodesLLM(api, mockk { every { useStreaming } returns streaming },
+                conversationInstructions = { "style ".repeat(instructionRepetitions) })
+            val original = context(listOf(
+                LLMRequest.Message(LLMMessageRole.system, "system"),
+                LLMRequest.Message(LLMMessageRole.user, "current request"),
+                LLMRequest.Message(LLMMessageRole.assistant, "", functionCall = LLMRequest.FunctionCall("work", "{}"), functionsStateId = "call"),
+                LLMRequest.Message(LLMMessageRole.function, "result ".repeat(toolOutputRepetitions), name = "work", functionsStateId = "call"),
+            )).let {
+                it.copy(settings = it.settings.copy(provider = provider, contextSize = 16000),
+                    activeTools = listOf(LLMRequest.Function("work", "schema ".repeat(schemaRepetitions), LLMRequest.Parameters("object"))))
+            }
 
-            // The next model call must budget newly returned tool output as well.
-            val oversizedTurn = ctx.copy(history = listOf(ctx.history.first()) +
-                activeTurn.dropLast(1) + activeTurn.last().copy(content = "result ".repeat(12000)))
-            val rejectedToolOutput = nodes.chat().execute(oversizedTurn, runtime)
-            assertTrue(rejectedToolOutput.input is LLMResponse.Chat.Error)
-            assertEquals(oversizedTurn.history, rejectedToolOutput.history)
-            assertTrue(calls.isEmpty())
+            val rejected = nodes.chat().execute(original, GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10))
+
+            assertTrue(rejected.input is LLMResponse.Chat.Error, scenario)
+            assertEquals(original.history, rejected.history, scenario)
+            coVerify(exactly = 0) { api.message(any()) }
+            coVerify(exactly = 0) { api.messageStream(any()) }
         }
     }
 
@@ -209,7 +229,7 @@ class NodesLLMTest {
     }
 
     @Test
-    fun `tool schemas participate in budgeting and an oversized summary cannot bypass recheck`() = runTest {
+    fun `an oversized summary fails the post-compaction check without a conversational call`() = runTest {
         val calls = mutableListOf<LLMRequest.Chat>()
         val api = mockk<LLMChatAPI> {
             coEvery { message(any()) } answers {
@@ -219,20 +239,22 @@ class NodesLLMTest {
         }
         val nodes = NodesLLM(api, mockk { every { useStreaming } returns false })
         val runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10)
-        val original = context(listOf(LLMRequest.Message(LLMMessageRole.user, "current"))).copy(
-            activeTools = listOf(LLMRequest.Function("work", "schema ".repeat(10000), LLMRequest.Parameters("object"))),
+        val activeTurn = listOf(
+            LLMRequest.Message(LLMMessageRole.user, "current"),
+            LLMRequest.Message(LLMMessageRole.assistant, "", functionCall = LLMRequest.FunctionCall("work", "{}"), functionsStateId = "call"),
+            LLMRequest.Message(LLMMessageRole.function, "result", name = "work", functionsStateId = "call"),
         )
-        assertTrue(nodes.chat().execute(original, runtime).input is LLMResponse.Chat.Error)
-        assertTrue(calls.isEmpty(), "An oversized schema must not reach the provider.")
-
         val history = listOf(
             LLMRequest.Message(LLMMessageRole.user, "old ".repeat(12000)),
             LLMRequest.Message(LLMMessageRole.assistant, "completed"),
-            LLMRequest.Message(LLMMessageRole.user, "current"),
-        )
-        assertTrue(nodes.chat().execute(context(history), runtime).input is LLMResponse.Chat.Error)
+        ) + activeTurn
+        val rejected = nodes.chat().execute(context(history), runtime)
+
+        assertTrue(rejected.input is LLMResponse.Chat.Error)
+        assertEquals(activeTurn, rejected.history.takeLast(activeTurn.size))
         assertEquals(1, calls.size)
         assertTrue(calls.single().isSummarization)
+        coVerify(exactly = 0) { api.messageStream(any()) }
     }
 
     @Test
