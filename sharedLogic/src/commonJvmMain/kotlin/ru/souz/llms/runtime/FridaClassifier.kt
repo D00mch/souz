@@ -1,6 +1,5 @@
 package ru.souz.llms.runtime
 
-import com.fasterxml.jackson.databind.node.TextNode
 import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.skills.SkillId
 import ru.souz.frida.FridaClient
@@ -14,15 +13,14 @@ import ru.souz.tool.UserMessageClassifier
  */
 class FridaClassifier(private val client: FridaClient) : UserMessageClassifier, SkillClassifier {
     override suspend fun classify(body: LLMRequest.Chat, categories: Map<ToolCategory, String>): UserMessageClassifier.Reply {
-        val options = categories.entries.associate { (category, description) -> category.name to description + screenRule(category) }
-        val selected = selected(client.choose(TextNode(jevState(body.messages)), TOOLS_QUESTION, options))
+        val selected = selected(client.choose(jevState(body.messages), TOOLS_QUESTION, categoryOptions(categories)))
         return UserMessageClassifier.Reply(categories = categories.keys.filter { it.name in selected }, confidence = null)
     }
 
     override suspend fun selectSkills(request: LLMRequest.Chat, descriptions: Map<SkillId, String>): Set<SkillId> {
         val options = descriptions.mapKeys { it.key.value }.filterKeys { it != NONE }
         if (options.isEmpty()) return emptySet()
-        val state = TextNode(jevState(request.messages, historyLimit = 2))
+        val state = jevState(request.messages, historyLimit = 2)
         val selected = selected(client.choose(state, SKILLS_QUESTION, options + (NONE to NONE_DESCRIPTION)))
         return descriptions.keys.filterTo(mutableSetOf()) { it.value in selected }
     }

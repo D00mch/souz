@@ -45,7 +45,7 @@ then regex; Skill selection runs Jev, then FRIDA, then the execution LLM. FRIDA 
 one choice question, with a `none` option for Skills; it selects the top option plus every option at least 3 above the
 mean margin, and nothing when `none` wins. FRIDA requests time out after 2 seconds.
 
-Settings are read at construction; invalid Jev configuration fails when Jev is selected or its client is resolved.
+Invalid Jev configuration fails each classification like a failed request.
 Requests time out after 2 seconds. Classic category selection tries twice before regex fallback. Skill selection falls back to the current execution LLM when Jev configuration or requests fail; failure of both classifiers keeps ID-only inventory. Cancellation propagates.
 Only enabled, nonempty categories are evaluated; an empty catalog makes no request. No matches or `HELP`
 exposes all available tools.

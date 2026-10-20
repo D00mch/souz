@@ -400,7 +400,10 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<UserMessageClassifier>(tag = DiTags.TAG_API) {
         when (System.getenv("SOUZ_CLASSIFIER")?.trim()?.lowercase()) {
             null, "", "llm" -> ApiClassifier(instance())
-            "jev" -> JevClassifier(instance(), System.getenv("JEV_THRESHOLD")?.trim()?.toDouble() ?: 0.5)
+            // Built per request, so invalid Jev configuration fails the request and reaches the fallbacks.
+            "jev" -> UserMessageClassifier { body, categories ->
+                JevClassifier(instance(), System.getenv("JEV_THRESHOLD")?.trim()?.toDouble() ?: 0.5).classify(body, categories)
+            }
             else -> error("SOUZ_CLASSIFIER must be llm or jev")
         }
     }

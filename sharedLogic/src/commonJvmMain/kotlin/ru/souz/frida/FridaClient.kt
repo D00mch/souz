@@ -2,7 +2,6 @@ package ru.souz.frida
 
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.core.JsonProcessingException
-import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.plugins.timeout
@@ -38,7 +37,7 @@ class FridaClient(
     }
 
     /** Asks one choice question and returns every option's raw margin by its key. */
-    suspend fun choose(state: JsonNode, instructions: String, options: Map<String, String>): Map<String, Double> {
+    suspend fun choose(state: String, instructions: String, options: Map<String, String>): Map<String, Double> {
         if (options.isEmpty()) return emptyMap()
         var status: Int? = null
         var outcome = "cancelled"
@@ -77,5 +76,5 @@ class FridaClient(
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 private data class FridaRequest(val model: String?, val data: FridaData)
-private data class FridaData(val state: JsonNode, val questions: Map<String, FridaQuestion>)
+private data class FridaData(val state: String, val questions: Map<String, FridaQuestion>)
 private data class FridaQuestion(val instructions: String, val criteria: Map<String, String>, val type: String = "choice")

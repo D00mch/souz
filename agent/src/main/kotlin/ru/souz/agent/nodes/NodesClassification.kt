@@ -60,9 +60,9 @@ internal class NodesClassification(
     ): List<ToolCategory> {
         l.debug("Classifying user message, body: \n{}", logObjectMapper.writeValueAsString(body))
         val localResult = localClassifier.classify(body, categoryDescriptions)
-        repeat(2) {
+        for (classifier in listOfNotNull(apiClassifier, apiClassifier, fallbackClassifier)) {
             try {
-                val apiResult = apiClassifier.classify(body, categoryDescriptions)
+                val apiResult = classifier.classify(body, categoryDescriptions)
                 if (apiResult.confidence == null || apiResult.confidence > 50 ||
                     apiResult.categories.firstOrNull() == localResult.categories.firstOrNull()) {
                     return apiResult.categories
@@ -72,16 +72,7 @@ internal class NodesClassification(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                l.error("Error in apiClassifier: {}", e.message)
-            }
-        }
-        fallbackClassifier?.let { fallback ->
-            try {
-                return fallback.classify(body, categoryDescriptions).categories
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                l.error("Error in fallbackClassifier: {}", e.message)
+                l.error("Error in remote classifier: {}", e.message)
             }
         }
         return localResult.categories

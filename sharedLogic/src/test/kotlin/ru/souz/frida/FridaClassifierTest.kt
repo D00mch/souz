@@ -107,7 +107,7 @@ class FridaClassifierTest {
         var status = HttpStatusCode.OK
         HttpClient(MockEngine { respond(body, status) }) { providerHttpClientDefaults() }.use { http ->
             val client = FridaClient(http, "https://frida.test/pooling")
-            val state = restJsonMapper.valueToTree<JsonNode>("private message")
+            val state = "private message"
             val options = mapOf("A" to "First", "B" to "Second")
             val invalid = listOf("", "not json", "{}", """{"data":{"margins":{"choice":{"A":1.0}}}}""",
                 """{"data":{"margins":{"choice":{"A":1.0,"B":"2"}}}}""", """{"data":{"margins":{"choice":{"A":1.0,"B":1e999}}}}""")
