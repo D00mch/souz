@@ -94,6 +94,7 @@ internal class BackendConversationRuntimeFactory(
     private val chatRepository: ChatRepository,
     private val skillBundleProvider: SkillBundleProvider,
     private val skillClassifier: SkillClassifier,
+    private val fallbackSkillClassifier: SkillClassifier? = null,
     private val commandExecutor: SkillCommandExecutor,
     private val filesToolUtil: FilesToolUtil,
     private val webResearchClient: WebResearchClient,
@@ -292,6 +293,7 @@ internal class BackendConversationRuntimeFactory(
                     canUpdate = PersonalityTool.NAME in baseCatalog.toolsByCategory[ToolCategory.CONFIG].orEmpty())
             },
             skillClassifier = skillClassifier,
+            fallbackSkillClassifier = fallbackSkillClassifier,
             memoryRuntime = memoryRuntime,
             automaticMemoryRecall = automaticMemoryRecall,
             captureScope = agentBackgroundScope + backendLogContext(

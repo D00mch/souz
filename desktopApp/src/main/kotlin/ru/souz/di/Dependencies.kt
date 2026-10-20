@@ -108,6 +108,7 @@ import ru.souz.tool.web.ToolWebImageSearch
 import ru.souz.tool.web.ToolWebPageText
 import ru.souz.tool.web.internal.WebImageDownloader
 import ru.souz.tool.web.internal.WebResearchClient
+import ru.souz.runtime.di.FRIDA_FALLBACK_TAG
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
 import ru.souz.runtime.files.FilesToolUtil
@@ -502,6 +503,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             logObjectMapperTag = DiTags.TAG_LOG,
             apiClassifierTag = DiTags.TAG_API,
             localClassifierTag = DiTags.TAG_LOCAL,
+            fallbackClassifierTag = FRIDA_FALLBACK_TAG,
         )
     )
     bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance()) }

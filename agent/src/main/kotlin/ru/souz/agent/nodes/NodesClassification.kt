@@ -20,6 +20,7 @@ internal class NodesClassification(
     private val localClassifier: UserMessageClassifier,
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
+    private val fallbackClassifier: UserMessageClassifier? = null,
 ) {
     private val l = LoggerFactory.getLogger(NodesClassification::class.java)
 
@@ -72,6 +73,15 @@ internal class NodesClassification(
                 throw e
             } catch (e: Exception) {
                 l.error("Error in apiClassifier: {}", e.message)
+            }
+        }
+        fallbackClassifier?.let { fallback ->
+            try {
+                return fallback.classify(body, categoryDescriptions).categories
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                l.error("Error in fallbackClassifier: {}", e.message)
             }
         }
         return localResult.categories

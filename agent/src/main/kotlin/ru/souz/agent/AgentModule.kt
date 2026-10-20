@@ -35,6 +35,7 @@ fun agentDiModule(
     apiClassifierTag: Any? = null,
     localClassifierTag: Any? = null,
     graphSessionRepositoryTag: Any? = null,
+    fallbackClassifierTag: Any? = null,
 ): DI.Module = DI.Module("agent") {
     bindSingleton {
         graphSessionRepositoryTag
@@ -69,6 +70,7 @@ fun agentDiModule(
             skillBundleProvider = instance<SkillRegistryRepository>(),
             llmApi = instance(),
             skillClassifier = instanceOrNull<SkillClassifier>(),
+            fallbackSkillClassifier = fallbackClassifierTag?.let { instanceOrNull<SkillClassifier>(tag = it) },
         )
     }
     bindSingleton { NodesMemory(instance(), instance()) }
@@ -83,6 +85,7 @@ fun agentDiModule(
             localClassifier = instance<UserMessageClassifier>(tag = localClassifierTag),
             toolCatalog = instance(),
             toolsFilter = instance(),
+            fallbackClassifier = fallbackClassifierTag?.let { instanceOrNull<UserMessageClassifier>(tag = it) },
         )
     }
     bindSingleton {

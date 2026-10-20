@@ -264,6 +264,33 @@ class NodesSkillInventoryTest {
     }
 
     @Test
+    fun `fallback classifier answers when the classifier fails, before the LLM`() = runTest {
+        val api = mockk<LLMChatAPI>()
+        coEvery { api.message(any()) } returns LLMResponse.Chat.Ok(
+            choices = listOf(LLMResponse.Choice(LLMResponse.Message("[\"paper\"]", LLMMessageRole.assistant, functionsStateId = null),
+                0, LLMResponse.FinishReason.stop)),
+            created = 0, model = "test", usage = LLMResponse.Usage(0, 0, 0, 0),
+        )
+        var fallbackCalls = 0
+        fun inventory(primary: SkillClassifier, fallback: SkillClassifier) = NodesSkillInventory(
+            toolCatalog = catalog(), toolsFilter = PassThroughToolsFilter, skillBundleProvider = repository("paper" to "Summarize papers."),
+            llmApi = api, skillClassifier = primary, fallbackSkillClassifier = fallback,
+        ).node(emptyList(), classifySkills = true)
+        val fallback = SkillClassifier { _, _ -> fallbackCalls++; setOf(SkillId("paper")) }
+        val failing = SkillClassifier { _, _ -> error("Jev unavailable") }
+
+        assertContains(inventory(failing, fallback).execute(contextWithCatalog(), runtime()).history.first().content, "; description:")
+        assertEquals(1, fallbackCalls)
+        coVerify(exactly = 0) { api.message(any()) }
+        assertContains(inventory(failing, failing).execute(contextWithCatalog(), runtime()).history.first().content, "; description:")
+        coVerify(exactly = 1) { api.message(any()) }
+        assertFailsWith<CancellationException> {
+            inventory(SkillClassifier { _, _ -> throw CancellationException("cancelled") }, fallback).execute(contextWithCatalog(), runtime())
+        }
+        assertEquals(1, fallbackCalls)
+    }
+
+    @Test
     fun `thanks and greetings skip Skill selection`() = runTest {
         val api = mockk<LLMChatAPI>()
         val node = node(catalog(), repository = repository("paper" to "Summarize papers."), llmApi = api,

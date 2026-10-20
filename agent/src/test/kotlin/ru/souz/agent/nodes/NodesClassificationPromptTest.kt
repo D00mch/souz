@@ -69,6 +69,25 @@ class NodesClassificationPromptTest {
     }
 
     @Test
+    fun `fallback classifier answers after two remote failures, before regex`() {
+        val failing = UserMessageClassifier { _, _ -> error("Provider unavailable") }
+        val regex = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(listOf(ToolCategory.FILES), 50.0) }
+        val fallback = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(listOf(ToolCategory.BROWSER), null) }
+        val result = executeClassification("Open the website", emptyList(), localClassifier = regex, apiClassifier = failing,
+            fallbackClassifier = fallback)
+        assertEquals(listOf("Open"), result.activeTools.map { it.name })
+        assertEquals(listOf("Read"), executeClassification("Read the file", emptyList(), localClassifier = regex,
+            apiClassifier = failing, fallbackClassifier = failing).activeTools.map { it.name })
+        var fallbackCalls = 0
+        assertFailsWith<CancellationException> {
+            executeClassification("Read the file", emptyList(), localClassifier = regex,
+                apiClassifier = UserMessageClassifier { _, _ -> throw CancellationException("Cancelled") },
+                fallbackClassifier = UserMessageClassifier { _, _ -> fallbackCalls++; error("must not run") })
+        }
+        assertEquals(0, fallbackCalls)
+    }
+
+    @Test
     fun `classification cancellation is not retried`() {
         var requests = 0
         assertFailsWith<CancellationException> {
@@ -428,6 +447,7 @@ class NodesClassificationPromptTest {
         tools: Map<ToolCategory, Map<String, LLMToolSetup>> = defaultTools,
         localClassifier: UserMessageClassifier,
         apiClassifier: UserMessageClassifier,
+        fallbackClassifier: UserMessageClassifier? = null,
     ): AgentContext<String> {
         val toolsFactory = AgentToolCatalog(tools.mapValues { it.value.values })
         val toolsSettings = mockk<AgentToolsFilter> {
@@ -439,6 +459,7 @@ class NodesClassificationPromptTest {
             localClassifier = localClassifier,
             toolCatalog = toolsFactory,
             toolsFilter = toolsSettings,
+            fallbackClassifier = fallbackClassifier,
         )
 
         return runBlocking {

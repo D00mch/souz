@@ -2,7 +2,7 @@
 
 ## Invariant
 
-Every classic `GraphBasedAgent` turn runs direct-tool classification, Skill inventory/core-tool installation, then MCP injection. Classification narrows advertised direct-tool schemas; executable lookup may retain the host's wider catalog. Inventory lists enabled tool-backed IDs and user-scoped file-backed IDs. The skills graph selects relevant descriptions inside inventory preparation using description metadata and bounded recent conversation, with a host classifier and execution-LLM fallback. Selection failure retains ID-only discovery.
+Every classic `GraphBasedAgent` turn runs direct-tool classification, Skill inventory/core-tool installation, then MCP injection. Classification narrows advertised direct-tool schemas; executable lookup may retain the host's wider catalog. Inventory lists enabled tool-backed IDs and user-scoped file-backed IDs. The skills graph selects relevant descriptions inside inventory preparation using description metadata and bounded recent conversation, with a host classifier, an optional fallback classifier when it fails, and execution-LLM fallback. Selection failure retains ID-only discovery.
 
 `GetSkillByName`, generic `RunSkillCommand`, and explicit `SpawnSubagent` selection load full file-backed bundles on demand. Hosts may pass `SkillApprovalGate` to require cached or fresh approval before exposing `SKILL.md` or executing bundled commands; without a gate, these paths use the loaded bundle directly. The backend intentionally passes no gate for classpath- and sandbox-backed Skills. When enabled, validation cache identity is the user, canonical skill ID, canonical bundle hash, and policy version. A changed bundle gets a different cache key. Changing validation rules requires a new policy version.
 
