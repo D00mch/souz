@@ -33,6 +33,3 @@ Transfers buffer files in memory. Concurrency limits are not heap-byte budgets: 
 
 Backend credentials are not forwarded to Docker sandboxes. LOCAL child commands inherit the backend environment; LOCAL credential isolation is tracked in [#903](https://github.com/D00mch/souz/issues/903).
 
-## Verification
-
-Run `./gradlew :backend:test` with Docker available. Attachment tests use real PostgreSQL and a pinned [Coollabs MinIO build](https://github.com/coollabsio/minio), provision a private bucket and restricted object-only credential, and resolve storage through production DI. Apply V20 with this backend release. Databases that applied a draft migration from PR #901 need an explicit schema/data migration before adopting this implementation.
