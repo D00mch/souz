@@ -1,0 +1,19 @@
+-- External user IDs outlive local users rows; deleting a local row is not account deletion.
+create table stored_attachments (
+    id uuid primary key,
+    user_id text not null,
+    source_key text not null,
+    name text not null,
+    mime_type text not null,
+    size_bytes bigint not null check (size_bytes >= 0),
+    sha256 text not null,
+    state text not null check (state in ('pending', 'ready', 'deleting')),
+    created_at timestamptz not null,
+    stored_at timestamptz,
+    expires_at timestamptz,
+    cleanup_due_at timestamptz not null,
+    unique (user_id, source_key),
+    check (state <> 'ready' or (stored_at is not null and expires_at is not null))
+);
+
+create index stored_attachments_cleanup_due_idx on stored_attachments(cleanup_due_at, id);
