@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.storage.postgres.PostgresAttachmentRepository
@@ -29,7 +30,7 @@ class AttachmentStorage(
         val file = repository.reserve(userId, sourceKey, safeName, attachmentMime(bytes, safeName),
             bytes.size.toLong(), bytes.sha256Hex(), clock.instant())
         if (file.state == "ready") return@withPermit available(file)
-        // Failed/cancelled uploads stay pending until their cleanup deadline; PUT is never resumed.
+        // Failed/canceled uploads stay pending until their cleanup deadline; PUT is never resumed.
         objects.put(file, bytes)
         available(repository.complete(file, clock.instant()))
     }
@@ -73,6 +74,6 @@ class AttachmentStorage(
     }
 
     private companion object {
-        val logger = LoggerFactory.getLogger(AttachmentStorage::class.java)
+        val logger: Logger = LoggerFactory.getLogger(AttachmentStorage::class.java)
     }
 }
