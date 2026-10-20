@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.slf4j.LoggerFactory
 import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.tool.ToolCategory
@@ -20,8 +21,19 @@ class ApiClassifier(
     private val spaceRegex = Regex("\\s+")
 
     override suspend fun classify(body: LLMRequest.Chat, categories: Map<ToolCategory, String>): UserMessageClassifier.Reply {
-        l.debug("Classifying via API, body:\n{}", logObjectMapper.writeValueAsString(body))
-        return when (val resp = api.message(body)) {
+        val system = body.messages.filter { it.role == LLMMessageRole.system }
+        val conversation = body.messages.filterNot { it.role == LLMMessageRole.system }
+        val history = conversation.dropLast(1).joinToString(separator = "\n\n") { message ->
+            "${message.role.name.uppercase()}: ${message.content.trim()}"
+        }
+        val request = body.copy(
+            messages = system + listOf(
+                LLMRequest.Message(LLMMessageRole.user, "History:\n$history\n"),
+                LLMRequest.Message(LLMMessageRole.user, "New message:\n${conversation.lastOrNull()?.content.orEmpty()}"),
+            ),
+        )
+        l.debug("Classifying via API, body:\n{}", logObjectMapper.writeValueAsString(request))
+        return when (val resp = api.message(request)) {
             is LLMResponse.Chat.Error -> {
                 l.error("Classification error: {}", resp.message)
                 unknown

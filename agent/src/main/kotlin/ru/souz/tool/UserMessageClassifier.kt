@@ -20,9 +20,7 @@ object LocalRegexClassifier : UserMessageClassifier {
         val lastUser = body.messages.lastOrNull { it.role == LLMMessageRole.user }
             ?: return defaultUnknown
 
-        val text = lastUser.content
-            .substringAfter("new message:\n", lastUser.content)
-            .lowercase()
+        val text = lastUser.content.lowercase()
 
         val scores = CATEGORY_PATTERNS.mapValues { (_, patterns) ->
             patterns.sumOf { (regex, weight) ->

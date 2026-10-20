@@ -38,7 +38,7 @@ class SettingsRoutingLlmChatApiTest {
                 1, request.model, LLMResponse.Usage(1, 2, 3, 0),
             )
             mockk<LLMChatAPI> {
-                coEvery { message(request) } returns response
+                coEvery { message(match { it.model == request.model && it.provider == provider }) } returns response
                 coEvery { messageStream(request) } returns flowOf(response)
             }
         }

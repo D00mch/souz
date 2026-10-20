@@ -1,5 +1,6 @@
 package ru.souz.jev
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.HttpClient
@@ -36,9 +37,11 @@ class JevClient(
         require(model.isNotBlank()) { "Jev model must not be blank" }
     }
 
+    /** Returns p(yes) by question name; [criteria] may describe a question's `true` and `false` sides. */
     suspend fun evaluate(
         state: JsonNode,
         questions: Map<String, String>,
+        criteria: Map<String, Map<String, String>> = emptyMap(),
     ): Map<String, Double> {
         if (questions.isEmpty()) return emptyMap()
         require(state.isTextual || state.isObject || state.isArray) { "Jev state must be text, an object, or an array" }
@@ -51,7 +54,7 @@ class JevClient(
                 bearerAuth(token)
                 contentType(ContentType.Application.Json)
                 timeout { requestTimeoutMillis = JEV_TIMEOUT }
-                setBody(JevRequest(state, model, questions.mapValues { JevQuestion(it.value) }))
+                setBody(JevRequest(state, model, questions.mapValues { JevQuestion(it.value, criteria = criteria[it.key]) }))
             }
             status = response.status.value
             val text = response.bodyAsText()
@@ -94,4 +97,6 @@ class JevClient(
 }
 
 private data class JevRequest(val state: JsonNode, val model: String, val questions: Map<String, JevQuestion>)
-private data class JevQuestion(val instructions: String, val type: String = "noul")
+
+@JsonInclude(JsonInclude.Include.NON_NULL)
+private data class JevQuestion(val instructions: String, val type: String = "noul", val criteria: Map<String, String>? = null)
