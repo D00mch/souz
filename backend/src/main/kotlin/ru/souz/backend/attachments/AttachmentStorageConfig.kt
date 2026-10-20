@@ -40,7 +40,7 @@ class AttachmentStorageConfig(
                 ?.trim()?.takeIf(String::isNotEmpty)
             fun required(key: String) = requireNotNull(value(key)) { "Attachment $key is required." }
             fun <T : Any> parsed(key: String, default: T, parse: (String) -> T?): T =
-                value(key)?.let { parse(it) } ?: default
+                value(key)?.let { requireNotNull(parse(it)) { "Invalid attachment $key." } } ?: default
             return AttachmentStorageConfig(
                 endpoint = value("S3_ENDPOINT") ?: return null,
                 bucket = required("S3_BUCKET"),
