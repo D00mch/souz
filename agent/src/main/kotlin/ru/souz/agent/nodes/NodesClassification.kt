@@ -352,7 +352,7 @@ internal const val CLASSIFY_NODE_NAME = "classify"
 
 private const val THANKS_WORDS = "спасибо|благодарю|спс|пасиб[оа]?|мерси|привет|приветик|здравствуй(?:те)?|" +
     "добр(?:ое|ый|ой) (?:утро|день|вечер)|спокойной ночи|пока|до свидания|понятно|ясно|большое|огромное|тебе|вам|" +
-    "всё|все|на сегодня|thanks|thank you|thx|hi|hello|hey|bye|good night|a lot|so much"
+    "на сегодня вс[её]|thanks|thank you|thx|hi|hello|hey|bye|good night|a lot|so much"
 private val THANKS_OR_GREETING = Regex("""^(?:\s*(?:$THANKS_WORDS)[\s\p{P}\p{S}]*){1,5}$""", RegexOption.IGNORE_CASE)
 
 /**

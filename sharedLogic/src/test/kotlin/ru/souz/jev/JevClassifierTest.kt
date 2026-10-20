@@ -29,8 +29,9 @@ class JevClassifierTest {
         messages = listOf(
             LLMRequest.Message(LLMMessageRole.system, "LLM formatting instructions"),
             LLMRequest.Message(LLMMessageRole.user, "Prepare for today's meetings"),
-            LLMRequest.Message(LLMMessageRole.function, "private tool result"),
             LLMRequest.Message(LLMMessageRole.user, "Summarize them"),
+            LLMRequest.Message(LLMMessageRole.assistant, "", functionCall = LLMRequest.FunctionCall("ListEvents", "{}")),
+            LLMRequest.Message(LLMMessageRole.function, "private tool result"),
             LLMRequest.Message(LLMMessageRole.assistant, " You have two meetings. " + "x".repeat(400)),
             LLMRequest.Message(LLMMessageRole.user, "Check my calendar and email the agenda"),
         ),
@@ -48,7 +49,7 @@ class JevClassifierTest {
     )
 
     @Test
-    fun `state puts the new message first and earlier ones newest first, cut to 300 characters`() {
+    fun `state puts the new message first and earlier non-empty ones newest first, cut to 300 characters`() {
         val assistant = ("You have two meetings. " + "x".repeat(400)).take(299)
         assertEquals(
             "New user message:\nCheck my calendar and email the agenda\n\nPrevious messages, newest first:\n" +

@@ -51,12 +51,13 @@ class JevClassifier(
 
 /**
  * Plain-text Jev state: the last user or assistant message of [messages] (the new user message) first,
- * then up to [historyLimit] earlier ones, newest first, each cut to its first 300 characters.
+ * then up to [historyLimit] earlier non-empty ones, newest first, each cut to its first 300 characters.
+ * Empty assistant messages that only call a tool are skipped.
  */
 fun jevState(messages: List<LLMRequest.Message>, historyLimit: Int = Int.MAX_VALUE): String {
     val conversation = messages.filter { it.role == LLMMessageRole.user || it.role == LLMMessageRole.assistant }
     val message = conversation.lastOrNull()?.content.orEmpty()
-    val history = conversation.dropLast(1).takeLast(historyLimit).asReversed()
+    val history = conversation.dropLast(1).filter { it.content.isNotBlank() }.takeLast(historyLimit).asReversed()
     if (history.isEmpty()) return message
     return "New user message:\n$message\n\nPrevious messages, newest first:\n" + history.joinToString("\n") {
         "${if (it.role == LLMMessageRole.user) "User" else "Assistant"}: ${it.content.take(300).trim()}"

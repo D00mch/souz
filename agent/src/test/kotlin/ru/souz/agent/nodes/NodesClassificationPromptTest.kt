@@ -308,7 +308,7 @@ class NodesClassificationPromptTest {
             assertEquals(emptyList(), result.activeTools, input)
         }
         for (input in listOf("да", "ок", "Спасибо, отправь письмо Олегу", "спасибо спасибо спасибо спасибо спасибо спасибо",
-                "покажи", "hire me")) {
+                "покажи", "hire me", "все", "Всё!")) {
             assertFalse(isThanksOrGreeting(input), input)
         }
     }

@@ -15,7 +15,7 @@ The classic `GraphBasedAgent` can select multiple tool categories with Jev indep
 model. The skills graph, including backend conversations, selects relevant file-backed Skill descriptions with Jev and execution-LLM fallback; it does not classify tool categories. Inventory keeps every exact ID and adds only selected descriptions as bounded, escaped metadata. Full instructions and supporting files load on demand with approval where enabled.
 
 `JevClassifier` sends the conversation as plain text built by `jevState`: the new user message first, then earlier
-user and assistant messages newest first, each cut to its first 300 characters. Every category and Skill gets one
+non-empty user and assistant messages newest first, each cut to its first 300 characters. Every category and Skill gets one
 yes/no question naming it with its description; the shared `true` and `false` sides say that a step of the request
 must need it and that a mentioned topic alone does not count. Categories use the classic graph's history window,
 Skills the last two earlier messages. A whole message of up to five words
