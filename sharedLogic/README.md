@@ -18,9 +18,9 @@ model. The skills graph, including backend conversations, selects relevant file-
 non-empty user and assistant messages newest first, each cut to its first 300 characters. Every category and Skill gets one
 yes/no question naming it with its description; the shared `true` and `false` sides say that a step of the request
 must need it and that a mentioned topic alone does not count. Categories use the classic graph's history window,
-Skills the last two earlier messages. A whole message of up to five words
-that only thanks, greets or says goodbye skips both selections: it gets no direct tools and no Skill descriptions.
-Confirmations such as "да" or "ок" are still classified, since they may approve an offered action.
+Skills the last two earlier messages. A whole message that is one of a fixed set of thanks, greeting or goodbye
+phrases skips both selections: it gets no direct tools and no Skill descriptions. Confirmations such as "да" or "ок"
+and fragments such as "тебе" are still classified, since they may approve an offered action or answer a question.
 
 | Variable | Behavior |
 | --- | --- |
