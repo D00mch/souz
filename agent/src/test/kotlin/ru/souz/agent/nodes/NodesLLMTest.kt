@@ -35,13 +35,12 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.restJsonMapper
 
 class NodesLLMTest {
     @ParameterizedTest(name = "{0}")
     @CsvSource(
         "personality-triggered compaction, 9000, 2600",
-        "recent exchanges without personality, 40000, 0",
+        "compaction without personality, 13000, 0",
     )
     fun `compaction budgets requests and preserves the active tool exchange`(
         scenario: String,
@@ -80,8 +79,7 @@ class NodesLLMTest {
             assertTrue(summary.isSummarization)
             assertEquals(SUMMARIZATION_MAX_OUTPUT_TOKENS, summary.maxTokens)
             assertTrue(summary.functions.isEmpty())
-            assertEquals(restJsonMapper.writeValueAsString(if (style.isEmpty()) recent else oldest + recent),
-                summary.messages.last().content)
+            assertEquals(listOf(system) + oldest + laterSystem + recent, summary.messages.dropLast(1))
             assertTrue(summary.messages.none {
                 (style.isNotEmpty() && style in it.content) || "current request" in it.content || "result" in it.content
             })
@@ -128,29 +126,28 @@ class NodesLLMTest {
         coVerify { api wasNot Called }
     }
 
-    @Test
-    fun `summary budget includes the prompt output reserve and margin without splitting exchanges`() = runTest {
+    @ParameterizedTest
+    @CsvSource("79999, 1", "80000, 2", "80001, 2")
+    fun `compaction starts at eighty percent of the context window`(inputTokens: Int, expectedCalls: Int) = runTest {
         val calls = mutableListOf<LLMRequest.Chat>()
         val api = mockk<LLMChatAPI> {
             coEvery { message(capture(calls)) } returns block(0, "compact history")
         }
-        val completed = activeTurn("whole tool output with quotes \" and emoji 😀") +
-            LLMRequest.Message(LLMMessageRole.assistant, "completed answer")
         val active = activeTurn()
-        val request = context(completed + active).toChatRequest(completed + active, SUMMARIZATION_MAX_OUTPUT_TOKENS)
-        api.compactHistory(request)
-        val summary = calls.single()
-        val exactBudget = summary.estimatedInputTokens() + SUMMARIZATION_MAX_OUTPUT_TOKENS + CONTEXT_SAFETY_MARGIN_TOKENS
-        val history = exchange("older request") + request.messages
-        calls.clear()
+        val seed = context(exchange("") + active)
+        val framing = seed.toChatRequest(seed.history, CHAT_MAX_OUTPUT_TOKENS).estimatedInputTokens()
+        val ctx = seed.copy(history = exchange("x".repeat((inputTokens - framing) * 4)) + active,
+            settings = seed.settings.copy(contextSize = 100_000))
+        val request = ctx.toChatRequest(ctx.history, CHAT_MAX_OUTPUT_TOKENS)
+        assertEquals(inputTokens, request.estimatedInputTokens())
+        assertFalse(request.exceedsContextBudget(100_000), "Compaction starts before the hard input limit.")
 
-        api.compactHistory(request.copy(messages = history, contextSize = exactBudget))
-        assertEquals(summary.messages, calls.single().messages, "Only the newest whole exchange fits exactly.")
-        calls.clear()
-        for (budget in listOf(exactBudget - 1, SUMMARIZATION_MAX_OUTPUT_TOKENS + CONTEXT_SAFETY_MARGIN_TOKENS)) {
-            assertEquals(history, api.compactHistory(request.copy(messages = history, contextSize = budget)))
-            assertTrue(calls.isEmpty(), "Do not send a partial exchange or an oversized summary prompt.")
-        }
+        NodesLLM(api, mockk { every { useStreaming } returns false }).chat()
+            .execute(ctx, GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10))
+
+        assertEquals(expectedCalls, calls.size)
+        assertEquals(expectedCalls == 2, calls.first().isSummarization)
+        assertEquals(active, calls.last().messages.takeLast(active.size))
     }
 
     @Test

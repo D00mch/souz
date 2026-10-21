@@ -12,15 +12,16 @@ snapshot per call and reuses it after compaction; the next call reads fresh inst
 The prepared message text, tool arguments and schemas share the context estimate;
 transport JSON escaping does not increase the text estimate.
 Conversational input must fit `contextSize - maxTokens - 512`, reserving 4,096 output tokens and
-a 512-token safety margin. Local context size is separate from the output limit. If the request exceeds
-the budget, compaction runs before the call and the rebuilt request is checked again.
+a 512-token safety margin. Local context size is separate from the output limit. Compaction runs before
+the call when estimated input reaches 80% of the context window, or earlier if the output reservation
+requires it. The rebuilt request is checked against the input budget again.
 
-Compaction uses one summary call over the most recent completed exchanges that fit alongside the
-summarization prompt, 1,024 output tokens, and the safety margin. It drops older completed exchanges
-at user boundaries without splitting messages or tool exchanges. System instructions and the entire
-active user/tool exchange stay intact. If even the newest completed exchange cannot fit, history stays
-unchanged and the budget recheck returns an error without a provider call. Empty or length-truncated summaries fail
-compaction. Skill selection and summaries use the ordinary `llmApi` without host augmentation.
+Compaction sends the history before the last user message followed by the summarization prompt in one
+call, reserving 1,024 output tokens and the safety margin. System instructions and the last user message
+with its following tool exchange stay intact. History is neither split nor dropped to fit the summary
+request; if it cannot fit, history stays unchanged and the conversational budget check still applies.
+Empty or length-truncated summaries fail compaction. Skill selection and summaries use the ordinary
+`llmApi` without host augmentation.
 Merging instructions leaves stored context unchanged. Turn finalization converts the accepted answer
 and schedules memory capture; it does not summarize history.
 
