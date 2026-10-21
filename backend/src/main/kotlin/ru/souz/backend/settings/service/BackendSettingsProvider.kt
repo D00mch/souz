@@ -74,8 +74,8 @@ class BackendSettingsProvider(
         configured(REQUEST_TIMEOUT_MILLIS)?.toLongOrNull() ?: DEFAULT_REQUEST_TIMEOUT_MILLIS
     override var contextSize: Int =
         source.value(CONTEXT_SIZE, CONTEXT_SIZE)?.let { value ->
-            requireNotNull(value.trim().toIntOrNull()?.takeIf { it > 0 }) {
-                "CONTEXT_SIZE must be a positive integer."
+            requireNotNull(value.trim().toIntOrNull()?.takeIf { it >= 24_000 }) {
+                "CONTEXT_SIZE must be an integer of at least 24000 tokens."
             }
         } ?: 125_000
     override var initialWindowWidthDp: Int = configured(INITIAL_WINDOW_WIDTH_DP)?.toIntOrNull() ?: 580

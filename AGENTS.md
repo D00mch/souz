@@ -4,7 +4,7 @@ Souz is a Kotlin Multiplatform AI assistant with desktop and backend hosts over 
 
 Backend client Skills are bundled under `backend/src/main/resources/skills/client/`. Orion command tools come from chat declarations or discovery. Chat declarations override matching defaults; discovered Orion tools override both and remain bound to their supplying channel until refreshed in that conversation.
 
-Backend uses one startup-validated `CONTEXT_SIZE` for conversational and summary requests; context size is not a user or execution setting.
+Backend uses one startup-validated `CONTEXT_SIZE` (minimum 24,000 tokens) for all models, including summaries. Compaction and input validation share an 80% limit independent of output limits; context size is not a user or execution setting.
 
 Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts and synchronize revisioned snapshots to Orion.
 

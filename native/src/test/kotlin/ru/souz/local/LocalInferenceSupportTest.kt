@@ -1392,7 +1392,7 @@ class LocalInferenceSupportTest {
             )
         )
         assertEquals(
-            96_000,
+            256_000,
             runtime.resolveContextSize(
                 body = LLMRequest.Chat(
                     model = LocalModelProfiles.GEMMA4_E4B_IT.gigaModel.alias,
@@ -1405,7 +1405,7 @@ class LocalInferenceSupportTest {
             )
         )
         assertEquals(
-            8192,
+            16000,
             runtime.resolveContextSize(
                 body = LLMRequest.Chat(
                     model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
@@ -1444,8 +1444,8 @@ class LocalInferenceSupportTest {
 
         val configuredVision = visionBody.copy(contextSize = 16_000, maxTokens = 128)
         assertTrue(runtime.usesConfiguredContextWindow(configuredVision))
-        assertEquals(4096, runtime.resolveContextSize(configuredVision, LocalModelProfiles.GEMMA4_E4B_IT, "prompt"))
-        assertEquals(128, runtime.resolveCompletionBudget(configuredVision, "prompt", 4096))
+        assertEquals(16_000, runtime.resolveContextSize(configuredVision, LocalModelProfiles.GEMMA4_E4B_IT, "prompt"))
+        assertEquals(128, runtime.resolveCompletionBudget(configuredVision, "prompt", 16_000))
         assertNull(runtime.resolveExpansionContextSize(configuredVision, LocalModelProfiles.GEMMA4_E4B_IT))
         assertFalse(runtime.usesConfiguredContextWindow(visionBody))
         assertEquals(

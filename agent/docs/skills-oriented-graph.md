@@ -11,15 +11,16 @@ Hosts may supply `conversationInstructions` to add ephemeral system instructions
 snapshot per call and reuses it after compaction; the next call reads fresh instructions.
 The prepared message text, tool arguments and schemas share the context estimate;
 transport JSON escaping does not increase the text estimate.
-Conversational input must fit `contextSize - maxTokens - 512`, reserving 4,096 output tokens and
-a 512-token safety margin. Local context size is separate from the output limit. Compaction runs before
-the call when estimated input reaches 80% of the context window, or earlier if the output reservation
-requires it. The rebuilt request is checked against the input budget again.
+Conversational and summary input must fit 80% of the configured `CONTEXT_SIZE`, shared by all models.
+Compaction runs before a conversational call when the prepared input exceeds that limit, and the rebuilt
+request is checked against the same limit. Exactly 80% fits. `maxTokens` only limits provider output
+(4,096 tokens for conversation, 1,024 for summaries); it does not change the input budget.
 
 Compaction sends the history before the last user message followed by the summarization prompt in one
-call, reserving 1,024 output tokens and the safety margin. System instructions and the last user message
+call. The history and summarization prompt together must fit the same 80% limit. System instructions and the last user message
 with its following tool exchange stay intact. History is neither split nor dropped to fit the summary
-request; if it cannot fit, history stays unchanged and the conversational budget check still applies.
+request; if it cannot fit, history stays unchanged and the conversational request is rejected.
+Requests without compactable history or still over the limit after compaction are also rejected.
 Empty or length-truncated summaries fail compaction. Skill selection and summaries use the ordinary
 `llmApi` without host augmentation.
 Merging instructions leaves stored context unchanged. Turn finalization converts the accepted answer

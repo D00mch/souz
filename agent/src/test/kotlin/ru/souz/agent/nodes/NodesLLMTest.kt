@@ -39,8 +39,8 @@ import ru.souz.llms.LLMResponse
 class NodesLLMTest {
     @ParameterizedTest(name = "{0}")
     @CsvSource(
-        "personality-triggered compaction, 9000, 2600",
-        "compaction without personality, 13000, 0",
+        "personality-triggered compaction, 14000, 3600",
+        "compaction without personality, 17000, 0",
     )
     fun `compaction budgets requests and preserves the active tool exchange`(
         scenario: String,
@@ -63,7 +63,7 @@ class NodesLLMTest {
                 instructionReads++
                 savedInstructions
             })
-            val activeTurn = activeTurn()
+            val activeTurn = activeTurn("result ".repeat(1500))
             val oldest = exchange("old ".repeat(historyRepetitions))
             val recent = exchange("previous request") + activeTurn("completed tool output", "recent request") +
                 LLMRequest.Message(LLMMessageRole.assistant, "recent answer")
@@ -72,7 +72,7 @@ class NodesLLMTest {
             val ctx = context(listOf(system) + oldest + laterSystem + recent + activeTurn, provider = provider)
             val runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10)
             assertEquals(style.isEmpty(), ctx.toChatRequest(ctx.history, CHAT_MAX_OUTPUT_TOKENS)
-                .exceedsContextBudget(16000), scenario)
+                .exceedsContextBudget(24000), scenario)
             val result = nodes.chat().execute(ctx, runtime)
             val summary = calls.dropLast(1).single()
             assertEquals(1, instructionReads, "Reuse the instructions snapshot when compaction rebuilds the request.")
@@ -83,13 +83,13 @@ class NodesLLMTest {
             assertTrue(summary.messages.none {
                 (style.isNotEmpty() && style in it.content) || "current request" in it.content || "result" in it.content
             })
-            assertTrue(calls.all { !it.exceedsContextBudget(16000) }, "Every request must fit, including the summary.")
+            assertTrue(calls.all { !it.exceedsContextBudget(24000) }, "Every request must fit, including the summary.")
             val request = calls.last()
             assertFalse(request.isSummarization)
             assertEquals(if (style.isEmpty()) "system" else "system\n\n$style", request.messages.first().content)
             assertEquals(activeTurn, request.messages.takeLast(activeTurn.size))
             assertEquals(CHAT_MAX_OUTPUT_TOKENS, request.maxTokens)
-            assertEquals(16000, request.contextSize)
+            assertEquals(24000, request.contextSize)
             assertTrue(result.history.none { style.isNotEmpty() && style in it.content })
             assertEquals(listOf(system, laterSystem), result.history.filter { it.role == LLMMessageRole.system })
             assertEquals(activeTurn, result.history.dropLast(1).takeLast(activeTurn.size))
@@ -127,27 +127,72 @@ class NodesLLMTest {
     }
 
     @ParameterizedTest
-    @CsvSource("79999, 1", "80000, 2", "80001, 2")
-    fun `compaction starts at eighty percent of the context window`(inputTokens: Int, expectedCalls: Int) = runTest {
+    @ValueSource(ints = [19_199, 19_200, 19_201])
+    fun `compaction and final validation use the same eighty percent limit`(inputTokens: Int) = runTest {
+        for (hasHistory in listOf(false, true)) {
+            val calls = mutableListOf<LLMRequest.Chat>()
+            val api = mockk<LLMChatAPI> {
+                coEvery { message(capture(calls)) } returns block(0, "compact history")
+            }
+            val active = activeTurn("result ".repeat(1000))
+            val seed = context(if (hasHistory) exchange("") + active else active)
+            val framing = seed.toChatRequest(seed.history, CHAT_MAX_OUTPUT_TOKENS).estimatedInputTokens()
+            val content = "x".repeat((inputTokens - framing) * 4)
+            val history = if (hasHistory) exchange(content) + active else
+                active.dropLast(1) + active.last().copy(content = active.last().content + content)
+            val ctx = seed.copy(history = history)
+            val request = ctx.toChatRequest(ctx.history, CHAT_MAX_OUTPUT_TOKENS)
+            assertEquals(inputTokens, request.estimatedInputTokens())
+            for (outputLimit in listOf(512, 1024, 4096, 24_000)) {
+                assertEquals(inputTokens > 19_200, request.copy(maxTokens = outputLimit).exceedsContextBudget(24_000))
+            }
+
+            val result = NodesLLM(api, mockk { every { useStreaming } returns false }).chat()
+                .execute(ctx, GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10))
+
+            if (inputTokens > 19_200 && !hasHistory) {
+                assertTrue(result.input is LLMResponse.Chat.Error)
+                assertEquals(history, result.history)
+                assertTrue(calls.isEmpty())
+            } else {
+                assertTrue(result.input is LLMResponse.Chat.Ok)
+                val compacted = inputTokens > 19_200
+                assertEquals(if (compacted) 2 else 1, calls.size)
+                assertEquals(compacted, calls.first().isSummarization)
+                assertEquals(history.takeLast(active.size), calls.last().messages.takeLast(active.size))
+                assertTrue(calls.all { it.contextSize == 24_000 && it.estimatedInputTokens() <= 19_200 })
+            }
+        }
+    }
+
+    @Test
+    fun `summary prompt must fit the same eighty percent limit without dropping history`() = runTest {
         val calls = mutableListOf<LLMRequest.Chat>()
         val api = mockk<LLMChatAPI> {
             coEvery { message(capture(calls)) } returns block(0, "compact history")
         }
         val active = activeTurn()
         val seed = context(exchange("") + active)
-        val framing = seed.toChatRequest(seed.history, CHAT_MAX_OUTPUT_TOKENS).estimatedInputTokens()
-        val ctx = seed.copy(history = exchange("x".repeat((inputTokens - framing) * 4)) + active,
-            settings = seed.settings.copy(contextSize = 100_000))
-        val request = ctx.toChatRequest(ctx.history, CHAT_MAX_OUTPUT_TOKENS)
-        assertEquals(inputTokens, request.estimatedInputTokens())
-        assertFalse(request.exceedsContextBudget(100_000), "Compaction starts before the hard input limit.")
-
-        NodesLLM(api, mockk { every { useStreaming } returns false }).chat()
-            .execute(ctx, GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10))
-
-        assertEquals(expectedCalls, calls.size)
-        assertEquals(expectedCalls == 2, calls.first().isSummarization)
-        assertEquals(active, calls.last().messages.takeLast(active.size))
+        val request = seed.toChatRequest(seed.history, CHAT_MAX_OUTPUT_TOKENS)
+        api.compactHistory(request)
+        val framing = calls.single().estimatedInputTokens()
+        for (inputTokens in listOf(19_199, 19_200, 19_201)) {
+            calls.clear()
+            val completed = exchange("x".repeat((inputTokens - framing) * 4))
+            val history = completed + active
+            val result = api.compactHistory(request.copy(messages = history))
+            if (inputTokens > 19_200) {
+                assertEquals(history, result)
+                assertTrue(calls.isEmpty())
+            } else {
+                val summary = calls.single()
+                assertEquals(inputTokens, summary.estimatedInputTokens())
+                assertEquals(completed, summary.messages.dropLast(1))
+                assertEquals(24_000, summary.contextSize)
+                assertEquals(SUMMARIZATION_MAX_OUTPUT_TOKENS, summary.maxTokens)
+                assertEquals(active, result.takeLast(active.size))
+            }
+        }
     }
 
     @Test
@@ -254,8 +299,8 @@ class NodesLLMTest {
             }
         }
         val nodes = NodesLLM(api, mockk { every { useStreaming } returns false })
-        val active = activeTurn()
-        val ctx = context(exchange("old ".repeat(12000)) + active)
+        val active = activeTurn("result ".repeat(1000))
+        val ctx = context(exchange("old ".repeat(18000)) + active)
         val runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10)
         if (failure == "oversized") {
             val rejected = nodes.chat().execute(ctx, runtime)
@@ -304,7 +349,7 @@ class NodesLLMTest {
             provider = provider,
             temperature = 0.2f,
             toolsByCategory = emptyMap(),
-            contextSize = 16_000,
+            contextSize = 24_000,
         ),
         history = history,
         activeTools = emptyList(),

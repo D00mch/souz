@@ -400,11 +400,8 @@ class LocalLlamaRuntime(
         profile: LocalModelProfile,
         prompt: String,
     ): Int {
-        val maxContextSize = resolveMaxContextSize(body, profile)
         if (usesConfiguredContextWindow(body)) {
             return requireNotNull(body.contextSize)
-                .coerceAtLeast(MIN_CONTEXT_SIZE)
-                .coerceAtMost(maxContextSize)
         }
 
         val promptEstimate = prompt.estimateTokenCount()
