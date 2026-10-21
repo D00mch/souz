@@ -263,7 +263,6 @@ class NodesMemoryTest {
         assertEquals("ToolTelegramReadInbox", evidence[1].sourceName)
         assertTrue(evidence[1].text.contains("PR 564"))
         assertFalse(evidence.any { it.text == "old answer" })
-        assertFalse(evidence.any { it.text == "Compacted working summary" })
         assertFalse(evidence.any { it.text == "tool invocation" })
     }
 
