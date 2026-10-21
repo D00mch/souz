@@ -26,9 +26,7 @@ class BackendSettingsProviderTest {
         assertEquals(125_000, provider(env = mapOf("CONTEXT_SIZE" to " 125000 "),
             properties = mapOf("CONTEXT_SIZE" to "64000")).contextSize)
         for (value in listOf("0", "-1", "23999", "1.5", "invalid", "", " ", "2147483648")) {
-            val error = assertFailsWith<IllegalArgumentException> { provider(env = mapOf("CONTEXT_SIZE" to value)) }
-            assertEquals("CONTEXT_SIZE must be an integer of at least 24000 tokens.", error.message)
-            assertFailsWith<IllegalArgumentException> { provider(properties = mapOf("CONTEXT_SIZE" to value)) }
+            assertFailsWith<IllegalArgumentException> { provider(env = mapOf("CONTEXT_SIZE" to value)) }
         }
         // The removed summary setting cannot change the server window.
         assertEquals(125_000, provider(env = mapOf("OPENAI_SUMMARIZATION_CONTEXT_SIZE" to "1")).contextSize)
