@@ -119,23 +119,19 @@ class NodesCommonTest {
             content = """{"ok":true}""",
             name = functionCall.name,
         )
-        val context = AgentContext(
-            input = okResponse(
-                content = "",
-                functionCall = functionCall,
-                functionsStateId = "call-1",
-                finishReason = LLMResponse.FinishReason.function_call,
-            ),
-            settings = settings("gpt-5-mini"),
-            history = listOf(
-                "system".toSystemPromptMessage(),
-                LLMRequest.Message(LLMMessageRole.user, "read file"),
-            ),
-            activeTools = emptyList(),
-            systemPrompt = "system",
+        val context = stringContext("read file", "gpt-5-mini").copy(
             toolInvocationMeta = meta,
             runtimeEventSink = eventSink,
-        )
+        ).map {
+            LLMResponse.Chat.Ok(
+                choices = listOf(LLMResponse.Choice(
+                    message = LLMResponse.Message("", LLMMessageRole.assistant,
+                        functionCall = functionCall, functionsStateId = "call-1"),
+                    index = 0, finishReason = LLMResponse.FinishReason.function_call,
+                )),
+                created = 1L, model = "test-model", usage = LLMResponse.Usage(1, 1, 2, 0),
+            )
+        }
 
         val result = NodesPlain.toolUse(agentToolExecutor).execute(context, graphRuntime())
 
@@ -179,29 +175,6 @@ class NodesCommonTest {
         provider = LlmProvider.OPENAI,
         temperature = 0.2f,
         toolsByCategory = emptyMap(),
-    )
-
-    private fun okResponse(
-        content: String,
-        functionCall: LLMResponse.FunctionCall? = null,
-        functionsStateId: String? = null,
-        finishReason: LLMResponse.FinishReason = LLMResponse.FinishReason.stop,
-    ): LLMResponse.Chat.Ok = LLMResponse.Chat.Ok(
-        choices = listOf(
-            LLMResponse.Choice(
-                message = LLMResponse.Message(
-                    content = content,
-                    role = LLMMessageRole.assistant,
-                    functionCall = functionCall,
-                    functionsStateId = functionsStateId,
-                ),
-                index = 0,
-                finishReason = finishReason,
-            )
-        ),
-        created = 1L,
-        model = "test-model",
-        usage = LLMResponse.Usage(1, 1, 2, 0),
     )
 
     private fun graphRuntime(): GraphRuntime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 20)
