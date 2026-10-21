@@ -18,9 +18,9 @@ model. The skills graph, including backend conversations, selects relevant file-
 non-empty user and assistant messages newest first, each cut to its first 300 characters. Every category and Skill gets one
 yes/no question naming it with its description; the shared `true` and `false` sides say that a step of the request
 must need it and that a mentioned topic alone does not count. Categories use the classic graph's history window,
-Skills the last two earlier messages. A whole message of up to five words
-that only thanks, greets or says goodbye skips both selections: it gets no direct tools and no Skill descriptions.
-Confirmations such as "да" or "ок" are still classified, since they may approve an offered action.
+Skills the last two earlier messages. A whole message that is one of a fixed set of thanks, greeting or goodbye
+phrases skips both selections: it gets no direct tools and no Skill descriptions. Confirmations such as "да" or "ок"
+and fragments such as "тебе" are still classified, since they may approve an offered action or answer a question.
 
 | Variable | Behavior |
 | --- | --- |
@@ -28,6 +28,9 @@ Confirmations such as "да" or "ок" are still classified, since they may appr
 | `JEV_TOKEN` | Required, nonblank Bearer credential for Jev and its live tests. |
 | `JEV_MODEL` | Hosted model ID or alias; defaults to `jev-latest`. |
 | `JEV_THRESHOLD` | Finite probability in `[0, 1]`; defaults to `0.5`. Categories and Skills must score strictly above it. |
+| `FRIDA_URL` | Optional FRIDA-Decisions `POST /pooling` endpoint of its vLLM server; enables the FRIDA fallback. |
+| `FRIDA_TOKEN` | Optional Bearer credential for `FRIDA_URL`. |
+| `FRIDA_MODEL` | Optional served model name sent with each FRIDA request. |
 
 Export `JEV_TOKEN` in the environment that starts Souz, then run:
 
@@ -35,8 +38,13 @@ Export `JEV_TOKEN` in the environment that starts Souz, then run:
 SOUZ_CLASSIFIER=jev JEV_MODEL=jev-latest JEV_THRESHOLD=0.5 ./gradlew :desktopApp:run
 ```
 
-Settings are read at construction; invalid Jev configuration fails when Jev is selected or its client is resolved.
-Requests time out after 2 seconds. Classic category selection tries twice before regex fallback. Skill selection falls back to the current execution LLM when Jev configuration or requests fail; failure of both classifiers keeps ID-only inventory. Cancellation propagates.
+Each classifier request (Jev, FRIDA) times out after 2 seconds. With `FRIDA_URL` set, shared runtime DI binds
+`FridaClassifier` under `FRIDA_FALLBACK_TAG`, and FRIDA answers whenever Jev fails: invalid configuration such as a
+missing `JEV_TOKEN`, a timeout, a network or HTTP error (bad key, rate limit, no credit, outage), or an invalid response.
+A low-confidence Jev answer is still an answer. Category selection runs Jev twice, then FRIDA, then regex; Skill selection
+runs Jev, then FRIDA, then the current execution LLM, and keeps ID-only inventory when all of them fail. Cancellation
+propagates. FRIDA asks one choice question over the same state and descriptions, with a `none` option for Skills; it
+selects the top option plus every option at least 3 above the mean margin, and nothing when `none` wins.
 Only enabled, nonempty categories are evaluated; an empty catalog makes no request. No matches or `HELP`
 exposes all available tools.
 

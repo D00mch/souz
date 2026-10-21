@@ -47,6 +47,7 @@ class AgentExecutionKernelFactory(
     private val captureScope: CoroutineScope,
     private val automaticMemoryRecall: Boolean = true,
     private val skillClassifier: SkillClassifier? = null,
+    private val fallbackSkillClassifier: SkillClassifier? = null,
 ) {
     fun create(): AgentExecutionKernel {
         val agentToolExecutor = AgentToolExecutor(telemetry)
@@ -61,6 +62,7 @@ class AgentExecutionKernelFactory(
             skillBundleProvider = skillBundleProvider,
             llmApi = llmApi,
             skillClassifier = skillClassifier,
+            fallbackSkillClassifier = fallbackSkillClassifier,
         )
         val nodesToolUseWithKnowledge = NodesToolUseWithKnowledge(
             agentToolExecutor = agentToolExecutor,

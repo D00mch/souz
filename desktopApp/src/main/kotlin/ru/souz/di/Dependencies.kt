@@ -108,6 +108,7 @@ import ru.souz.tool.web.ToolWebImageSearch
 import ru.souz.tool.web.ToolWebPageText
 import ru.souz.tool.web.internal.WebImageDownloader
 import ru.souz.tool.web.internal.WebResearchClient
+import ru.souz.runtime.di.FRIDA_FALLBACK_TAG
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
 import ru.souz.runtime.files.FilesToolUtil
@@ -399,7 +400,10 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<UserMessageClassifier>(tag = DiTags.TAG_API) {
         when (System.getenv("SOUZ_CLASSIFIER")?.trim()?.lowercase()) {
             null, "", "llm" -> ApiClassifier(instance())
-            "jev" -> JevClassifier(instance(), System.getenv("JEV_THRESHOLD")?.trim()?.toDouble() ?: 0.5)
+            // Built per request, so invalid Jev configuration fails the request and reaches the fallbacks.
+            "jev" -> UserMessageClassifier { body, categories ->
+                JevClassifier(instance(), System.getenv("JEV_THRESHOLD")?.trim()?.toDouble() ?: 0.5).classify(body, categories)
+            }
             else -> error("SOUZ_CLASSIFIER must be llm or jev")
         }
     }
@@ -502,6 +506,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             logObjectMapperTag = DiTags.TAG_LOG,
             apiClassifierTag = DiTags.TAG_API,
             localClassifierTag = DiTags.TAG_LOCAL,
+            fallbackClassifierTag = FRIDA_FALLBACK_TAG,
         )
     )
     bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance()) }

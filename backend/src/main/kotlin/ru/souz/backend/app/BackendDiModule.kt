@@ -107,6 +107,8 @@ import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.llms.giga.toGiga
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.NoopConversationMemoryRuntime
+import ru.souz.agent.skills.SkillClassifier
+import ru.souz.runtime.di.FRIDA_FALLBACK_TAG
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLocalLlmDiModule
 import ru.souz.runtime.di.runtimeProviderHttpDiModule
@@ -334,6 +336,7 @@ fun backendDiModule(
             personalitySync = instance(),
             namedModels = instance<NamedLlmConfig>().models,
             skillClassifier = instance(),
+            fallbackSkillClassifier = instanceOrNull<SkillClassifier>(tag = FRIDA_FALLBACK_TAG),
             baseSettingsProvider = instance(),
             credentialResolver = instance(),
             retryPolicy = appConfig.providerRetryPolicy,

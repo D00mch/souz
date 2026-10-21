@@ -30,6 +30,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class NodesSkillInventoryTest {
     @ParameterizedTest
@@ -269,6 +270,24 @@ class NodesSkillInventoryTest {
     }
 
     @Test
+    fun `fallback classifier answers only when the classifier fails, before the LLM`() = runTest {
+        val api = mockk<LLMChatAPI>()
+        coEvery { api.message(any()) } throws IllegalStateException("LLM unavailable")
+        val failing = SkillClassifier { _, _ -> error("Jev unavailable") }
+        val paper = SkillClassifier { _, _ -> setOf(SkillId("paper")) }
+        suspend fun described(classifier: SkillClassifier, fallback: SkillClassifier) =
+            node(catalog(), repository = repository("paper" to "Summarize papers."), classifier = classifier,
+                fallbackClassifier = fallback, llmApi = api).node(emptyList(), classifySkills = true)
+                .execute(contextWithCatalog(), runtime()).history.first().content.contains("; description:")
+
+        assertTrue(described(failing, paper))
+        assertFalse(described(SkillClassifier { _, _ -> emptySet() }, paper))
+        coVerify(exactly = 0) { api.message(any()) }
+        assertFalse(described(failing, failing))
+        coVerify(exactly = 1) { api.message(any()) }
+    }
+
+    @Test
     fun `thanks and greetings skip Skill selection`() = runTest {
         val api = mockk<LLMChatAPI>()
         val node = node(catalog(), repository = repository("paper" to "Summarize papers."), llmApi = api,
@@ -285,12 +304,14 @@ class NodesSkillInventoryTest {
         toolsFilter: AgentToolsFilter = PassThroughToolsFilter,
         repository: SkillRegistryRepository = repository(),
         classifier: SkillClassifier? = null,
+        fallbackClassifier: SkillClassifier? = null,
         llmApi: LLMChatAPI? = null,
     ): NodesSkillInventory = NodesSkillInventory(
         toolCatalog = catalog,
         toolsFilter = toolsFilter,
         skillBundleProvider = repository,
         skillClassifier = classifier,
+        fallbackSkillClassifier = fallbackClassifier,
         llmApi = llmApi,
     )
 

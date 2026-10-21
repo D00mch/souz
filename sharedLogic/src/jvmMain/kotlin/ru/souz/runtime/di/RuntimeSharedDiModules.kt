@@ -9,7 +9,10 @@ import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl
 import ru.souz.jev.JevClient
 import ru.souz.agent.skills.SkillClassifier
+import ru.souz.frida.FridaClient
+import ru.souz.llms.runtime.FridaClassifier
 import ru.souz.llms.runtime.JevClassifier
+import ru.souz.tool.UserMessageClassifier
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.SessionTokenLogging
@@ -129,6 +132,9 @@ fun runtimeLlmDiModule(
     bindSingleton<ImageGenerationGateway> { instance<CapabilityBasedImageGenerationGateway>() }
 }
 
+/** DI tag of the FRIDA classifier that answers when Jev fails; bound only when `FRIDA_URL` is set. */
+const val FRIDA_FALLBACK_TAG = "fridaFallback"
+
 /** Process-owned remote transports that are safe for backend and interactive hosts. */
 fun runtimeProviderHttpDiModule(): DI.Module = DI.Module("runtimeProviderHttp") {
     bindSingleton { ProviderHttpClients() }
@@ -138,6 +144,12 @@ fun runtimeProviderHttpDiModule(): DI.Module = DI.Module("runtimeProviderHttp") 
             JevClassifier(instance<JevClient>(), System.getenv("JEV_THRESHOLD")?.trim()?.toDouble() ?: 0.5)
                 .selectSkills(request, descriptions)
         }
+    }
+    if (!System.getenv("FRIDA_URL").isNullOrBlank()) {
+        // FRIDA shares the classifiers' OkHttp transport, which is named after Jev.
+        bindSingleton { FridaClassifier(FridaClient(instance<ProviderHttpClients>().jev)) }
+        bindSingleton<UserMessageClassifier>(tag = FRIDA_FALLBACK_TAG) { instance<FridaClassifier>() }
+        bindSingleton<SkillClassifier>(tag = FRIDA_FALLBACK_TAG) { instance<FridaClassifier>() }
     }
     bindSingleton {
         CodexOAuthService(
