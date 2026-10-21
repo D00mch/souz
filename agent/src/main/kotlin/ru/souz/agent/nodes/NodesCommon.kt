@@ -40,16 +40,19 @@ internal class NodesCommon(
         val additionalMessage = appendActualInformation(ctx.input)
 
         val currentUserIndex = ctx.history.indexOfLast { it.role == LLMMessageRole.user }
+        var activeExchangeStartIndex = ctx.activeExchangeStartIndex
         val newHistory = ctx.history
             .filterIndexed { index, message ->
-                index == currentUserIndex || !message.isInjectedContextMessage()
+                val keep = index == currentUserIndex || !message.isInjectedContextMessage()
+                if (!keep && index < ctx.activeExchangeStartIndex) activeExchangeStartIndex--
+                keep
             }
             .toMutableList()
         additionalMessage?.let {
             l.info("Injecting additional context ({} chars)", it.content.length)
-            if (newHistory.isEmpty()) newHistory += it else newHistory.add(newHistory.lastIndex, it)
+            newHistory.add(maxOf(activeExchangeStartIndex, newHistory.lastIndex), it)
         }
-        ctx.map(history = newHistory)
+        ctx.map(history = newHistory, activeExchangeStartIndex = activeExchangeStartIndex)
     }
 
     private suspend fun appendActualInformation(
@@ -136,18 +139,19 @@ internal class NodesCommon(
         type.toString().replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
 }
 
-internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>): LLMRequest.Chat {
-    val ctx = this
-    return LLMRequest.Chat(
-        model = ctx.settings.model,
-        provider = ctx.settings.provider,
-        messages = history,
-        functions = ctx.activeTools,
-        temperature = ctx.settings.temperature,
-        maxTokens = ctx.settings.contextSize,
-        reasoningEffort = ctx.settings.reasoningEffort,
-    )
-}
+internal fun AgentContext<*>.toChatRequest(
+    history: List<LLMRequest.Message>,
+    maxOutputTokens: Int,
+): LLMRequest.Chat = LLMRequest.Chat(
+    model = settings.model,
+    provider = settings.provider,
+    messages = history,
+    functions = activeTools,
+    temperature = settings.temperature,
+    maxTokens = maxOutputTokens,
+    contextSize = settings.contextSize,
+    reasoningEffort = settings.reasoningEffort,
+)
 
 /** Merge ephemeral host instructions without changing the stored conversation. */
 internal fun LLMRequest.Chat.withConversationInstructions(instructions: String): LLMRequest.Chat {

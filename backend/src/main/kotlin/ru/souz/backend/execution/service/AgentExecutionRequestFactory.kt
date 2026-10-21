@@ -75,7 +75,6 @@ internal class AgentExecutionRequestFactory(
             usage = null,
             metadata = executionMetadata(
                 reasoningEffort = effectiveSettings.reasoningEffort,
-                contextSize = effectiveSettings.contextSize,
                 temperature = effectiveSettings.temperature,
                 locale = effectiveSettings.locale.toLanguageTag(),
                 timeZone = effectiveSettings.timeZone.id,
@@ -101,7 +100,6 @@ internal class AgentExecutionRequestFactory(
                 reasoningEffort = effectiveSettings.reasoningEffort,
                 prompt = content,
                 model = effectiveSettings.defaultModel,
-                contextSize = effectiveSettings.contextSize,
                 locale = effectiveSettings.locale.toLanguageTag(),
                 timeZone = effectiveSettings.timeZone.id,
                 executionId = execution.id.toString(),
@@ -147,8 +145,6 @@ internal class AgentExecutionRequestFactory(
             prompt = option.toContinuationInput(),
             reasoningEffort = execution.metadata[METADATA_REASONING_EFFORT],
             model = model,
-            contextSize = executionMetadataInt(execution, METADATA_CONTEXT_SIZE)
-                ?: throw internalError("Execution contextSize is missing."),
             locale = execution.metadata[METADATA_LOCALE]
                 ?: throw internalError("Execution locale is missing."),
             timeZone = execution.metadata[METADATA_TIME_ZONE]
@@ -169,7 +165,6 @@ internal class AgentExecutionRequestFactory(
 
     private fun executionMetadata(
         reasoningEffort: String?,
-        contextSize: Int,
         temperature: Float,
         locale: String,
         timeZone: String,
@@ -181,7 +176,6 @@ internal class AgentExecutionRequestFactory(
         useFewShotExamples: Boolean,
         enabledTools: Set<String>,
     ): Map<String, String> = buildMap {
-        put(METADATA_CONTEXT_SIZE, contextSize.toString())
         put(METADATA_TEMPERATURE, temperature.toString())
         put(METADATA_LOCALE, locale)
         put(METADATA_TIME_ZONE, timeZone)
@@ -194,11 +188,6 @@ internal class AgentExecutionRequestFactory(
         systemPrompt?.let { put(METADATA_SYSTEM_PROMPT, it) }
         reasoningEffort?.let { put(METADATA_REASONING_EFFORT, it) }
     }
-
-    private fun executionMetadataInt(
-        execution: AgentExecution,
-        key: String,
-    ): Int? = execution.metadata[key]?.toIntOrNull()
 
     private fun executionMetadataFloat(
         execution: AgentExecution,
@@ -259,7 +248,6 @@ private fun internalError(message: String): BackendV1Exception =
     )
 
 private const val METADATA_REASONING_EFFORT = "reasoningEffort"
-private const val METADATA_CONTEXT_SIZE = "contextSize"
 private const val METADATA_TEMPERATURE = "temperature"
 private const val METADATA_LOCALE = "locale"
 private const val METADATA_TIME_ZONE = "timeZone"

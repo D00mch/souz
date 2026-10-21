@@ -1,13 +1,12 @@
 package ru.souz.backend.e2e
 
-import io.ktor.client.request.patch
 import io.ktor.websocket.Frame
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import ru.souz.backend.http.BackendHttpRoutes
+import ru.souz.backend.config.BackendConfigSource
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.restJsonMapper
 
@@ -28,6 +27,11 @@ class BackendKnowledgeE2eTest {
         var searched = false
         backendE2eTest(
             schemaPrefix = "e2e_knowledge",
+            // Exercise Knowledge retention bounds with a server window large enough for this fixture.
+            settingsSource = object : BackendConfigSource {
+                override fun env(key: String): String? = if (key == "CONTEXT_SIZE") "524288" else null
+                override fun property(key: String): String? = null
+            },
             llm = E2eLlmApi { request ->
                 val result = request.messages.lastOrNull { it.role == LLMMessageRole.function }
                 when {
@@ -90,11 +94,6 @@ class BackendKnowledgeE2eTest {
         ) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId, tools = clientToolsJson("user.ask"))
-            // Exercise Knowledge's retention bounds with enough model context for the large fixture.
-            client.patch(BackendHttpRoutes.SETTINGS) {
-                trusted(userId)
-                jsonBody("""{"contextSize":524288}""")
-            }
             if (failWrites) backend.sql { connection ->
                 connection.createStatement().use {
                     it.execute("alter table conversation_knowledge add constraint reject_knowledge_writes check (false)")

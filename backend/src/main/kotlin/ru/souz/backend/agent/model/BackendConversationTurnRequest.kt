@@ -6,7 +6,6 @@ internal data class BackendConversationTurnRequest(
     val prompt: String,
     val model: String,
     val reasoningEffort: String? = null,
-    val contextSize: Int,
     val locale: String,
     val timeZone: String,
     val executionId: String? = null,

@@ -13,7 +13,6 @@ import ru.souz.db.REGION_RU
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SUBAGENT_MODELS_JSON
 import ru.souz.db.parseSubagentModels
-import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
@@ -51,9 +50,6 @@ class BackendSettingsProvider(
     override val openaiSummarizationBaseUrl: String? = namedModels.summarization?.baseUrl ?: configured("OPENAI_SUMMARIZATION_BASE_URL")
     override val openaiSummarizationModel: String? = namedModels.summarization?.modelId ?: configured("OPENAI_SUMMARIZATION_MODEL")
     override val openaiSummarizationParameters: String? = configured("OPENAI_SUMMARIZATION_PARAMETERS")
-    override val summarizationContextSize: Int? = namedModels.summarizationContextSize ?: openaiSummarizationModel
-        ?.let { configured("OPENAI_SUMMARIZATION_CONTEXT_SIZE")?.toIntOrNull() }
-        ?.takeIf { it > 0 }
     override var saluteSpeechKey: String? = configured("VOICE_KEY")
     override var supportEmail: String? = configured(SUPPORT_EMAIL)
     override var defaultCalendar: String? = configured(DEFAULT_CALENDAR)
@@ -77,7 +73,11 @@ class BackendSettingsProvider(
     override var requestTimeoutMillis: Long =
         configured(REQUEST_TIMEOUT_MILLIS)?.toLongOrNull() ?: DEFAULT_REQUEST_TIMEOUT_MILLIS
     override var contextSize: Int =
-        configured(CONTEXT_SIZE)?.toIntOrNull()?.takeIf { it > 0 } ?: DEFAULT_MAX_TOKENS
+        source.value(CONTEXT_SIZE, CONTEXT_SIZE)?.let { value ->
+            requireNotNull(value.trim().toIntOrNull()?.takeIf { it >= 24_000 }) {
+                "CONTEXT_SIZE must be an integer of at least 24000 tokens."
+            }
+        } ?: 125_000
     override var initialWindowWidthDp: Int = configured(INITIAL_WINDOW_WIDTH_DP)?.toIntOrNull() ?: 580
     override var initialWindowHeightDp: Int = configured(INITIAL_WINDOW_HEIGHT_DP)?.toIntOrNull() ?: 780
     override var temperature: Float = configured(TEMPERATURE)?.toFloatOrNull() ?: 0.7f

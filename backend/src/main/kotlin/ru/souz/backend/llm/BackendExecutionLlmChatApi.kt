@@ -65,7 +65,7 @@ internal class BackendExecutionLlmChatApi(
                 baseUrl = settingsProvider.openaiSummarizationBaseUrl,
                 requestParameters = settingsProvider.openaiSummarizationParameters,
             )
-            val request = body.copy(model = summarizationModel, provider = LlmProvider.OPENAI, maxTokens = 0)
+            val request = body.copy(model = summarizationModel, provider = LlmProvider.OPENAI)
             return retryChat { callProvider(LlmProvider.OPENAI, request, api) }
         }
         val (provider, request, namedModel) = when (val route = chatRoute(body)) {

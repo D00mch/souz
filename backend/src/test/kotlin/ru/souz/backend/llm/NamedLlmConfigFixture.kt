@@ -35,5 +35,5 @@ internal const val NAMED_LLM_CONFIG = """{
     "tv-agent": {"connection":"router", "modelId":"shared-model"}
   },
   "subagentModels": ["tv-agent"],
-  "summarization": {"model":"tv-agent", "contextSize":32000}
+  "summarization": {"model":"tv-agent"}
 }"""

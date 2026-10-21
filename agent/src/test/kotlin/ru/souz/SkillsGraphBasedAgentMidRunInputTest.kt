@@ -18,7 +18,6 @@ import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkillInventory
-import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
 import ru.souz.agent.runtime.AgentRuntimeEvent
@@ -332,7 +331,6 @@ private class Harness(
     private val nodesLLM = mockk<NodesLLM>()
     private val nodesCommon = mockk<NodesCommon>()
     private val nodesErrorHandling = mockk<NodesErrorHandling>()
-    private val nodesSummarization = mockk<NodesSummarization>()
     private val nodesMemory = mockk<NodesMemory>()
     private val nodesSkillInventory = mockk<NodesSkillInventory>()
     private val agentToolExecutor = mockk<AgentToolExecutor>()
@@ -366,10 +364,7 @@ private class Harness(
         coEvery { agentToolExecutor.execute(any(), any(), any(), any(), any()) } coAnswers {
             toolHandler()
         }
-        every { nodesSummarization.summarize() } returns Node("Summary") { ctx ->
-            ctx.map { responseContent(ctx.input) }
-        }
-        every { nodesMemory.finalizeTurn(any()) } returns Node("Memory-aware finalization") { ctx ->
+        every { nodesMemory.finalizeTurn() } returns Node("Memory-aware finalization") { ctx ->
             finalizationCount += 1
             onFinalize()
             ctx.map { responseContent(ctx.input) }
@@ -384,7 +379,6 @@ private class Harness(
             nodesLLM = nodesLLM,
             nodesCommon = nodesCommon,
             nodesErrorHandling = nodesErrorHandling,
-            nodesSummarization = nodesSummarization,
             nodesMemory = nodesMemory,
             nodesSkillInventory = nodesSkillInventory,
             nodesToolUseWithKnowledge = nodesToolUse,

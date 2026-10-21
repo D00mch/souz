@@ -43,8 +43,7 @@ internal class NodesToolUseWithKnowledge(
                 )
             }
         }
-        val history = ArrayList(ctx.history).apply { addAll(fnCallMessages) }
-        ctx.map(history = history) { ctx.history.last().content }
+        ctx.map(history = ctx.history + fnCallMessages) { ctx.history.last().content }
     }
 
     private suspend fun offloadToolResult(

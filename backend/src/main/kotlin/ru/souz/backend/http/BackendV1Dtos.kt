@@ -41,7 +41,6 @@ internal data class BackendV1SettingsResponse(
 
 internal data class BackendV1SettingsPatchRequest(
     val defaultModel: String? = null,
-    val contextSize: Int? = null,
     val temperature: Float? = null,
     val locale: String? = null,
     val timeZone: String? = null,
@@ -70,7 +69,6 @@ internal data class BackendV1OnboardingCompleteRequest(
 
 data class BackendV1SettingsDto(
     val defaultModel: String,
-    val contextSize: Int,
     val temperature: Float,
     val locale: String,
     val timeZone: String,
@@ -154,7 +152,6 @@ internal data class BackendV1CreateMessageRequest(
 
 internal data class BackendV1MessageOptionsRequest(
     val model: String? = null,
-    val contextSize: Int? = null,
     val temperature: Float? = null,
     val locale: String? = null,
     val timeZone: String? = null,
@@ -284,7 +281,6 @@ internal data class PublicClientEventDto(
 internal fun EffectiveUserSettings.toDto(): BackendV1SettingsDto =
     BackendV1SettingsDto(
         defaultModel = defaultModel,
-        contextSize = contextSize,
         temperature = temperature,
         locale = locale.toLanguageTag(),
         timeZone = timeZone.id,

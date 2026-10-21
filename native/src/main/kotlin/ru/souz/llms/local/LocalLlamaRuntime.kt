@@ -363,7 +363,8 @@ class LocalLlamaRuntime(
                         content = WARMUP_PROMPT,
                     )
                 ),
-                maxTokens = MIN_CONTEXT_SIZE,
+                contextSize = MIN_CONTEXT_SIZE,
+                maxTokens = WARMUP_COMPLETION_TOKENS,
             ),
             profile = profile,
         )
@@ -385,14 +386,10 @@ class LocalLlamaRuntime(
         prompt: String,
         contextSize: Int,
     ): Int {
-        val requestedBudget = if (usesConfiguredContextWindow(body)) {
-            MAX_COMPLETION_TOKENS
-        } else {
-            body.maxTokens
-                .takeIf { it > 0 }
-                ?.let { minOf(MAX_COMPLETION_TOKENS, it) }
-                ?: MAX_COMPLETION_TOKENS
-        }
+        val requestedBudget = body.maxTokens
+            .takeIf { it > 0 }
+            ?.let { minOf(MAX_COMPLETION_TOKENS, it) }
+            ?: MAX_COMPLETION_TOKENS
         val promptEstimate = prompt.estimateTokenCount()
         val availableCompletion = (contextSize - promptEstimate - CONTEXT_SAFETY_MARGIN_TOKENS).coerceAtLeast(1)
         return requestedBudget.coerceAtMost(availableCompletion)
@@ -403,11 +400,8 @@ class LocalLlamaRuntime(
         profile: LocalModelProfile,
         prompt: String,
     ): Int {
-        val maxContextSize = resolveMaxContextSize(body, profile)
         if (usesConfiguredContextWindow(body)) {
-            return body.maxTokens
-                .coerceAtLeast(MIN_CONTEXT_SIZE)
-                .coerceAtMost(maxContextSize)
+            return requireNotNull(body.contextSize)
         }
 
         val promptEstimate = prompt.estimateTokenCount()
@@ -433,7 +427,7 @@ class LocalLlamaRuntime(
     }
 
     internal fun usesConfiguredContextWindow(body: LLMRequest.Chat): Boolean =
-        !body.hasMediaAttachments() && body.maxTokens >= MIN_CONTEXT_SIZE
+        body.contextSize != null
 
     private fun resolveDefaultContextSize(body: LLMRequest.Chat, profile: LocalModelProfile): Int =
         profile.defaultContextSize.coerceAtMost(resolveMaxContextSize(body, profile))

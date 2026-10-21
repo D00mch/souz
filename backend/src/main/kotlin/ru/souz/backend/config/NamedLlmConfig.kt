@@ -16,7 +16,6 @@ class NamedLlmConfig(
     val models: Map<String, NamedLlmModel> = emptyMap(),
     val subagentModels: Set<String> = emptySet(),
     val summarization: NamedLlmModel? = null,
-    val summarizationContextSize: Int? = null,
 )
 
 /** Resolve and validate deployment routes once, before accepting requests. */
@@ -53,12 +52,8 @@ internal fun BackendConfigSource.loadNamedModels(): NamedLlmConfig {
         require(node.isArray && node.all { it.isTextual }) { "subagentModels must be an array of model names." }
         node.mapTo(linkedSetOf()) { it.textValue().also(::model) }
     }.orEmpty()
-    val summary = root["summarization"]?.also { it.fieldsOnly("model", "contextSize") }
-    val contextSize = summary?.get("contextSize")?.let {
-        require(it.isIntegralNumber && it.canConvertToInt() && it.intValue() > 0) { "summarization.contextSize must be positive." }
-        it.intValue()
-    }
-    return NamedLlmConfig(models, subagents, summary?.text("model")?.let(::model), contextSize)
+    val summary = root["summarization"]?.also { it.fieldsOnly("model") }
+    return NamedLlmConfig(models, subagents, summary?.text("model")?.let(::model))
 }
 
 private fun JsonNode.fieldsOnly(vararg names: String) {

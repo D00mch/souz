@@ -88,6 +88,8 @@ internal class NodesClassification(
         return LLMRequest.Chat(
             model = ctx.settings.model,
             provider = ctx.settings.provider,
+            maxTokens = CLASSIFICATION_MAX_OUTPUT_TOKENS,
+            contextSize = ctx.settings.contextSize,
             messages = messages,
             functions = emptyList(),
         )

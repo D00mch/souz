@@ -32,7 +32,7 @@ import kotlin.test.assertTrue
 
 class NodesCommonTest {
     @Test
-    fun `local model includes desktop search and refreshes browser context`() = runTest {
+    fun `host context includes desktop search and refreshes across turns`() = runTest {
         val desktopInfoRepository = mockk<AgentDesktopInfoRepository>()
         coEvery { desktopInfoRepository.search(any(), any()) } returns listOf(
             StorredData("Найден локальный факт", StorredType.GENERAL_FACT)
@@ -48,6 +48,7 @@ class NodesCommonTest {
 
         val result = nodesCommon.nodeAppendAdditionalData().execute(context, graphRuntime())
         val injectedContext = assertNotNull(result.history.firstOrNull { it.isInjectedContextMessage() })
+        assertEquals(1, result.activeExchangeStartIndex)
 
         assertTrue(injectedContext.content.contains("Найден локальный факт"))
         assertTrue(injectedContext.content.contains("Календарь по умолчанию: Work"))
@@ -58,29 +59,16 @@ class NodesCommonTest {
         var nextContext = result
         for (browser in listOf("Google Chrome", null)) {
             environment.defaultBrowserDisplayName = browser
+            nextContext = NodesPlain.inputToHistory().execute(nextContext, graphRuntime())
+            val startBeforeCleanup = nextContext.activeExchangeStartIndex
             nextContext = nodesCommon.nodeAppendAdditionalData().execute(nextContext, graphRuntime())
+            assertEquals(startBeforeCleanup - 1, nextContext.activeExchangeStartIndex)
+            assertTrue(nextContext.history[nextContext.activeExchangeStartIndex].isInjectedContextMessage())
             val refreshed = nextContext.history.single { it.isInjectedContextMessage() }.content
             assertFalse(refreshed.contains("Safari"))
             if (browser == null) assertFalse(refreshed.contains("[Default browser]"))
             else assertTrue(refreshed.contains("- [Default browser]: $browser"))
         }
-    }
-
-    @Test
-    fun `cloud model includes desktop search in additional context`() = runTest {
-        val desktopInfoRepository = mockk<AgentDesktopInfoRepository>()
-        coEvery { desktopInfoRepository.search(any(), any()) } returns listOf(
-            StorredData("Найден локальный факт", StorredType.GENERAL_FACT)
-        )
-        val nodesCommon = nodesCommon(desktopInfoRepository)
-        val context = stringContext(input = "Найди локальные данные", model = "gpt-5-mini")
-
-        val result = nodesCommon.nodeAppendAdditionalData().execute(context, graphRuntime())
-        val injectedContext = assertNotNull(result.history.firstOrNull { it.isInjectedContextMessage() })
-
-        assertTrue(injectedContext.content.contains("Найден локальный факт"))
-        assertFalse(injectedContext.content.contains("[Default browser]"))
-        coVerify(exactly = 1) { desktopInfoRepository.search(any(), any()) }
     }
 
     @Test
@@ -131,23 +119,19 @@ class NodesCommonTest {
             content = """{"ok":true}""",
             name = functionCall.name,
         )
-        val context = AgentContext(
-            input = okResponse(
-                content = "",
-                functionCall = functionCall,
-                functionsStateId = "call-1",
-                finishReason = LLMResponse.FinishReason.function_call,
-            ),
-            settings = settings("gpt-5-mini"),
-            history = listOf(
-                "system".toSystemPromptMessage(),
-                LLMRequest.Message(LLMMessageRole.user, "read file"),
-            ),
-            activeTools = emptyList(),
-            systemPrompt = "system",
+        val context = stringContext("read file", "gpt-5-mini").copy(
             toolInvocationMeta = meta,
             runtimeEventSink = eventSink,
-        )
+        ).map {
+            LLMResponse.Chat.Ok(
+                choices = listOf(LLMResponse.Choice(
+                    message = LLMResponse.Message("", LLMMessageRole.assistant,
+                        functionCall = functionCall, functionsStateId = "call-1"),
+                    index = 0, finishReason = LLMResponse.FinishReason.function_call,
+                )),
+                created = 1L, model = "test-model", usage = LLMResponse.Usage(1, 1, 2, 0),
+            )
+        }
 
         val result = NodesPlain.toolUse(agentToolExecutor).execute(context, graphRuntime())
 
@@ -183,6 +167,7 @@ class NodesCommonTest {
         ),
         activeTools = emptyList(),
         systemPrompt = "system",
+        activeExchangeStartIndex = 1,
     )
 
     private fun settings(model: String): AgentSettings = AgentSettings(
@@ -190,29 +175,6 @@ class NodesCommonTest {
         provider = LlmProvider.OPENAI,
         temperature = 0.2f,
         toolsByCategory = emptyMap(),
-    )
-
-    private fun okResponse(
-        content: String,
-        functionCall: LLMResponse.FunctionCall? = null,
-        functionsStateId: String? = null,
-        finishReason: LLMResponse.FinishReason = LLMResponse.FinishReason.stop,
-    ): LLMResponse.Chat.Ok = LLMResponse.Chat.Ok(
-        choices = listOf(
-            LLMResponse.Choice(
-                message = LLMResponse.Message(
-                    content = content,
-                    role = LLMMessageRole.assistant,
-                    functionCall = functionCall,
-                    functionsStateId = functionsStateId,
-                ),
-                index = 0,
-                finishReason = finishReason,
-            )
-        ),
-        created = 1L,
-        model = "test-model",
-        usage = LLMResponse.Usage(1, 1, 2, 0),
     )
 
     private fun graphRuntime(): GraphRuntime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 20)

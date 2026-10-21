@@ -24,7 +24,6 @@ data class UserSettings(
     val userId: String,
     val defaultModel: String? = null,
     val reasoningEffort: String? = null,
-    val contextSize: Int? = null,
     val temperature: Float? = null,
     val locale: Locale? = null,
     val timeZone: ZoneId? = null,

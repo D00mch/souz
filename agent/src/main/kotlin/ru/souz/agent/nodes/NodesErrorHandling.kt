@@ -27,7 +27,7 @@ internal class NodesErrorHandling(
             if (error.status == PAYLOAD_TOO_LARGE_STATUS) {
                 l.info("Resetting history due to a large object in it")
                 val message = errorMessages.contextReset()
-                ctx.map(history = emptyList()) { message }
+                ctx.map(history = emptyList(), activeExchangeStartIndex = 0) { message }
             } else if (error.status == PAYMENT_REQUIRED) {
                 showPaymentError(error, ctx)
             } else if (error.message.isKtorRequestTimeoutMessage()) {
@@ -52,7 +52,7 @@ internal class NodesErrorHandling(
             false
         }
         val noMoneyMessage = errorMessages.noMoney()
-        return ctx.map(history = emptyList()) {
+        return ctx.map(history = emptyList(), activeExchangeStartIndex = 0) {
             if (isMessageJson) {
                 buildString {
                     appendLine(noMoneyMessage)

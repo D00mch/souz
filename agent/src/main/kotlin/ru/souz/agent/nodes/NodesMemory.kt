@@ -42,8 +42,13 @@ internal class NodesMemory(
     /** Removes previous memory augmentation and optionally retrieves memory for the current input. */
     fun recall(name: String = "Memory recall"): Node<String, String> = Node(name) { ctx ->
         val memoryBlock = if (automaticMemoryRecall) retrieveMemoryBlock(ctx) else null
+        var activeExchangeStartIndex = ctx.activeExchangeStartIndex
         val history = ctx.history
-            .filterNot(LLMRequest.Message::isInjectedMemoryContextMessage)
+            .filterIndexed { index, message ->
+                val keep = !message.isInjectedMemoryContextMessage()
+                if (!keep && index < ctx.activeExchangeStartIndex) activeExchangeStartIndex--
+                keep
+            }
             .toMutableList()
 
         memoryBlock?.let { block ->
@@ -52,19 +57,14 @@ internal class NodesMemory(
                 content = INJECTED_MEMORY_PREFIX + block + INJECTED_MEMORY_SUFFIX,
                 name = INJECTED_MEMORY_MESSAGE_NAME,
             )
-            val latestUserIndex = history.indexOfLast { it.role == LLMMessageRole.user }
-            if (latestUserIndex >= 0) history.add(latestUserIndex, message) else history += message
+            history.add(activeExchangeStartIndex, message)
         }
 
-        ctx.map(history = history)
+        ctx.map(history = history, activeExchangeStartIndex = activeExchangeStartIndex)
     }
 
-    /**
-     * Snapshots the completed turn before summarization can compact history, then schedules capture
-     * only after the existing finalization node succeeds.
-     */
+    /** Captures the completed exchange after accepting its final response. */
     fun finalizeTurn(
-        summarization: Node<LLMResponse.Chat.Ok, String>,
         name: String = "Memory-aware finalization",
     ): Node<LLMResponse.Chat.Ok, String> = object : Node<LLMResponse.Chat.Ok, String> {
         override val name: String = name
@@ -74,7 +74,7 @@ internal class NodesMemory(
             runtime: GraphRuntime,
         ): AgentContext<String> {
             val draft = if (memoryRuntime === NoopConversationMemoryRuntime) null else snapshotCompletedTurn(ctx)
-            val finalizedContext = summarization.execute(ctx, runtime)
+            val finalizedContext = NodesPlain.responseToString().execute(ctx, runtime)
             draft?.let { scheduleCapture(it.copy(assistantMessage = finalizedContext.input)) }
             return finalizedContext
         }

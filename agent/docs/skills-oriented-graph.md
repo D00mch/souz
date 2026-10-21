@@ -6,15 +6,26 @@
 
 Continuation ordering, reserved publication, response acceptance, and stream revisions follow [Execution lifecycle](execution-lifecycle.md).
 
+`NodesLLM` prepares every conversational call, including tool-loop and subagent calls without personality.
 Hosts may supply `conversationInstructions` to add ephemeral system instructions. The agent reads one
-snapshot per conversational call and reuses it after compaction; the next call reads fresh instructions.
+snapshot per call and reuses it after compaction; the next call reads fresh instructions.
 The prepared message text, tool arguments and schemas share the context estimate;
 transport JSON escaping does not increase the text estimate.
-When augmentation exceeds the 80% budget, the existing summarizer compacts completed history before
-the call, preserving the current user/tool exchange. An oversized remaining turn returns an error.
-Remote completion limits use the remaining window; local requests retain their configured context size.
-Finalization also counts the prepared instructions. Skill selection and summaries use the ordinary
-`llmApi` without host augmentation. Merging instructions leaves stored context unchanged.
+Conversational and summary input must fit 80% of the configured `CONTEXT_SIZE`, shared by all models.
+Compaction runs before a conversational call when the prepared input exceeds that limit, and the rebuilt
+request is checked against the same limit. Exactly 80% fits. `maxTokens` only limits provider output
+(4,096 tokens for conversation, 1,024 for summaries); it does not change the input budget.
+
+Compaction sends the completed prefix before `AgentContext.activeExchangeStartIndex`, followed by the
+summarization prompt, in one call. Both must fit the same 80% limit. System instructions and the entire
+active exchange, including fresh memory, host context, tools, and mid-run inputs, stay intact.
+History is neither split nor dropped to fit the summary
+request; if it cannot fit, history stays unchanged and the conversational request is rejected.
+Requests without compactable history or still over the limit after compaction are also rejected.
+Empty or length-truncated summaries fail compaction. Skill selection and summaries use the ordinary
+`llmApi` without host augmentation.
+Merging instructions leaves stored context unchanged. Turn finalization converts the accepted answer
+and schedules memory capture; it does not summarize history.
 
 `NodesSkillInventory` owns Skill inventory prompt augmentation. `AgentContext.withOnlyTools` replaces advertised and executable tools at the skills-graph boundary through the list-based `AgentTools` factory shared with subagent selection. This factory rejects duplicate names and retains only explicitly supplied categories for selected tools. `SteerableChatNode` owns execution-scoped continuation boundaries. `NodesCommon` enriches history with host context. `NodesPlain` is a stateless object providing history, response, and tool-execution helpers. `NodesToolUseWithKnowledge` composes tool execution with Knowledge-aware result handling.
 

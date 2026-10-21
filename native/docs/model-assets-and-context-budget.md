@@ -6,7 +6,7 @@ A chat profile's required download set includes its main GGUF, the linked local 
 
 Projectors share the chat model's storage directory. `mmproj-F16.gguf` is the canonical download name; resolution also accepts the upstream BF16 name and the legacy aliases declared by each profile. Keep `visionProjectorCandidates` as the source of truth.
 
-Context size is capped by the selected profile. Completion budget is reserved from tokenized prompt size, and multimodal generation recalculates it after `mtmd_tokenize` using the actual text-and-image token count.
+`LLMRequest.Chat.contextSize` explicitly carries the configured local window; `maxTokens` is only the output limit. An explicit context size is used unchanged for every model, including vision and summarization. Profile defaults and caps apply only to requests without an explicit context size. Completion budget is reserved from tokenized prompt size, and multimodal generation recalculates it after `mtmd_tokenize` using the actual text-and-image token count.
 
 ## Why this is fragile
 
@@ -21,9 +21,9 @@ EmbeddingGemma query and document inputs use different prefixes; losing that dis
 - Preserve the shared `storageId` for projectors and update candidate aliases only when runtime resolution and tests change together.
 - Preserve embedding query/document formatting and the embedding profile's own context cap.
 - Keep Skill discovery results complete; truncating descriptions can also remove executable input schemas. Ordinary tool results retain bounded previews.
-- Apply settings-driven context size only within model limits. Leave room for at least one completion token and retain context-expansion retry bounds.
+- Configured models must support the configured context size. Leave room for at least one completion token and retain context-expansion retry bounds for requests without an explicit context size.
 - For media requests, perform budgeting only after `mtmd` reports the effective prompt token count. Do not enable non-media prompt-prefix reuse for media without validating cache semantics.
 
 ## Verification
 
-Run `./gradlew :native:test`. Cover missing linked assets, shared projector storage, canonical and compatibility projector names, query/document embedding prefixes, profile context caps, oversized prompts, and multimodal completion budgeting from actual `mtmd` token counts.
+Run `./gradlew :native:test`. Cover missing linked assets, shared projector storage, canonical and compatibility projector names, query/document embedding prefixes, configured context preservation, profile defaults, oversized prompts, and multimodal completion budgeting from actual `mtmd` token counts.

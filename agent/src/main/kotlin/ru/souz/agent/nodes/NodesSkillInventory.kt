@@ -46,12 +46,14 @@ internal class NodesSkillInventory(
             selectedDescriptions(ctx, ids)
         } else emptyMap()
         val message = "${ctx.systemPrompt}\n\n${inventoryBlock(tools, ids, descriptions)}".toSystemPromptMessage()
+        val replaced = if (ctx.history.firstOrNull()?.role == LLMMessageRole.system) 1 else 0
         ctx.map(
             settings = ctx.settings.copy(
                 tools = ctx.settings.tools.copy(byName = ctx.settings.tools.byName + skillTools.associateBy { it.fn.name }),
             ),
             activeTools = (ctx.activeTools + skillTools.map { it.fn }).distinctBy { it.name },
-            history = listOf(message) + ctx.history.drop(if (ctx.history.firstOrNull()?.role == LLMMessageRole.system) 1 else 0),
+            history = listOf(message) + ctx.history.drop(replaced),
+            activeExchangeStartIndex = ctx.activeExchangeStartIndex + 1 - replaced,
         ) { it }
     }
 
@@ -73,7 +75,8 @@ internal class NodesSkillInventory(
             val request = LLMRequest.Chat(
                 model = ctx.settings.model,
                 provider = ctx.settings.provider,
-                maxTokens = ctx.settings.contextSize,
+                maxTokens = CLASSIFICATION_MAX_OUTPUT_TOKENS,
+                contextSize = ctx.settings.contextSize,
                 functions = emptyList(),
                 messages = listOf(LLMRequest.Message(LLMMessageRole.system, """
                     Select Skills useful for the latest user request, considering every step.
