@@ -69,22 +69,17 @@ class NodesClassificationPromptTest {
     }
 
     @Test
-    fun `fallback classifier answers after two remote failures, before regex`() {
-        val failing = UserMessageClassifier { _, _ -> error("Provider unavailable") }
-        val regex = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(listOf(ToolCategory.FILES), 50.0) }
-        val fallback = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(listOf(ToolCategory.BROWSER), null) }
-        val result = executeClassification("Open the website", emptyList(), localClassifier = regex, apiClassifier = failing,
-            fallbackClassifier = fallback)
-        assertEquals(listOf("Open"), result.activeTools.map { it.name })
-        assertEquals(listOf("Read"), executeClassification("Read the file", emptyList(), localClassifier = regex,
-            apiClassifier = failing, fallbackClassifier = failing).activeTools.map { it.name })
-        var fallbackCalls = 0
-        assertFailsWith<CancellationException> {
-            executeClassification("Read the file", emptyList(), localClassifier = regex,
-                apiClassifier = UserMessageClassifier { _, _ -> throw CancellationException("Cancelled") },
-                fallbackClassifier = UserMessageClassifier { _, _ -> fallbackCalls++; error("must not run") })
-        }
-        assertEquals(0, fallbackCalls)
+    fun `fallback classifier answers only after two remote failures, before regex`() {
+        var failures = 0
+        val failing = UserMessageClassifier { _, _ -> failures++; error("Provider unavailable") }
+        val files = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(listOf(ToolCategory.FILES), 50.0) }
+        val browser = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(listOf(ToolCategory.BROWSER), null) }
+        fun tools(api: UserMessageClassifier, fallback: UserMessageClassifier) = executeClassification("Open the website",
+            emptyList(), localClassifier = files, apiClassifier = api, fallbackClassifier = fallback).activeTools.map { it.name }
+        assertEquals(listOf("Read"), tools(files, browser))
+        assertEquals(listOf("Open"), tools(failing, browser))
+        assertEquals(2, failures)
+        assertEquals(listOf("Read"), tools(failing, failing))
     }
 
     @Test

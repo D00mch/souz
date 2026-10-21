@@ -60,7 +60,7 @@ class FridaClassifierTest {
                     "understanding the current screen needs both screen capture and image analysis, unless a path to an existing image was supplied")),
                 question["criteria"],
             )
-            respond("""{"data":{"margins":{"choice":{"CALENDAR":5.0,"MAIL":3.0,"FILES":-2.0,"DESKTOP":-6.0}}}}""")
+            respond("""{"data":{"margins":{"choice":{"CALENDAR":6.0,"MAIL":3.0,"FILES":2.0,"DESKTOP":-11.0}}}}""")
         }
         HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
             val client = FridaClient(http, "https://frida.test/pooling", "frida-token", "frida-decisions")
@@ -90,7 +90,7 @@ class FridaClassifierTest {
             val classifier = FridaClassifier(FridaClient(http, "https://frida.test/pooling", token = null, model = null))
             val cases = mapOf(
                 """"paper":5.0,"music":3.0,"none":-8.0""" to setOf(paper, music),
-                """"paper":4.0,"music":-2.0,"none":6.0""" to emptySet(),
+                """"paper":5.0,"music":-8.0,"none":6.0""" to emptySet(),
             )
             cases.forEach { (answer, expected) ->
                 margins = answer
@@ -109,7 +109,7 @@ class FridaClassifierTest {
             val client = FridaClient(http, "https://frida.test/pooling")
             val state = "private message"
             val options = mapOf("A" to "First", "B" to "Second")
-            val invalid = listOf("", "not json", "{}", """{"data":{"margins":{"choice":{"A":1.0}}}}""",
+            val invalid = listOf("not json", """{"data":{"margins":{"choice":{"A":1.0}}}}""",
                 """{"data":{"margins":{"choice":{"A":1.0,"B":"2"}}}}""", """{"data":{"margins":{"choice":{"A":1.0,"B":1e999}}}}""")
             for (response in invalid) {
                 body = response

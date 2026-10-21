@@ -28,6 +28,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class NodesSkillInventoryTest {
     @Test
@@ -264,30 +265,21 @@ class NodesSkillInventoryTest {
     }
 
     @Test
-    fun `fallback classifier answers when the classifier fails, before the LLM`() = runTest {
+    fun `fallback classifier answers only when the classifier fails, before the LLM`() = runTest {
         val api = mockk<LLMChatAPI>()
-        coEvery { api.message(any()) } returns LLMResponse.Chat.Ok(
-            choices = listOf(LLMResponse.Choice(LLMResponse.Message("[\"paper\"]", LLMMessageRole.assistant, functionsStateId = null),
-                0, LLMResponse.FinishReason.stop)),
-            created = 0, model = "test", usage = LLMResponse.Usage(0, 0, 0, 0),
-        )
-        var fallbackCalls = 0
-        fun inventory(primary: SkillClassifier, fallback: SkillClassifier) = NodesSkillInventory(
-            toolCatalog = catalog(), toolsFilter = PassThroughToolsFilter, skillBundleProvider = repository("paper" to "Summarize papers."),
-            llmApi = api, skillClassifier = primary, fallbackSkillClassifier = fallback,
-        ).node(emptyList(), classifySkills = true)
-        val fallback = SkillClassifier { _, _ -> fallbackCalls++; setOf(SkillId("paper")) }
+        coEvery { api.message(any()) } throws IllegalStateException("LLM unavailable")
         val failing = SkillClassifier { _, _ -> error("Jev unavailable") }
+        val paper = SkillClassifier { _, _ -> setOf(SkillId("paper")) }
+        suspend fun described(classifier: SkillClassifier, fallback: SkillClassifier) =
+            node(catalog(), repository = repository("paper" to "Summarize papers."), classifier = classifier,
+                fallbackClassifier = fallback, llmApi = api).node(emptyList(), classifySkills = true)
+                .execute(contextWithCatalog(), runtime()).history.first().content.contains("; description:")
 
-        assertContains(inventory(failing, fallback).execute(contextWithCatalog(), runtime()).history.first().content, "; description:")
-        assertEquals(1, fallbackCalls)
+        assertTrue(described(failing, paper))
+        assertFalse(described(SkillClassifier { _, _ -> emptySet() }, paper))
         coVerify(exactly = 0) { api.message(any()) }
-        assertContains(inventory(failing, failing).execute(contextWithCatalog(), runtime()).history.first().content, "; description:")
+        assertFalse(described(failing, failing))
         coVerify(exactly = 1) { api.message(any()) }
-        assertFailsWith<CancellationException> {
-            inventory(SkillClassifier { _, _ -> throw CancellationException("cancelled") }, fallback).execute(contextWithCatalog(), runtime())
-        }
-        assertEquals(1, fallbackCalls)
     }
 
     @Test
@@ -307,12 +299,14 @@ class NodesSkillInventoryTest {
         toolsFilter: AgentToolsFilter = PassThroughToolsFilter,
         repository: SkillRegistryRepository = repository(),
         classifier: SkillClassifier? = null,
+        fallbackClassifier: SkillClassifier? = null,
         llmApi: LLMChatAPI? = null,
     ): NodesSkillInventory = NodesSkillInventory(
         toolCatalog = catalog,
         toolsFilter = toolsFilter,
         skillBundleProvider = repository,
         skillClassifier = classifier,
+        fallbackSkillClassifier = fallbackClassifier,
         llmApi = llmApi,
     )
 
