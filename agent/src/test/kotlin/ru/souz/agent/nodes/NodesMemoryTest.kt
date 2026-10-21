@@ -44,9 +44,10 @@ import kotlin.test.assertTrue
 
 class NodesMemoryTest {
     @Test
-    fun `agent module wires memory runtime into recall with scoped metadata`() = runTest {
+    fun `agent module recalls scoped memory and emits its augmentation event`() = runTest {
         val memoryRuntime = RecordingMemoryRuntime(
-            retrievalResult = memoryResult("Relevant memory:\n- User prefers Kotlin"),
+            retrievalResult = memoryResult("Relevant memory:\n- User prefers Kotlin",
+                facts = listOf(MemoryPromptFact("fact-1", "user", 0.9f))),
         )
         val di = DI {
             bindSingleton<ConversationMemoryRuntime> { memoryRuntime }
@@ -54,6 +55,7 @@ class NodesMemoryTest {
             import(agentDiModule())
         }
         val nodesMemory: NodesMemory = di.direct.instance()
+        val events = mutableListOf<AgentRuntimeEvent>()
         val context = stringContext(
             input = "hello",
             meta = ToolInvocationMeta(
@@ -61,7 +63,9 @@ class NodesMemoryTest {
                 conversationId = "backend-chat",
                 requestId = "request-1",
             ),
-        )
+        ).copy(runtimeEventSink = object : AgentRuntimeEventSink {
+            override suspend fun emit(event: AgentRuntimeEvent) { events += event }
+        })
 
         val result = nodesMemory.recall().execute(context, graphRuntime())
 
@@ -74,6 +78,9 @@ class NodesMemoryTest {
         assertEquals(result.history.lastIndex - 1, result.history.indexOf(memory))
         assertEquals("souz_injected_memory", memory.name)
         assertTrue(memory.content.contains("User prefers Kotlin"))
+        val event = events.filterIsInstance<AgentRuntimeEvent.MemoryPromptAugmented>().single()
+        assertEquals("Relevant memory:\n- User prefers Kotlin", event.addedBlock)
+        assertEquals("fact-1", event.facts.single().factId)
     }
 
     @Test
@@ -135,30 +142,6 @@ class NodesMemoryTest {
             assertEquals(history, result.history)
             assertEquals(2, result.activeExchangeStartIndex)
         }
-    }
-
-    @Test
-    fun `recall emits augmentation event`() = runTest {
-        val memoryRuntime = RecordingMemoryRuntime(
-            retrievalResult = memoryResult(
-                block = "Relevant memory:\n- A fact",
-                facts = listOf(MemoryPromptFact("fact-1", "user", 0.9f)),
-            )
-        )
-        val events = mutableListOf<AgentRuntimeEvent>()
-        val context = stringContext("hello").copy(
-            runtimeEventSink = object : AgentRuntimeEventSink {
-                override suspend fun emit(event: AgentRuntimeEvent) {
-                    events += event
-                }
-            },
-        )
-
-        NodesMemory(memoryRuntime, backgroundScope).recall().execute(context, graphRuntime())
-
-        val event = events.filterIsInstance<AgentRuntimeEvent.MemoryPromptAugmented>().single()
-        assertEquals("Relevant memory:\n- A fact", event.addedBlock)
-        assertEquals("fact-1", event.facts.single().factId)
     }
 
     @Test
