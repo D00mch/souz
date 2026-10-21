@@ -42,37 +42,30 @@ internal class NodesLLM(
         streamRevision: Long = 0L,
     ): Node<String, LLMResponse.Chat> =
         Node(name, retryable = true) { ctx: AgentContext<String> ->
-            val prepared = prepareRequest(ctx)
-            val response = prepared.input?.let { request(ctx, it, streamRevision) }
-                ?: LLMResponse.Chat.Error(-1, "The conversation, instructions and tools exceed the context budget. " +
+            // Reuse one personality snapshot if compaction requires rebuilding this call.
+            val instructions = conversationInstructions()
+            fun build(history: List<LLMRequest.Message>) =
+                ctx.toChatRequest(history, maxOutputTokens = CHAT_MAX_OUTPUT_TOKENS)
+                    .withConversationInstructions(instructions)
+
+            var history = ctx.history
+            var request = build(history)
+            if (request.exceedsContextBudget(ctx.settings.contextSize)) {
+                history = llmApi.compactHistory(
+                    ctx.toChatRequest(history, maxOutputTokens = SUMMARIZATION_MAX_OUTPUT_TOKENS),
+                    ctx.activeExchangeStartIndex,
+                )
+                request = build(history)
+            }
+            val response = if (request.exceedsContextBudget(ctx.settings.contextSize)) {
+                LLMResponse.Chat.Error(-1, "The conversation, instructions and tools exceed the context budget. " +
                     "Shorten the request or increase the configured context size.")
-            val history = prepared.history + (response as? LLMResponse.Chat.Ok)?.choices.orEmpty().mapNotNull { it.toMessage() }
-            prepared.map(history = history) { response }
+            } else request(ctx, request, streamRevision)
+            ctx.map(
+                history = history + (response as? LLMResponse.Chat.Ok)?.choices.orEmpty().mapNotNull { it.toMessage() },
+                activeExchangeStartIndex = ctx.activeExchangeStartIndex + history.size - ctx.history.size,
+            ) { response }
         }
-
-    private suspend fun prepareRequest(ctx: AgentContext<*>): AgentContext<LLMRequest.Chat?> {
-        // Reuse one personality snapshot if compaction requires rebuilding this call.
-        val instructions = conversationInstructions()
-        fun build(history: List<LLMRequest.Message>) =
-            ctx.toChatRequest(history, maxOutputTokens = CHAT_MAX_OUTPUT_TOKENS)
-                .withConversationInstructions(instructions)
-
-        var history = ctx.history
-        var request = build(history)
-        if (request.exceedsContextBudget(ctx.settings.contextSize)) {
-            history = llmApi.compactHistory(
-                ctx.toChatRequest(history, maxOutputTokens = SUMMARIZATION_MAX_OUTPUT_TOKENS),
-                ctx.activeExchangeStartIndex,
-            )
-            request = build(history)
-        }
-        return ctx.map(
-            history = history,
-            activeExchangeStartIndex = ctx.activeExchangeStartIndex + history.size - ctx.history.size,
-        ) {
-            request.takeUnless { it.exceedsContextBudget(ctx.settings.contextSize) }
-        }
-    }
 
     private suspend fun request(
         ctx: AgentContext<*>,
