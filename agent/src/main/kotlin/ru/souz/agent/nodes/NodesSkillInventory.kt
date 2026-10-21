@@ -27,6 +27,7 @@ internal class NodesSkillInventory(
     private val skillBundleProvider: SkillBundleProvider,
     private val llmApi: LLMChatAPI? = null,
     private val skillClassifier: SkillClassifier? = null,
+    private val fallbackSkillClassifier: SkillClassifier? = null,
 ) {
     private val logger = LoggerFactory.getLogger(NodesSkillInventory::class.java)
 
@@ -84,9 +85,9 @@ internal class NodesSkillInventory(
                     LLMRequest.Message(it.role, it.content.trimMiddle(4000))
                 } + LLMRequest.Message(LLMMessageRole.user, ctx.input),
             )
-            val selected = skillClassifier?.let { classifier ->
-                discoveryOr(null) { classifier.selectSkills(request, descriptions) }
-            } ?: selectWithLlm(request)
+            val selected = skillClassifier?.let { discoveryOr(null) { it.selectSkills(request, descriptions) } }
+                ?: fallbackSkillClassifier?.let { discoveryOr(null) { it.selectSkills(request, descriptions) } }
+                ?: selectWithLlm(request)
             descriptions.filterKeys { it in selected }.mapValues { (_, text) -> text.take(240) }
         }
 

@@ -68,6 +68,20 @@ class NodesClassificationPromptTest {
     }
 
     @Test
+    fun `fallback classifier answers only after two remote failures, before regex`() {
+        var failures = 0
+        val failing = UserMessageClassifier { _, _ -> failures++; error("Provider unavailable") }
+        val files = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(listOf(ToolCategory.FILES), 50.0) }
+        val browser = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(listOf(ToolCategory.BROWSER), null) }
+        fun tools(api: UserMessageClassifier, fallback: UserMessageClassifier) = executeClassification("Open the website",
+            emptyList(), localClassifier = files, apiClassifier = api, fallbackClassifier = fallback).activeTools.map { it.name }
+        assertEquals(listOf("Read"), tools(files, browser))
+        assertEquals(listOf("Open"), tools(failing, browser))
+        assertEquals(2, failures)
+        assertEquals(listOf("Read"), tools(failing, failing))
+    }
+
+    @Test
     fun `classification cancellation is not retried`() {
         var requests = 0
         assertFailsWith<CancellationException> {
@@ -325,6 +339,7 @@ class NodesClassificationPromptTest {
         tools: Map<ToolCategory, Map<String, LLMToolSetup>> = defaultTools,
         localClassifier: UserMessageClassifier,
         apiClassifier: UserMessageClassifier,
+        fallbackClassifier: UserMessageClassifier? = null,
     ): AgentContext<String> {
         val toolsFactory = AgentToolCatalog(tools.mapValues { it.value.values })
         val toolsSettings = mockk<AgentToolsFilter> {
@@ -336,6 +351,7 @@ class NodesClassificationPromptTest {
             localClassifier = localClassifier,
             toolCatalog = toolsFactory,
             toolsFilter = toolsSettings,
+            fallbackClassifier = fallbackClassifier,
         )
 
         return runBlocking {

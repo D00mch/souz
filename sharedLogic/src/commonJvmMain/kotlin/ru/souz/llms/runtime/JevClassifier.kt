@@ -18,10 +18,7 @@ class JevClassifier(
     }
 
     override suspend fun classify(body: LLMRequest.Chat, categories: Map<ToolCategory, String>): UserMessageClassifier.Reply {
-        val options = categories.entries.associate { (category, description) ->
-            category.name to description + if (category == ToolCategory.DESKTOP || category == ToolCategory.IMAGE) SCREEN_RULE else ""
-        }
-        val selected = select(jevState(body.messages), "tool category", options)
+        val selected = select(jevState(body.messages), "tool category", categoryOptions(categories))
         return UserMessageClassifier.Reply(categories = categories.keys.filter { it.name in selected }, confidence = null)
     }
 
@@ -40,8 +37,6 @@ class JevClassifier(
     }
 
     private companion object {
-        const val SCREEN_RULE = "; understanding the current screen needs both screen capture and image analysis, " +
-            "unless a path to an existing image was supplied"
         val SIDES = mapOf(
             "true" to "the request or at least one of its steps needs it",
             "false" to "no step of the request needs this; a mentioned topic alone does not count",
@@ -49,8 +44,17 @@ class JevClassifier(
     }
 }
 
+private const val SCREEN_RULE = "; understanding the current screen needs both screen capture and image analysis, " +
+    "unless a path to an existing image was supplied"
+
+/** Jev and FRIDA options by category name; DESKTOP and IMAGE descriptions carry [SCREEN_RULE]. */
+internal fun categoryOptions(categories: Map<ToolCategory, String>): Map<String, String> =
+    categories.entries.associate { (category, description) ->
+        category.name to description + if (category == ToolCategory.DESKTOP || category == ToolCategory.IMAGE) SCREEN_RULE else ""
+    }
+
 /**
- * Plain-text Jev state: the last user or assistant message of [messages] (the new user message) first,
+ * Plain-text Jev and FRIDA state: the last user or assistant message of [messages] (the new user message) first,
  * then up to [historyLimit] earlier non-empty ones, newest first, each cut to its first 300 characters.
  * Empty assistant messages that only call a tool are skipped.
  */
