@@ -40,20 +40,17 @@ class NodesLLMTest {
     fun `compaction preserves the active exchange through steering and tool loops`() = runTest {
         val calls = mutableListOf<LLMRequest.Chat>()
         val style = "style ".repeat(3600)
-        var instructions = style
         var instructionReads = 0
-        var summaryCalls = 0
         val api = mockk<LLMChatAPI> {
-            coEvery { message(capture(calls)) } answers {
-                instructions = "updated style"
-                if (calls.last().isSummarization) {
-                    block(0, "compact history".repeat(if (++summaryCalls == 1) 250 else 1))
-                } else block(0, "answer", tool = true)
-            }
+            coEvery { message(capture(calls)) } returnsMany listOf(
+                block(0, "compact history".repeat(250)),
+                block(0, "answer", tool = true),
+                block(0, "compact history"),
+                block(0, "answer", tool = true),
+            )
         }
         val nodes = NodesLLM(api, mockk { every { useStreaming } returns false }, conversationInstructions = {
-            instructionReads++
-            instructions
+            if (instructionReads++ == 0) style else "updated style"
         })
         val system = LLMRequest.Message(LLMMessageRole.system, "system")
         val laterSystem = system.copy(content = "retained instructions")
@@ -93,11 +90,10 @@ class NodesLLMTest {
             coEvery { execute(any(), any(), any(), any(), any()) } returns activeTurn("result ".repeat(10550)).last()
         }
         val afterTools = NodesPlain.toolUse(executor).execute(result.map { it as LLMResponse.Chat.Ok }, runtime)
-        calls.clear()
         val next = chat.execute(afterTools, runtime)
         assertEquals(2, instructionReads)
-        assertEquals(2, summaryCalls)
-        assertEquals(result.history.take(result.activeExchangeStartIndex), calls.first().messages.dropLast(1))
+        assertEquals(listOf(true, false, true, false), calls.map { it.isSummarization })
+        assertEquals(result.history.take(result.activeExchangeStartIndex), calls[2].messages.dropLast(1))
         assertEquals(afterTools.history.drop(afterTools.activeExchangeStartIndex), calls.last().messages.drop(next.activeExchangeStartIndex))
         assertEquals(3, next.activeExchangeStartIndex)
         assertEquals("system\n\nupdated style", calls.last().messages.first().content)
