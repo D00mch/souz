@@ -350,14 +350,20 @@ CATEGORY1,CATEGORY2 0-100
 
 internal const val CLASSIFY_NODE_NAME = "classify"
 
-private const val THANKS_WORDS = "спасибо|благодарю|спс|пасиб[оа]?|мерси|привет|приветик|здравствуй(?:те)?|" +
-    "добр(?:ое|ый|ой) (?:утро|день|вечер)|спокойной ночи|пока|до свидания|понятно|ясно|большое|огромное|тебе|вам|" +
-    "на сегодня вс[её]|thanks|thank you|thx|hi|hello|hey|bye|good night|a lot|so much"
-private val THANKS_OR_GREETING = Regex("""^(?:\s*(?:$THANKS_WORDS)[\s\p{P}\p{S}]*){1,5}$""", RegexOption.IGNORE_CASE)
+private val THANKS_OR_GREETING_PHRASES = setOf(
+    "спасибо", "спасибо большое", "большое спасибо", "спасибо огромное", "огромное спасибо",
+    "спасибо тебе", "спасибо вам", "спасибо тебе большое", "спасибо вам большое",
+    "благодарю", "спс", "пасиб", "пасибо", "пасиба", "мерси",
+    "привет", "приветик", "здравствуй", "здравствуйте", "доброе утро", "добрый день", "добрый вечер",
+    "спокойной ночи", "пока", "до свидания", "на сегодня все", "спасибо на сегодня все", "понятно", "ясно",
+    "thanks", "thank you", "thx", "thanks a lot", "thank you so much", "hi", "hello", "hey", "bye", "good night",
+)
 
 /**
- * A whole message of at most five words that only thanks, greets or says goodbye needs no tools or Skills.
- * Confirmations such as "да" or "ок" stay out: they may approve an action the assistant offered.
+ * A whole message that is one of the known thanks, greeting or goodbye phrases needs no tools or Skills.
+ * Fragments such as "тебе" or "a lot" and confirmations such as "да" or "ок" stay out: they may answer
+ * the assistant's question or approve an action it offered.
  */
 internal fun isThanksOrGreeting(message: String): Boolean =
-    message.trim().split(Regex("""\s+""")).size <= 5 && THANKS_OR_GREETING.matches(message.trim())
+    message.lowercase().replace('ё', 'е').replace(Regex("""[\s\p{P}\p{S}]+"""), " ").trim() in
+        THANKS_OR_GREETING_PHRASES
