@@ -42,8 +42,13 @@ internal class NodesMemory(
     /** Removes previous memory augmentation and optionally retrieves memory for the current input. */
     fun recall(name: String = "Memory recall"): Node<String, String> = Node(name) { ctx ->
         val memoryBlock = if (automaticMemoryRecall) retrieveMemoryBlock(ctx) else null
+        var activeExchangeStartIndex = ctx.activeExchangeStartIndex
         val history = ctx.history
-            .filterNot(LLMRequest.Message::isInjectedMemoryContextMessage)
+            .filterIndexed { index, message ->
+                val keep = !message.isInjectedMemoryContextMessage()
+                if (!keep && index < ctx.activeExchangeStartIndex) activeExchangeStartIndex--
+                keep
+            }
             .toMutableList()
 
         memoryBlock?.let { block ->
@@ -52,11 +57,10 @@ internal class NodesMemory(
                 content = INJECTED_MEMORY_PREFIX + block + INJECTED_MEMORY_SUFFIX,
                 name = INJECTED_MEMORY_MESSAGE_NAME,
             )
-            val latestUserIndex = history.indexOfLast { it.role == LLMMessageRole.user }
-            if (latestUserIndex >= 0) history.add(latestUserIndex, message) else history += message
+            history.add(activeExchangeStartIndex, message)
         }
 
-        ctx.map(history = history)
+        ctx.map(history = history, activeExchangeStartIndex = activeExchangeStartIndex)
     }
 
     /** Captures the completed exchange after accepting its final response. */

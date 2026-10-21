@@ -11,11 +11,9 @@ import ru.souz.llms.toSystemPromptMessage
 
 internal object NodesPlain {
     fun inputToHistory(name: String = "Input->History"): Node<String, String> = Node(name) { ctx ->
-        val history = ArrayList(ctx.history).apply {
-            if (isEmpty()) add(ctx.systemPrompt.toSystemPromptMessage())
-            add(LLMRequest.Message(LLMMessageRole.user, ctx.input))
-        }
-        ctx.map(history = history) { ctx.input }
+        val history = ctx.history.ifEmpty { listOf(ctx.systemPrompt.toSystemPromptMessage()) } +
+            LLMRequest.Message(LLMMessageRole.user, ctx.input)
+        ctx.map(history = history, activeExchangeStartIndex = history.lastIndex) { it }
     }
 
     fun responseToString(

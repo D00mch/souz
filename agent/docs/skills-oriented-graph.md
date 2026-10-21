@@ -16,9 +16,10 @@ Compaction runs before a conversational call when the prepared input exceeds tha
 request is checked against the same limit. Exactly 80% fits. `maxTokens` only limits provider output
 (4,096 tokens for conversation, 1,024 for summaries); it does not change the input budget.
 
-Compaction sends the history before the last user message followed by the summarization prompt in one
-call. The history and summarization prompt together must fit the same 80% limit. System instructions and the last user message
-with its following tool exchange stay intact. History is neither split nor dropped to fit the summary
+Compaction sends the completed prefix before `AgentContext.activeExchangeStartIndex`, followed by the
+summarization prompt, in one call. Both must fit the same 80% limit. System instructions and the entire
+active exchange, including fresh memory, host context, tools, and mid-run inputs, stay intact.
+History is neither split nor dropped to fit the summary
 request; if it cannot fit, history stays unchanged and the conversational request is rejected.
 Requests without compactable history or still over the limit after compaction are also rejected.
 Empty or length-truncated summaries fail compaction. Skill selection and summaries use the ordinary

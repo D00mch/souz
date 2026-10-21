@@ -16,7 +16,13 @@ data class AgentContext<I>(
     val systemPrompt: String,
     val toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     val runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
+    /** Execution-local boundary; messages from here onward must survive compaction unchanged. */
+    val activeExchangeStartIndex: Int = 0,
 ) {
+    init {
+        require(activeExchangeStartIndex in 0..history.size) { "Active exchange boundary must be within history." }
+    }
+
     /** Replaces advertised and executable tools without inheriting catalog categories. */
     internal fun withOnlyTools(tools: List<LLMToolSetup>): AgentContext<I> {
         val selected = AgentTools(tools)
@@ -31,6 +37,7 @@ data class AgentContext<I>(
         history: List<LLMRequest.Message> = this.history,
         activeTools: List<LLMRequest.Function> = this.activeTools,
         systemPrompt: String = this.systemPrompt,
+        activeExchangeStartIndex: Int = this.activeExchangeStartIndex,
         transform: (I) -> O = { it as O },
     ): AgentContext<O> = AgentContext(
         input = transform(input),
@@ -40,6 +47,7 @@ data class AgentContext<I>(
         systemPrompt = systemPrompt,
         toolInvocationMeta = toolInvocationMeta,
         runtimeEventSink = runtimeEventSink,
+        activeExchangeStartIndex = activeExchangeStartIndex,
     )
 }
 

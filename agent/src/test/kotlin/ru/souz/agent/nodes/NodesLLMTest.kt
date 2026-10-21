@@ -18,11 +18,13 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import ru.souz.agent.AgentStreamChunk
+import ru.souz.agent.ActiveRunInput
 import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.RetryPolicy
 import ru.souz.agent.graph.buildGraph
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.runtime.ActiveRunInputController
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -35,15 +37,18 @@ import ru.souz.llms.LLMResponse
 
 class NodesLLMTest {
     @Test
-    fun `compaction preserves exchanges and reuses one instruction snapshot`() = runTest {
+    fun `compaction preserves the active exchange through steering and tool loops`() = runTest {
         val calls = mutableListOf<LLMRequest.Chat>()
         val style = "style ".repeat(3600)
         var instructions = style
         var instructionReads = 0
+        var summaryCalls = 0
         val api = mockk<LLMChatAPI> {
             coEvery { message(capture(calls)) } answers {
                 instructions = "updated style"
-                block(0, if (calls.last().isSummarization) "compact history" else "answer")
+                if (calls.last().isSummarization) {
+                    block(0, "compact history".repeat(if (++summaryCalls == 1) 250 else 1))
+                } else block(0, "answer", tool = true)
             }
         }
         val nodes = NodesLLM(api, mockk { every { useStreaming } returns false }, conversationInstructions = {
@@ -55,11 +60,19 @@ class NodesLLMTest {
         val completed = listOf(system) + exchange("old ".repeat(15000)) +
             activeTurn("completed tool output", "previous request") +
             LLMRequest.Message(LLMMessageRole.assistant, "completed answer") + laterSystem
-        val active = activeTurn()
-        val ctx = context(completed + active)
+        val active = listOf(
+            LLMRequest.Message(LLMMessageRole.user, "fresh memory", name = INJECTED_MEMORY_MESSAGE_NAME),
+            LLMRequest.Message(LLMMessageRole.user, "fresh host context"),
+        ) + activeTurn()
+        val ctx = context(completed + active, activeExchangeStartIndex = completed.size)
         val runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10)
+        val controller = ActiveRunInputController()
+        val queued = listOf("first follow-up", "second follow-up")
+        queued.forEach { input -> controller.submit { ActiveRunInput(input = input) } }
+        val chat = SteerableChatNode(nodes, controller)
+        val expectedActive = active + queued.map { LLMRequest.Message(LLMMessageRole.user, it) }
 
-        val result = nodes.chat().execute(ctx, runtime)
+        val result = chat.execute(ctx, runtime)
 
         val summary = calls.dropLast(1).single()
         assertTrue(summary.isSummarization)
@@ -70,15 +83,24 @@ class NodesLLMTest {
         assertEquals("system\n\n$style", calls.last().messages.first().content)
         assertTrue(calls.last().messages.any { "compact history" in it.content })
         assertEquals(CHAT_MAX_OUTPUT_TOKENS, calls.last().maxTokens)
-        assertEquals(active, calls.last().messages.takeLast(active.size))
+        assertEquals(expectedActive, calls.last().messages.drop(result.activeExchangeStartIndex))
+        assertEquals(3, result.activeExchangeStartIndex)
         assertEquals(listOf(system, laterSystem), result.history.filter { it.role == LLMMessageRole.system })
         assertTrue(result.history.none { style in it.content })
         assertEquals(1, instructionReads)
 
+        val executor = mockk<AgentToolExecutor> {
+            coEvery { execute(any(), any(), any(), any(), any()) } returns activeTurn("result ".repeat(10550)).last()
+        }
+        val afterTools = NodesPlain.toolUse(executor).execute(result.map { it as LLMResponse.Chat.Ok }, runtime)
         calls.clear()
-        nodes.chat().execute(ctx.copy(history = result.history), runtime)
+        val next = chat.execute(afterTools, runtime)
         assertEquals(2, instructionReads)
-        assertEquals("system\n\nupdated style", calls.single().messages.first().content)
+        assertEquals(2, summaryCalls)
+        assertEquals(result.history.take(result.activeExchangeStartIndex), calls.first().messages.dropLast(1))
+        assertEquals(afterTools.history.drop(afterTools.activeExchangeStartIndex), calls.last().messages.drop(next.activeExchangeStartIndex))
+        assertEquals(3, next.activeExchangeStartIndex)
+        assertEquals("system\n\nupdated style", calls.last().messages.first().content)
     }
 
     @ParameterizedTest
@@ -87,7 +109,7 @@ class NodesLLMTest {
         val api = mockk<LLMChatAPI>()
         val nodes = NodesLLM(api, mockk { every { useStreaming } returns false })
         val oversized = "x".repeat(100_000)
-        val original = if (oversizedPart == "completed history") context(exchange(oversized) + activeTurn()) else
+        val original = if (oversizedPart == "completed history") context(exchange(oversized) + activeTurn(), activeExchangeStartIndex = 2) else
             context(activeTurn()).copy(activeTools = listOf(
                 LLMRequest.Function("work", oversized, LLMRequest.Parameters("object")),
             ))
@@ -221,7 +243,7 @@ class NodesLLMTest {
                 finishReason = if (failure == "truncated") LLMResponse.FinishReason.length else null)
         }
         val nodes = NodesLLM(api, mockk { every { useStreaming } returns false })
-        val ctx = context(exchange("old ".repeat(18000)) + activeTurn("result ".repeat(1000)))
+        val ctx = context(exchange("old ".repeat(18000)) + activeTurn("result ".repeat(1000)), activeExchangeStartIndex = 2)
         val runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10)
         if (failure == "oversized") {
             assertTrue(nodes.chat().execute(ctx, runtime).input is LLMResponse.Chat.Error)
@@ -259,6 +281,7 @@ class NodesLLMTest {
     private fun context(
         history: List<LLMRequest.Message>,
         runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
+        activeExchangeStartIndex: Int = 0,
     ): AgentContext<String> = AgentContext(
         input = "ignored",
         settings = AgentSettings(
@@ -272,5 +295,6 @@ class NodesLLMTest {
         activeTools = emptyList(),
         systemPrompt = "system",
         runtimeEventSink = runtimeEventSink,
+        activeExchangeStartIndex = activeExchangeStartIndex,
     )
 }

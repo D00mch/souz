@@ -5,6 +5,8 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.CancellationException
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.RetryPolicy
@@ -30,15 +32,17 @@ import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 
 class NodesSkillInventoryTest {
-    @Test
-    fun `node adds skill tools and augments history without changing supplied prompt`() = runTest {
+    @ParameterizedTest
+    @ValueSource(booleans = [true, false])
+    fun `inventory preserves the exchange when replacing or prepending instructions`(replace: Boolean) = runTest {
         val coreTool = FixedTool("GetSkillByName")
         val catalogTool = FixedTool("CatalogTool")
         val context = contextWithCatalog(catalogTool).copy(
             history = listOf(
                 LLMRequest.Message(LLMMessageRole.system, "obsolete effective prompt"),
                 LLMRequest.Message(LLMMessageRole.user, "hello"),
-            )
+            ).drop(if (replace) 0 else 1),
+            activeExchangeStartIndex = if (replace) 1 else 0,
         )
 
         val repository = repository(
@@ -53,6 +57,7 @@ class NodesSkillInventoryTest {
         assertEquals(listOf(catalogTool.fn, coreTool.fn), result.activeTools)
         assertEquals(setOf(catalogTool.fn.name, coreTool.fn.name), result.settings.tools.byName.keys)
         assertEquals(2, result.history.size)
+        assertEquals(1, result.activeExchangeStartIndex)
         assertContains(result.history.first().content, PROVIDED_SYSTEM_PROMPT)
         assertContains(result.history.first().content, "<skill_inventory>")
         assertContains(result.history.first().content, "- FILES: CatalogTool")

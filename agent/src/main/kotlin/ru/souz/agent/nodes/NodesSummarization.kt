@@ -8,11 +8,12 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 
-/** Compacts completed history, preserving system instructions and the current user/tool exchange. */
-internal suspend fun LLMChatAPI.compactHistory(request: LLMRequest.Chat): List<LLMRequest.Message> {
-    val currentTurn = request.messages.indexOfLast { it.role == LLMMessageRole.user }
-    if (currentTurn <= 0) return request.messages
-    val previous = request.messages.take(currentTurn)
+/** Compacts only the completed prefix, preserving system instructions and the entire active exchange. */
+internal suspend fun LLMChatAPI.compactHistory(
+    request: LLMRequest.Chat,
+    activeExchangeStartIndex: Int,
+): List<LLMRequest.Message> {
+    val previous = request.messages.take(activeExchangeStartIndex)
     if (previous.none { it.role != LLMMessageRole.system }) return request.messages
 
     val body = request.copy(
@@ -32,7 +33,7 @@ internal suspend fun LLMChatAPI.compactHistory(request: LLMRequest.Chat): List<L
     }
     val summary = choice.message.content
     val message = LLMRequest.Message(LLMMessageRole.assistant, "$SUMMARIZATION_PREFIX:\n$summary")
-    return previous.filter { it.role == LLMMessageRole.system } + message + request.messages.drop(currentTurn)
+    return previous.filter { it.role == LLMMessageRole.system } + message + request.messages.drop(activeExchangeStartIndex)
 }
 
 private const val SUMMARIZATION_PROMPT = """

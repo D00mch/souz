@@ -46,12 +46,8 @@ internal class NodesLLM(
             val response = prepared.input?.let { request(ctx, it, streamRevision) }
                 ?: LLMResponse.Chat.Error(-1, "The conversation, instructions and tools exceed the context budget. " +
                     "Shorten the request or increase the configured context size.")
-            val history = ArrayList(prepared.history).apply {
-                if (response is LLMResponse.Chat.Ok) {
-                    addAll(response.choices.mapNotNull { it.toMessage() })
-                }
-            }
-            ctx.map(history = history) { response }
+            val history = prepared.history + (response as? LLMResponse.Chat.Ok)?.choices.orEmpty().mapNotNull { it.toMessage() }
+            prepared.map(history = history) { response }
         }
 
     private suspend fun prepareRequest(ctx: AgentContext<*>): AgentContext<LLMRequest.Chat?> {
@@ -66,10 +62,14 @@ internal class NodesLLM(
         if (request.exceedsContextBudget(ctx.settings.contextSize)) {
             history = llmApi.compactHistory(
                 ctx.toChatRequest(history, maxOutputTokens = SUMMARIZATION_MAX_OUTPUT_TOKENS),
+                ctx.activeExchangeStartIndex,
             )
             request = build(history)
         }
-        return ctx.map(history = history) {
+        return ctx.map(
+            history = history,
+            activeExchangeStartIndex = ctx.activeExchangeStartIndex + history.size - ctx.history.size,
+        ) {
             request.takeUnless { it.exceedsContextBudget(ctx.settings.contextSize) }
         }
     }

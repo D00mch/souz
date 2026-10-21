@@ -92,14 +92,15 @@ class NodesMemoryTest {
                 ordinaryContext,
                 userAuthoredMemoryTags,
             ),
+            activeExchangeStartIndex = 3,
         )
         val firstTurn = nodesMemory.recall().execute(firstTurnContext, graphRuntime())
         memoryRuntime.retrievalResult = memoryResult("Relevant memory:\n- Fresh recall")
         val nextUserMessage = LLMRequest.Message(LLMMessageRole.user, "next question")
-        val nextTurnContext = stringContext("next question").copy(
-            history = firstTurn.history +
-                LLMRequest.Message(LLMMessageRole.assistant, "first answer") +
-                nextUserMessage,
+        val nextTurnContext = NodesPlain.inputToHistory().execute(
+            firstTurn.copy(input = nextUserMessage.content,
+                history = firstTurn.history + LLMRequest.Message(LLMMessageRole.assistant, "first answer")),
+            graphRuntime(),
         )
 
         val result = nodesMemory.recall().execute(nextTurnContext, graphRuntime())
@@ -113,6 +114,7 @@ class NodesMemoryTest {
             .single()
         assertTrue(injectedMemory.value.content.contains("Fresh recall"))
         assertEquals(result.history.lastIndex - 1, injectedMemory.index)
+        assertEquals(injectedMemory.index, result.activeExchangeStartIndex)
         assertEquals(nextUserMessage, result.history.last())
     }
 
@@ -120,7 +122,7 @@ class NodesMemoryTest {
     fun `disabled empty or failed recall removes stale memory and preserves client history`() = runTest {
         val clientMemory = LLMRequest.Message(LLMMessageRole.function, "Client recalled fact", name = "RunSkillCommand")
         val history = listOf("system".toSystemPromptMessage(), clientMemory, LLMRequest.Message(LLMMessageRole.user, "hello"))
-        val context = stringContext("hello").copy(history = listOf(memoryMessage("stale")) + history)
+        val context = stringContext("hello").copy(history = listOf(memoryMessage("stale")) + history, activeExchangeStartIndex = 3)
         listOf(
             false to RecordingMemoryRuntime(retrievalResult = memoryResult("Unwanted recall")),
             true to RecordingMemoryRuntime(),
@@ -131,6 +133,7 @@ class NodesMemoryTest {
 
             assertEquals(automaticRecall, memoryRuntime.retrievalRequest != null)
             assertEquals(history, result.history)
+            assertEquals(2, result.activeExchangeStartIndex)
         }
     }
 
@@ -331,6 +334,7 @@ class NodesMemoryTest {
         activeTools = emptyList(),
         systemPrompt = "system",
         toolInvocationMeta = meta,
+        activeExchangeStartIndex = 1,
     )
 
     private fun completedContext(
