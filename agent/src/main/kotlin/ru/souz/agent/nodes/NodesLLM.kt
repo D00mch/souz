@@ -44,7 +44,7 @@ internal class NodesLLM(
         Node(name, retryable = true) { ctx: AgentContext<String> ->
             val prepared = prepareRequest(ctx)
             val response = prepared.input?.let { request(ctx, it, streamRevision) }
-                ?: LLMResponse.Chat.Error(-1, "The current message, instructions and tools exceed the context budget. " +
+                ?: LLMResponse.Chat.Error(-1, "The conversation, instructions and tools exceed the context budget. " +
                     "Shorten the request or increase the configured context size.")
             val history = ArrayList(prepared.history).apply {
                 if (response is LLMResponse.Chat.Ok) {

@@ -6,23 +6,29 @@
 
 Continuation ordering, reserved publication, response acceptance, and stream revisions follow [Execution lifecycle](execution-lifecycle.md).
 
+`NodesLLM` prepares every conversational call, including tool-loop and subagent calls without personality.
 Hosts may supply `conversationInstructions` to add ephemeral system instructions. The agent reads one
-snapshot per conversational call and reuses it after compaction; the next call reads fresh instructions.
+snapshot per call and reuses it after compaction; the next call reads fresh instructions.
 The prepared message text, tool arguments and schemas share the context estimate;
 transport JSON escaping does not increase the text estimate.
-When augmentation exceeds the 80% budget, the existing summarizer compacts completed history before
-the call, preserving the current user/tool exchange. An oversized remaining turn returns an error.
-Remote completion limits use the remaining window; local requests retain their configured context size.
-Finalization also counts the prepared instructions. Skill selection and summaries use the ordinary
-`llmApi` without host augmentation. Merging instructions leaves stored context unchanged.
+Conversational input must fit `contextSize - maxTokens - 512`, reserving 4,096 output tokens and
+a 512-token safety margin. Local context size is separate from the output limit. If the request exceeds
+the budget, compaction runs before the call and the rebuilt request is checked again.
+
+Compaction uses one summary call over the most recent completed exchanges that fit alongside the
+summarization prompt, 1,024 output tokens, and the safety margin. It drops older completed exchanges
+at user boundaries without splitting messages or tool exchanges. System instructions and the entire
+active user/tool exchange stay intact. If even the newest completed exchange cannot fit, history stays
+unchanged and the budget recheck returns an error without a provider call. Empty or length-truncated summaries fail
+compaction. Skill selection and summaries use the ordinary `llmApi` without host augmentation.
+Merging instructions leaves stored context unchanged. Turn finalization converts the accepted answer
+and schedules memory capture; it does not summarize history.
 
 `NodesSkillInventory` owns Skill inventory prompt augmentation. `AgentContext.withOnlyTools` replaces advertised and executable tools at the skills-graph boundary through the list-based `AgentTools` factory shared with subagent selection. This factory rejects duplicate names and retains only explicitly supplied categories for selected tools. `SteerableChatNode` owns execution-scoped continuation boundaries. `NodesCommon` enriches history with host context. `NodesPlain` is a stateless object providing history, response, and tool-execution helpers. `NodesToolUseWithKnowledge` composes tool execution with Knowledge-aware result handling.
 
 Tool results larger than 8,192 UTF-8 bytes are stored in conversation-scoped Knowledge and replaced with a compact JSON reference. A result of exactly 8,192 bytes stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results are always returned inline. `SearchMemory` has no always-inline exemption and a large result may be offloaded. Storage unavailability and persistence failures keep the original result inline; coroutine cancellation propagates.
 
 Knowledge entries use UTF-16 offsets and lengths because they retain Kotlin strings. `GetKnowledge` returns all retained content: a complete read returns its text, while a truncated read exposes the retained head and tail with their original ranges and the omitted range. `SearchKnowledge` searches retained segments independently, so it never matches across an omitted middle. A match without additional context omits its redundant excerpt and excerpt offsets. Knowledge is temporary and belongs to the exact tool-invocation conversation scope.
-
-`NodesLLM` prepares every conversational call, including tool-loop and subagent calls without personality. It reads one instruction snapshot, builds the full request with tool schemas, and checks `contextSize - maxTokens - 512`. If needed it compacts completed history and checks again. The current user/tool exchange stays intact. Summaries use bounded history excerpts without personality; turn finalization only converts the accepted answer and schedules memory capture.
 
 ## Why this is fragile
 
