@@ -1,10 +1,11 @@
 package ru.souz.agent.spi
 
+import java.time.Clock
 import java.time.ZoneId
 import java.util.Locale
 
 /**
- * Supplies locale, time-zone and optional browser context for agent execution.
+ * Supplies locale, time-zone, clock and optional browser context for agent execution.
  *
  * Desktop preserves its startup locale and reads live system preferences;
  * backend supplies request-scoped locale and time-zone values.
@@ -12,6 +13,7 @@ import java.util.Locale
 interface AgentRuntimeEnvironment {
     val locale: Locale
     val zoneId: ZoneId
+    val clock: Clock get() = Clock.systemUTC()
     val defaultBrowserDisplayName: String? get() = null
 }
 

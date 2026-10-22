@@ -65,7 +65,7 @@ internal class NodesCommon(
         return LLMRequest.Message(LLMMessageRole.user, buildContextMessage(additionalData))
     }
 
-    private fun buildUserGeoLocationFact(): String? = try {
+    private fun buildUserGeoLocationFact(now: ZonedDateTime): String? = try {
         val locale = runtimeEnvironment.locale
         val zoneId = runtimeEnvironment.zoneId
 
@@ -95,7 +95,7 @@ internal class NodesCommon(
             if (cityHint.isNotBlank() && !cityHint.equals(zoneIdText, ignoreCase = true)) {
                 parts += "city_hint=$cityHint"
             }
-            parts += "utc_offset=${ZonedDateTime.now(zoneId).offset.id}"
+            parts += "utc_offset=${now.offset.id}"
         }
 
         if (parts.isEmpty()) null else "User geo: ${parts.joinToString("; ")}"
@@ -105,6 +105,7 @@ internal class NodesCommon(
     }
 
     private suspend fun loadAdditionalData(userText: String): List<StorredData> = buildList {
+        val now = runtimeEnvironment.clock.instant().atZone(runtimeEnvironment.zoneId)
         try {
             addAll(desktopInfoRepository.search(userText))
         } catch (e: Exception) {
@@ -116,11 +117,11 @@ internal class NodesCommon(
         settingsProvider.defaultCalendar
             ?.takeIf(String::isNotBlank)
             ?.let { add(StorredData("Календарь по умолчанию: $it", StorredType.GENERAL_FACT)) }
-        buildUserGeoLocationFact()?.let { add(StorredData(it, StorredType.GENERAL_FACT)) }
+        buildUserGeoLocationFact(now)?.let { add(StorredData(it, StorredType.GENERAL_FACT)) }
         add(
             StorredData(
                 "Текущие дата и время: ${
-                    ZonedDateTime.now(runtimeEnvironment.zoneId).format(
+                    now.format(
                         DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss", runtimeEnvironment.locale)
                     )
                 }",

@@ -16,6 +16,7 @@ Before changing this module, read the relevant pain-point topics below.
 
 - [Telegram runtime and tool safety](docs/telegram-runtime-and-tool-safety.md) — authorization readiness, cache semantics, selection UX, attachments, and SafeMode.
 - [Process shutdown](docs/process-shutdown.md) — cancel-and-join ordering, shared completion, and resource failure aggregation.
+- [Agent scenario tests](docs/agent-scenario-tests.md) — deterministic fixtures, completion checks, and live provider runs.
 
 Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.
 
