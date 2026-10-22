@@ -338,14 +338,17 @@ internal class BackendExecutionLlmChatApi(
 private sealed interface ChatRoute {
     data class Ready(val provider: LlmProvider, val request: LLMRequest.Chat, val namedModel: NamedLlmModel? = null) : ChatRoute {
         /** The upstream model and connection this route reaches; named connections are shared, process-wide instances. */
-        val target get() = Triple(provider, namedModel, request.model)
+        val target = Triple(provider, namedModel, request.model)
     }
     data class Rejected(val error: LLMResponse.Chat.Error) : ChatRoute
 }
 
 /** The provider failed rather than the request: no HTTP status, 5xx, rejected credentials, timeout or rate limit. */
 private fun LLMResponse.Chat.Error.isProviderFailure(): Boolean =
-    status !in 400..499 || status in setOf(401, 402, 403, 408, 429)
+    status !in 400..499 ||
+        status in 401..403 ||
+        status == 408 ||
+        status == 429
 
 private class RetryFirstStreaming429(val error: LLMResponse.Chat.Error) : Exception("retry", null, false, false)
 

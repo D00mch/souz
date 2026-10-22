@@ -1,11 +1,10 @@
 package ru.souz.backend.llm
 
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 /**
  * Process-wide record of failing models. After [threshold] consecutive failures a model is skipped for
@@ -16,30 +15,49 @@ internal class ModelFailureMemory(
     private val cooldown: Duration = 5.minutes,
     private val timeSource: TimeSource = TimeSource.Monotonic,
 ) {
-    private val mutex = Mutex()
-    private val failures = mutableMapOf<Any, Failures>()
+    private val failures = ConcurrentHashMap<Any, Failures>()
 
-    suspend fun shouldTry(key: Any): Boolean = mutex.withLock {
-        val entry = failures[key]
-        when {
-            entry == null || entry.count < threshold -> true
-            entry.retryAt.hasNotPassedNow() -> false
-            else -> {
-                entry.retryAt = timeSource.markNow() + cooldown
-                true
+    fun shouldTry(key: Any): Boolean {
+        var allowed = true
+
+        failures.computeIfPresent(key) { _, entry ->
+            when {
+                entry.count < threshold -> entry
+                entry.retryAt.hasNotPassedNow() -> {
+                    allowed = false
+                    entry
+                }
+                else -> entry.copy(
+                    retryAt = timeSource.markNow() + cooldown,
+                )
             }
         }
+
+        return allowed
     }
 
-    suspend fun record(key: Any, failed: Boolean): Unit = mutex.withLock {
-        if (failed) {
-            val entry = failures.getOrPut(key) { Failures(retryAt = timeSource.markNow()) }
-            entry.count += 1
-            if (entry.count >= threshold) entry.retryAt = timeSource.markNow() + cooldown
-        } else {
+    fun record(key: Any, failed: Boolean) {
+        if (!failed) {
             failures.remove(key)
+            return
+        }
+
+        failures.compute(key) { _, previous ->
+            val count = (previous?.count ?: 0) + 1
+
+            Failures(
+                count = count,
+                retryAt = if (count >= threshold) {
+                    timeSource.markNow() + cooldown
+                } else {
+                    previous?.retryAt ?: timeSource.markNow()
+                },
+            )
         }
     }
 
-    private class Failures(var retryAt: TimeMark, var count: Int = 0)
+    private data class Failures(
+        val retryAt: TimeMark,
+        val count: Int = 0,
+    )
 }
