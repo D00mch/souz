@@ -1,6 +1,7 @@
 package ru.souz.agent.state
 
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.spi.ModelRouting
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
@@ -79,6 +80,8 @@ data class AgentSettings(
     val tools: AgentTools,
     val contextSize: Int = DEFAULT_MAX_TOKENS,
     val reasoningEffort: String? = null,
+    /** Pending model routing for the turn's first LLM call; cleared once the model is chosen. */
+    val routing: ModelRouting? = null,
 ) {
     constructor(
         model: String,

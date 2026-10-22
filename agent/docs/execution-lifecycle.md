@@ -14,6 +14,10 @@ Each accepted continuation advances an execution-scoped stream revision under th
 
 Server-side and other concurrent callers must create an `AgentExecutionKernel` per request or isolated execution scope instead of sharing a facade, graph agent, or session service. The request-scoped kernel exposes one steerable skills graph under `AgentId.SKILLS_GRAPH`; unsupported persisted agent IDs normalize to the first configured agent. The graph advertises and executes only its fixed core Skill tools. Those tools discover capabilities from the request-scoped catalog through the Skill inventory, and queued input keeps the same core-tool boundary for the remainder of the execution.
 
+### Model routing
+
+`AgentSettings.routing` marks a skills-graph turn whose first LLM call may run on a simple or a complex model. With a `TaskComplexityClassifier`, `NodesLLM` starts the simple model at once and publishes none of its streamed output until the classifier decides; a complex decision cancels that call and calls the complex model, and a classifier failure keeps the turn's own model. Each target call uses the ordinary request preparation with that target's tools: conversation instructions, the turn's context budget, and compaction that keeps the active exchange. The chosen settings, without routing, serve the rest of the turn, and the core tools are rebound to them, so a `SpawnSubagent` child defaults to the chosen model.
+
 ## Why this is fragile
 
 The facade owns mutable context, execution state, active-agent routing, and session start/finish. Overlapping work can attach steps to the wrong session, overwrite newer context, or clear `isExecuting` early. Completed-turn memory capture is graph-owned and uses successful graph finalization as its boundary rather than facade acceptance.

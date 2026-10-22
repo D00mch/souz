@@ -61,7 +61,9 @@ internal class BackendConversationRuntime(
 
         val result = executor.execute(
             agentId = AgentId.SKILLS_GRAPH,
-            context = seedContext.copy(settings = seedContext.settings.copy(reasoningEffort = request.reasoningEffort)),
+            context = seedContext.copy(
+                settings = seedContext.settings.copy(reasoningEffort = request.reasoningEffort, routing = request.routing),
+            ),
             input = request.prompt,
             eventSink = eventSink,
             onActiveRunReady = onRuntimeReady,
@@ -75,10 +77,13 @@ internal class BackendConversationRuntime(
             rowVersion = persistedSession?.rowVersion ?: 0L,
         )
 
+        val used = result.context.settings
         return BackendConversationExecution(
             output = result.output,
             usage = executionApi.cumulativeUsage(),
             session = nextSession,
+            routedModel = request.routing?.let { listOf(it.simple, it.complex) }
+                ?.firstOrNull { it.model == used.model && it.provider == used.provider },
         )
     }
 

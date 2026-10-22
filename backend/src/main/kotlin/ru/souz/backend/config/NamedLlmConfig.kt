@@ -5,7 +5,12 @@ import com.fasterxml.jackson.databind.JsonNode
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import ru.souz.agent.spi.ModelRouting
+import ru.souz.agent.spi.RoutedModel
+import ru.souz.llms.LLMModel
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.ModelResolution
+import ru.souz.llms.findLLMModel
 import ru.souz.llms.resolveChatModel
 import ru.souz.llms.restJsonMapper
 
@@ -16,6 +21,7 @@ class NamedLlmConfig(
     val models: Map<String, NamedLlmModel> = emptyMap(),
     val subagentModels: Set<String> = emptySet(),
     val summarization: NamedLlmModel? = null,
+    val routing: ModelRouting? = null,
 )
 
 /** Resolve and validate deployment routes once, before accepting requests. */
@@ -27,7 +33,7 @@ internal fun BackendConfigSource.loadNamedModels(): NamedLlmConfig {
         require(node != null && parser.nextToken() == null) { "Expected one LLM configuration object." }
         node
     }
-    root.fieldsOnly("openaiConnections", "models", "subagentModels", "summarization")
+    root.fieldsOnly("openaiConnections", "models", "subagentModels", "summarization", "routing")
     val connections = root.entries("openaiConnections").mapValues { (id, node) ->
         node.fieldsOnly("baseUrl", "apiKeyEnv")
         val url = node.text("baseUrl")
@@ -53,7 +59,20 @@ internal fun BackendConfigSource.loadNamedModels(): NamedLlmConfig {
         node.mapTo(linkedSetOf()) { it.textValue().also(::model) }
     }.orEmpty()
     val summary = root["summarization"]?.also { it.fieldsOnly("model") }
-    return NamedLlmConfig(models, subagents, summary?.text("model")?.let(::model))
+    val routing = root["routing"]?.let { node ->
+        node.fieldsOnly("simple", "complex")
+        fun target(name: String): RoutedModel {
+            val target = requireNotNull(node[name]) { "routing.$name is required." }
+            target.fieldsOnly("model")
+            val id = target.text("model")
+            val builtin = if (id in models) null else requireNotNull(findLLMModel(id)) { "Unknown routing.$name model $id." }
+            // A routed call sends the model name as is, so the custom selector would never reach OPENAI_MODEL.
+            require(builtin != LLMModel.OpenAICompatibleCustom) { "routing.$name cannot use $id; name a configured model instead." }
+            return RoutedModel(builtin?.alias ?: id, builtin?.provider ?: LlmProvider.OPENAI)
+        }
+        ModelRouting(target("simple"), target("complex"))
+    }
+    return NamedLlmConfig(models, subagents, summary?.text("model")?.let(::model), routing)
 }
 
 private fun JsonNode.fieldsOnly(vararg names: String) {

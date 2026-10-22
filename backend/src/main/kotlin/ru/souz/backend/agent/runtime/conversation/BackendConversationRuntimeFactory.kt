@@ -13,6 +13,7 @@ import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.TaskComplexityClassifier
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.model.chatId
@@ -95,6 +96,7 @@ internal class BackendConversationRuntimeFactory(
     private val skillBundleProvider: SkillBundleProvider,
     private val skillClassifier: SkillClassifier,
     private val fallbackSkillClassifier: SkillClassifier? = null,
+    private val complexityClassifier: TaskComplexityClassifier? = null,
     private val commandExecutor: SkillCommandExecutor,
     private val filesToolUtil: FilesToolUtil,
     private val webResearchClient: WebResearchClient,
@@ -294,6 +296,7 @@ internal class BackendConversationRuntimeFactory(
             },
             skillClassifier = skillClassifier,
             fallbackSkillClassifier = fallbackSkillClassifier,
+            complexityClassifier = complexityClassifier,
             memoryRuntime = memoryRuntime,
             automaticMemoryRecall = automaticMemoryRecall,
             captureScope = agentBackgroundScope + backendLogContext(

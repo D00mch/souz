@@ -63,8 +63,11 @@ suspend fun needsCalendar(jev: JevClient, message: String): Double {
 }
 ```
 
-Optional `criteria` describe a question's `true` and `false` sides. Callers can pass credentials and a model to
-`JevClient(http, token, model)`. The client validates probabilities
+`JevClient.choose(state, instructions, options)` asks one choice question and returns every option's probability.
+`JevClassifier.isComplex` asks it over the last two earlier messages whether a turn needs a light or a strong model
+and routes to the complex model when "complex" scores at least 0.5; when Jev fails, the turn keeps its own model
+without asking FRIDA. Optional `criteria` describe a question's `true` and `false` sides. Callers can pass
+credentials and a model to `JevClient(http, token, model)`. The client validates probabilities
 but leaves selection policy to callers and never closes the supplied transport.
 
 Regular tests use mock HTTP responses. Run the opt-in hosted test with the same `JEV_TOKEN`:

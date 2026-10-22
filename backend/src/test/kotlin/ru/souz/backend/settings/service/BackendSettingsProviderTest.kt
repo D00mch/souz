@@ -1,5 +1,7 @@
 package ru.souz.backend.settings.service
 
+import ru.souz.agent.spi.ModelRouting
+import ru.souz.agent.spi.RoutedModel
 import ru.souz.backend.config.loadNamedModels
 import ru.souz.backend.llm.withNamedLlmConfig
 import ru.souz.backend.llm.NAMED_LLM_CONFIG
@@ -67,6 +69,25 @@ class BackendSettingsProviderTest {
             withNamedLlmConfig(json) { source ->
                 assertFailsWith<Exception> { BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source) }
             }
+        }
+    }
+
+    @Test
+    fun `routing resolves named and built-in models and rejects broken blocks`() {
+        val complex = """, "complex": {"model":"${LLMModel.Max.name}"}"""
+        val valid = NAMED_LLM_CONFIG.trimEnd().removeSuffix("}") +
+            """, "routing": {"simple": {"model":"tv-agent"}$complex}}"""
+        withNamedLlmConfig(valid) { source ->
+            assertEquals(
+                ModelRouting(RoutedModel("tv-agent", LlmProvider.OPENAI), RoutedModel(LLMModel.Max.alias, LLMModel.Max.provider)),
+                source.loadNamedModels().routing,
+            )
+        }
+        withNamedLlmConfig { source -> assertNull(source.loadNamedModels().routing) }
+        (listOf("missing", LLMModel.OpenAICompatibleCustom.alias).map {
+            valid.replace("\"simple\": {\"model\":\"tv-agent\"}", "\"simple\": {\"model\":\"$it\"}")
+        } + valid.replace(complex, "")).forEach { json ->
+            withNamedLlmConfig(json) { source -> assertFailsWith<IllegalArgumentException> { source.loadNamedModels() } }
         }
     }
 

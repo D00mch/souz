@@ -2,6 +2,7 @@ package ru.souz.backend.execution.service
 
 import java.time.Instant
 import java.util.UUID
+import ru.souz.agent.spi.ModelRouting
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.execution.model.AgentExecution
@@ -38,6 +39,7 @@ internal data class PreparedContinuationTurn(
 internal class AgentExecutionRequestFactory(
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
     private val clientThreadRegistry: ClientThreadRuntimeRegistry? = null,
+    private val modelRouting: ModelRouting? = null,
 ) {
     suspend fun prepareChatTurn(
         userId: String,
@@ -56,6 +58,12 @@ internal class AgentExecutionRequestFactory(
             throw unsupportedBackendModel()
         }
         val normalizedClientMessageId = clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
+        // Route only turns on the deployment's default model, never a model the user chose for the chat or request.
+        val routing = modelRouting?.takeIf { routing ->
+            requestOverrides.defaultModel == null &&
+                effectiveSettings.defaultModel == effectiveSettingsResolver.defaultModel() &&
+                listOf(routing.simple, routing.complex).all { effectiveSettingsResolver.isSelectableDefaultModel(userId, it.model) }
+        }
         val execution = AgentExecution(
             id = executionId,
             userId = userId,
@@ -111,6 +119,7 @@ internal class AgentExecutionRequestFactory(
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
                 enabledTools = effectiveSettings.enabledTools.toSet(),
                 clientToolsEnabled = clientToolsEnabled,
+                routing = routing,
             ),
             userMessageMetadata = userMessageMetadata(normalizedClientMessageId) + userMessageMetadataExtras,
         )
