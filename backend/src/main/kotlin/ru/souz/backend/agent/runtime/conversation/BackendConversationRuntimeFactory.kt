@@ -1,6 +1,7 @@
 package ru.souz.backend.agent.runtime.conversation
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -41,6 +42,7 @@ import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.config.NamedLlmModel
 import ru.souz.backend.http.clientFrameMapper
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
+import ru.souz.backend.llm.ModelFailureMemory
 import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.metrics.BackendMetrics
@@ -48,6 +50,7 @@ import ru.souz.backend.personality.personalityInstructions
 import ru.souz.backend.personality.PersonalitySync
 import ru.souz.backend.personality.PersonalityTool
 import ru.souz.backend.settings.repository.UserSettingsRepository
+import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
@@ -81,6 +84,7 @@ internal class BackendConversationRuntimeFactory(
     private val personalitySync: PersonalitySync,
     private val baseSettingsProvider: SettingsProvider,
     private val credentialResolver: ProviderCredentialResolver,
+    private val effectiveSettingsResolver: EffectiveSettingsResolver,
     private val retryPolicy: BackendProviderRetryPolicy,
     private val providerHttpClients: ProviderHttpClients,
     private val localChatApi: LocalChatAPI,
@@ -113,6 +117,8 @@ internal class BackendConversationRuntimeFactory(
     private val namedModels: Map<String, NamedLlmModel> = emptyMap(),
     private val testLlmApiFactory: (suspend (SettingsProvider) -> LLMChatAPI)? = null,
 ) {
+    private val modelFailures = ModelFailureMemory()
+
     internal suspend fun create(
         key: AgentConversationKey,
         request: BackendConversationTurnRequest,
@@ -157,6 +163,8 @@ internal class BackendConversationRuntimeFactory(
             providerApiOverride = testApi?.let { api -> { api } },
             hookBudget = hookBudget,
             metrics = metrics,
+            fallbackModels = effectiveSettingsResolver.fallbackModels(key.userId, Locale.forLanguageTag(request.locale)),
+            failureMemory = modelFailures,
         )
         val visionGateway = LLMCapabilityResolver(
             settingsProvider = settingsProvider,

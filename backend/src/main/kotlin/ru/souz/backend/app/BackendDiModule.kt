@@ -344,6 +344,7 @@ fun backendDiModule(
             complexityClassifier = instance<NamedLlmConfig>().routing?.let { instance<TaskComplexityClassifier>() },
             baseSettingsProvider = instance(),
             credentialResolver = instance(),
+            effectiveSettingsResolver = instance(),
             retryPolicy = appConfig.providerRetryPolicy,
             providerHttpClients = instance(),
             localChatApi = instance<LocalChatAPI>(),
