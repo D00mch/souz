@@ -12,7 +12,7 @@ class AttachmentCleanupWorker(private val storage: AttachmentStorage) {
     fun start(scope: CoroutineScope) = scope.launch {
         while (isActive) {
             try {
-                if (storage.cleanup() == ATTACHMENT_CLEANUP_BATCH_SIZE) continue
+                storage.cleanup()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {

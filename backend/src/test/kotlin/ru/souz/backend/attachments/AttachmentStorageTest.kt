@@ -104,7 +104,7 @@ class AttachmentStorageTest {
     }
 
     @Test
-    fun `failed completion waits for pending timeout and retries failed metadata deletion`() = attachmentTest {
+    fun `failed completion waits for pending timeout and failed metadata deletion retries and ends passes`() = attachmentTest {
         execute("""create function reject_attachment() returns trigger language plpgsql as 'begin raise exception ''test failure''; end'""")
         execute("""create constraint trigger reject_ready after update on stored_attachments deferrable initially deferred for each row when (new.state = 'ready') execute function reject_attachment()""")
         assertFailsWith<SQLException> { save("alice", "failed", "a.txt", "persisted") }
@@ -131,6 +131,14 @@ class AttachmentStorageTest {
         assertNull(repository.get("alice", pending.id))
         assertAttachmentError("attachment_expired") { repository.complete(pending, clock.now) }
         assertEquals("persisted", storage.read("alice", save("alice", "failed", "a.txt", "persisted").id).decodeToString())
+        // A success resets the failure count; three consecutive failures end the pass before the last due row.
+        execute("""create constraint trigger reject_failing after delete on stored_attachments deferrable initially deferred for each row when (old.source_key like 'fail-%') execute function reject_attachment()""")
+        val queue = listOf("fail-0", "ok-0", "fail-1", "fail-2", "fail-3", "ok-1").mapIndexed { i, key ->
+            repository.reserve("alice", key, "a.txt", "text/plain", 0, "", clock.now.plusSeconds(i.toLong()))
+        }
+        clock.now = clock.now.plus(ATTACHMENT_PENDING_LIFETIME).plusSeconds(queue.size.toLong())
+        assertEquals(1, storage.cleanup())
+        assertEquals(listOf("deleting", null, "deleting", "deleting", "deleting", "pending"), queue.map { repository.get("alice", it.id)?.state })
     }
 
     @Test

@@ -48,16 +48,20 @@ class AttachmentStorage(
 
     suspend fun cleanup(): Int {
         var removed = 0
-        // One row per claim, so each lease covers a single S3 deletion.
-        repeat(ATTACHMENT_CLEANUP_BATCH_SIZE) {
-            val file = repository.claim(clock.instant()) ?: return removed
+        var failures = 0
+        // One row per claim, so each lease covers a single S3 deletion. Consecutive failures end the pass early,
+        // so an unavailable S3 costs a few attempts per worker delay instead of one per due row.
+        while (failures < ATTACHMENT_CLEANUP_CONSECUTIVE_FAILURE_LIMIT) {
+            val file = repository.claim(clock.instant()) ?: break
             try {
                 objects.delete(file)
                 repository.remove(file)
                 removed++
+                failures = 0
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
+                failures++
                 // Never log exception messages, response bodies or signed transport details.
                 val s3 = error as? S3Exception
                 logger.warn("Attachment cleanup failed for file {}: exceptionClass={}, statusCode={}, s3ErrorCode={}",
