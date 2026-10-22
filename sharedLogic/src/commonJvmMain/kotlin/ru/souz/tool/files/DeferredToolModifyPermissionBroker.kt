@@ -46,9 +46,9 @@ data class ToolModifyPendingReview(val items: List<Item>) {
 /** Aggregate result of resolving the current staged edit batch. */
 data class ToolModifyApplyResult(val items: List<Item>) {
     
-    val appliedCount: Int get() = items.count { it.status == ToolModifyApplyStatus.APPLIED }
-    val discardedCount: Int get() = items.count { it.status == ToolModifyApplyStatus.DISCARDED }
-    val skippedCount: Int get() = items.count {
+    val appliedCount: Int = items.count { it.status == ToolModifyApplyStatus.APPLIED }
+    val discardedCount: Int = items.count { it.status == ToolModifyApplyStatus.DISCARDED }
+    val skippedCount: Int = items.count {
         it.status == ToolModifyApplyStatus.SKIPPED_CONFLICT ||
             it.status == ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT
     }

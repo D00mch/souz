@@ -110,9 +110,10 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
         timers { call, cause ->
             tag("address", "backend")
             tag("throwable", if (cause == null) "none" else "error")
-            tag("method", call.request.httpMethod.value.takeIf {
-                it in setOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "CONNECT")
-            } ?: "OTHER")
+            tag("method", when (val method = call.request.httpMethod.value) {
+                "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "CONNECT" -> method
+                else -> "OTHER"
+            })
         }
     }
     install(WebSockets)

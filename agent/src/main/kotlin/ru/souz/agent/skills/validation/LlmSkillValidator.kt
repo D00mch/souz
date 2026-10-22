@@ -49,7 +49,7 @@ class LlmSkillValidator(
             parsed.decision.name,
             parsed.confidence,
             parsed.riskLevel,
-            input.filePaths.size,
+            input.bundle.files.size,
         )
         return parsed.toFindings(input.policy)
     }
