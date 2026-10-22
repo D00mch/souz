@@ -9,4 +9,4 @@ See the [SDK contract](../plugin-api/docs/plugin-contract.md).
 
 ## Verification
 
-Run `./gradlew :plugins:saved-links:test :plugins:saved-links:jar :plugins:gmail:test :plugins:gmail:jar`.
+Run `./gradlew :plugins:saved-links:test :plugins:saved-links:jar :plugins:gmail:test :plugins:gmail:jar :plugins:github:test :plugins:github:jar`.
