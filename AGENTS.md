@@ -27,6 +27,12 @@ Backend [personality settings](backend/docs/personality-settings.md) are separat
   `asContextElement`.
 - Prefer coroutine coordination inside suspend execution. Keep JVM monitors and atomics at explicit non-suspending JVM or native boundaries when they are required.
 
+## Code Review Rules
+
+- Flag collections allocated on every call just to test membership in a few constants, such as `status in setOf(...)`.
+- Flag getters that repeatedly allocate or recompute the same derived value from immutable inputs, such as `val target get() = Triple(...)`.
+- Flag layered mutability, such as mutable entries inside a mutable map/list, when immutable entries replaced atomically would simplify state ownership.
+
 ## Module Map
 
 - [`:graph-engine`](graph-engine/AGENTS.md) — framework-free typed graph execution.
