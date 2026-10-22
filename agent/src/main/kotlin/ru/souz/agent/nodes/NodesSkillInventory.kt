@@ -65,7 +65,7 @@ internal class NodesSkillInventory(
                 .filterValues { it.isNotBlank() }
             if (descriptions.isEmpty()) return@discoveryOr emptyMap()
             val history = ctx.history.filter {
-                it.role in listOf(LLMMessageRole.user, LLMMessageRole.assistant) &&
+                (it.role == LLMMessageRole.user || it.role == LLMMessageRole.assistant) &&
                     !it.isInjectedContextMessage() && !it.isInjectedMemoryContextMessage()
             }
             val last = history.lastOrNull()

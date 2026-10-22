@@ -66,7 +66,10 @@ private fun LLMRequest.Parameters.asProperty() = LLMRequest.Property(
 private fun normalizeSchema(schema: LLMRequest.Property, depth: Int, path: String): LLMRequest.Property {
     requireCatalogue(depth <= 16, "$path: Tool schema nesting exceeds 16 levels.")
     requireCatalogue(
-        schema.type in arrayOf("object", "array", "string", "integer", "number", "boolean", "null"),
+        when (schema.type) {
+            "object", "array", "string", "integer", "number", "boolean", "null" -> true
+            else -> false
+        },
         "$path: Unsupported tool schema type.",
     )
     schema.enum?.let { enum ->
