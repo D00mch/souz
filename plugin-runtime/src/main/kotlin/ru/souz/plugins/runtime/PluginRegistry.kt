@@ -95,29 +95,24 @@ class PluginRegistry(
     suspend fun acquire(bindings: List<PluginBinding>): PluginLease = mutex.withLock {
         initialize()
         require(bindings.map { it.id }.distinct().size == bindings.size) { "Duplicate plugin bindings" }
-        val generations = mutableListOf<Generation>()
         try {
-            for (binding in bindings) {
+            val generations = bindings.map { binding ->
                 require(binding.digest.matches(Regex("[a-f0-9]{64}"))) { "Invalid plugin digest" }
                 val generation = loaded[binding.digest] ?: loadCached(binding)
                 require(generation.binding == binding) { "Plugin binding does not match cached artifact" }
-                generation.leases++
-                generations += generation
+                generation
             }
             val tools = generations.flatMap { it.tools }
             require(tools.map { it.name }.distinct().size == tools.size) { "Plugin tool collision" }
+            generations.forEach { it.leases++ }
             PluginLease(tools) {
                 mutex.withLock {
                     generations.forEach { it.leases-- }
                     disposeUnused()
                 }
             }
-        } catch (failure: Throwable) {
-            withContext(NonCancellable) {
-                generations.forEach { it.leases-- }
-                disposeUnused()
-            }
-            throw failure
+        } finally {
+            disposeUnused()
         }
     }
 

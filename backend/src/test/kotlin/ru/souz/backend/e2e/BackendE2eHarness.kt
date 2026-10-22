@@ -205,6 +205,24 @@ internal class BackendE2eScope(
         return created.jsonBody()["chat"]["id"].asText()
     }
 
+    suspend fun callSkill(user: String, skill: String, arguments: Map<String, Any> = emptyMap()): JsonNode {
+        llm.requestSkill(skill, arguments)
+        val chat = createPublicChat(user, UUID.randomUUID().toString())
+        val sent = client.post(BackendHttpRoutes.chatMessages(chat)) {
+            trusted(user); jsonBody("""{"content":"plugin test ${UUID.randomUUID()}","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+        }
+        assertEquals(HttpStatusCode.OK, sent.status)
+        val execution = sent.jsonBody()["execution"]["id"].asText()
+        backend.awaitExecution(UUID.fromString(execution))
+        val stored = backend.executionRepository.getByChat(user, UUID.fromString(chat), UUID.fromString(execution))!!
+        assertEquals("COMPLETED", stored.status.name, "${stored.errorCode}: ${stored.errorMessage}")
+        return lastSkillResult()
+    }
+
+    fun lastSkillResult(): JsonNode = json.readTree(
+        llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content,
+    )
+
     suspend fun readJson(session: DefaultClientWebSocketSession): JsonNode =
         json.readTree((session.incoming.receive() as Frame.Text).readText())
 

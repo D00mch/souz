@@ -25,7 +25,34 @@ internal class GmailFlow(private val context: PluginCallContext, private val now
                 emailContext(body).apply { set<JsonNode>("attachments", attachments(body)) }
             }
             "download_attachment" -> downloadAttachment(context, args)
-            else -> connectionCommand(command, args)
+            "status" -> change(args.text("config")) { _, state -> state.deepCopy() }
+            "sync" -> sync(args.text("config"))
+            "watch" -> {
+                val snapshot = profile(args.text("config"))
+                val body = json.createObjectNode().put("topicName", snapshot["connection"]["topicName"].asText()).put("labelFilterBehavior", "include")
+                body.putArray("labelIds").add("INBOX")
+                val response = context.gmail("/watch", body = body).ok()
+                val expiry = response.path("expiration").asText().toLong().also { require(it > now()) }
+                change(args.text("config")) { _, state ->
+                    state.put("watchExpiresAt", maxOf(expiry, state.path("watchExpiresAt").asLong()))
+                    result("watching").put("watchExpiresAt", state.path("watchExpiresAt").asLong())
+                }
+            }
+            "read" -> read(args.text("config"), args)
+            "deliver" -> deliver(args.text("config"), args)
+            "restart_pages" -> change(args.text("config")) { _, state ->
+                if (state.path("revision").asLong() != args.path("revision").asLong()) result("conflict")
+                else { state.putNull("pageToken"); result(state.text("status")) }
+            }
+            "resolve_uncertain" -> change(args.text("config")) { _, state ->
+                val message = messageId(args.text("message"))
+                val pending = state.path("pending").path(message)
+                require(pending.path("status").asText() == "uncertain" && pending.path("claim").asText() == args.text("claim"))
+                require(args.text("outcome") in setOf("delivered", "skipped"))
+                finish(state, message)
+                result("resolved")
+            }
+            else -> throw PluginException("gmail_invalid_input", "Unknown Gmail command")
         }
     } catch (stop: GmailResult) {
         if (args.has("config") && stop.value.path("status").asText() == "reconnect_required") {
@@ -68,40 +95,6 @@ internal class GmailFlow(private val context: PluginCallContext, private val now
             entry(connection, imported)
         }
         return result("imported").put("uncertainCount", imported.path("pending").count { it.path("status").asText() == "uncertain" })
-    }
-
-    private suspend fun connectionCommand(command: String, args: ObjectNode): JsonNode {
-        val config = args.text("config")
-        return when (command) {
-            "status" -> change(config) { _, state -> state.deepCopy() }
-            "sync" -> sync(config)
-            "watch" -> {
-                val snapshot = profile(config)
-                val body = json.createObjectNode().put("topicName", snapshot["connection"]["topicName"].asText()).put("labelFilterBehavior", "include")
-                body.putArray("labelIds").add("INBOX")
-                val response = context.gmail("/watch", body = body).ok()
-                val expiry = response.path("expiration").asText().toLong().also { require(it > now()) }
-                change(config) { _, state ->
-                    state.put("watchExpiresAt", maxOf(expiry, state.path("watchExpiresAt").asLong()))
-                    result("watching").put("watchExpiresAt", state.path("watchExpiresAt").asLong())
-                }
-            }
-            "read" -> read(config, args)
-            "deliver" -> deliver(config, args)
-            "restart_pages" -> change(config) { _, state ->
-                if (state.path("revision").asLong() != args.path("revision").asLong()) result("conflict")
-                else { state.putNull("pageToken"); result(state.text("status")) }
-            }
-            "resolve_uncertain" -> change(config) { _, state ->
-                val message = messageId(args.text("message"))
-                val pending = state.path("pending").path(message)
-                require(pending.path("status").asText() == "uncertain" && pending.path("claim").asText() == args.text("claim"))
-                require(args.text("outcome") in setOf("delivered", "skipped"))
-                finish(state, message)
-                result("resolved")
-            }
-            else -> throw PluginException("gmail_invalid_input", "Unknown Gmail command")
-        }
     }
 
     private suspend fun profile(config: String): ObjectNode {
@@ -246,18 +239,17 @@ internal class GmailFlow(private val context: PluginCallContext, private val now
 
     private suspend fun change(config: String, operation: (ObjectNode, ObjectNode) -> ObjectNode): ObjectNode {
         val time = now() / 1000.0
-        var output = result("unknown")
+        lateinit var output: ObjectNode
         context.data.update(key(config)) { stored ->
             val record = stored?.deepCopy<ObjectNode>() ?: throw PluginException("gmail_connection_missing", "Configure or import this connection first")
             val state = record["state"] as ObjectNode
-            val before = record.toString()
             state.path("pending").forEach { item ->
                 if (item.path("status").asText() in setOf("claimed", "delivering") && item.path("expiresAt").asDouble() <= time) {
                     (item as ObjectNode).put("status", "uncertain")
                 }
             }
             output = operation(record, state)
-            if (before != record.toString()) state.put("revision", state.path("revision").asLong() + 1)
+            if (stored != record) state.put("revision", state.path("revision").asLong() + 1)
             output.put("revision", state.path("revision").asLong())
             record
         }

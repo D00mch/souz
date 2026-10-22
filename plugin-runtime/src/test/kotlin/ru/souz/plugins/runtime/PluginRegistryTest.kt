@@ -50,6 +50,12 @@ class PluginRegistryTest {
         val resumed = restarted.acquire(listOf(original))
         assertEquals("Report generation 1", resumed.tools.single().definition.description)
         resumed.close()
+        Files.delete(stopped)
+        // Failure after loading a cached generation must release it without an acquired lease.
+        assertFailsWith<PluginException> {
+            restarted.acquire(listOf(original, original.copy(id = "missing", digest = "0".repeat(64))))
+        }
+        assertTrue(Files.exists(stopped))
         Files.delete(root.resolve(".cache/${original.digest}.jar"))
         assertFailsWith<PluginException> { restarted.acquire(listOf(original)) }
         restarted.close()

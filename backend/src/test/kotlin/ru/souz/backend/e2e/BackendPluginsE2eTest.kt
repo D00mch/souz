@@ -1,6 +1,5 @@
 package ru.souz.backend.e2e
 
-import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -22,7 +21,6 @@ import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.plugins.PLUGIN_BINDINGS_METADATA
 import ru.souz.backend.plugins.decodePluginBindings
-import ru.souz.llms.restJsonMapper
 import ru.souz.plugins.testing.pluginJar
 
 class BackendPluginsE2eTest {
@@ -96,7 +94,7 @@ class BackendPluginsE2eTest {
             assertEquals("2", client.get(BackendHttpRoutes.BOOTSTRAP) { trusted(user) }.jsonBody()["capabilities"]["plugins"].single()["version"].asText())
             llm.releasePrompt("paused generation")
             backend.awaitExecution(UUID.fromString(sent["execution"]["id"].asText()))
-            assertEquals("1", lastPluginResult()["version"].asText())
+            assertEquals("1", lastSkillResult()["version"].asText())
             assertEquals("2", callSkill(user, "fixture__version")["version"].asText())
             pluginJar(artifact, version = "bad", api = "99")
             backend.reconcilePlugins()
@@ -170,8 +168,8 @@ class BackendPluginsE2eTest {
                             assertTrue(llm.requests.isEmpty())
                         } else {
                             assertEquals("COMPLETED", resumed.status.name, resumed.errorMessage)
-                            if (mode == "legacy") assertTrue(lastPluginResult().has("error"))
-                            else assertEquals("1", lastPluginResult()["version"].asText())
+                            if (mode == "legacy") assertTrue(lastSkillResult().has("error"))
+                            else assertEquals("1", lastSkillResult()["version"].asText())
                         }
                     }
                 }
@@ -195,24 +193,6 @@ class BackendPluginsE2eTest {
                 assertEquals(1, it.executeUpdate())
             }
         } }
-
-    private suspend fun BackendE2eScope.callSkill(user: String, skill: String, arguments: Map<String, Any> = emptyMap()): JsonNode {
-        llm.requestSkill(skill, arguments)
-        val chat = createPublicChat(user, UUID.randomUUID().toString())
-        val sent = client.post(BackendHttpRoutes.chatMessages(chat)) {
-            trusted(user); jsonBody("""{"content":"plugin test ${UUID.randomUUID()}","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
-        }
-        assertEquals(HttpStatusCode.OK, sent.status)
-        val execution = sent.jsonBody()["execution"]["id"].asText()
-        backend.awaitExecution(UUID.fromString(execution))
-        val stored = backend.executionRepository.getByChat(user, UUID.fromString(chat), UUID.fromString(execution))!!
-        assertEquals("COMPLETED", stored.status.name, "${stored.errorCode}: ${stored.errorMessage}")
-        return lastPluginResult()
-    }
-
-    private fun BackendE2eScope.lastPluginResult(): JsonNode = restJsonMapper.readTree(
-        llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content,
-    )
 }
 
 private fun installSavedLinks(path: Path, id: String = "saved_links"): Path {

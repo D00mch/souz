@@ -1,11 +1,9 @@
 package ru.souz.backend.e2e
 
-import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.get
-import io.ktor.client.request.post
 import io.ktor.http.HttpHeaders
 import java.nio.file.Files
 import java.nio.file.Path
@@ -31,32 +29,32 @@ class BackendGmailPluginE2eTest {
             val foreign = UUID.randomUUID().toString()
             val target = createPublicChat(owner)
             authorize(owner)
-            assertEquals("configured", gmail(owner, "configure", configuration(target))["status"].asText())
-            val synced = gmail(owner, "sync", mapOf("config" to "personal"))
+            assertEquals("configured", callSkill(owner, "gmail__configure", configuration(target))["status"].asText())
+            val synced = callSkill(owner, "gmail__sync", mapOf("config" to "personal"))
             assertEquals("ready", synced["status"].asText(), synced.toString())
             val claim = synced["message"]["claim"].asText()
-            val prepared = gmail(owner, "read", mapOf("config" to "personal", "message" to "m1", "claim" to claim))
+            val prepared = callSkill(owner, "gmail__read", mapOf("config" to "personal", "message" to "m1", "claim" to claim))
             assertEquals("compose", prepared["status"].asText(), prepared.toString())
             assertEquals("Hello from Gmail", prepared["email"]["body"].asText())
             val delivery = restJsonMapper.convertValue(prepared["inputs"], Map::class.java).entries.associate { it.key.toString() to it.value!! } + ("text" to "Gmail notification")
-            assertEquals("delivered", gmail(owner, "deliver", delivery)["status"].asText())
-            assertTrue(gmail(owner, "deliver", delivery).has("error"))
+            assertEquals("delivered", callSkill(owner, "gmail__deliver", delivery)["status"].asText())
+            assertTrue(callSkill(owner, "gmail__deliver", delivery).has("error"))
             val messages = client.get(BackendHttpRoutes.chatMessages(target)) { trusted(owner) }.jsonBody()["items"]
             assertEquals(1, messages.count { it["content"].asText() == "Gmail notification" })
-            val reconnect = gmail(foreign, "search", mapOf("query" to "in:inbox"))
+            val reconnect = callSkill(foreign, "gmail__search", mapOf("query" to "in:inbox"))
             assertEquals("reconnect_required", reconnect["status"].asText())
             assertTrue(reconnect["authorizationUrl"].asText().contains("gmail.readonly"))
-            assertTrue(gmail(foreign, "status", mapOf("config" to "personal")).has("error"))
+            assertTrue(callSkill(foreign, "gmail__status", mapOf("config" to "personal")).has("error"))
             val foreignTarget = createPublicChat(foreign)
-            gmail(owner, "configure", configuration(foreignTarget) + ("config" to "foreign_destination"))
-            val foreignClaim = gmail(owner, "sync", mapOf("config" to "foreign_destination"))["message"]["claim"].asText()
-            val rejected = gmail(owner, "deliver", mapOf("config" to "foreign_destination", "message" to "m1", "claim" to foreignClaim,
+            callSkill(owner, "gmail__configure", configuration(foreignTarget) + ("config" to "foreign_destination"))
+            val foreignClaim = callSkill(owner, "gmail__sync", mapOf("config" to "foreign_destination"))["message"]["claim"].asText()
+            val rejected = callSkill(owner, "gmail__deliver", mapOf("config" to "foreign_destination", "message" to "m1", "claim" to foreignClaim,
                 "channelType" to "public_client", "channelId" to foreignTarget, "text" to "must not arrive"))
             assertEquals("uncertain", rejected["status"].asText())
             assertTrue(client.get(BackendHttpRoutes.chatMessages(foreignTarget)) { trusted(foreign) }.jsonBody()["items"].isEmpty)
             backend.shutdown()
             withPeerBackend { peer -> with(peer) {
-                val state = gmail(owner, "status", mapOf("config" to "personal"))
+                val state = callSkill(owner, "gmail__status", mapOf("config" to "personal"))
                 assertEquals("101", state["historyCursor"].asText())
                 assertEquals(listOf("m1"), state["done"].map { it.asText() })
                 assertEquals(0, state["pending"].size())
@@ -77,16 +75,16 @@ class BackendGmailPluginE2eTest {
                 "mailboxEmail" to "owner@example.com", "topicName" to "projects/demo/topics/gmail",
                 "destination" to mapOf("channelType" to "public_client", "channelId" to target), "notificationMode" to "assistant")))
             Files.writeString(legacy.resolve("state.json"), """{"schemaVersion":1,"revision":5,"mailboxEmail":"owner@example.com","status":"ready","historyCursor":"77","startedAtMillis":1,"pending":{},"done":["old"]}""")
-            assertEquals("imported", gmail(owner, "import_connection", mapOf("config" to "personal", "source" to legacy.resolve("connection.json").toString()))["status"].asText())
-            assertEquals("77", gmail(owner, "status", mapOf("config" to "personal"))["historyCursor"].asText())
-            val downloaded = gmail(owner, "download_attachment", mapOf("message" to "m1", "attachment" to "att1", "filename" to "../../report.pdf"))
+            assertEquals("imported", callSkill(owner, "gmail__import_connection", mapOf("config" to "personal", "source" to legacy.resolve("connection.json").toString()))["status"].asText())
+            assertEquals("77", callSkill(owner, "gmail__status", mapOf("config" to "personal"))["historyCursor"].asText())
+            val downloaded = callSkill(owner, "gmail__download_attachment", mapOf("message" to "m1", "attachment" to "att1", "filename" to "../../report.pdf"))
             assertEquals("downloaded", downloaded["status"].asText(), downloaded.toString())
             val path = Path.of(downloaded["filePath"].asText())
             assertTrue(path.startsWith(home.resolve("Documents/souz/plugin-files/gmail")))
             assertEquals("attachment.pdf", path.fileName.toString())
             assertContentEquals(pdf, Files.readAllBytes(path))
             assertFalse(downloaded.has("data"))
-            assertTrue(gmail(owner, "import_connection", mapOf("config" to "outside", "source" to "/etc/passwd")).has("error"))
+            assertTrue(callSkill(owner, "gmail__import_connection", mapOf("config" to "outside", "source" to "/etc/passwd")).has("error"))
             assertTrue(Files.exists(legacy.resolve("state.json")))
         }
     }
@@ -114,16 +112,6 @@ class BackendGmailPluginE2eTest {
 
     private fun configuration(target: String): Map<String, Any> = mapOf("config" to "personal", "mailboxEmail" to "owner@example.com",
         "topicName" to "projects/demo/topics/gmail", "channelType" to "public_client", "channelId" to target, "notificationMode" to "assistant")
-
-    private suspend fun BackendE2eScope.gmail(user: String, command: String, arguments: Map<String, Any>): JsonNode {
-        llm.requestSkill("gmail__$command", arguments)
-        val chat = createPublicChat(user, UUID.randomUUID().toString())
-        val response = client.post(BackendHttpRoutes.chatMessages(chat)) {
-            trusted(user); jsonBody("""{"content":"gmail ${UUID.randomUUID()}","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
-        }.jsonBody()
-        backend.awaitExecution(UUID.fromString(response["execution"]["id"].asText()))
-        return restJsonMapper.readTree(llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content)
-    }
 
     private companion object { val pdf = "%PDF-1.7\n".toByteArray() + ByteArray(2 * 1024 * 1024) }
 }
