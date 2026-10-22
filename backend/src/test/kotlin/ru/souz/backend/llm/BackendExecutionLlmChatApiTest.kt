@@ -155,6 +155,14 @@ class BackendExecutionLlmChatApiTest {
             assertFailsWith<CancellationException> { fixture.api.message(chat(primary)) }
             assertEquals(listOf(primary, fallback, primary, primary), calls)
         }
+
+        // Named connections with one endpoint and upstream ID still differ by key.
+        val namedCalls = mutableListOf<String>()
+        facadeFixture(
+            namedModels = listOf("bad", "good").associateWith { NamedLlmModel("shared", "https://same.test/v1", "$it-key") },
+            fallbackModels = listOf("good"),
+            providerApiOverride = { StubChatApi(message = { namedCalls += it.model; if (namedCalls.size == 1) LLMResponse.Chat.Error(500, "down") else ok(it.model) }) },
+        ).use { assertEquals(ok("shared"), it.api.message(chat("bad"))) }
     }
 
     @Test
@@ -163,7 +171,7 @@ class BackendExecutionLlmChatApiTest {
         val memory = ModelFailureMemory(timeSource = time)
         var primaryDown = true
         val primary = LLMModel.OpenAIGpt52.alias
-        val fallback = LLMModel.QwenMax.alias
+        val fallback = "Fallback/Deployment"
         suspend fun attempts(userId: String, source: CredentialSource): List<String> {
             val calls = mutableListOf<String>()
             facadeFixture(

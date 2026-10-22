@@ -2,6 +2,7 @@ package ru.souz.backend.settings.service
 
 import io.mockk.coEvery
 import io.mockk.mockk
+import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -57,6 +58,10 @@ class EffectiveSettingsResolverTest {
             Case(OpenAICompatibleCustom.alias, selected = QwenMax.alias, listings = 1, region = "en", customOpenAi = true, keys = setOf(QWEN)),
             Case(OpenAICompatibleCustom.alias, selected = OpenAIGpt5Mini.alias, listings = 1, region = "en", keys = setOf(OPENAI)),
             Case(null, selected = OpenAICompatibleCustom.alias, listings = 1, region = "en", customOpenAi = true, keys = setOf(OPENAI)),
+            Case(
+                null, selected = OpenAICompatibleCustom.alias, listings = 1, region = "en", customOpenAi = true,
+                keys = setOf(OPENAI, ANTHROPIC), named = true, fallbacks = listOf("custom-model", AnthropicHaiku45.alias, named),
+            ),
             Case(QwenMax.alias, selected = QwenMax.alias, listings = 0, supplied = setOf(QWEN)),
             Case(AiTunnelClaudeHaiku.alias, selected = QwenMax.alias, listings = 0, keys = setOf(AI_TUNNEL), supplied = emptySet()),
             Case(
@@ -116,11 +121,12 @@ class EffectiveSettingsResolverTest {
             },
         )
         val resolved = resolver.resolve(USER, UserSettingsOverrides(defaultModel = case.requestModel), userManagedProviders = case.supplied)
-        return case.copy(selected = resolved.defaultModel, saved = saved, listings = listings)
+        val selection = case.copy(selected = resolved.defaultModel, saved = saved, listings = listings)
+        return selection.copy(fallbacks = if (case.fallbacks == null) null else resolver.fallbackModels(USER, Locale.forLanguageTag(case.region)))
     }
 }
 
-/** Resolution inputs with the expected selected model, new-user saved default, and stored key listings. */
+/** Resolution inputs with the expected selected model, new-user saved default, stored key listings and fallback chain. */
 private data class Case(
     val model: String?,
     val requestModel: String? = null,
@@ -137,6 +143,7 @@ private data class Case(
     val newUser: Boolean = false,
     val named: Boolean = false,
     val serverDefault: LLMModel = LLMModel.Max,
+    val fallbacks: List<String>? = null,
 )
 
 private const val USER = "user-1"

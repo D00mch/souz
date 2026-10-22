@@ -27,6 +27,7 @@ import ru.souz.llms.ModelResolution
 import ru.souz.llms.anthropic.AnthropicChatAPI
 import ru.souz.llms.codex.CodexChatAPI
 import ru.souz.llms.codex.CodexOAuthService
+import ru.souz.llms.findLLMModel
 import ru.souz.llms.resolveChatModel
 import ru.souz.llms.resolveEmbeddingsModel
 import ru.souz.llms.http.ProviderHttpClients
@@ -76,7 +77,8 @@ internal class BackendExecutionLlmChatApi(
             is ChatRoute.Ready -> route
             is ChatRoute.Rejected -> return route.error
         }
-        val fallbacks = fallbackModels.map { chatRoute(body.copy(model = it, provider = null)) }.filterIsInstance<ChatRoute.Ready>()
+        val fallbacks = fallbackModels.map { chatRoute(body.copy(model = it, provider = findLLMModel(it)?.provider ?: LlmProvider.OPENAI)) }
+            .filterIsInstance<ChatRoute.Ready>()
         val routes = (listOf(primary) + fallbacks).distinctBy { it.target }
         if (routes.size == 1) return chat(primary)
         var lastFailure: LLMResponse.Chat.Error? = null
@@ -335,8 +337,8 @@ internal class BackendExecutionLlmChatApi(
 
 private sealed interface ChatRoute {
     data class Ready(val provider: LlmProvider, val request: LLMRequest.Chat, val namedModel: NamedLlmModel? = null) : ChatRoute {
-        /** The upstream model this route reaches, independent of the request body and the execution. */
-        val target get() = Triple(provider, namedModel?.baseUrl, request.model)
+        /** The upstream model and connection this route reaches; named connections are shared, process-wide instances. */
+        val target get() = Triple(provider, namedModel, request.model)
     }
     data class Rejected(val error: LLMResponse.Chat.Error) : ChatRoute
 }
