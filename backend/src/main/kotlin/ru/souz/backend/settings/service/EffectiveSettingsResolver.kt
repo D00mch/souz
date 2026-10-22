@@ -162,27 +162,29 @@ class EffectiveSettingsResolver(
             ?: fallbackModel(locale, userManagedProviders)
     }
 
+    /** Models the user can access, in the default-model order; executions fall back along this list. */
+    suspend fun fallbackModels(userId: String, locale: Locale): List<String> {
+        val providers = loadUserManagedProviders(userId)
+        return defaultModelOrder(locale).filter { isDefaultCandidate(it) { providers } }.map { it.alias } +
+            listOfNotNull(namedModelNames.firstOrNull())
+    }
+
     private suspend fun fallbackModel(
         locale: Locale,
         userManagedProviders: suspend () -> Set<LlmProvider>,
-    ): String {
-        if (isSelectableModel(LLMModel.OpenAICompatibleCustom, userManagedProviders)) {
-            return LLMModel.OpenAICompatibleCustom.alias
-        }
+    ): String = defaultModelOrder(locale).firstOrNull { isDefaultCandidate(it, userManagedProviders) }?.alias
+        ?: namedModelNames.firstOrNull()
+        ?: LlmBuildProfile.defaultsForLanguage(locale.languageOrRegion()).values.first { it in BackendLlmSupport.chatModels }.alias
+
+    private fun defaultModelOrder(locale: Locale): List<LLMModel> {
         val defaults = LlmBuildProfile.defaultsForLanguage(locale.languageOrRegion())
-        val localDefault = localModelAvailability.defaultGigaModel()
-        return LlmBuildProfile.providerPrioritiesForLanguage(locale.languageOrRegion())
-            .firstNotNullOfOrNull { provider ->
-                when (provider) {
-                    LlmProvider.LOCAL -> localDefault
-                    else -> defaults[provider]?.takeIf { isSelectableModel(it, userManagedProviders) }
-                }
-            }
-            ?.alias
-            ?: localDefault?.alias
-            ?: namedModelNames.firstOrNull()
-            ?: defaults.values.first { it in BackendLlmSupport.chatModels }.alias
+        return listOf(LLMModel.OpenAICompatibleCustom) + LlmBuildProfile.providerPrioritiesForLanguage(locale.languageOrRegion())
+            .mapNotNull { provider -> if (provider == LlmProvider.LOCAL) localModelAvailability.defaultGigaModel() else defaults[provider] }
     }
+
+    // The local default comes from the host's selected profile and needs no key.
+    private suspend fun isDefaultCandidate(model: LLMModel, userManagedProviders: suspend () -> Set<LlmProvider>): Boolean =
+        model.provider == LlmProvider.LOCAL || isSelectableModel(model, userManagedProviders)
 
     private suspend fun loadUserManagedProviders(userId: String): Set<LlmProvider> =
         userProviderKeyRepository.list(userId)

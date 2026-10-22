@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.hooks.HookLlmBudget
@@ -46,9 +48,11 @@ internal class BackendExecutionLlmChatApi(
     private val hookBudget: HookLlmBudget? = null,
     private val metrics: BackendMetrics? = null,
     private val namedModels: Map<String, NamedLlmModel> = emptyMap(),
+    private val fallbackModels: List<String> = emptyList(),
+    private val failureMemory: ModelFailureMemory = ModelFailureMemory(),
 ) : LLMChatAPI {
     private val providerStateMutex = Mutex()
-    private val credentials = mutableMapOf<LlmProvider, String?>()
+    private val credentials = mutableMapOf<LlmProvider, ResolvedProviderCredential?>()
     private val providerApis = mutableMapOf<Pair<LlmProvider, NamedLlmModel?>, LLMChatAPI>()
 
     private val usageMutex = Mutex()
@@ -68,12 +72,35 @@ internal class BackendExecutionLlmChatApi(
             val request = body.copy(model = summarizationModel, provider = LlmProvider.OPENAI)
             return retryChat { callProvider(LlmProvider.OPENAI, request, api) }
         }
-        val (provider, request, namedModel) = when (val route = chatRoute(body)) {
+        val primary = when (val route = chatRoute(body)) {
             is ChatRoute.Ready -> route
             is ChatRoute.Rejected -> return route.error
         }
-        return retryChat { callProvider(provider, request, apiFor(provider, namedModel)) }
+        val fallbacks = fallbackModels.map { chatRoute(body.copy(model = it, provider = null)) }.filterIsInstance<ChatRoute.Ready>()
+        val routes = (listOf(primary) + fallbacks).distinctBy { it.target }
+        if (routes.size == 1) return chat(primary)
+        var lastFailure: LLMResponse.Chat.Error? = null
+        for (route in routes) {
+            val failureKey = route.target to userId.takeIf { usesUserKey(route) }
+            if (!failureMemory.shouldTry(failureKey)) continue
+            val response = chat(route)
+            val failed = response is LLMResponse.Chat.Error && response.isProviderFailure()
+            failureMemory.record(failureKey, failed)
+            if (!failed) return response
+            log.warn("Model {} failed with status {}; trying the next fallback model", route.request.model, response.status)
+            lastFailure = response
+        }
+        // Every model is cooling down: the requested one is still the best attempt.
+        return lastFailure ?: chat(primary)
     }
+
+    private suspend fun chat(route: ChatRoute.Ready): LLMResponse.Chat =
+        retryChat { callProvider(route.provider, route.request, apiFor(route.provider, route.namedModel)) }
+
+    // A user's own key fails for that user only; every other credential is shared by the whole server.
+    private suspend fun usesUserKey(route: ChatRoute.Ready): Boolean =
+        route.namedModel == null && route.provider in BackendLlmSupport.userManagedKeyProviders &&
+            providerStateMutex.withLock { resolveCredentialLocked(route.provider) }.source == CredentialSource.USER_MANAGED
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> {
         val (provider, request, namedModel) = when (val route = chatRoute(body)) {
@@ -128,7 +155,7 @@ internal class BackendExecutionLlmChatApi(
         require(provider in BackendLlmSupport.userManagedKeyProviders) {
             "Provider $provider does not use execution-scoped API-key credentials."
         }
-        return providerStateMutex.withLock { resolveCredentialLocked(provider) }
+        return providerStateMutex.withLock { resolveCredentialLocked(provider) }.apiKey
     }
 
     private fun currentProvider(): LlmProvider = settingsProvider.gigaModel.provider
@@ -179,13 +206,13 @@ internal class BackendExecutionLlmChatApi(
                         LlmProvider.OPENAI -> httpClients.openAi
                         else -> httpClients.standard
                     },
-                    apiKey = namedModel?.apiKey ?: resolveCredentialLocked(provider),
+                    apiKey = namedModel?.apiKey ?: resolveCredentialLocked(provider).apiKey,
                     baseUrl = namedModel?.baseUrl,
                 )
                 LlmProvider.ANTHROPIC -> AnthropicChatAPI(
                     settingsProvider,
                     httpClients.standard,
-                    apiKey = resolveCredentialLocked(provider),
+                    apiKey = resolveCredentialLocked(provider).apiKey,
                 )
                 LlmProvider.CODEX -> CodexChatAPI(
                     settingsProvider,
@@ -200,15 +227,9 @@ internal class BackendExecutionLlmChatApi(
         }
     }
 
-    private suspend fun resolveCredentialLocked(provider: LlmProvider): String {
-        if (credentials.containsKey(provider)) {
-            return credentials.getValue(provider)
-                ?: error("Missing configured credential for provider $provider.")
-        }
-        val credential = credentialResolver.resolve(userId, provider)
-        credentials[provider] = credential?.apiKey
-        return credentials.getValue(provider)
-            ?: error("Missing configured credential for provider $provider.")
+    private suspend fun resolveCredentialLocked(provider: LlmProvider): ResolvedProviderCredential {
+        if (!credentials.containsKey(provider)) credentials[provider] = credentialResolver.resolve(userId, provider)
+        return credentials.getValue(provider) ?: error("Missing configured credential for provider $provider.")
     }
 
     private suspend fun retryChat(request: suspend () -> LLMResponse.Chat): LLMResponse.Chat {
@@ -308,13 +329,21 @@ internal class BackendExecutionLlmChatApi(
         const val TOO_MANY_REQUESTS = 429
         val RETRY_AFTER = Regex("""retry-after=(\d+)""", RegexOption.IGNORE_CASE)
         val ZERO_USAGE = LLMResponse.Usage(0, 0, 0, 0)
+        val log: Logger = LoggerFactory.getLogger(BackendExecutionLlmChatApi::class.java)
     }
 }
 
 private sealed interface ChatRoute {
-    data class Ready(val provider: LlmProvider, val request: LLMRequest.Chat, val namedModel: NamedLlmModel? = null) : ChatRoute
+    data class Ready(val provider: LlmProvider, val request: LLMRequest.Chat, val namedModel: NamedLlmModel? = null) : ChatRoute {
+        /** The upstream model this route reaches, independent of the request body and the execution. */
+        val target get() = Triple(provider, namedModel?.baseUrl, request.model)
+    }
     data class Rejected(val error: LLMResponse.Chat.Error) : ChatRoute
 }
+
+/** The provider failed rather than the request: no HTTP status, 5xx, rejected credentials, timeout or rate limit. */
+private fun LLMResponse.Chat.Error.isProviderFailure(): Boolean =
+    status !in 400..499 || status in setOf(401, 402, 403, 408, 429)
 
 private class RetryFirstStreaming429(val error: LLMResponse.Chat.Error) : Exception("retry", null, false, false)
 

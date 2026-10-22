@@ -46,6 +46,8 @@ import ru.souz.backend.hooks.HookLlmBudget
 import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.hooks.LoadedHook
 import ru.souz.backend.http.BackendV1Exception
+import ru.souz.backend.llm.CredentialSource.SERVER_MANAGED
+import ru.souz.backend.llm.CredentialSource.USER_MANAGED
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.llm.quota.QuotaExceededException
 import ru.souz.backend.metrics.BackendMetrics
@@ -66,6 +68,8 @@ import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.restJsonMapper
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.TestTimeSource
 
 class BackendExecutionLlmChatApiTest {
     @Test
@@ -110,6 +114,86 @@ class BackendExecutionLlmChatApiTest {
             assertIs<LLMResponse.Chat.Error>(fixture.api.messageStream(rejected).toList().single())
             assertEquals(9, requests.size)
         }
+    }
+
+    @Test
+    fun `unary chat falls back once per model on provider failures only`() = runTest {
+        val primary = LLMModel.OpenAIGpt52.alias
+        val fallback = LLMModel.QwenMax.alias
+        val switched = listOf(primary, fallback)
+        val kept = listOf(primary)
+        for ((status, attempts) in listOf(
+            -1 to switched, 500 to switched, 401 to switched, 402 to switched, 403 to switched, 408 to switched,
+            429 to listOf(primary, primary, fallback), 400 to kept, 404 to kept, 413 to kept, 422 to kept,
+        )) {
+            val calls = mutableListOf<String>()
+            val failure = LLMResponse.Chat.Error(status, "down")
+            facadeFixture(
+                retryPolicy = BackendProviderRetryPolicy(max429Retries = 1),
+                fallbackModels = listOf(primary, fallback),
+                providerApiOverride = { StubChatApi(message = { calls += it.model; if (it.model == primary) failure else ok(it.model) }) },
+            ).use { fixture ->
+                assertEquals(if (attempts == kept) failure else ok(fallback), fixture.api.message(chat(primary)))
+                assertEquals(attempts, calls, "status $status")
+            }
+        }
+
+        val calls = mutableListOf<String>()
+        var cancel = false
+        facadeFixture(
+            fallbackModels = listOf(fallback),
+            providerApiOverride = {
+                StubChatApi(
+                    message = { calls += it.model; if (cancel) throw CancellationException("stop") else LLMResponse.Chat.Error(500, it.model) },
+                    stream = { calls += it.model; flowOf(LLMResponse.Chat.Error(500, it.model)) },
+                )
+            },
+        ).use { fixture ->
+            assertEquals(LLMResponse.Chat.Error(500, fallback), fixture.api.message(chat(primary)))
+            assertEquals(listOf(LLMResponse.Chat.Error(500, primary)), fixture.api.messageStream(chat(primary)).toList())
+            cancel = true
+            assertFailsWith<CancellationException> { fixture.api.message(chat(primary)) }
+            assertEquals(listOf(primary, fallback, primary, primary), calls)
+        }
+    }
+
+    @Test
+    fun `failure memory skips a model after three failures per credential owner until one trial`() = runTest {
+        val time = TestTimeSource()
+        val memory = ModelFailureMemory(timeSource = time)
+        var primaryDown = true
+        val primary = LLMModel.OpenAIGpt52.alias
+        val fallback = LLMModel.QwenMax.alias
+        suspend fun attempts(userId: String, source: CredentialSource): List<String> {
+            val calls = mutableListOf<String>()
+            facadeFixture(
+                userId = userId,
+                credentialResolver = CountingCredentialResolver("key", source = source),
+                fallbackModels = listOf(fallback),
+                failureMemory = memory,
+                providerApiOverride = {
+                    StubChatApi(message = { calls += it.model; if (primaryDown && it.model == primary) LLMResponse.Chat.Error(500, "down") else ok(it.model) })
+                },
+            ).use { it.api.message(chat(primary)) }
+            return calls
+        }
+        val both = listOf(primary, fallback)
+        repeat(3) { assertEquals(both, attempts("user-a", USER_MANAGED)) }
+        assertEquals(listOf(fallback), attempts("user-a", USER_MANAGED))
+        assertEquals(both, attempts("user-b", USER_MANAGED))
+        repeat(3) { assertEquals(both, attempts("user-b", SERVER_MANAGED)) }
+        assertEquals(listOf(fallback), attempts("user-c", SERVER_MANAGED))
+        time += 5.minutes
+        assertEquals(both, attempts("user-c", SERVER_MANAGED))
+        assertEquals(listOf(fallback), attempts("user-c", SERVER_MANAGED))
+        time += 5.minutes
+        primaryDown = false
+        repeat(2) { assertEquals(listOf(primary), attempts("user-c", SERVER_MANAGED)) }
+
+        // Concurrent calls after a cooldown: only the first one gets the trial.
+        repeat(3) { memory.record("model", failed = true) }
+        time += 5.minutes
+        assertEquals(listOf(true, false), List(2) { memory.shouldTry("model") })
     }
 
     @Test
@@ -498,6 +582,7 @@ private fun recordingClient(requests: MutableList<CapturedRequest>): HttpClient 
     }
 
 private fun facadeFixture(
+    userId: String = "user-a",
     namedModels: Map<String, NamedLlmModel> = emptyMap(),
     settingsProvider: SettingsProvider = LlmSettingsStub(),
     credentialResolver: CountingCredentialResolver = CountingCredentialResolver("test-key"),
@@ -509,12 +594,14 @@ private fun facadeFixture(
     client: HttpClient = HttpClient(MockEngine { respondOk() }) {
         providerHttpClientDefaults()
     },
+    fallbackModels: List<String> = emptyList(),
+    failureMemory: ModelFailureMemory = ModelFailureMemory(),
 ): FacadeFixture {
     val clients = ProviderHttpClients(standard = client, openAi = client)
     val metrics = BackendMetrics()
     val api = BackendExecutionLlmChatApi(
         namedModels = namedModels,
-        userId = "user-a",
+        userId = userId,
         settingsProvider = settingsProvider,
         credentialResolver = credentialResolver,
         retryPolicy = retryPolicy,
@@ -526,6 +613,8 @@ private fun facadeFixture(
         providerApiOverride = providerApiOverride,
         hookBudget = hookBudget,
         metrics = metrics,
+        fallbackModels = fallbackModels,
+        failureMemory = failureMemory,
     )
     return FacadeFixture(api, credentialResolver, clients, metrics)
 }
@@ -533,6 +622,7 @@ private fun facadeFixture(
 private class CountingCredentialResolver(
     private val value: String?,
     private val delayMs: Long = 0,
+    private val source: CredentialSource = CredentialSource.USER_MANAGED,
 ) : ProviderCredentialResolver {
     val calls = AtomicInteger()
 
@@ -540,7 +630,7 @@ private class CountingCredentialResolver(
         calls.incrementAndGet()
         if (delayMs > 0) delay(delayMs.milliseconds)
         return value?.let {
-            ResolvedProviderCredential(provider, it, CredentialSource.USER_MANAGED)
+            ResolvedProviderCredential(provider, it, source)
         }
     }
 }

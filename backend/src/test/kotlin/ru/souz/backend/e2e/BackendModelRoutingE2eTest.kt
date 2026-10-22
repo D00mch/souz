@@ -8,6 +8,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
@@ -23,12 +24,13 @@ import ru.souz.llms.restJsonMapper
 
 class BackendModelRoutingE2eTest {
     @Test
-    fun `default-model turns run on the routed model and chosen models are kept`() = withNamedLlmConfig(ROUTING_CONFIG) { source ->
+    fun `default-model turns run on the routed model, fall back when it fails and keep chosen models`() = withNamedLlmConfig(ROUTING_CONFIG) { source ->
         val children = CopyOnWriteArrayList<String>()
         val http = HttpClient(MockEngine { request ->
             val body = restJsonMapper.readTree(request.body.toByteArray())
             val model = body["model"].asText()
             val last = body["messages"].last()["content"].asText()
+            if (last == "Fail over" && model == "strong-model") return@MockEngine respond("overloaded", HttpStatusCode.ServiceUnavailable)
             if (last == "child task") children += model
             // A parent asked to delegate spawns a child without choosing its model.
             val delegate = last.startsWith("Delegate") && body.path("tools").any { it["function"]["name"].asText() == "SpawnSubagent" }
@@ -67,6 +69,8 @@ class BackendModelRoutingE2eTest {
             assertEquals("lite-model answer" to "route-lite", turn("Delegate a simple task"))
             verdict = { true }
             assertEquals("strong-model answer" to "route-strong", turn("Delegate a complex task"))
+            // The first configured model is the only accessible entry of the default-model order.
+            assertEquals("default-model answer" to "route-strong", turn("Fail over"))
             verdict = { error("Jev unavailable") }
             assertEquals("default-model answer" to "default-chat", turn("Anything"))
             assertEquals(listOf("lite-model", "strong-model"), children)
@@ -74,7 +78,7 @@ class BackendModelRoutingE2eTest {
             assertEquals("default-model answer" to "default-chat", turn("Explicit", ""","options":{"model":"default-chat"}"""))
             client.patch(BackendHttpRoutes.SETTINGS) { trusted(userId); jsonBody("""{"defaultModel":"route-strong"}""") }
             assertEquals("strong-model answer" to "route-strong", turn("Chosen"))
-            assertEquals(3, classified.get())
+            assertEquals(4, classified.get())
         }
     }
 
