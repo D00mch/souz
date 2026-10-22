@@ -6,7 +6,7 @@ Every classic `GraphBasedAgent` turn runs direct-tool classification, Skill inve
 
 `GetSkillByName`, generic `RunSkillCommand`, and explicit `SpawnSubagent` selection load full file-backed bundles on demand. Hosts may pass `SkillApprovalGate` to require cached or fresh approval before exposing `SKILL.md` or executing bundled commands; without a gate, these paths use the loaded bundle directly. The backend intentionally passes no gate for classpath- and sandbox-backed Skills. When enabled, validation cache identity is the user, canonical skill ID, canonical bundle hash, and policy version. A changed bundle gets a different cache key. Changing validation rules requires a new policy version.
 
-Hosts supply core Skill tools through `AgentCoreTools`, outside `AgentToolCatalog`; see the [skills graph](skills-oriented-graph.md) for exposure rules. Its optional spawn factory binds the parent's settings once per execution. Enabled compiled tools take precedence over stored bundles with the same ID; disabled tools do not hide a stored bundle. Selected child bundles are approved before prompt preparation and remain scoped to that child invocation.
+Hosts supply core Skill tools through `AgentCoreTools`, outside `AgentToolCatalog`; see the [skills graph](skills-oriented-graph.md) for exposure rules. Its optional spawn factory binds the parent's settings when the execution starts and again when [model routing](execution-lifecycle.md#model-routing) chooses the turn's model. Enabled compiled tools take precedence over stored bundles with the same ID; disabled tools do not hide a stored bundle. Selected child bundles are approved before prompt preparation and remain scoped to that child invocation.
 
 ## Why this is fragile
 

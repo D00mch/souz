@@ -10,6 +10,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
@@ -27,7 +28,11 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.runtime.ActiveRunInputController
 import ru.souz.agent.state.AgentContext
+import ru.souz.agent.spi.ModelRouting
+import ru.souz.agent.spi.RoutedModel
+import ru.souz.agent.spi.TaskComplexityClassifier
 import ru.souz.agent.state.AgentSettings
+import ru.souz.testTool
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMException
 import ru.souz.llms.LLMMessageRole
@@ -249,6 +254,63 @@ class NodesLLMTest {
         assertTrue(calls.single().isSummarization)
     }
 
+    @Test
+    fun `routing holds the simple stream until the classifier decides and keeps the chosen model`() = runTest {
+        val cases = listOf<Pair<() -> Boolean, String>>({ false } to "simple", { true } to "complex", { error("Jev down") } to "test-model")
+        for ((verdict, chosen) in cases) {
+            val events = mutableListOf<AgentRuntimeEvent>()
+            val requests = mutableListOf<LLMRequest.Chat>()
+            val simpleStreamed = CompletableDeferred<Unit>()
+            val api = mockk<LLMChatAPI> {
+                coEvery { messageStream(any()) } answers {
+                    val request = firstArg<LLMRequest.Chat>().also { requests += it }
+                    flow {
+                        emit(block(0, "${request.model} answer"))
+                        if (request.model == "simple") simpleStreamed.complete(Unit)
+                    }
+                }
+            }
+            val classifier = TaskComplexityClassifier { request ->
+                assertEquals(listOf("system", "Prompt"), request.messages.map { it.content })
+                simpleStreamed.await()
+                assertEquals(emptyList(), events)
+                verdict()
+            }
+            val nodes = NodesLLM(api, mockk { every { useStreaming } returns true }, conversationInstructions = { "Be brief." },
+                complexityClassifier = classifier, routedTools = { listOf(testTool(it.model)) })
+            val context = context(listOf(SYSTEM, INJECTED, LLMRequest.Message(LLMMessageRole.user, "Prompt")), recordingSink(events))
+            val result = nodes.chat().execute(context.copy(settings = context.settings.copy(routing = ROUTING)), runtime())
+
+            assertEquals("$chosen answer", (result.input as LLMResponse.Chat.Ok).choices.single().message.content)
+            assertEquals<List<AgentRuntimeEvent>>(listOf(AgentRuntimeEvent.LlmMessageDelta("$chosen answer")), events)
+            assertEquals(listOf("simple", chosen).distinct(), requests.map { it.model })
+            // Each routed call is prepared like any other, with the tools rebound to its model.
+            assertTrue(requests.all { it.messages.first().content == "system\n\nBe brief." && it.maxTokens == CHAT_MAX_OUTPUT_TOKENS })
+            assertEquals(requests.map { listOf(it.model) }, requests.map { request -> request.functions.map { it.name } })
+            assertEquals(chosen, result.settings.model)
+            assertEquals(null, result.settings.routing)
+        }
+    }
+
+    @Test
+    fun `routed compaction preserves the active exchange`() = runTest {
+        for ((complex, chosen) in listOf(false to "simple", true to "complex")) {
+            val calls = mutableListOf<LLMRequest.Chat>()
+            val api = mockk<LLMChatAPI> {
+                coEvery { message(capture(calls)) } returnsMany listOf(block(0, "short summary"), block(0, "answer"))
+            }
+            val nodes = NodesLLM(api, mockk { every { useStreaming } returns false }, complexityClassifier = { complex })
+            val completed = exchange("old ".repeat(18000))
+            val ctx = context(completed + activeTurn("result ".repeat(1000)), activeExchangeStartIndex = 2)
+            val result = nodes.chat().execute(ctx.copy(settings = ctx.settings.copy(routing = ROUTING)), runtime())
+
+            assertEquals(listOf(chosen to true, chosen to false), calls.map { it.model to it.isSummarization })
+            assertEquals(completed, calls.first().messages.dropLast(1))
+            assertEquals(ctx.history.drop(2), calls.last().messages.drop(result.activeExchangeStartIndex))
+            assertEquals(1, result.activeExchangeStartIndex)
+        }
+    }
+
     private fun exchange(prompt: String) = listOf(
         LLMRequest.Message(LLMMessageRole.user, prompt),
         LLMRequest.Message(LLMMessageRole.assistant, "completed answer"),
@@ -259,6 +321,18 @@ class NodesLLMTest {
         LLMRequest.Message(LLMMessageRole.assistant, "", functionCall = LLMRequest.FunctionCall("work", "{}"), functionsStateId = "call"),
         LLMRequest.Message(LLMMessageRole.function, toolOutput, name = "work", functionsStateId = "call"),
     )
+
+    private fun runtime() = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10)
+
+    private companion object {
+        val ROUTING = ModelRouting(RoutedModel("simple", LlmProvider.OPENAI), RoutedModel("complex", LlmProvider.ANTHROPIC))
+        val SYSTEM = LLMRequest.Message(LLMMessageRole.system, "system")
+        val INJECTED = LLMRequest.Message(
+            LLMMessageRole.user,
+            "<context>\nBackground information. Use ONLY if strictly relevant to the user query. If irrelevant (e.g. chitchat), " +
+                "IGNORE completely. Do NOT reference this data in output.\n---\n- [Default browser]: Safari\n</context>",
+        )
+    }
 
     private fun recordingSink(events: MutableList<AgentRuntimeEvent>) = object : AgentRuntimeEventSink {
         override suspend fun emit(event: AgentRuntimeEvent) { events += event }

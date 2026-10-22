@@ -1,5 +1,6 @@
 package ru.souz.backend.e2e
 
+import ru.souz.agent.spi.TaskComplexityClassifier
 import ru.souz.agent.skills.SkillClassifier
 
 import ru.souz.backend.execution.service.AgentExecutionLauncher
@@ -150,6 +151,7 @@ internal fun backendE2eTest(
     llmLimits: BackendLlmLimits = BackendLlmLimits(),
     sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
     skillOAuth: Boolean = false,
+    complexityClassifier: TaskComplexityClassifier? = null,
     block: suspend BackendE2eScope.() -> Unit,
 ) = testApplication {
     val backend = BackendE2eBackend(
@@ -170,6 +172,7 @@ internal fun backendE2eTest(
         scheduledTasks = scheduledTasks,
         llmLimits = llmLimits,
         sandboxFactory = sandboxFactory,
+        complexityClassifier = complexityClassifier,
     )
     application {
         backendApplication(backend.dependencies)
@@ -357,6 +360,7 @@ internal class BackendE2eBackend(
     private val scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     private val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     private val sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
+    private val complexityClassifier: TaskComplexityClassifier? = null,
 ) : AutoCloseable {
     private val appConfig: BackendAppConfig = postgresAppConfig(
         schema = schema,
@@ -408,6 +412,9 @@ internal class BackendE2eBackend(
         }
         if (turnRunnerOverride != null) {
             bindSingleton<BackendConversationTurnRunner>(overrides = true) { turnRunnerOverride }
+        }
+        if (complexityClassifier != null) {
+            bindSingleton<TaskComplexityClassifier>(overrides = true) { complexityClassifier }
         }
     }
 

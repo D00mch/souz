@@ -1,5 +1,6 @@
 package ru.souz.backend.agent.runtime.conversation
 
+import ru.souz.agent.spi.RoutedModel
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.llms.LLMResponse
 
@@ -8,4 +9,6 @@ internal data class BackendConversationExecution(
     val output: String,
     val usage: LLMResponse.Usage,
     val session: AgentConversationSession,
+    /** The routing target the turn ran on, or null when it was not routed. */
+    val routedModel: RoutedModel? = null,
 )

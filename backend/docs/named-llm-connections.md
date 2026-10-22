@@ -13,7 +13,11 @@ Set `SOUZ_LLM_CONFIG_FILE` to a JSON file readable by the backend, and supply th
     "tv-agent": {"connection": "router", "modelId": "provider/model"}
   },
   "subagentModels": ["tv-agent"],
-  "summarization": {"model": "tv-agent"}
+  "summarization": {"model": "tv-agent"},
+  "routing": {
+    "simple": {"model": "test-chat"},
+    "complex": {"model": "tv-agent"}
+  }
 }
 ```
 
@@ -32,5 +36,7 @@ Prepared conversation and summary input must fit 80% of `CONTEXT_SIZE`, includin
 Names are case-sensitive, nonblank, trimmed and must not collide with built-in selectors, legacy subagent IDs or the trimmed `OPENAI_MODEL` value. These collisions reject startup; shared upstream `modelId` values remain valid. Invalid URLs (including ports outside 1–65535), unknown fields, duplicate JSON keys, missing secrets and unresolved references reject startup. Only environment variable names belong in the JSON file.
 
 Backend settings and execution records carry public model names as strings; the shared agent carries the same name. The backend resolves it to the exact upstream model ID immediately before a chat or streaming call, and caches adapters by provider and named model. Different connections can serve identical IDs without sharing credentials. Named connections always use their server key, independently of a user's legacy OpenAI key. Embeddings retain their existing provider configuration.
+
+`routing` is optional and enables complexity-aware execution routing; it requires `JEV_TOKEN`, otherwise startup fails. Each target names a configured or built-in model other than `openai-compatible-custom`. Both targets must support `CONTEXT_SIZE`: a 32k/128k pair needs a common value such as `32000`. A new turn is routed only when it runs on the server default model: no model in the request and no different `defaultModel` in the user's settings, and both targets selectable for the user. Jev decides whether the turn is simple or complex; the agent's sequence is described in [model routing](../../agent/docs/execution-lifecycle.md#model-routing). The chosen model replaces the execution's model when the turn commits, so an option continuation resumes on it. `execution.started` still reports the model the turn started with.
 
 Verify with `./gradlew :backend:test`. Existing configuration, request-routing and backend E2E tests cover malformed configuration, identical upstream IDs, independent keys/endpoints, streaming, user selections and child calls.

@@ -136,6 +136,23 @@ class JevClassifierTest {
     }
 
     @Test
+    fun `complexity is one choice over the last two messages`() = runTest {
+        var complex = 0.0
+        val engine = MockEngine { httpRequest ->
+            val payload = restJsonMapper.readTree(httpRequest.body.toByteArray())
+            assertEquals(jevState(request.messages, historyLimit = 2), payload["state"].asText())
+            val question = payload["questions"]["choice"]
+            assertEquals("choice", question["type"].asText())
+            assertEquals(listOf("simple", "complex"), question["criteria"].fieldNames().asSequence().toList())
+            respond("""{"answers":{"choice":{"type":"choice","probabilities":{"simple":${1 - complex},"complex":$complex}}}}""")
+        }
+        HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
+            val classifier = JevClassifier(JevClient(http, "test-token"))
+            assertEquals(listOf(false, true, true), listOf(0.49, 0.5, 0.9).map { complex = it; classifier.isComplex(request) })
+        }
+    }
+
+    @Test
     fun `missing malformed and failed responses reject classification`() = runTest {
         var body = ""
         var status = HttpStatusCode.OK
@@ -150,6 +167,12 @@ class JevClassifierTest {
             for (response in invalid) {
                 body = response
                 assertFailsWith<IllegalStateException>(response) { client.evaluate(state, questions) }
+            }
+            // Probability values share the Noul validation above.
+            val invalidChoice = listOf("""{"type":"noul","probabilities":{"A":0.5,"B":0.5}}""", """{"type":"choice","probabilities":{"A":1.0}}""")
+            for (response in invalidChoice) {
+                body = """{"answers":{"choice":$response}}"""
+                assertFailsWith<IllegalStateException>(response) { client.choose(state, "Which one?", mapOf("A" to "A", "B" to "B")) }
             }
             status = HttpStatusCode.Unauthorized
             body = "test-token and private message"
