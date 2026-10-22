@@ -48,7 +48,9 @@ class AttachmentStorage(
 
     suspend fun cleanup(): Int {
         var removed = 0
-        for (file in repository.expire(clock.instant())) {
+        // One row per claim, so each lease covers a single S3 deletion.
+        repeat(ATTACHMENT_CLEANUP_BATCH_SIZE) {
+            val file = repository.claim(clock.instant()) ?: return removed
             try {
                 objects.delete(file)
                 repository.remove(file)
