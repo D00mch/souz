@@ -104,7 +104,7 @@ class AttachmentStorageTest {
     }
 
     @Test
-    fun `failed completion waits for pending timeout and retries failed metadata deletion`() = attachmentTest {
+    fun `failed completion waits for pending timeout and failed metadata deletion retries and ends passes`() = attachmentTest {
         execute("""create function reject_attachment() returns trigger language plpgsql as 'begin raise exception ''test failure''; end'""")
         execute("""create constraint trigger reject_ready after update on stored_attachments deferrable initially deferred for each row when (new.state = 'ready') execute function reject_attachment()""")
         assertFailsWith<SQLException> { save("alice", "failed", "a.txt", "persisted") }
@@ -117,22 +117,32 @@ class AttachmentStorageTest {
         // Completion must fail at the deadline even before a worker has claimed the row.
         val pending = repository.reserve("alice", "stale", "a.txt", "text/plain", 0, "", clock.now.minus(ATTACHMENT_PENDING_LIFETIME))
         assertAttachmentError("attachment_expired") { repository.complete(pending, clock.now) }
-        val uploaded = repository.expire(clock.now).single { it.id != pending.id }
+        val uploaded = List(2) { repository.claim(clock.now)!! }.single { it.id != pending.id }
         assertContentEquals("persisted".toByteArray(), objects.read(uploaded))
         execute("""create constraint trigger reject_delete after delete on stored_attachments deferrable initially deferred for each row execute function reject_attachment()""")
+        clock.now = clock.now.plus(ATTACHMENT_CLEANUP_LEASE)
         assertEquals(0, storage.cleanup())
         assertMissingObject { objects.read(uploaded) }
         assertEquals("deleting", repository.get("alice", pending.id)?.state)
         assertAttachmentError("attachment_expired") { save("alice", "failed", "a.txt", "persisted") }
         execute("drop trigger reject_delete on stored_attachments")
+        clock.now = clock.now.plus(ATTACHMENT_CLEANUP_LEASE)
         assertEquals(2, storage.cleanup())
         assertNull(repository.get("alice", pending.id))
         assertAttachmentError("attachment_expired") { repository.complete(pending, clock.now) }
         assertEquals("persisted", storage.read("alice", save("alice", "failed", "a.txt", "persisted").id).decodeToString())
+        // A success resets the failure count; three consecutive failures end the pass before the last due row.
+        execute("""create constraint trigger reject_failing after delete on stored_attachments deferrable initially deferred for each row when (old.source_key like 'fail-%') execute function reject_attachment()""")
+        val queue = listOf("fail-0", "ok-0", "fail-1", "fail-2", "fail-3", "ok-1").mapIndexed { i, key ->
+            repository.reserve("alice", key, "a.txt", "text/plain", 0, "", clock.now.plusSeconds(i.toLong()))
+        }
+        clock.now = clock.now.plus(ATTACHMENT_PENDING_LIFETIME).plusSeconds(queue.size.toLong())
+        assertEquals(1, storage.cleanup())
+        assertEquals(listOf("deleting", null, "deleting", "deleting", "deleting", "pending"), queue.map { repository.get("alice", it.id)?.state })
     }
 
     @Test
-    fun `missing bucket leaves a pending upload and object deletion failures are retryable with safe logs`() = attachmentTest {
+    fun `missing bucket leaves a pending upload and failed object deletions retry after the lease with safe logs`() = attachmentTest {
         val missing = AttachmentStorageConfig(config.endpoint, "missing-${UUID.randomUUID()}", "attachment-test", "attachment-test-secret")
         val logger = LoggerFactory.getLogger(AttachmentStorage::class.java) as Logger
         val logs = ListAppender<ILoggingEvent>().apply { start() }
@@ -151,6 +161,8 @@ class AttachmentStorageTest {
             for (secret in listOf(missing.endpoint, missing.bucket, missing.accessKey, missing.secretKey)) {
                 assertFalse(failure.formattedMessage.contains(secret))
             }
+            assertEquals(0, storage.cleanup()) // Another worker skips the leased row.
+            clock.now = clock.now.plus(ATTACHMENT_CLEANUP_LEASE)
             assertEquals(1, storage.cleanup())
             assertEquals(0, storage.cleanup())
         } finally {
@@ -160,13 +172,15 @@ class AttachmentStorageTest {
     }
 
     @Test
-    fun `one bounded queue handles ready pending and retry deadlines`() = attachmentTest {
+    fun `one queue handles ready pending and expired lease deadlines and ignores stale claims`() = attachmentTest {
         val expected = mutableSetOf<UUID>()
         val old = clock.now.minus(Duration.ofDays(31))
         repeat(3) { i ->
             expected += repository.reserve("alice", "retry-$i", "a", "text/plain", 0, "", old).id
         }
-        assertEquals(expected, repository.expire(clock.now).map { it.id }.toSet())
+        val stale = List(3) { repository.claim(clock.now)!! }
+        assertEquals(expected, stale.map { it.id }.toSet())
+        clock.now = clock.now.plus(ATTACHMENT_CLEANUP_LEASE)
         repeat(3) { i ->
             expected += repository.complete(repository.reserve("alice", "ready-$i", "a", "text/plain", 0, "", old), old).id
             expected += repository.reserve("alice", "pending-$i", "a", "text/plain", 0, "", old).id
@@ -174,17 +188,10 @@ class AttachmentStorageTest {
         val fresh = repository.reserve("alice", "fresh", "a", "text/plain", 0, "", clock.now)
         repository.complete(fresh, clock.now)
         repository.reserve("alice", "pending", "a", "text/plain", 0, "", clock.now)
-        for (size in listOf(4, 4, 1)) {
-            val batch = repository.expire(clock.now, 4)
-            assertEquals(size, batch.size)
-            for (file in batch) {
-                assertEquals("deleting", file.state)
-                assertTrue(expected.remove(file.id))
-                repository.remove(file)
-            }
-        }
-        assertTrue(expected.isEmpty())
-        assertEquals(0, storage.cleanup())
+        assertEquals(expected, List(9) { repository.claim(clock.now)!!.id }.toSet())
+        assertNull(repository.claim(clock.now))
+        stale.forEach { repository.remove(it) }
+        assertEquals(List(3) { "deleting" }, stale.map { repository.get("alice", it.id)?.state })
     }
 
     @Test

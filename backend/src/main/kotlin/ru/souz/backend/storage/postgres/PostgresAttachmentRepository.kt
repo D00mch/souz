@@ -4,7 +4,7 @@ import java.sql.ResultSet
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
-import ru.souz.backend.attachments.ATTACHMENT_CLEANUP_BATCH_SIZE
+import ru.souz.backend.attachments.ATTACHMENT_CLEANUP_LEASE
 import ru.souz.backend.attachments.ATTACHMENT_PENDING_LIFETIME
 import ru.souz.backend.attachments.ATTACHMENT_RETENTION
 import ru.souz.backend.attachments.AttachmentException
@@ -78,25 +78,28 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
         }
     }
 
-    /** Commit the access revocation before touching S3; failed deletions remain eligible. */
-    suspend fun expire(now: Instant, limit: Int = ATTACHMENT_CLEANUP_BATCH_SIZE): List<StoredAttachment> = dataSource.write { connection ->
+    /**
+     * Leases one due row and commits its access revocation before S3 deletion. Each claim moves the deadline
+     * forward, so other workers retry the row only after the lease, and [remove] accepts only the latest claim.
+     */
+    suspend fun claim(now: Instant): StoredAttachment? = dataSource.write { connection ->
         connection.prepareStatement("""
             update stored_attachments f set state = 'deleting', cleanup_due_at = ?
             from (
                 select id from stored_attachments where cleanup_due_at <= ?
-                order by cleanup_due_at, id limit ? for update skip locked
+                order by cleanup_due_at, id limit 1 for update skip locked
             ) due where f.id = due.id returning f.*
         """.trimIndent()).use {
-            it.setInstant(1, now)
+            it.setInstant(1, now.plus(ATTACHMENT_CLEANUP_LEASE))
             it.setInstant(2, now)
-            it.setInt(3, limit)
-            it.executeQuery().use { rows -> buildList { while (rows.next()) add(rows.attachment()) } }
+            it.executeQuery().use { rows -> if (rows.next()) rows.attachment() else null }
         }
     }
 
     suspend fun remove(file: StoredAttachment): Unit = dataSource.write { connection ->
-        connection.prepareStatement("delete from stored_attachments where id = ? and state = 'deleting'").use {
+        connection.prepareStatement("delete from stored_attachments where id = ? and state = 'deleting' and cleanup_due_at = ?").use {
             it.setObject(1, file.id)
+            it.setInstant(2, file.cleanupDueAt)
             it.executeUpdate()
         }
     }
@@ -106,5 +109,6 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
         name = getString("name"), mimeType = getString("mime_type"), sizeBytes = getLong("size_bytes"),
         sha256 = getString("sha256"), state = getString("state"), createdAt = instant("created_at"),
         storedAt = getTimestamp("stored_at")?.toInstant(), expiresAt = getTimestamp("expires_at")?.toInstant(),
+        cleanupDueAt = instant("cleanup_due_at"),
     )
 }
