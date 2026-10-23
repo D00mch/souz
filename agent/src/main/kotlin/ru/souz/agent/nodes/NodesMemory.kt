@@ -41,7 +41,7 @@ internal class NodesMemory(
 
     /** Removes previous memory augmentation and optionally retrieves memory for the current input. */
     fun recall(name: String = "Memory recall"): Node<String, String> = Node(name) { ctx ->
-        val memoryBlock = if (automaticMemoryRecall) retrieveMemoryBlock(ctx) else null
+        val memoryBlock = if (automaticMemoryRecall && ctx.recallMemory) retrieveMemoryBlock(ctx) else null
         var activeExchangeStartIndex = ctx.activeExchangeStartIndex
         val history = ctx.history
             .filterIndexed { index, message ->

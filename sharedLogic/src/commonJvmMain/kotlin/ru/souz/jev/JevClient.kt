@@ -23,9 +23,8 @@ import ru.souz.llms.restJsonMapper
 import kotlin.time.TimeSource
 
 private const val JEV_TIMEOUT = 2_000L
-private const val CHOICE_QUESTION = "choice"
 
-/** Reusable Noul and choice evaluation; the caller owns the supplied HTTP client. */
+/** Reusable Noul evaluation; the caller owns the supplied HTTP client. */
 class JevClient(
     private val client: HttpClient,
     private val token: String = System.getenv("JEV_TOKEN").orEmpty().trim(),
@@ -53,21 +52,6 @@ class JevClient(
             }
             answer.path("noul").asDouble()
         }
-    }
-
-    /** Asks one choice question and returns the probability of every option by its key. */
-    suspend fun choose(
-        state: JsonNode,
-        instructions: String,
-        options: Map<String, String>,
-    ): Map<String, Double> {
-        val answer = request(state, mapOf(CHOICE_QUESTION to JevQuestion(instructions, "choice", options)))
-            .path(CHOICE_QUESTION)
-        val probabilities = answer.path("probabilities")
-        check(answer.path("type").asText() == "choice" && options.keys.all { probabilities.path(it).isProbability() }) {
-            "Jev response contains a missing or invalid choice answer"
-        }
-        return options.mapValues { (option, _) -> probabilities.path(option).asDouble() }
     }
 
     private suspend fun request(state: JsonNode, questions: Map<String, JevQuestion>): JsonNode {

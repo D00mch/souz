@@ -20,6 +20,8 @@ Partial route contexts and in-memory repositories can pass while the production 
 - Keep deterministic per-binding poll helpers in the test harness; production polling uses the shared scheduler.
 - Do not add general-purpose in-memory repository implementations.
 
+Turn classification is an external boundary: E2E fixtures supply `TurnClassifier` decisions independently of provider and Hindsight HTTP responses. Ordinary fixtures skip initial waiting; memory fixtures retain recall. Routing and initial-wait workflows cover conservative fallback and live-only delivery.
+
 ## Verification
 
 Run Docker-backed backend tests with `./gradlew :backend:test`. Focus the production-wired suite with `./gradlew :backend:test --tests 'ru.souz.backend.e2e.*'`.

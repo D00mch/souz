@@ -224,6 +224,7 @@ private class ParentHarness(
         )
         val nodesLLM = mockk<NodesLLM>()
         every { nodesLLM.sideEffects } returns emptyFlow()
+        every { nodesLLM.prepareTurn() } returns Node("Turn classification") { it }
         every { nodesLLM.chat(any(), any()) } answers {
             Node<String, LLMResponse.Chat>(firstArg()) { ctx ->
                 requests += ctx

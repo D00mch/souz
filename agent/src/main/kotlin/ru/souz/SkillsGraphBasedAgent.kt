@@ -31,7 +31,7 @@ import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMResponse
 
 /**
- * Agent graph whose model always sees only the core skill-discovery, Knowledge, and execution tools.
+ * Simple routed replies have no tools; other turns expose only core Skill and Knowledge tools.
  * Other capabilities are discovered and invoked through skills rather than injected directly.
  */
 class SkillsGraphBasedAgent internal constructor(
@@ -54,6 +54,7 @@ class SkillsGraphBasedAgent internal constructor(
 
     private fun graph(controller: ActiveRunInputController): Graph<String, String> = buildGraph(name = "Skills Agent") {
         val inputToHistory = NodesPlain.inputToHistory()
+        val prepareTurn = nodesLLM.prepareTurn()
         val memoryRecall = nodesMemory.recall()
         val skillInventory = nodesSkillInventory.node(
             skillTools = emptyList(),
@@ -72,8 +73,9 @@ class SkillsGraphBasedAgent internal constructor(
         val chatErrorToFinish = nodesErrorHandling.chatErrorToFinish()
 
         nodeInput.edgeTo(inputToHistory)
-        inputToHistory.edgeTo(memoryRecall)
-        memoryRecall.edgeTo(skillInventory)
+        inputToHistory.edgeTo(prepareTurn)
+        prepareTurn.edgeTo(memoryRecall)
+        memoryRecall.edgeTo { ctx -> if (ctx.simpleReply) contextEnrich else skillInventory }
         skillInventory.edgeTo(contextEnrich)
         contextEnrich.edgeTo(chat)
         chat.edgeTo { ctx ->

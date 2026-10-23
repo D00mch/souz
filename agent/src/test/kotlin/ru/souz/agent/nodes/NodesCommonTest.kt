@@ -54,6 +54,9 @@ class NodesCommonTest {
         assertTrue(injectedContext.content.contains("Календарь по умолчанию: Work"))
         assertTrue(injectedContext.content.contains("Текущие дата и время:"))
         assertTrue(injectedContext.content.contains("- [Default browser]: Safari"))
+        val simple = nodesCommon.nodeAppendAdditionalData().execute(result.copy(simpleReply = true), graphRuntime())
+        assertEquals(context.history, simple.history)
+        assertEquals(context.activeExchangeStartIndex, simple.activeExchangeStartIndex)
         coVerify(exactly = 1) { desktopInfoRepository.search(any(), any()) }
 
         var nextContext = result

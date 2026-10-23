@@ -4,18 +4,24 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
+import io.ktor.client.plugins.websocket.webSocketSession
+import io.ktor.websocket.close
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import io.ktor.websocket.Frame
+import kotlin.test.assertTrue
+import ru.souz.backend.config.BackendFeatureFlags
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import ru.souz.agent.spi.TaskComplexityClassifier
+import ru.souz.agent.spi.TurnClassifier
+import ru.souz.agent.spi.TurnClassification
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.llm.withNamedLlmConfig
 import ru.souz.llms.http.ProviderHttpClients
@@ -50,7 +56,7 @@ class BackendModelRoutingE2eTest {
         backendE2eTest(
             "e2e_model_routing", settingsSource = source, localModels = emptyList(),
             providerClients = ProviderHttpClients(standard = http, openAi = http),
-            complexityClassifier = TaskComplexityClassifier { classified.incrementAndGet(); verdict() },
+            turnClassifier = TurnClassifier { classified.incrementAndGet(); TurnClassification(verdict(), false) },
         ) {
             val userId = UUID.randomUUID().toString()
             client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) { trusted(userId); jsonBody("{}") }
@@ -69,16 +75,63 @@ class BackendModelRoutingE2eTest {
             assertEquals("lite-model answer" to "route-lite", turn("Delegate a simple task"))
             verdict = { true }
             assertEquals("strong-model answer" to "route-strong", turn("Delegate a complex task"))
-            // The first configured model is the only accessible entry of the default-model order.
-            assertEquals("default-model answer" to "route-strong", turn("Fail over"))
             verdict = { error("Jev unavailable") }
-            assertEquals("default-model answer" to "default-chat", turn("Anything"))
-            assertEquals(listOf("lite-model", "strong-model"), children)
+            assertEquals("strong-model answer" to "route-strong", turn("Anything"))
+            assertEquals(listOf("strong-model"), children)
 
             assertEquals("default-model answer" to "default-chat", turn("Explicit", ""","options":{"model":"default-chat"}"""))
             client.patch(BackendHttpRoutes.SETTINGS) { trusted(userId); jsonBody("""{"defaultModel":"route-strong"}""") }
             assertEquals("strong-model answer" to "route-strong", turn("Chosen"))
-            assertEquals(4, classified.get())
+            assertEquals("default-model answer" to "route-strong", turn("Fail over", ""","options":{"model":"route-strong"}"""))
+            assertEquals(6, classified.get())
+        }
+    }
+
+    @Test
+    fun `initial wait is live only and independent of narration`() {
+        var decision: TurnClassification? = null
+        backendE2eTest("e2e_initial_wait", featureFlags = BackendFeatureFlags(wsEvents = true),
+            turnClassifier = TurnClassifier { decision ?: error("Jev unavailable") }) {
+            val user = UUID.randomUUID().toString()
+            val decisions = listOf(TurnClassification(false, false), TurnClassification(false, true),
+                TurnClassification(true, false), TurnClassification(true, true), null)
+            for (narrate in listOf(false, true)) for ((index, next) in decisions.withIndex()) {
+                decision = next
+                val prompt = "turn-$narrate-$index"
+                val chat = createPublicChat(user, requestId = prompt)
+                client.patch(BackendHttpRoutes.SETTINGS) { trusted(user); jsonBody("""{"narrateSteps":$narrate}""") }
+                llm.pausePromptUntilReleased(prompt)
+                try {
+                    withPublicSocket(chat) { socket ->
+                        val frame = messageFrame(chat, user, prompt, text = prompt)
+                        socket.send(Frame.Text(frame))
+                        assertEquals("accepted", readJson(socket)["status"].asText())
+                        assertEquals("thread.status", readJson(socket)["type"].asText())
+                        if (next?.expectedFast != true) {
+                            val wait = readJson(socket)
+                            assertEquals("assistant.message", wait["type"].asText())
+                            assertTrue(wait["seq"].isNull)
+                            assertTrue(wait["payload"]["content"].asText().isNotBlank())
+                        }
+                        llm.awaitPrompt(prompt)
+                        socket.send(Frame.Text(frame))
+                        assertEquals("accepted", readJson(socket)["status"].asText())
+                        assertEquals("thread.status", readJson(socket)["type"].asText())
+                        llm.releasePrompt(prompt)
+                        assertEquals("thread.completed", readJson(socket)["type"].asText())
+                    }
+                    webSocketClient().use { client ->
+                        val replay = client.webSocketSession("${BackendHttpRoutes.chatWebSocket(chat)}?clientType=backend&afterSeq=0")
+                        try {
+                            assertEquals("thread.completed", readJson(replay)["type"].asText())
+                        } finally { replay.close() }
+                    }
+                    val messages = client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(user) }.jsonBody()["items"]
+                    assertEquals(listOf(prompt, "assistant reply to $prompt"), messages.map { it["content"].asText() })
+                } finally {
+                    llm.releasePrompt(prompt)
+                }
+            }
         }
     }
 

@@ -37,7 +37,8 @@ internal class NodesCommon(
      * Modifies [AgentContext.history] when new data is added.
      */
     fun nodeAppendAdditionalData(name: String = "appendActualInformation"): Node<String, String> = Node(name) { ctx ->
-        val additionalMessage = appendActualInformation(ctx.input)
+        // Simple replies still remove stale context, but do not fetch host information.
+        val additionalMessage = if (ctx.simpleReply) null else appendActualInformation(ctx.input)
 
         val currentUserIndex = ctx.history.indexOfLast { it.role == LLMMessageRole.user }
         var activeExchangeStartIndex = ctx.activeExchangeStartIndex

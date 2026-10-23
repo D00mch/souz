@@ -56,7 +56,7 @@ import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.config.NamedLlmConfig
 import ru.souz.backend.config.SystemBackendConfigSource
 import ru.souz.backend.config.loadNamedModels
-import ru.souz.agent.spi.TaskComplexityClassifier
+import ru.souz.agent.spi.TurnClassifier
 import ru.souz.llms.runtime.JevClassifier
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.options.repository.OptionRepository
@@ -332,7 +332,7 @@ fun backendDiModule(
             HistoryMemoryWorker(instance(), instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance())
         }
     }
-    bindSingleton<TaskComplexityClassifier> { JevClassifier(instance()) }
+    bindSingleton<TurnClassifier> { TurnClassifier { request -> JevClassifier(instance()).classify(request) } }
     bindSingleton {
         BackendConversationRuntimeFactory(
             userSettingsRepository = instance(),
@@ -340,8 +340,8 @@ fun backendDiModule(
             namedModels = instance<NamedLlmConfig>().models,
             skillClassifier = instance(),
             fallbackSkillClassifier = instanceOrNull<SkillClassifier>(tag = FRIDA_FALLBACK_TAG),
-            // Routing needs Jev: a configured routing block without JEV_TOKEN fails at startup.
-            complexityClassifier = instance<NamedLlmConfig>().routing?.let { instance<TaskComplexityClassifier>() },
+            // Resolve Jev lazily: unavailable classification falls back to waiting and recall.
+            turnClassifier = instance(),
             baseSettingsProvider = instance(),
             credentialResolver = instance(),
             effectiveSettingsResolver = instance(),

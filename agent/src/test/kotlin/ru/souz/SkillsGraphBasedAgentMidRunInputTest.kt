@@ -347,6 +347,7 @@ private class Harness(
 
     init {
         every { nodesLLM.sideEffects } returns emptyFlow()
+        every { nodesLLM.prepareTurn() } returns Node("Turn classification") { it }
         every { nodesMemory.recall() } returns Node("Memory recall") { it }
         every { nodesSkillInventory.node(any(), SKILL_INVENTORY_NODE_NAME, classifySkills = true) } returns
             Node(SKILL_INVENTORY_NODE_NAME) { it }

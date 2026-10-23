@@ -22,6 +22,13 @@ Skills the last two earlier messages. A whole message that is one of a fixed set
 phrases skips both selections: it gets no direct tools and no Skill descriptions. Confirmations such as "да" or "ок"
 and fragments such as "тебе" are still classified, since they may approve an offered action or answer a question.
 
+Backend turn preparation uses one Jev request with independent `simple` and `skip_memory` Noul questions.
+A simple reply requires probability at least 0.9; skipping recall requires at least 0.8. Input contains the
+full current message and at most two previous nonempty messages truncated to 300 characters each,
+with roles and available speaker labels. Attachments force complex routing. Ordinary conversation, continuations
+and newly supplied personal facts can be answered without tools or recall; missing saved facts require
+recall. Saving new information is independent. Classification failure uses conservative preparation.
+
 | Variable | Behavior |
 | --- | --- |
 | `SOUZ_CLASSIFIER` | Unset or `llm`: existing LLM classifier with regex fallback. `jev`: Jev classifier. |
@@ -63,10 +70,7 @@ suspend fun needsCalendar(jev: JevClient, message: String): Double {
 }
 ```
 
-`JevClient.choose(state, instructions, options)` asks one choice question and returns every option's probability.
-`JevClassifier.isComplex` asks it over the last two earlier messages whether a turn needs a light or a strong model
-and routes to the complex model when "complex" scores at least 0.5; when Jev fails, the turn keeps its own model
-without asking FRIDA. Optional `criteria` describe a question's `true` and `false` sides. Callers can pass
+Optional `criteria` describe each question's `true` and `false` sides. Callers can pass
 credentials and a model to `JevClient(http, token, model)`. The client validates probabilities
 but leaves selection policy to callers and never closes the supplied transport.
 

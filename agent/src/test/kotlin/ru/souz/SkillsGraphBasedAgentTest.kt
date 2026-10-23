@@ -44,6 +44,7 @@ class SkillsGraphBasedAgentTest {
         var chatCount = 0
 
         every { nodesLLM.sideEffects } returns emptyFlow()
+        every { nodesLLM.prepareTurn() } returns passthrough("Turn classification", executed)
         every { nodesMemory.recall() } returns coreToolsPassthrough(
             name = "Memory recall",
             executed = executed,
@@ -78,6 +79,7 @@ class SkillsGraphBasedAgentTest {
         assertEquals("final", result.output)
         assertEquals(
             listOf(
+                "Turn classification",
                 "Memory recall",
                 "appendActualInformation",
                 "LLM",
@@ -90,7 +92,10 @@ class SkillsGraphBasedAgentTest {
             executed,
         )
 
+        executed.clear()
+        every { nodesLLM.prepareTurn() } returns Node("Turn classification") { it.copy(simpleReply = true) }
         skillsAgent.execute(result.context.copy(input = "Again"))
+        assertEquals(listOf("Memory recall", "appendActualInformation", "LLM", "Memory-aware finalization"), executed)
         assertEquals(PROVIDED_SYSTEM_PROMPT, result.context.systemPrompt)
     }
 
@@ -103,6 +108,7 @@ class SkillsGraphBasedAgentTest {
         val executed = mutableListOf<String>()
 
         every { nodesLLM.sideEffects } returns emptyFlow()
+        every { nodesLLM.prepareTurn() } returns Node("Turn classification") { it }
         every { nodesMemory.recall() } returns passthrough("Memory recall", executed)
         every { nodesCommon.nodeAppendAdditionalData() } returns passthrough("appendActualInformation", executed)
         every { nodesLLM.chat("LLM request", any()) } returns Node("LLM request") { ctx ->

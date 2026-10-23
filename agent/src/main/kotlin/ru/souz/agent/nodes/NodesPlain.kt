@@ -14,6 +14,7 @@ internal object NodesPlain {
         val history = ctx.history.ifEmpty { listOf(ctx.systemPrompt.toSystemPromptMessage()) } +
             LLMRequest.Message(LLMMessageRole.user, ctx.input)
         ctx.map(history = history, activeExchangeStartIndex = history.lastIndex) { it }
+            .copy(recallMemory = true, simpleReply = false)
     }
 
     fun responseToString(

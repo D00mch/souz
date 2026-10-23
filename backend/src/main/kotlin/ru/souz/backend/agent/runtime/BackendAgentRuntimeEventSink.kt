@@ -70,6 +70,9 @@ internal class BackendAgentRuntimeEventSink(
 
     override suspend fun emit(event: AgentRuntimeEvent) = emitMutex.withLock {
         when (event) {
+            AgentRuntimeEvent.InitialWait -> publishLiveEvent(
+                AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload(INITIAL_WAIT_PHRASES.random()),
+            )
             is AgentRuntimeEvent.MemoryPromptAugmented -> Unit
             is AgentRuntimeEvent.LlmMessageDelta -> onLlmMessageDelta(event)
             is AgentRuntimeEvent.AssistantMessage -> if (narrateSteps) {
@@ -348,4 +351,9 @@ private val publicErrorCodes = setOf(
     "message_rejected",
     "client_tool_timed_out",
     "internal_error",
+)
+
+private val INITIAL_WAIT_PHRASES = listOf(
+    "Минуту...", "Одну минуту...", "Секунду...", "Одну секунду...",
+    "Секундочку...", "Один момент...", "Сейчас вернусь...",
 )

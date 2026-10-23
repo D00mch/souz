@@ -135,6 +135,11 @@ class NodesMemoryTest {
             true to RecordingMemoryRuntime(),
             true to RecordingMemoryRuntime(retrievalFailure = IllegalStateException("offline")),
         ).forEach { (automaticRecall, memoryRuntime) ->
+            val skipped = NodesMemory(memoryRuntime, backgroundScope).recall()
+                .execute(context.copy(recallMemory = false), graphRuntime())
+            assertEquals(null, memoryRuntime.retrievalRequest)
+            assertEquals(history, skipped.history)
+            assertEquals(2, skipped.activeExchangeStartIndex)
             val result = NodesMemory(memoryRuntime, backgroundScope, automaticMemoryRecall = automaticRecall)
                 .recall().execute(context, graphRuntime())
 

@@ -71,6 +71,7 @@ class BackendHistoryMemoryE2eTest {
                             socket.send(Frame.Text(messageFrame(chat, owner, "search", text = question)))
                             assertEquals("accepted", readJson(socket)["status"].asText())
                             assertEquals("thread.status", readJson(socket)["type"].asText())
+                            assertEquals("assistant.message", readJson(socket)["type"].asText())
                             assertEquals("thread.completed", readJson(socket)["type"].asText())
                         }
                     } else {
@@ -108,6 +109,7 @@ class BackendHistoryMemoryE2eTest {
             val started = withPublicSocket(chat) { socket ->
                 socket.send(Frame.Text(initial))
                 repeat(2) { readJson(socket) }
+                assertEquals("assistant.message", readJson(socket)["type"].asText())
                 readJson(socket)
             }
             withPublicSocket(chat) { socket ->
@@ -186,6 +188,7 @@ class BackendHistoryMemoryE2eTest {
                         socket.send(Frame.Text(messageFrame(chat, owner, "turn-$zone", timeZone = zone)))
                         assertEquals("accepted", readJson(socket)["status"].asText())
                         assertEquals("thread.status", readJson(socket)["type"].asText())
+                        assertEquals("assistant.message", readJson(socket)["type"].asText())
                         assertEquals("thread.completed", readJson(socket)["type"].asText())
                         val turn = eventually("completed-turn timestamp") { hindsight.items.getOrNull(before) }
                         assertEquals(clock.instant().atZone(ZoneId.of(zone)).toOffsetDateTime(),
@@ -289,6 +292,7 @@ class BackendHistoryMemoryE2eTest {
                 socket.send(Frame.Text(messageFrame(chat, owner, "execute", text = "A new Souz request")))
                 assertEquals("accepted", readJson(socket)["status"].asText())
                 readJson(socket)
+                assertEquals("assistant.message", readJson(socket)["type"].asText())
                 readJson(socket)
             }
             eventually("completed-turn memory") { hindsight.items.firstOrNull { it.item["document_id"].asText().startsWith("souz-turn-") } }

@@ -136,19 +136,39 @@ class JevClassifierTest {
     }
 
     @Test
-    fun `complexity is one choice over the last two messages`() = runTest {
-        var complex = 0.0
+    fun `turn classification uses independent confidence thresholds and preserves speaker context`() = runTest {
+        var simple = 0.9
+        var skip = 0.8
+        var missingMemory = false
+        val labelled = request.copy(messages = listOf(
+            LLMRequest.Message(LLMMessageRole.user, "Меня зовут Саша", name = "speaker-a"),
+            LLMRequest.Message(LLMMessageRole.assistant, "Привет"),
+            LLMRequest.Message(LLMMessageRole.user, "Как меня зовут?", name = "speaker-b"),
+        ))
         val engine = MockEngine { httpRequest ->
             val payload = restJsonMapper.readTree(httpRequest.body.toByteArray())
-            assertEquals(jevState(request.messages, historyLimit = 2), payload["state"].asText())
-            val question = payload["questions"]["choice"]
-            assertEquals("choice", question["type"].asText())
-            assertEquals(listOf("simple", "complex"), question["criteria"].fieldNames().asSequence().toList())
-            respond("""{"answers":{"choice":{"type":"choice","probabilities":{"simple":${1 - complex},"complex":$complex}}}}""")
+            assertEquals("Previous dialogue (context only):\nuser [speaker-a]: Меня зовут Саша\n" +
+                "assistant: Привет\nCurrent request:\nuser [speaker-b]: Как меня зовут?", payload["state"].asText())
+            assertEquals(setOf("simple", "skip_memory"), payload["questions"].fieldNames().asSequence().toSet())
+            respond("""{"answers":{"simple":{"type":"noul","noul":$simple},"skip_memory":${
+                if (missingMemory) "{}" else """{"type":"noul","noul":$skip}"""}}}""")
         }
         HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
             val classifier = JevClassifier(JevClient(http, "test-token"))
-            assertEquals(listOf(false, true, true), listOf(0.49, 0.5, 0.9).map { complex = it; classifier.isComplex(request) })
+            for ((simpleProbability, skipProbability) in listOf(0.9 to 0.8, 0.89 to 0.8, 0.9 to 0.79, 0.0 to 0.0)) {
+                simple = simpleProbability; skip = skipProbability
+                val result = classifier.classify(labelled)
+                assertEquals(simple < 0.9, result.complex)
+                assertEquals(skip < 0.8, result.recallMemory)
+                assertEquals(simple >= 0.9 && skip >= 0.8, result.expectedFast)
+            }
+            simple = 1.0; skip = 1.0
+            val attachment = labelled.copy(messages = labelled.messages.dropLast(1) +
+                labelled.messages.last().copy(attachments = listOf("image.png")))
+            assertEquals(true, classifier.classify(attachment).complex)
+            missingMemory = true
+            assertFailsWith<IllegalStateException> { classifier.classify(labelled) }
+            assertEquals(6, engine.requestHistory.size)
         }
     }
 
@@ -167,12 +187,6 @@ class JevClassifierTest {
             for (response in invalid) {
                 body = response
                 assertFailsWith<IllegalStateException>(response) { client.evaluate(state, questions) }
-            }
-            // Probability values share the Noul validation above.
-            val invalidChoice = listOf("""{"type":"noul","probabilities":{"A":0.5,"B":0.5}}""", """{"type":"choice","probabilities":{"A":1.0}}""")
-            for (response in invalidChoice) {
-                body = """{"answers":{"choice":$response}}"""
-                assertFailsWith<IllegalStateException>(response) { client.choose(state, "Which one?", mapOf("A" to "A", "B" to "B")) }
             }
             status = HttpStatusCode.Unauthorized
             body = "test-token and private message"
