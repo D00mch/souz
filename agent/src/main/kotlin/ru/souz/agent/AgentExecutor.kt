@@ -56,6 +56,7 @@ class AgentExecutor internal constructor(
         val seed = context.copy(
             input = input,
             runtimeEventSink = runtimeEventSink,
+            replyAttachments = emptyList(),
         )
         return agentById(agentId).execute(seed, onActiveRunReady, onStep)
     }

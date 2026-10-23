@@ -73,7 +73,7 @@ class ToolInvokeSkill(
                     } else {
                         commandExecutor.executeComposite(resolved.bundle, resolved.bundleHash, arguments, meta, resolver.enabledTools.byName)
                     }
-                    resultMessage(functionCall.name, result)
+                    resultMessage(functionCall.name, result).copy(files = result.files, replyFiles = result.replyFiles, attachments = result.attachments.takeIf { it.isNotEmpty() })
                 }
                 is SkillResolution.Error -> errorMessage(functionCall.name, resolved.code, resolved.message)
             }

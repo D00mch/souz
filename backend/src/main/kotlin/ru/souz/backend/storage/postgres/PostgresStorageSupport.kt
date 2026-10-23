@@ -175,6 +175,8 @@ internal data class StoredConversationContext(
     val temperature: Float,
     val locale: String,
     val timeZone: String,
+    val attachmentExecutionId: String? = null,
+    val replyAttachments: List<ru.souz.llms.FileContent> = emptyList(),
 )
 
 internal data class StoredOptionAnswer(
@@ -265,6 +267,7 @@ internal fun ResultSet.toMessage(): ChatMessage =
         chatId = getObject("chat_id", java.util.UUID::class.java),
         seq = getLong("seq"),
         role = parseChatRole(getString("role")),
+        attachments = postgresStorageMapper.readValue(getString("attachments")),
         content = getString("content"),
         metadata = postgresStorageMapper.readValue<Map<String, String>>(getString("metadata")),
         createdAt = instant("created_at"),
@@ -276,6 +279,8 @@ internal fun ResultSet.toState(): AgentConversationState {
         userId = getString("user_id"),
         chatId = getObject("chat_id", java.util.UUID::class.java),
         schemaVersion = context.schemaVersion,
+        attachmentExecutionId = context.attachmentExecutionId,
+        replyAttachments = context.replyAttachments,
         history = context.history,
         temperature = context.temperature,
         locale = context.locale.toLocaleOrDefault(),
@@ -451,6 +456,8 @@ internal fun AgentConversationState.toContextJson(): String =
         StoredConversationContext(
             schemaVersion = schemaVersion,
             history = history,
+            attachmentExecutionId = attachmentExecutionId,
+            replyAttachments = replyAttachments,
             temperature = temperature,
             locale = locale.toLanguageTag(),
             timeZone = timeZone.id,

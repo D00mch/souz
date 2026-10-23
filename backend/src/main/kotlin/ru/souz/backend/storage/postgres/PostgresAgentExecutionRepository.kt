@@ -104,6 +104,7 @@ class PostgresAgentExecutionRepository(
         usage: AgentExecutionUsage,
         output: String?,
         assistantMessageId: UUID?,
+        attachments: List<ru.souz.llms.FileContent>,
         routedModel: RoutedModel?,
     ): CommittedAgentTurn? {
         require(state.userId == expected.userId && state.chatId == expected.chatId)
@@ -120,10 +121,20 @@ class PostgresAgentExecutionRepository(
             val message = output?.let { content ->
                 val writer = PostgresMessageRepository(dataSource)
                 current.assistantMessageId?.let { id ->
-                    checkNotNull(writer.updateContent(connection, current.userId, current.chatId, id, content))
+                    checkNotNull(writer.updateContent(connection, current.userId, current.chatId, id, content)).let {
+                        connection.validateAttachments(current.userId, attachments)
+                        connection.prepareStatement("update messages set attachments = ? where user_id = ? and id = ?").use { statement ->
+                            statement.setJson(1, postgresStorageMapper.writeValueAsString(attachments))
+                            statement.setString(2, current.userId)
+                            statement.setObject(3, id)
+                            statement.executeUpdate()
+                        }
+                        it.copy(attachments = attachments)
+                    }
                 } ?: writer.append(
                     connection, current.userId, current.chatId, ChatRole.ASSISTANT, content,
                     emptyMap(), requireNotNull(assistantMessageId), Instant.now(),
+                    attachments,
                 )
             }
             val savedState = if (message?.seq == state.basedOnMessageSeq + 1L) {

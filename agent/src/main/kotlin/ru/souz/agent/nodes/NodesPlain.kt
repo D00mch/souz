@@ -12,7 +12,7 @@ import ru.souz.llms.toSystemPromptMessage
 internal object NodesPlain {
     fun inputToHistory(name: String = "Input->History"): Node<String, String> = Node(name) { ctx ->
         val history = ctx.history.ifEmpty { listOf(ctx.systemPrompt.toSystemPromptMessage()) } +
-            LLMRequest.Message(LLMMessageRole.user, ctx.input)
+            LLMRequest.Message(LLMMessageRole.user, ctx.input, files = ctx.inputAttachments)
         ctx.map(history = history, activeExchangeStartIndex = history.lastIndex) { it }
     }
 
@@ -39,6 +39,7 @@ internal object NodesPlain {
     ): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
         val messages = executeFunctionCalls(ctx, executor).map { it.message }
         ctx.map(history = ctx.history + messages) { ctx.history.last().content }
+            .copy(replyAttachments = (ctx.replyAttachments + messages.flatMap { it.replyFiles }).distinctBy { it.file })
     }
 
     suspend fun executeFunctionCalls(

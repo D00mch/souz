@@ -17,6 +17,8 @@ data class AgentContext<I>(
     val systemPrompt: String,
     val toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     val runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
+    val inputAttachments: List<ru.souz.agent.MessageAttachment> = emptyList(),
+    val replyAttachments: List<ru.souz.agent.MessageAttachment> = emptyList(),
     /** Execution-local boundary; messages from here onward must survive compaction unchanged. */
     val activeExchangeStartIndex: Int = 0,
 ) {
@@ -48,6 +50,8 @@ data class AgentContext<I>(
         systemPrompt = systemPrompt,
         toolInvocationMeta = toolInvocationMeta,
         runtimeEventSink = runtimeEventSink,
+        inputAttachments = inputAttachments,
+        replyAttachments = replyAttachments,
         activeExchangeStartIndex = activeExchangeStartIndex,
     )
 }

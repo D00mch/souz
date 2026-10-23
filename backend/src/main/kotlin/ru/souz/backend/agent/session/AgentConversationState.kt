@@ -17,4 +17,6 @@ data class AgentConversationState(
     val basedOnMessageSeq: Long,
     val updatedAt: Instant,
     val rowVersion: Long,
+    val attachmentExecutionId: String? = null,
+    val replyAttachments: List<ru.souz.llms.FileContent> = emptyList(),
 )

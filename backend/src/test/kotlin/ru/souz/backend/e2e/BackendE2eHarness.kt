@@ -151,6 +151,7 @@ internal fun backendE2eTest(
     llmLimits: BackendLlmLimits = BackendLlmLimits(),
     sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
     skillOAuth: Boolean = false,
+    attachments: ru.souz.backend.attachments.AttachmentStorageConfig? = null,
     complexityClassifier: TaskComplexityClassifier? = null,
     block: suspend BackendE2eScope.() -> Unit,
 ) = testApplication {
@@ -173,6 +174,7 @@ internal fun backendE2eTest(
         llmLimits = llmLimits,
         sandboxFactory = sandboxFactory,
         complexityClassifier = complexityClassifier,
+        attachments = attachments,
     )
     application {
         backendApplication(backend.dependencies)
@@ -360,6 +362,7 @@ internal class BackendE2eBackend(
     private val scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     private val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     private val sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
+    private val attachments: ru.souz.backend.attachments.AttachmentStorageConfig? = null,
     private val complexityClassifier: TaskComplexityClassifier? = null,
 ) : AutoCloseable {
     private val appConfig: BackendAppConfig = postgresAppConfig(
@@ -375,6 +378,7 @@ internal class BackendE2eBackend(
         scheduledTasks = scheduledTasks,
         llmLimits = llmLimits,
         policyPrompt = E2E_POLICY_PROMPT,
+        attachments = attachments,
     )
     private val localChatApi = localChatApiBackedBy(llm)
     private val localAvailability = localProviderAvailability(localModels)
@@ -465,6 +469,12 @@ internal class BackendE2eBackend(
 
     val jobService: JobService get() = di.direct.instance()
 
+    val attachmentStorage: ru.souz.backend.attachments.AttachmentStorage get() = di.direct.instance()
+    val attachmentAccess: ru.souz.backend.attachments.BackendAttachmentAccess get() = di.direct.instance()
+    val messageRepository: ru.souz.backend.chat.repository.MessageRepository get() = di.direct.instance()
+    val agentStateRepository: ru.souz.backend.agent.session.AgentStateRepository get() = di.direct.instance()
+    val turnRunner: BackendConversationTurnRunner get() = di.direct.instance()
+
     suspend fun startScheduledTaskWorker() {
         di.direct.instance<PostgresJobService>().startWorker(applicationScope, di.direct.instance<ScheduledTaskRunner>()::run)
     }
@@ -511,6 +521,7 @@ internal class BackendE2eBackend(
             scheduledTasks = scheduledTasks,
             llmLimits = llmLimits,
             sandboxFactory = sandboxFactory,
+            attachments = attachments,
         )
 
     override fun close() {

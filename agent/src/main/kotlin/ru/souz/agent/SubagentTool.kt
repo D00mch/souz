@@ -62,6 +62,7 @@ class SubagentTool(
 
     override suspend fun invoke(functionCall: LLMResponse.FunctionCall, meta: ToolInvocationMeta): LLMRequest.Message {
         // Return failures as tool results so parent graph retries cannot replay child side effects.
+        var files: List<MessageAttachment> = emptyList()
         val result = try {
             val input = try {
                 restJsonMapper.convertValue(functionCall.arguments, Input::class.java)
@@ -86,7 +87,11 @@ class SubagentTool(
             )
             val result = createAgent(input.maxTurns).execute(childContext)
             currentCoroutineContext().ensureActive()
-            mapOf("result" to result.output)
+            files = result.attachments
+            buildMap<String, Any> {
+                put("result", result.output)
+                if (files.isNotEmpty()) put("files", files)
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -104,6 +109,7 @@ class SubagentTool(
             role = LLMMessageRole.function,
             content = restJsonMapper.writeValueAsString(result),
             name = functionCall.name,
+            files = files,
         )
     }
 

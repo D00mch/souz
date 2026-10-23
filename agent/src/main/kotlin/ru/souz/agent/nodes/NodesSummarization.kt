@@ -32,7 +32,8 @@ internal suspend fun LLMChatAPI.compactHistory(
         throw LLMException(LLMResponse.Chat.Error(-1, "Summarization reached its output limit."))
     }
     val summary = choice.message.content
-    val message = LLMRequest.Message(LLMMessageRole.assistant, "$SUMMARIZATION_PREFIX:\n$summary")
+    val message = LLMRequest.Message(LLMMessageRole.assistant, "$SUMMARIZATION_PREFIX:\n$summary",
+        files = previous.flatMap { it.files + it.replyFiles }.distinctBy { it.file })
     return previous.filter { it.role == LLMMessageRole.system } + message + request.messages.drop(activeExchangeStartIndex)
 }
 

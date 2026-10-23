@@ -19,9 +19,10 @@ class PostgresMessageRepository(
         metadata: Map<String, String>,
         id: UUID,
         createdAt: Instant,
+        attachments: List<ru.souz.llms.FileContent>,
     ): ChatMessage = dataSource.write { connection ->
         connection.lockChat(userId, chatId)
-        append(connection, userId, chatId, role, content, metadata, id, createdAt)
+        append(connection, userId, chatId, role, content, metadata, id, createdAt, attachments)
     }
 
     internal fun append(
@@ -33,7 +34,9 @@ class PostgresMessageRepository(
         metadata: Map<String, String>,
         id: UUID,
         createdAt: Instant,
+        attachments: List<ru.souz.llms.FileContent> = emptyList(),
     ): ChatMessage {
+        connection.validateAttachments(userId, attachments)
         val nextSeq = connection.prepareStatement(
             "select coalesce(max(seq), 0) + 1 from messages where user_id = ? and chat_id = ?"
         ).use { statement ->
@@ -46,8 +49,8 @@ class PostgresMessageRepository(
         }
         connection.prepareStatement(
             """
-            insert into messages(id, user_id, chat_id, seq, role, content, metadata, created_at)
-            values (?, ?, ?, ?, ?, ?, ?, ?)
+            insert into messages(id, user_id, chat_id, seq, role, content, metadata, created_at, attachments)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent()
         ).use { statement ->
             statement.setObject(1, id)
@@ -58,6 +61,7 @@ class PostgresMessageRepository(
             statement.setString(6, content)
             statement.setJson(7, postgresStorageMapper.writeValueAsString(metadata))
             statement.setInstant(8, createdAt)
+            statement.setJson(9, postgresStorageMapper.writeValueAsString(attachments))
             statement.executeUpdate()
         }
         return ChatMessage(
@@ -69,6 +73,7 @@ class PostgresMessageRepository(
             content = content,
             metadata = metadata,
             createdAt = createdAt,
+            attachments = attachments,
         )
     }
 

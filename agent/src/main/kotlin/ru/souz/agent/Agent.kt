@@ -26,11 +26,13 @@ data class AgentStreamChunk(
 data class ActiveRunInput(
     val history: List<LLMRequest.Message> = emptyList(),
     val input: String,
+    val attachments: List<MessageAttachment> = emptyList(),
 )
 
 data class AgentExecutionResult(
     val output: String,
     val context: AgentContext<String>,
+    val attachments: List<MessageAttachment> = emptyList(),
 )
 
 typealias GraphStepCallback =

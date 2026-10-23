@@ -70,6 +70,7 @@ class AgentExecutionService internal constructor(
         latestDeviceContextJson: String = "{}",
         userMessageMetadata: Map<String, String> = emptyMap(),
         clientToolsEnabled: Boolean = false,
+        attachments: List<ru.souz.llms.FileContent> = emptyList(),
     ): SendMessageResult {
         val prepared = prepareChatTurn(
             userId = userId,
@@ -81,6 +82,7 @@ class AgentExecutionService internal constructor(
             latestDeviceContextJson = latestDeviceContextJson,
             userMessageMetadata = userMessageMetadata,
             clientToolsEnabled = clientToolsEnabled,
+            attachments = attachments,
         )
         prepared.normalizedClientMessageId?.let { normalizedClientMessageId ->
             executionRepository.findByClientMessageId(userId, chatId, normalizedClientMessageId)
@@ -173,6 +175,7 @@ class AgentExecutionService internal constructor(
         latestDeviceContextJson: String = "{}",
         userMessageMetadata: Map<String, String> = emptyMap(),
         clientToolsEnabled: Boolean = false,
+        attachments: List<ru.souz.llms.FileContent> = emptyList(),
     ): PreparedChatTurn {
         requireOwnedChat(userId, chatId)
         return requestFactory.prepareChatTurn(
@@ -185,6 +188,7 @@ class AgentExecutionService internal constructor(
             latestDeviceContextJson = latestDeviceContextJson,
             userMessageMetadataExtras = userMessageMetadata,
             clientToolsEnabled = clientToolsEnabled,
+            attachments = attachments,
         )
     }
 
@@ -198,6 +202,7 @@ class AgentExecutionService internal constructor(
             role = ChatRole.USER,
             content = prepared.runtimeRequest.prompt,
             metadata = prepared.userMessageMetadata,
+            attachments = prepared.runtimeRequest.attachments,
         )
         chatRepository.touchUpdatedAt(userId, chatId, userMessage.createdAt)
 
@@ -231,12 +236,13 @@ class AgentExecutionService internal constructor(
         clientMessageId: String? = null,
         requestOverrides: UserSettingsOverrides = UserSettingsOverrides(),
         onProgress: suspend (String) -> Unit,
+        attachments: List<ru.souz.llms.FileContent> = emptyList(),
     ): SendMessageResult = coroutineScope {
         // Subscribe before execution can publish its first block; no replay or device commands.
         val subscription = eventService.observeLive(userId, chatId)
         var sender: Job? = null
         try {
-            val started = executeChatTurn(userId, chatId, content, clientMessageId, requestOverrides)
+            val started = executeChatTurn(userId, chatId, content, clientMessageId, requestOverrides, attachments = attachments)
             sender = launch {
                 for (event in subscription.events) {
                     if (event.executionId != started.execution.id) continue

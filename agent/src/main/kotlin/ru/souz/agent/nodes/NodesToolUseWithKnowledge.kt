@@ -44,6 +44,7 @@ internal class NodesToolUseWithKnowledge(
             }
         }
         ctx.map(history = ctx.history + fnCallMessages) { ctx.history.last().content }
+            .copy(replyAttachments = (ctx.replyAttachments + fnCallMessages.flatMap { it.replyFiles }).distinctBy { it.file })
     }
 
     private suspend fun offloadToolResult(

@@ -27,7 +27,10 @@ internal suspend fun SkillCommandExecutor.executeComposite(
     tools: Map<String, LLMToolSetup>,
 ): SandboxCommandResult {
     var location = "composite '${arguments.composite}'"
-    return try {
+    val attachments = mutableListOf<String>()
+    val files = mutableListOf<ru.souz.llms.FileContent>()
+    val replyFiles = mutableListOf<ru.souz.llms.FileContent>()
+    val result = try {
         val spec = bundle.manifest.commands[arguments.composite]
             ?: error("Command is unavailable.")
         require(arguments.inputs.keys.containsAll(spec.inputs)) { "Missing inputs: ${spec.inputs - arguments.inputs.keys}" }
@@ -58,7 +61,12 @@ internal suspend fun SkillCommandExecutor.executeComposite(
                     tool != null -> {
                         val target = tools.getValue(tool)
                         val call = LLMResponse.FunctionCall(target.fn.name, restJsonMapper.convertValue(resolve(step.arguments)))
-                        jsonOrText(target.invoke(call, meta).content)
+                        val message = target.invoke(call, meta)
+                        attachments.clear()
+                        attachments.addAll(message.attachments.orEmpty())
+                        files.addAll(message.files)
+                        replyFiles.addAll(message.replyFiles)
+                        jsonOrText(message.content)
                     }
                     step.script != null -> {
                         val result = execute(bundle, bundleHash, SkillCommandExecutor.Args(
@@ -86,6 +94,8 @@ internal suspend fun SkillCommandExecutor.executeComposite(
     } catch (error: Exception) {
         SandboxCommandResult(1, "", "$location: ${error.message}")
     }
+    return result.copy(files = files.distinctBy { it.file }, replyFiles = replyFiles.distinctBy { it.file },
+        attachments = attachments.takeIf { result.exitCode == 0 && !result.timedOut }.orEmpty())
 }
 
 private val compositeJsonReader = restJsonMapper.reader()

@@ -62,13 +62,20 @@ internal class BackendConversationRuntime(
         val result = executor.execute(
             agentId = AgentId.SKILLS_GRAPH,
             context = seedContext.copy(
+                inputAttachments = request.attachments,
                 settings = seedContext.settings.copy(reasoningEffort = request.reasoningEffort, routing = request.routing),
             ),
             input = request.prompt,
             eventSink = eventSink,
             onActiveRunReady = onRuntimeReady,
         )
+        val previousSelection = persistedSession?.takeIf {
+            request.executionId != null && it.attachmentExecutionId == request.executionId
+        }?.replyAttachments.orEmpty()
+        val attachments = (previousSelection + result.attachments).distinctBy { it.file }
         val nextSession = AgentConversationSession(
+            attachmentExecutionId = request.executionId,
+            replyAttachments = attachments,
             history = result.context.history,
             temperature = result.context.settings.temperature,
             locale = request.locale,
@@ -82,6 +89,7 @@ internal class BackendConversationRuntime(
             output = result.output,
             usage = executionApi.cumulativeUsage(),
             session = nextSession,
+            attachments = attachments,
             routedModel = request.routing?.let { listOf(it.simple, it.complex) }
                 ?.firstOrNull { it.model == used.model && it.provider == used.provider },
         )
@@ -119,6 +127,7 @@ internal class BackendConversationRuntime(
                                 .flatMap { it.toAgentHistoryMessages().asSequence() }
                                 .toList(),
                             input = inputMessage.content,
+                            attachments = inputMessage.attachments,
                         )
                         observedMessageSeq = inputMessage.seq
                         input
@@ -180,7 +189,7 @@ private val ChatMessage.isClientHistory: Boolean
 private fun ChatMessage.toAgentHistoryMessages(): List<LLMRequest.Message> =
     when (val toolArguments = metadata[CLIENT_HISTORY_MESSAGE_METADATA_KEY]) {
         null -> if (metadata[CROSS_CHANNEL_MESSAGE_METADATA_KEY] == "true") {
-            listOf(LLMRequest.Message(role = LLMMessageRole.assistant, content = content))
+            listOf(LLMRequest.Message(role = LLMMessageRole.assistant, content = content, files = attachments))
         } else {
             emptyList()
         }

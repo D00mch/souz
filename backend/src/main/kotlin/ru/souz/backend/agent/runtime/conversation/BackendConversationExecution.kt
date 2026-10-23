@@ -9,6 +9,7 @@ internal data class BackendConversationExecution(
     val output: String,
     val usage: LLMResponse.Usage,
     val session: AgentConversationSession,
+    val attachments: List<ru.souz.llms.FileContent> = emptyList(),
     /** The routing target the turn ran on, or null when it was not routed. */
     val routedModel: RoutedModel? = null,
 )
