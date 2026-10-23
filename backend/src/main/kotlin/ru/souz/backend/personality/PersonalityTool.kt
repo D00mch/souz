@@ -42,7 +42,7 @@ internal class PersonalityTool(
         val args = functionCall.arguments
         val action = if ("action" in args) args["action"] else "update"
         val wish = args["request"] as? String
-        if (action !in setOf("update", "append", "reset") || args.keys.any { it !in setOf("action", "request") } ||
+        if ((action != "update" && action != "append" && action != "reset") || args.keys.any { it != "action" && it != "request" } ||
             (if (action == "reset") "request" in args else wish.isNullOrBlank() || wish.length > PersonalitySnapshot.MAX_PROMPT_LENGTH)) {
             return failure("personality_invalid_arguments")
         }

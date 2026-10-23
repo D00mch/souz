@@ -56,7 +56,7 @@ internal class HistoryMemoryWorker(
             throw cancelled
         } catch (error: Exception) {
             val permanent = error is HindsightRetainRejected ||
-                (error is HindsightHttpFailure && error.statusCode in 400..499 && error.statusCode !in listOf(408, 429))
+                (error is HindsightHttpFailure && error.statusCode in 400..499 && when (error.statusCode) { 408, 429 -> false; else -> true })
             val exhausted = if (permanent) fragment.attempts >= 12
                 else !clock.instant().isBefore(fragment.createdAt.plus(Duration.ofHours(24)))
             val updated = if (exhausted) repository.complete(fragment, failed = true) else repository.retry(fragment)

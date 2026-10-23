@@ -39,7 +39,7 @@ class BackendPersonalityE2eTest {
                 "reject" to "captain; brief", "malformed" to "captain; brief", "reset" to null)
             var revision = 1L
             for ((wish, expected) in cases) {
-                val rejected = wish in setOf("reject", "malformed")
+                val rejected = wish == "reject" || wish == "malformed"
                 turn(chat, wish)
                 if (!rejected) revision++
                 val stored = settings()

@@ -416,7 +416,7 @@ class BackendHooksE2eTest {
                     backend.createPeer(restartedLlm).use { peer ->
                         assertEquals(terminal, peer.dependencies.hookService.status(owner, interrupted).status)
                         val event = peer.dependencies.eventService.listByChat(owner, chatId)
-                            .filter { it.type.value in setOf("execution.finished", "execution.failed", "execution.cancelled") }.single()
+                            .filter { when (it.type.value) { "execution.finished", "execution.failed", "execution.cancelled" -> true; else -> false } }.single()
                         assertEquals("execution.$terminal", event.type.value)
                         if (attempt == 2) assertEquals(terminalEventId, event.id)
                         terminalEventId = event.id
