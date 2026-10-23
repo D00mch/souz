@@ -350,7 +350,7 @@ data class BackendAppConfig(
 }
 
 private fun String.isHindsightBaseUrl(): Boolean = runCatching { URI(this) }.getOrNull()?.let { uri ->
-    uri.scheme?.lowercase() in setOf("http", "https") &&
+    when (uri.scheme?.lowercase()) { "http", "https" -> true; else -> false } &&
         uri.host != null &&
         uri.port in -1..65_535 &&
         uri.rawUserInfo == null &&

@@ -38,7 +38,7 @@ internal fun BackendConfigSource.loadNamedModels(): NamedLlmConfig {
         node.fieldsOnly("baseUrl", "apiKeyEnv")
         val url = node.text("baseUrl")
         val uri = URI(url)
-        require(uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank() &&
+        require(when (uri.scheme) { "http", "https" -> true; else -> false } && !uri.host.isNullOrBlank() &&
             uri.userInfo == null && uri.query == null && uri.fragment == null &&
             (uri.port == -1 || uri.port in 1..65535)) { "Invalid baseUrl for connection $id." }
         val keyEnv = node.text("apiKeyEnv")

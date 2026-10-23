@@ -80,11 +80,7 @@ class BackendChatLifecycleE2eTest {
                         trusted(userId)
                     }.jsonBody()["items"].takeIf { items ->
                         items.count {
-                            it["type"].asText() in setOf(
-                                "execution.finished",
-                                "execution.failed",
-                                "execution.cancelled",
-                            )
+                            when (it["type"].asText()) { "execution.finished", "execution.failed", "execution.cancelled" -> true; else -> false }
                         } == index + 1
                     }
                 }

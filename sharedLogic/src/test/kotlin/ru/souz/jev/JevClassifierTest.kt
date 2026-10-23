@@ -69,7 +69,7 @@ class JevClassifierTest {
         val screen = "; understanding the current screen needs both screen capture and image analysis, " +
             "unless a path to an existing image was supplied"
         val expectedQuestions = categories.entries.associate { (category, description) ->
-            val rule = if (category in setOf(ToolCategory.DESKTOP, ToolCategory.IMAGE)) screen else ""
+            val rule = if (category == ToolCategory.DESKTOP || category == ToolCategory.IMAGE) screen else ""
             category.name to mapOf(
                 "instructions" to "Does fulfilling the latest user request require this tool category: ${category.name} ($description$rule)?",
                 "type" to "noul",

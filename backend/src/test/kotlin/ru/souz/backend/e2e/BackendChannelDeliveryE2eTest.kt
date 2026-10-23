@@ -116,11 +116,7 @@ class BackendChannelDeliveryE2eTest {
                 trusted(userId)
             }.jsonBody()["items"].takeIf { events ->
                 events.count { event ->
-                    event["type"].asText() in setOf(
-                        "execution.finished",
-                        "execution.failed",
-                        "execution.cancelled",
-                    )
+                    when (event["type"].asText()) { "execution.finished", "execution.failed", "execution.cancelled" -> true; else -> false }
                 } == count
             }
         }

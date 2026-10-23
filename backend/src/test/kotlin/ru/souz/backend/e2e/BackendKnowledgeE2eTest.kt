@@ -38,7 +38,7 @@ class BackendKnowledgeE2eTest {
                     request.functions.map { it.name } == listOf("RunSkillCommand") ->
                         toolCallReply(request, "RunSkillCommand", mapOf("skillId" to "user.ask", "arguments" to mapOf("question" to "Report progress")))
 
-                    result?.name in listOf("RunSkillCommand", "SpawnSubagent") -> {
+                    result?.name.let { it == "RunSkillCommand" || it == "SpawnSubagent" } -> {
                         val body = restJsonMapper.readTree(result!!.content)
                         if (failWrites) {
                             assertFalse(body.has("knowledgeId"))
