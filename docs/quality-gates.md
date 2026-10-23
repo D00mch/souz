@@ -9,7 +9,8 @@ the fast gate from the repository root:
 
 The fast lane is local-safe: its results remain meaningful in a dirty
 checkout. Repository and module contracts are blocking locally and in
-pull-request CI. Coroutine analysis is advisory. CI publishes the quality
+pull-request CI. Constant-membership allocation checks are blocking; coroutine,
+getter-computation, and layered-mutability analysis are advisory. CI publishes the quality
 summary and report artifacts even when a blocking check fails.
 
 ## Checks
@@ -22,11 +23,15 @@ summary and report artifacts even when a blocking check fails.
 | `cancellation-propagation` | Suspend paths do not swallow `CancellationException`, including through `runCatching`. | Catch the expected exception type or rethrow cancellation immediately. |
 | `coroutine-thread-local` | Every JVM `ThreadLocal` state declaration is reviewed explicitly. | Move the state into coroutine context, or suppress the reviewed declaration and propagate coroutine access with `asContextElement`. |
 | `coroutine-monitor-use` | `synchronized`, `@Synchronized`, and `Collections.synchronized*` use inside suspend execution is reported for review. | Prefer `Mutex` inside suspend execution or keep monitor coordination behind an explicit non-suspending JVM boundary. |
+| `temporary-collection-membership` | Constant collections are not constructed only for immediate membership in executable bodies. | Use comparisons, `when`, or a stored immutable collection, preserving equality and evaluation semantics. |
+| `repeated-getter-computation` | Known allocations and collection traversal in computed getters are reported for review. | Review the caller or evaluation strategy; caching can change timing and identity. |
+| `layered-mutability` | Stored mutable collections containing mutable records or collections are reported for ownership review. | Consider immutable entry replacement while preserving existing coordination. |
 | `ci-exact-checkout` | The expensive lane is authoritative only for a clean GitHub Actions checkout whose `HEAD` matches `GITHUB_SHA`. | Remove checkout mutations and ensure the workflow tests the recorded SHA. |
 | `duplicate-code` | Production and test duplicated-token totals match their reviewed jscpd baselines. | Remove the new duplication, or run the explicit baseline update task and review the baseline change. |
 
-Fast checks have `local-safe` authority. The three coroutine checks are
-advisory and produce warnings; the other fast checks are blocking. Duplicate
+Fast checks have `local-safe` authority. The three coroutine checks and the
+getter-computation and layered-mutability checks are advisory and produce
+warnings; the other fast checks are blocking. Duplicate
 code is blocking with `ci-exact-checkout` authority. An unexpected checker
 failure is reported as `error`, not as a pass or policy failure.
 RepoWise pull-request quality is advisory and compares the base with the
@@ -49,8 +54,8 @@ Local-link checks cover `AGENTS.md` and Markdown files directly under `docs/`.
 ## Coroutine analysis
 
 Detekt runs one type-resolved analysis task for every JVM production and test
-compilation. Non-coroutine rule sets are disabled in
-[`quality/detekt.yml`](../quality/detekt.yml). Reviewed findings live in
+compilation. Only the selected coroutine and `souz-review` rules are enabled in
+[`quality/detekt.yml`](../quality/detekt.yml). Reviewed coroutine findings live in
 module- and analysis-scoped files under `quality/detekt-baselines/`; they are
 suppressed so the gate summary shows only new findings. Refresh the reviewed
 baseline explicitly after resolving or accepting debt:
@@ -58,6 +63,9 @@ baseline explicitly after resolving or accepting debt:
 ```bash
 ./gradlew updateSouzCoroutineBaseline
 ```
+
+This task filters out code-review findings. It cannot baseline the blocking
+membership rule or hide advisory getter and mutability findings.
 
 The enabled built-in rule is `SuspendFunSwallowedCancellation`.
 
@@ -73,6 +81,63 @@ reporting `kotlin.synchronized`, `java.util.Collections.synchronized*`, or
 Unrelated APIs with the same short names are ignored. Atomics, volatile fields,
 and monitor coordination at non-suspending JVM or native boundaries are not
 prohibited.
+
+## Code-review analysis
+
+The `souz-review` rules resolve callable and type identities, including import
+aliases and inferred types. Findings are explicitly routed into the fast-gate
+summary because Detekt itself runs with `ignoreFailures=true`. Missing or
+malformed reports produce errors even for advisory checks. The summary-v1
+contract and existing coroutine check IDs remain unchanged.
+
+`TemporaryCollectionForMembership` reports standard `setOf`, `listOf`, and
+`arrayOf` calls immediately consumed by standard `in`, `!in`, or `contains`,
+including `when` conditions. Any nonempty number of literal, enum-entry, or
+`const val` arguments qualifies. Functions, getters, and callbacks are covered;
+stored collections, ranges, spreads, dynamic arguments, unrelated APIs, and
+one-time initializers outside callbacks are excluded. Diagnostics describe the
+temporary construction without asserting how frequently the code executes.
+Manual fixes must preserve candidate evaluation count, null handling, and
+collection equality semantics; stored collections suit cases where comparisons
+would change semantics or obscure a larger lookup table.
+
+`RepeatedComputationInGetter` reports known tuple/collection-factory allocations
+over stable scalar inputs and standard collection transformations or predicate
+scans over stable read-only references. Supported operations are `Pair`,
+`Triple`, `to`, the three membership factories, `map`, `mapNotNull`, `flatMap`,
+`filter`, `filterNot`, `associate`, `associateBy`, `associateWith`, `groupBy`, and
+predicate forms of `count`, `any`, `all`, `none`, `first`, and `firstOrNull`.
+Mutable inputs, arrays, explicitly mutable collection types, delegates, custom
+getters, unknown calls, and external-state reads are excluded, as are cheap forwarding
+and arithmetic. Returning a callback does not execute its body during getter
+access. Read-only references do not establish deep immutability. A finding
+does not prove frequent access or that caching is safe: caching changes
+evaluation and exception timing, identity, and work for unused properties.
+
+`LayeredMutability` examines stored mutable lists, sets, and maps, including
+constructor properties, Kotlin mutable interfaces, and supported standard JVM
+implementations such as `LinkedHashMap` and `ConcurrentHashMap`. It reports
+data-class values/elements with `var` properties and known nested mutable
+collections, including through read-only collection type arguments. Map values
+are inspected; keys, unknown types, read-only outer collections, and local
+builders are excluded. This targeted rule is used instead of
+`DataClassShouldBeImmutable`: the built-in rule flags every data-class `var`
+without connecting it to collection ownership and misses nested collections.
+
+Code-review checks have no reviewed baseline. Intentional exceptions use a
+rule-specific suppression, for example `@Suppress("LayeredMutability")`, with
+a nearby ownership explanation. Resource registries and buffers may retain
+their existing design after explicit review. A finding is not proof of a race
+or a performance improvement; it does not justify replacing a coroutine mutex
+with a concurrent map. These rules provide no automatic corrections.
+
+Repository adoption leaves no unsuppressed constant-membership findings in the
+analyzed production or test sources. Advisory getter candidates include Skill
+bundle/validation projections, response-choice scans, and the memory UI model
+lookup. Mutability candidates include staged-file state, streaming response
+assembly, graph transitions, client runtime state, quota windows, and the
+concurrent event-subscriber registry. They remain visible for ownership review;
+no advisory findings are baselined or automatically rewritten.
 
 ## Duplicate code
 

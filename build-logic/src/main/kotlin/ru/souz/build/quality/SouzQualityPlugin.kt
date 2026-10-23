@@ -57,7 +57,7 @@ class SouzQualityPlugin : Plugin<Project> {
         }
         val gate = project.tasks.register("souzGateFast") {
             group = "verification"
-            description = "Runs exact, local-safe Souz repository, module, and coroutine checks."
+            description = "Runs exact, local-safe Souz repository, module, coroutine, and code-review checks."
             finalizedBy(report)
         }
 

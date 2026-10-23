@@ -30,9 +30,7 @@ gradlePlugin {
     }
 }
 
-tasks.test {
-    useJUnitPlatform()
-}
+tasks.test { useJUnitPlatform() }
 
 tasks.named("check") {
     dependsOn(":detekt-rules:check")
