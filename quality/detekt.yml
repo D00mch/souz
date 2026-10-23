@@ -46,3 +46,12 @@ souz-coroutines:
     active: true
   ThreadLocalInCoroutineCode:
     active: true
+
+souz-review:
+  active: true
+  TemporaryCollectionForMembership:
+    active: true
+  RepeatedComputationInGetter:
+    active: true
+  LayeredMutability:
+    active: true

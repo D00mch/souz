@@ -190,7 +190,58 @@ class SouzQualityPluginFunctionalTest {
         assertEquals("error", check(report, "cancellation-propagation").path("status").asText())
         assertEquals("error", check(report, "coroutine-thread-local").path("status").asText())
         assertEquals("error", check(report, "coroutine-monitor-use").path("status").asText())
+        assertEquals("error", check(report, "temporary-collection-membership").path("status").asText())
+        assertEquals("error", check(report, "repeated-getter-computation").path("status").asText())
+        assertEquals("error", check(report, "layered-mutability").path("status").asText())
         assertTrue(Files.isRegularFile(root.resolve("build/reports/souz-quality/fast/gate-summary.md")))
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        "TemporaryCollectionForMembership, temporary-collection-membership, blocking, fail",
+        "RepeatedComputationInGetter, repeated-getter-computation, advisory, warning",
+        "LayeredMutability, layered-mutability, advisory, warning",
+    )
+    fun `review findings reach their check with the selected enforcement`(
+        rule: String,
+        checkId: String,
+        enforcement: String,
+        status: String,
+        @TempDir root: Path,
+    ) {
+        val fixture = FixtureProject(root).apply {
+            create()
+            addDetektReport(rule)
+            commit()
+        }
+        if (status == "fail") fixture.buildAndFail("souzGateFast") else fixture.build("souzGateFast")
+        val report = report(fixture)
+        val result = check(report, checkId)
+
+        assertEquals(status, report.path("status").asText())
+        assertEquals(status, result.path("status").asText())
+        assertEquals(enforcement, result.path("enforcement").asText())
+        assertEquals(1, result.path("implementationVersion").asInt())
+        assertEquals("agent/Example.kt", result.path("diagnostics").single().path("path").asText())
+        assertEquals(7, result.path("diagnostics").single().path("line").asInt())
+        assertFalse(Files.readString(fixture.reportPath()).contains(root.toAbsolutePath().toString()))
+        assertTrue(Files.readString(root.resolve("build/reports/souz-quality/fast/gate-summary.md")).contains(checkId))
+    }
+
+    @Test
+    fun `malformed analysis is an error even for advisory checks`(@TempDir root: Path) {
+        val fixture = FixtureProject(root).apply {
+            create()
+            addDetektReport()
+            write("analysis.xml", "<checkstyle>")
+            commit()
+        }
+        fixture.buildAndFail("souzGateFast")
+        val report = report(fixture)
+
+        assertEquals("error", report.path("status").asText())
+        assertEquals("error", check(report, "repeated-getter-computation").path("status").asText())
+        assertEquals("error", check(report, "layered-mutability").path("status").asText())
     }
 
     private fun report(fixture: FixtureProject): JsonNode {

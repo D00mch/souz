@@ -33,6 +33,7 @@ class RepositoryContractsTest {
 
     @Test
     fun `module policy exemption allows root-owned policy without a module index`(@TempDir repository: Path) {
+        write(repository.resolve("docs/quality-gates.md"), "# Quality gates\n")
         write(
             repository.resolve("AGENTS.md"),
             """
@@ -109,6 +110,7 @@ class RepositoryContractsTest {
     )
 
     private fun writePolicies(repository: Path, modulePolicy: String) {
+        write(repository.resolve("docs/quality-gates.md"), "# Quality gates\n")
         write(repository.resolve("AGENTS.md"), "# Policy\n\n## Module Map\n\n- `:agent` — agent module.\n")
         write(repository.resolve("agent/AGENTS.md"), modulePolicy)
     }

@@ -7,8 +7,9 @@ implemented in Gradle build logic and documented in
 
 ## Contents
 
-- `detekt.yml` and `detekt-baselines/` configure reviewed coroutine-analysis
-  findings for the fast quality gate.
+- `detekt.yml` enables coroutine and code-review analysis for the fast gate.
+  `detekt-baselines/` stores reviewed coroutine findings only; code-review
+  exceptions use explicit rule-specific suppressions.
 - `jscpd.json`, `package.json`, `package-lock.json`, and
   `duplication-baseline.json` support the duplicate-code ratchet.
 - `coverage-baseline.json` stores reviewed Kover coverage comparison values.

@@ -32,6 +32,22 @@ class DetektBaselinesTest {
         assertTrue(DetektBaselines.renderByAnalysis(root.toFile(), setOf(empty)).isEmpty())
     }
 
+    @Test
+    fun `coroutine baseline maintenance cannot suppress code-review findings`(@TempDir root: Path) {
+        val coroutine = "MonitorInsideSuspendContext:Runtime.kt:monitor"
+        val mixed = partialBaseline(root, "agent", coroutine,
+            "TemporaryCollectionForMembership:Runtime.kt:membership",
+            "RepeatedComputationInGetter:Runtime.kt:getter",
+            "LayeredMutability:Runtime.kt:entries")
+        val reviewOnly = partialBaseline(root, "backend", "LayeredMutability:Runtime.kt:registry")
+
+        val rendered = DetektBaselines.renderByAnalysis(root.toFile(), setOf(mixed, reviewOnly))
+
+        assertEquals(setOf("agent/main.xml"), rendered.keys)
+        assertTrue(rendered.values.single().contains(coroutine))
+        assertTrue(rendered.values.single().lines().filter { "<ID>" in it }.size == 1)
+    }
+
     private fun partialBaseline(
         root: Path,
         module: String,

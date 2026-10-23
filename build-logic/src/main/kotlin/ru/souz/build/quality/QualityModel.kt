@@ -114,6 +114,29 @@ internal object SouzQualityChecks {
         authority = QualityAuthority.CI_EXACT_CHECKOUT,
     )
 
+    val temporaryCollectionMembership = QualityCheckDefinition(
+        id = "temporary-collection-membership",
+        implementationVersion = 1,
+        description = "Constant collections are not created only for membership in executable bodies.",
+        policy = "docs/quality-gates.md",
+    )
+
+    val repeatedGetterComputation = QualityCheckDefinition(
+        id = "repeated-getter-computation",
+        implementationVersion = 1,
+        description = "Computed getter allocations and collection traversal are reviewed.",
+        policy = "docs/quality-gates.md",
+        enforcement = QualityEnforcement.ADVISORY,
+    )
+
+    val layeredMutability = QualityCheckDefinition(
+        id = "layered-mutability",
+        implementationVersion = 1,
+        description = "Stored mutable collections containing mutable records or collections are reviewed.",
+        policy = "docs/quality-gates.md",
+        enforcement = QualityEnforcement.ADVISORY,
+    )
+
     val duplicateCode = QualityCheckDefinition(
         id = "duplicate-code",
         implementationVersion = 2,
@@ -130,6 +153,9 @@ internal object SouzQualityChecks {
         cancellationPropagation,
         coroutineThreadLocal,
         coroutineMonitorUse,
+        temporaryCollectionMembership,
+        repeatedGetterComputation,
+        layeredMutability,
     )
 
     val expensive = listOf(ciExactCheckout, duplicateCode)

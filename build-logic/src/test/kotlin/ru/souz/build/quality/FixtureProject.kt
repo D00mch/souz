@@ -86,6 +86,22 @@ internal class FixtureProject(private val root: Path) {
         )
     }
 
+    fun addDetektReport(vararg rules: String) {
+        write("analysis.xml", """
+            <checkstyle version="4.3">
+              <file name="${root.resolve("agent/Example.kt").toFile().canonicalPath}">
+                ${rules.joinToString("\n") { "<error line=\"7\" source=\"detekt.souz-review.$it\" message=\"Review $it.\"/>" }}
+              </file>
+            </checkstyle>
+        """.trimIndent())
+        append("build.gradle.kts", """
+
+            tasks.named<ru.souz.build.quality.SouzGateFastTask>("souzGateFastReport") {
+                detektReports.from(layout.projectDirectory.file("analysis.xml"))
+            }
+        """.trimIndent() + "\n")
+    }
+
     fun commit() {
         git("init", "-q")
         git("add", "--all")
