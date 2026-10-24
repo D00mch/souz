@@ -196,6 +196,7 @@ internal data class BackendV1MessageDto(
     val content: String,
     val metadata: Map<String, String>,
     val createdAt: String,
+    val attachments: List<ru.souz.llms.FileContent> = emptyList(),
 )
 
 internal data class BackendV1TelegramBotBindingDto(
@@ -375,6 +376,7 @@ internal fun ChatMessage.toDto(): BackendV1MessageDto =
         content = content,
         metadata = metadata,
         createdAt = createdAt.toString(),
+        attachments = attachments,
     )
 
 internal fun AgentExecution.toDto(): BackendV1ExecutionDto =

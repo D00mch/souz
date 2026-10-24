@@ -19,6 +19,7 @@ internal data class BackendConversationTurnRequest(
     val enabledTools: Set<String>? = null,
     val clientToolsEnabled: Boolean = false,
     val narrateSteps: Boolean = false,
+    val attachments: List<ru.souz.llms.FileContent> = emptyList(),
     /** Set only for a new turn that may be routed by complexity. */
     val routing: ModelRouting? = null,
 )

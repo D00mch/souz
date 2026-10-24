@@ -218,6 +218,7 @@ internal class BackendConversationRuntimeFactory(
             ),
             enabledCompiledToolNames = request.enabledTools,
             clientToolCatalog = clientToolCatalog,
+            replyAttachmentsEnabled = !request.clientToolsEnabled,
             includeFewShotExamples = settingsProvider.useFewShotExamples,
             metrics = metrics,
         )

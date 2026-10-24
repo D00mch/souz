@@ -11,6 +11,8 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.backend.attachments.AttachmentCleanupWorker
+import ru.souz.backend.attachments.BackendAttachmentAccess
+import ru.souz.tool.files.AttachmentTools
 import ru.souz.backend.attachments.AttachmentStorage
 import ru.souz.backend.attachments.S3AttachmentObjects
 import ru.souz.backend.client.LiveClientToolDispatcher
@@ -171,6 +173,8 @@ fun backendDiModule(
         bindSingleton { PostgresAttachmentRepository(instance<HikariDataSource>()) }
         bindSingleton { AttachmentStorage(config, instance(), instance(), instance()) }
         bindSingleton { AttachmentCleanupWorker(instance()) }
+        bindSingleton { BackendAttachmentAccess(instance(), instance(), config) }
+        bindSingleton { AttachmentTools(instance<BackendAttachmentAccess>()) }
     }
     bindSingleton<BackendFeatureFlags> { appConfig.featureFlags }
     bindSingleton { BackendMetrics() }
@@ -514,6 +518,7 @@ fun backendDiModule(
         AgentToolCatalog.compose(
             instance<RuntimeToolsFactory>().catalog,
             instance<BackendChannelToolCatalog>().catalog,
+            instanceOrNull<AttachmentTools>()?.catalog ?: AgentToolCatalog(),
             AgentToolCatalog(mapOf(ToolCategory.SCHEDULING to listOf(
                 ToolCreateScheduledTask(instance(), instance(), instance(), appConfig.scheduledTasks, instance()).toGiga(),
                 ToolListScheduledTasks(instance()).toGiga(),

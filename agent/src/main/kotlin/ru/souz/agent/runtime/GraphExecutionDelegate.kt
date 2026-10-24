@@ -51,6 +51,6 @@ internal class GraphExecutionDelegate(
                 runningJob.compareAndSet(result, null)
             }
         }
-        return AgentExecutionResult(output = newContext.input, context = newContext)
+        return AgentExecutionResult(output = newContext.input, context = newContext, attachments = newContext.replyAttachments)
     }
 }

@@ -43,6 +43,8 @@ import ru.souz.llms.LLMResponse
 class NodesLLMTest {
     @Test
     fun `compaction preserves the active exchange through steering and tool loops`() = runTest {
+        val file = ru.souz.llms.FileContent(ru.souz.llms.FileReference("old-file"), "report.md", "text/markdown", 12)
+        val incoming = file.copy(file = ru.souz.llms.FileReference("incoming-file"))
         val calls = mutableListOf<LLMRequest.Chat>()
         val style = "style ".repeat(3600)
         var instructionReads = 0
@@ -61,7 +63,7 @@ class NodesLLMTest {
         val laterSystem = system.copy(content = "retained instructions")
         val completed = listOf(system) + exchange("old ".repeat(15000)) +
             activeTurn("completed tool output", "previous request") +
-            LLMRequest.Message(LLMMessageRole.assistant, "completed answer") + laterSystem
+            LLMRequest.Message(LLMMessageRole.assistant, "completed answer", files = listOf(file), replyFiles = listOf(file)) + laterSystem
         val active = listOf(
             LLMRequest.Message(LLMMessageRole.user, "fresh memory", name = INJECTED_MEMORY_MESSAGE_NAME),
             LLMRequest.Message(LLMMessageRole.user, "fresh host context"),
@@ -70,9 +72,9 @@ class NodesLLMTest {
         val runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10)
         val controller = ActiveRunInputController()
         val queued = listOf("first follow-up", "second follow-up")
-        queued.forEach { input -> controller.submit { ActiveRunInput(input = input) } }
+        queued.forEach { input -> controller.submit { ActiveRunInput(input = input, attachments = listOf(incoming)) } }
         val chat = SteerableChatNode(nodes, controller)
-        val expectedActive = active + queued.map { LLMRequest.Message(LLMMessageRole.user, it) }
+        val expectedActive = active + queued.map { LLMRequest.Message(LLMMessageRole.user, it, files = listOf(incoming)) }
 
         val result = chat.execute(ctx, runtime)
 
@@ -84,6 +86,7 @@ class NodesLLMTest {
         assertTrue(calls.all { it.contextSize == 24_000 && !it.exceedsContextBudget(24_000) })
         assertEquals("system\n\n$style", calls.last().messages.first().content)
         assertTrue(calls.last().messages.any { "compact history" in it.content })
+        assertEquals(listOf(file), result.history.single { "compact history" in it.content }.files)
         assertEquals(CHAT_MAX_OUTPUT_TOKENS, calls.last().maxTokens)
         assertEquals(expectedActive, calls.last().messages.drop(result.activeExchangeStartIndex))
         assertEquals(3, result.activeExchangeStartIndex)

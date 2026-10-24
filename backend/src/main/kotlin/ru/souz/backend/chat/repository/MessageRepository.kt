@@ -15,6 +15,7 @@ interface MessageRepository {
         metadata: Map<String, String> = emptyMap(),
         id: UUID = UUID.randomUUID(),
         createdAt: Instant = Instant.now().truncatedTo(ChronoUnit.MICROS),
+        attachments: List<ru.souz.llms.FileContent> = emptyList(),
     ): ChatMessage
 
     suspend fun get(userId: String, chatId: UUID, seq: Long): ChatMessage?

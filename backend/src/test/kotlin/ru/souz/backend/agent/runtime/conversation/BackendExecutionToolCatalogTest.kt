@@ -28,6 +28,23 @@ import ru.souz.tool.web.ToolWebImageSearch
 
 class BackendExecutionToolCatalogTest {
     @Test
+    fun `text-only client executions exclude reply selection but retain file preparation`() {
+        for (replyAttachmentsEnabled in listOf(true, false)) {
+            for (enabled in listOf(null, emptySet(), setOf("PrepareAttachment", "AttachFileToReply"))) {
+                val catalog = backendExecutionToolCatalog(
+                    compiledToolCatalog = TestToolCatalog(ToolCategory.FILES to listOf("PrepareAttachment", "AttachFileToReply")),
+                    executionLlmToolCatalog = TestToolCatalog(), enabledCompiledToolNames = enabled,
+                    clientToolCatalog = TestToolCatalog(), includeFewShotExamples = false,
+                    replyAttachmentsEnabled = replyAttachmentsEnabled,
+                )
+                val expected = if (enabled == emptySet<String>()) emptySet() else
+                    if (replyAttachmentsEnabled) setOf("PrepareAttachment", "AttachFileToReply") else setOf("PrepareAttachment")
+                assertEquals(expected, toolNames(catalog))
+            }
+        }
+    }
+
+    @Test
     fun `compiled tool outcomes are recorded through Skill delegation and counted once for direct calls`() = runTest {
         val failures = mapOf(
             "success" to null,

@@ -15,4 +15,5 @@ data class ChatMessage(
     val content: String,
     val metadata: Map<String, String>,
     val createdAt: Instant,
+    val attachments: List<ru.souz.llms.FileContent> = emptyList(),
 )

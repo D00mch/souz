@@ -39,6 +39,25 @@ import kotlin.test.assertTrue
 
 class SubagentToolTest {
     @Test
+    fun `child files return to the parent without selecting the parent reply`() = runTest {
+        val file = ru.souz.llms.FileContent(ru.souz.llms.FileReference("child-file"), "report.md", "text/markdown", 12)
+        val selected = mockk<LLMToolSetup> {
+            every { fn } returns LLMRequest.Function("Selected", "Selected", LLMRequest.Parameters("object"))
+        }
+        coEvery { selected.invoke(any(), any()) } returns LLMRequest.Message(
+            LLMMessageRole.function, "created", files = listOf(file), replyFiles = listOf(file),
+        )
+        var calls = 0
+        val child = subagent(tools = listOf(selected)) {
+            if (++calls == 1) response(toolName = "Selected") else response("child answer")
+        }
+        val result = child.invoke(LLMResponse.FunctionCall("SpawnSubagent", mapOf("task" to "create report")))
+        assertEquals(listOf(file), result.files)
+        assertTrue(result.replyFiles.isEmpty())
+        assertEquals("child-file", restJsonMapper.readTree(result.content)["files"][0]["file"]["fileId"].asText())
+    }
+
+    @Test
     fun `reasoning effort reaches streaming and ordinary child requests`() = runTest {
         for (streaming in listOf(false, true)) {
             val requests = mutableListOf<LLMRequest.Chat>()

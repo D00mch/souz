@@ -8,6 +8,8 @@ Backend uses one startup-validated `CONTEXT_SIZE` (minimum 24,000 tokens) for al
 
 Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts and synchronize revisioned snapshots to Orion.
 
+Attachment references survive agent history, compaction, tool results, and backend sessions. Only explicit tool selections attach files to a reply; subagent files require selection by the parent. See [attachment contracts](backend/docs/attachments.md).
+
 - Read and maintain this file before changing the repository. Before editing a module, read its linked `AGENTS.md`, any applicable nested instructions, and relevant topics linked in its `Pain points` section.
 - Keep runtime documentation and `docs/public-souz-contract/` concise and current-state only. Do not write change-history phrases such as “now we do”.
 - Keep pre-implementation client agreements under `docs/proposals/`, explicitly marked as proposed and not implemented; exclude them from the implemented public API schemas.

@@ -8,7 +8,10 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertFailsWith
 import ru.souz.backend.agent.session.AgentConversationState
+import ru.souz.backend.agent.session.toConversationSession
 
 class PostgresStorageSupportTest {
     @Test
@@ -28,6 +31,8 @@ class PostgresStorageSupportTest {
 
         assertEquals(1, context.schemaVersion)
         assertEquals(emptyList(), context.history)
+        assertEquals(emptyList(), context.replyAttachments)
+        assertNull(context.attachmentExecutionId)
         assertEquals(0.4f, context.temperature)
         assertEquals("en-US", context.locale)
         assertEquals("Europe/Amsterdam", context.timeZone)
@@ -51,5 +56,15 @@ class PostgresStorageSupportTest {
         val json = postgresStorageMapper.readTree(state.toContextJson())
 
         assertFalse(json.has("activeAgentId"))
+        assertEquals(emptyList(), state.toConversationSession().replyAttachments)
+        val file = ru.souz.llms.FileContent(ru.souz.llms.FileReference("file-id"), "report.md", "text/markdown", 12)
+        val withFiles = state.copy(schemaVersion = 2, attachmentExecutionId = "execution", replyAttachments = listOf(file))
+        val restored = postgresStorageMapper.readValue<StoredConversationContext>(withFiles.toContextJson())
+        assertEquals(listOf(file), restored.replyAttachments)
+        assertEquals("execution", restored.attachmentExecutionId)
+        assertEquals(listOf(file), withFiles.toConversationSession().replyAttachments)
+        for (version in listOf(0, 3)) assertFailsWith<IllegalArgumentException> {
+            state.copy(schemaVersion = version).toConversationSession()
+        }
     }
 }

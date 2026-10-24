@@ -104,7 +104,7 @@ internal class SteerableChatNode(
             addAll(history)
             inputs.forEach { input ->
                 addAll(input.history)
-                add(LLMRequest.Message(LLMMessageRole.user, input.input))
+                add(LLMRequest.Message(LLMMessageRole.user, input.input, files = input.attachments))
             }
         }
         return map(history = nextHistory) { inputs.last().input }

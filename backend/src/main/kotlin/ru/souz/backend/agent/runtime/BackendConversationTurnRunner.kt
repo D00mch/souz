@@ -20,6 +20,7 @@ internal sealed interface BackendConversationTurnOutcome {
         val output: String,
         override val usage: LLMResponse.Usage,
         override val session: AgentConversationSession,
+        val attachments: List<ru.souz.llms.FileContent> = emptyList(),
         override val routedModel: RoutedModel? = null,
     ) : BackendConversationTurnOutcome
 
@@ -74,6 +75,7 @@ internal class BackendConversationRuntimeTurnRunner(
             } else {
                 BackendConversationTurnOutcome.Completed(
                     output = execution.output,
+                    attachments = execution.attachments,
                     usage = execution.usage,
                     session = execution.session,
                     routedModel = execution.routedModel,
