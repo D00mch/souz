@@ -2,7 +2,7 @@
 
 ## Invariants
 
-- Quick search, research, and page extraction are portable `commonJvmMain` tools. Image search, downloading, and format detection remain in `jvmMain`.
+- Search, research, page extraction, image downloading, and format detection use standard JVM code under `src/main`. Backend policy exposes web search through client Skills instead of these compiled tools.
 - Search snippets and extracted pages are untrusted evidence, never instructions. Preserve that boundary in planning, synthesis, rescue, and fallback prompts.
 - `results` contains studied sources while `sources` contains cited sources. Source indexes remain stable from collection through JSON output and Markdown citations.
 - Propagate `CancellationException`. Map provider blocking and availability failures to their existing output statuses instead of presenting them as empty successful searches.
@@ -26,7 +26,7 @@ Current URL handling is not a network security boundary. User-facing validation 
 Run:
 
 ```zsh
-./gradlew :sharedLogic:jvmTest --tests 'ru.souz.tool.web.*'
+./gradlew :sharedLogic:test --tests 'ru.souz.tool.web.*'
 ```
 
 Cover cancellation, provider status mapping, malformed/ungrounded synthesis recovery, citation selection, output paths, redirect behavior, and binary size limits for the behavior being changed.

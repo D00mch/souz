@@ -2,21 +2,16 @@ package ru.souz.agent.nodes
 
 import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.RetryPolicy
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentRuntimeEnvironment
-import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
-import ru.souz.db.StorredData
-import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
@@ -24,6 +19,8 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
+import java.time.ZoneId
+import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -32,45 +29,41 @@ import kotlin.test.assertTrue
 
 class NodesCommonTest {
     @Test
-    fun `host context includes desktop search and refreshes across turns`() = runTest {
-        val desktopInfoRepository = mockk<AgentDesktopInfoRepository>()
-        coEvery { desktopInfoRepository.search(any(), any()) } returns listOf(
-            StorredData("Найден локальный факт", StorredType.GENERAL_FACT)
-        )
-        val environment = object : AgentRuntimeEnvironment by SystemAgentRuntimeEnvironment {
-            override var defaultBrowserDisplayName: String? = "Safari"
+    fun `host context includes locale and refreshes request timezone across turns`() = runTest {
+        var localeReads = 0
+        val environment = object : AgentRuntimeEnvironment {
+            override val locale: Locale get() = Locale.US.also { localeReads++ }
+            override var zoneId: ZoneId = ZoneId.of("Europe/Moscow")
         }
-        val nodesCommon = nodesCommon(desktopInfoRepository, calendar = "Work", environment = environment)
+        val nodesCommon = nodesCommon(environment = environment)
         val context = stringContext(
             input = "Проверь Telegram",
-            model = LLMModel.LocalQwen3_4B_Instruct_2507.alias,
+            model = LLMModel.OpenAIGpt5Mini.alias,
         )
 
         val result = nodesCommon.nodeAppendAdditionalData().execute(context, graphRuntime())
         val injectedContext = assertNotNull(result.history.firstOrNull { it.isInjectedContextMessage() })
         assertEquals(1, result.activeExchangeStartIndex)
-
-        assertTrue(injectedContext.content.contains("Найден локальный факт"))
-        assertTrue(injectedContext.content.contains("Календарь по умолчанию: Work"))
         assertTrue(injectedContext.content.contains("Текущие дата и время:"))
-        assertTrue(injectedContext.content.contains("- [Default browser]: Safari"))
+        assertTrue(injectedContext.content.contains("locale=en-US"))
+        assertTrue(injectedContext.content.contains("timezone=Europe/Moscow"))
+        val readsBeforeSimple = localeReads
         val simple = nodesCommon.nodeAppendAdditionalData().execute(result.copy(simpleReply = true), graphRuntime())
         assertEquals(context.history, simple.history)
         assertEquals(context.activeExchangeStartIndex, simple.activeExchangeStartIndex)
-        coVerify(exactly = 1) { desktopInfoRepository.search(any(), any()) }
+        assertEquals(readsBeforeSimple, localeReads)
 
         var nextContext = result
-        for (browser in listOf("Google Chrome", null)) {
-            environment.defaultBrowserDisplayName = browser
+        for (zoneId in listOf("America/New_York", "UTC")) {
+            environment.zoneId = ZoneId.of(zoneId)
             nextContext = NodesPlain.inputToHistory().execute(nextContext, graphRuntime())
             val startBeforeCleanup = nextContext.activeExchangeStartIndex
             nextContext = nodesCommon.nodeAppendAdditionalData().execute(nextContext, graphRuntime())
             assertEquals(startBeforeCleanup - 1, nextContext.activeExchangeStartIndex)
             assertTrue(nextContext.history[nextContext.activeExchangeStartIndex].isInjectedContextMessage())
             val refreshed = nextContext.history.single { it.isInjectedContextMessage() }.content
-            assertFalse(refreshed.contains("Safari"))
-            if (browser == null) assertFalse(refreshed.contains("[Default browser]"))
-            else assertTrue(refreshed.contains("- [Default browser]: $browser"))
+            assertFalse(refreshed.contains("timezone=Europe/Moscow"))
+            assertTrue(refreshed.contains("timezone=$zoneId"))
         }
     }
 
@@ -83,7 +76,7 @@ class NodesCommonTest {
             user-authored content
             </context>
         """.trimIndent()
-        val nodesCommon = nodesCommon(mockk(relaxed = true))
+        val nodesCommon = nodesCommon()
         val context = stringContext(input = prompt, model = "gpt-model")
 
         val result = nodesCommon.nodeAppendAdditionalData().execute(context, graphRuntime())
@@ -152,12 +145,8 @@ class NodesCommonTest {
     }
 
     private fun nodesCommon(
-        desktopInfoRepository: AgentDesktopInfoRepository,
-        calendar: String? = null,
         environment: AgentRuntimeEnvironment = SystemAgentRuntimeEnvironment,
     ): NodesCommon = NodesCommon(
-        desktopInfoRepository = desktopInfoRepository,
-        settingsProvider = mockk<AgentSettingsProvider> { every { defaultCalendar } returns calendar },
         runtimeEnvironment = environment,
     )
 

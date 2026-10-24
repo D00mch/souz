@@ -106,7 +106,7 @@ class BackendChannelDeliveryE2eTest {
         client.post(BackendHttpRoutes.chatMessages(chatId)) {
             trusted(userId)
             jsonBody(
-                """{"content":"$content","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}"""
+                """{"content":"$content","options":{"model":"${E2E_MODEL.alias}"}}"""
             )
         }
 
@@ -116,11 +116,7 @@ class BackendChannelDeliveryE2eTest {
                 trusted(userId)
             }.jsonBody()["items"].takeIf { events ->
                 events.count { event ->
-                    event["type"].asText() in setOf(
-                        "execution.finished",
-                        "execution.failed",
-                        "execution.cancelled",
-                    )
+                    when (event["type"].asText()) { "execution.finished", "execution.failed", "execution.cancelled" -> true; else -> false }
                 } == count
             }
         }

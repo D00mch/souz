@@ -78,7 +78,7 @@ internal fun CompositeCommandSpec.validate(name: String) {
         if (step.script != null) {
             SkillPathNormalizer.normalize(step.script)
             check(!step.script.contains("\${"), "scripts need a static path.")
-            check(step.runtime?.uppercase() in listOf("BASH", "PYTHON", "NODE"), "scripts require BASH, PYTHON, or NODE runtime.")
+            check(when (step.runtime?.uppercase()) { "BASH", "PYTHON", "NODE" -> true; else -> false }, "scripts require BASH, PYTHON, or NODE runtime.")
         }
         validateReferences(step.arguments)
         validateReferences(step.args)

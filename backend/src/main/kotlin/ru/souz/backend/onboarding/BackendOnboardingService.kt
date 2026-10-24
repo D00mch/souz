@@ -47,7 +47,6 @@ class BackendOnboardingService(
         val userManagedProviders = BackendLlmSupport.chatModels
             .filter {
                 (it != LLMModel.OpenAICompatibleCustom || hasOpenAiCompatibleCustomModel) &&
-                    it.provider != LlmProvider.LOCAL &&
                     it.provider != LlmProvider.CODEX
             }
             .groupBy { it.provider.name.lowercase() }

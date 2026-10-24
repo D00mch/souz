@@ -69,7 +69,7 @@ class BackendPublicMultiChatWebSocketE2eTest {
                         assertEquals(event["threadId"].asText(), fields["threadId"])
                         assertEquals(owners[fields["chatId"]], fields["userId"])
                     }
-                    acknowledgements.filter { (_, fields) -> fields["clientRequestId"] in setOf("create", "history", "subscribe") }
+                    acknowledgements.filter { (_, fields) -> when (fields["clientRequestId"]) { "create", "history", "subscribe" -> true; else -> false } }
                         .forEach { (_, fields) -> assertFalse(fields.containsKey("threadId")) }
                     logs.filter { (message, fields) ->
                         (message == "WebSocket event sent" && "seq" in fields) || message.startsWith("Public client event stored")
@@ -477,7 +477,7 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     val sourceThread = if (http) {
                         client.post(BackendHttpRoutes.chatMessages(source)) {
                             trusted(user)
-                            jsonBody("""{"content":"$prompt","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+                            jsonBody("""{"content":"$prompt","options":{"model":"${E2E_MODEL.alias}"}}""")
                         }.also { assertEquals(HttpStatusCode.OK, it.status) }.jsonBody()["execution"]["id"].asText()
                     } else {
                         val ack = request(socket, messageFrame(source, user, prompt, text = prompt))

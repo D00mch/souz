@@ -24,7 +24,6 @@ import ru.souz.db.SettingsProvider
 import ru.souz.llms.anthropic.AnthropicChatAPI
 import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.openai.OpenAICompatibleChatAPI
-import ru.souz.llms.runtime.SettingsRoutingLlmChatApi
 import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.state.AgentSettings
@@ -38,7 +37,7 @@ import kotlin.test.assertIs
 
 class ProviderStreamingFlowTest {
     @Test
-    fun `routers and adapters forward exact model IDs in both modes`() = runTest {
+    fun `provider adapters forward exact model IDs in both modes`() = runTest {
         val cases = listOf(
             LLMModel.OpenAIGpt52 to "Deployment/ID",
             LLMModel.AnthropicOpus45 to "ClAuDe-Custom/Case",
@@ -54,7 +53,7 @@ class ProviderStreamingFlowTest {
                     anthropic -> ANTHROPIC_STREAM
                     else -> "data: $COMPATIBLE_REPLY\n\ndata: [DONE]\n\n"
                 }
-                listOf(false, true).forEach { routed ->
+                run {
                     var requests = 0
                     streamClient(content, if (streaming) ContentType.Text.EventStream else ContentType.Application.Json) {
                         requests++
@@ -65,7 +64,7 @@ class ProviderStreamingFlowTest {
                     }.use { client ->
                         val adapter = if (anthropic) AnthropicChatAPI(settings, client, "test-key")
                         else OpenAICompatibleChatAPI(selected.provider, settings, client, "test-key")
-                        val api = if (routed) SettingsRoutingLlmChatApi(settings, mapOf(selected.provider to adapter)) else adapter
+                        val api = adapter
                         val request = chatRequest(input)
                         val response = if (streaming) api.messageStream(request).toList().last() else api.message(request)
                         assertIs<LLMResponse.Chat.Ok>(response)
@@ -77,7 +76,7 @@ class ProviderStreamingFlowTest {
     }
 
     @Test
-    fun `desktop children reach configured providers with exact model IDs in both modes`() = runTest {
+    fun `subagents reach configured providers with exact model IDs in both modes`() = runTest {
         listOf(false, true).forEach { streaming ->
             listOf(LlmProvider.OPENAI, LlmProvider.ANTHROPIC, LlmProvider.QWEN, LlmProvider.AI_TUNNEL).forEach { provider ->
                 val settings = settings().also {
@@ -105,8 +104,7 @@ class ProviderStreamingFlowTest {
                 }.use { client ->
                     val providerApi = if (anthropic) AnthropicChatAPI(settings, client)
                     else OpenAICompatibleChatAPI(provider, settings, client)
-                    val router = SettingsRoutingLlmChatApi(settings, mapOf(provider to providerApi))
-                    val api = TokenLoggingChatApi(router, mockk(relaxed = true))
+                    val api = TokenLoggingChatApi(providerApi, mockk(relaxed = true))
                     val spawn = SubagentToolFactory(
                         createAgent = { ToolLoopGraphBasedAgent(api, settings, it) },
                         catalogProvider = { AgentToolCatalog() },

@@ -31,7 +31,7 @@ class BackendExecutionE2eTest {
             val chatId = createPublicChat(userId)
             val settings = client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId)
-                jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","streamingMessages":true}""")
+                jsonBody("""{"defaultModel":"${E2E_MODEL.alias}","streamingMessages":true}""")
             }
             assertEquals(HttpStatusCode.OK, settings.status)
 
@@ -82,7 +82,7 @@ class BackendExecutionE2eTest {
             val chatId = createPublicChat(userId)
             client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId)
-                jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","streamingMessages":true}""")
+                jsonBody("""{"defaultModel":"${E2E_MODEL.alias}","streamingMessages":true}""")
             }
             val sent = client.post(BackendHttpRoutes.chatMessages(chatId)) {
                 trusted(userId)
@@ -119,13 +119,13 @@ class BackendExecutionE2eTest {
             val chatId = createPublicChat(userId)
             client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId)
-                jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","streamingMessages":true}""")
+                jsonBody("""{"defaultModel":"${E2E_MODEL.alias}","streamingMessages":true}""")
             }
             coroutineScope {
                 val runningSend = async {
                     client.post(BackendHttpRoutes.chatMessages(chatId)) {
                         trusted(userId)
-                        jsonBody("""{"content":"cancel me","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+                        jsonBody("""{"content":"cancel me","options":{"model":"${E2E_MODEL.alias}"}}""")
                     }
                 }
                 llm.awaitPrompt("cancel me")
@@ -187,7 +187,7 @@ class BackendExecutionE2eTest {
 
             val sent = client.post(BackendHttpRoutes.chatMessages(sourceChatId)) {
                 trusted(userId)
-                jsonBody("""{"content":"$prompt","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+                jsonBody("""{"content":"$prompt","options":{"model":"${E2E_MODEL.alias}"}}""")
             }
             assertEquals(HttpStatusCode.OK, sent.status)
             val executionId = sent.jsonBody()["execution"]["id"].asText()

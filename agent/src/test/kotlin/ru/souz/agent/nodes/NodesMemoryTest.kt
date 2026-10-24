@@ -9,11 +9,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
-import org.kodein.di.DI
-import org.kodein.di.bindSingleton
-import org.kodein.di.direct
-import org.kodein.di.instance
-import ru.souz.agent.agentDiModule
 import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.RetryPolicy
 import ru.souz.agent.runtime.AgentRuntimeEvent
@@ -44,17 +39,12 @@ import kotlin.test.assertTrue
 
 class NodesMemoryTest {
     @Test
-    fun `agent module recalls scoped memory and emits its augmentation event`() = runTest {
+    fun `memory node recalls scoped memory and emits its augmentation event`() = runTest {
         val memoryRuntime = RecordingMemoryRuntime(
             retrievalResult = memoryResult("Relevant memory:\n- User prefers Kotlin",
                 facts = listOf(MemoryPromptFact("fact-1", "user", 0.9f))),
         )
-        val di = DI {
-            bindSingleton<ConversationMemoryRuntime> { memoryRuntime }
-            bindSingleton<CoroutineScope> { backgroundScope }
-            import(agentDiModule())
-        }
-        val nodesMemory: NodesMemory = di.direct.instance()
+        val nodesMemory = NodesMemory(memoryRuntime, backgroundScope)
         val events = mutableListOf<AgentRuntimeEvent>()
         val context = stringContext(
             input = "hello",

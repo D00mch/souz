@@ -1,35 +1,10 @@
 # Souz
 
-[Website](https://souz.app) · [Releases](https://github.com/D00mch/souz/releases) · [Contributing](docs/CONTRIBUTING.md)
+[Website](https://souz.app) · [Contributing](docs/CONTRIBUTING.md)
 
-Souz is a Kotlin Multiplatform AI assistant focused on **safe, observable, user-approved automation**. It combines a Compose Desktop app, a reusable graph-based agent runtime, shared backend-safe tools, local and cloud LLM providers, sandbox-aware file/process access, and an HTTP backend for web/API integrations.
+Souz is a backend-only Kotlin/JVM AI assistant. A Ktor HTTP server runs request-scoped graph agents over cloud LLM providers, sandboxed tools, Skills, and PostgreSQL-backed conversations.
 
-The project is designed around one core idea: an AI agent should be useful enough to operate your desktop and data, but transparent and constrained enough that users can trust what it is doing.
-
-## Highlights
-
-- **Kotlin Multiplatform app surfaces** built with Compose for Desktop.
-- **Selectable graph agents**: the default `GraphBasedAgent` uses memory recall, direct-tool classification, compact Skill inventory, and MCP injection, while `SkillsGraphBasedAgent` exposes only Skill/Knowledge core tools.
-- **Shared runtime layer** used by desktop and backend for LLM clients, settings/config, sandbox-aware filesystem access, and backend-safe tools.
-- **Sandbox abstraction** for filesystem and command execution, with local mode by default and opt-in Docker-backed execution.
-- **HTTP backend** with trusted-proxy auth, OpenAPI/Swagger docs, onboarding, per-user settings/provider keys, chat lifecycle, message execution, Telegram bot chat bindings, cancellation, option continuation, event replay, WebSocket streaming, and PostgreSQL persistence.
-- **Rich desktop tool catalog** for files, browser, web search/research, config, notes, applications, data analytics, calendar, mail, text replacement, Telegram, desktop capture, and calculator.
-- **SafeMode confirmations** for tool permission prompts, destructive Telegram operations, ambiguous contact/chat selection, and deferred file-modification review.
-- **Persistent memory** with scoped facts, prompt recall, completed-turn capture, desktop SQLite storage, Memory UI, and optional local Dreamer maintenance.
-- **Multi-provider LLM support** for GigaChat, Qwen, AiTunnel, Anthropic Claude, OpenAI, Codex OAuth models, and local llama.cpp models.
-- **Local inference** through a packaged native bridge with Qwen/Gemma chat profiles, EmbeddingGemma embeddings, prompt-family rendering, strict JSON tool output handling, model downloads, preload/warmup, and cancellation.
-- **MCP integration** over stdio/http with OAuth discovery and token refresh support.
-- **Voice, ambient, and desktop interaction** with audio capture/playback, cloud or local macOS speech recognition, ambient semantic blocks, bounded suggestions, global hotkeys, native media keys, screenshots, screen recording, and macOS integrations.
-- **ClawHub/OpenClaw skill support** with bundle parsing, canonical hashing, compact prompt inventory, desktop-first registry storage, safe on-demand loading, structural/static/LLM approval, validation caching, and sandboxed command execution.
-
-## Installation
-
-```bash
-brew tap D00mch/tap
-brew install --cask souz-ai
-```
-
-Or download the latest build from [GitHub Releases](https://github.com/D00mch/souz/releases).
+The backend supports public Client-Souz HTTP/WebSocket integrations, trusted-proxy APIs, event replay, streaming, cancellation, subagents, scheduled jobs, workspace hooks, Telegram and VK bot bindings, encrypted provider credentials, and optional Hindsight memory. Client tools and device capabilities are delegated through the external client contract.
 
 ## Local backend
 
@@ -87,367 +62,27 @@ Codex models use one server-managed OAuth session because the refresh token, acc
 
 ## Project structure
 
-```text
-.
-├── agent/                  # Shared agent contracts, graph agents, Skill inventory, sessions
-├── graph-engine/           # Framework-free typed graph DSL/runtime
-├── llms/                   # Shared LLM DTOs, provider enums, model profiles, token logging
-├── native/                 # llama.cpp bridge and local model runtime
-├── ambientAgent/           # Ambient transcription semantics and local task analysis
-├── sharedLogic/            # Shared JVM runtime logic, providers, tools, and sandboxes
-├── sharedUI/               # Shared Compose and desktop UI, view models, host ports, UI adapters, UI resources
-├── skill-oauth-api/        # Provider-neutral Skill OAuth contracts
-├── skill-oauth-impl/       # Backend OAuth providers, routes, and PostgreSQL persistence
-├── desktopApp/             # Runnable desktop host, DI composition root, OS integrations, packaging
-├── backend/                # Ktor HTTP backend over the shared agent runtime
-├── scripts/                # Build, release, and packaging helper scripts
-├── docs/                   # Project documentation
-└── gradle/                 # Version catalog and wrapper configuration
-```
-
-Gradle modules included by the build:
-
-```text
-:agent
-:graph-engine
-:llms
-:native
-:ambientAgent
-:sharedLogic
-:sharedUI
-:skill-oauth-api
-:skill-oauth-impl
-:desktopApp
-:backend
-```
-
-Module docs:
-
-- [`sharedLogic/README.md`](sharedLogic/README.md) covers the shared JVM runtime layer, sandbox modes, tools, and Docker sandbox image setup.
-- [`docs/quality-gates.md`](docs/quality-gates.md) covers repository checks, advisory analysis, evidence, and remediation.
-
-## Architecture (module structure)
-
-```mermaid
-flowchart LR
-    userNode["User"] --> desktopApp[":desktopApp\nDesktop entry + packaging"]
-    desktopApp --> sharedUi[":sharedUI\nCompose UI + UI adapters"]
-    sharedUi --> agentNode[":agent\nGraph agents"]
-    sharedUi --> ambientNode[":ambientAgent\nAmbient speech analysis"]
-    backendApi[":backend\nHTTP API"] --> agentNode
-
-    agentNode --> graphEngine[":graph-engine\nTyped graph runtime"]
-    agentNode --> llmsNode[":llms\nLLM contracts"]
-    runtimeNode[":sharedLogic\nShared runtime logic"] --> agentNode
-    runtimeNode --> llmsNode
-    runtimeNode --> nativeRuntime[":native\nLocal llama.cpp runtime"]
-    runtimeNode --> oauthApi[":skill-oauth-api\nOAuth contracts"]
-    oauthImpl[":skill-oauth-impl\nOAuth backend implementation"] --> oauthApi
-    backendApi --> oauthImpl
-    ambientNode --> runtimeNode
-    backendApi --> runtimeNode
-    desktopApp --> runtimeNode
-    sharedUi --> runtimeNode
-    sharedUi --> nativeRuntime
-
-    runtimeNode --> sandboxNode["RuntimeSandbox\nfilesystem + commands"]
-    runtimeNode --> toolsNode["Tool catalog"]
-    llmsNode --> providersNode["Cloud + local providers"]
-```
-
-### Frontend / Desktop app
-
-`:desktopApp` owns the runnable desktop entry point, app composition root, OS integrations, desktop-only services/tools, and Compose Desktop packaging. It depends on `:sharedLogic` and `:sharedUI`.
-
-`:sharedUI` owns shared UI surfaces and the desktop experience:
-
-- Compose screens, ViewModels, app theme, reusable UI components, and setup/settings flows for desktop.
-- Chat UI with model/context selectors, attachments, send/mic controls, streaming state, speech output, and graph/thinking visualization.
-- Tool-management UI and permission/selection approval flows.
-- Settings UI for models, provider keys, general behavior, security, folders, Telegram, sessions, visualization, and support logs.
-- Host-port interfaces plus UI adapters for permission/selection flows and macOS window effects. Non-UI desktop services and OS-bound tools live in `:desktopApp`.
-
-UI code should stay rendering-only. Business logic belongs in ViewModels or use cases.
-
-### KMP / shared modules
-
-Souz keeps platform-specific logic at the edges:
-
-- `:llms` contains provider-agnostic contracts and shared model/profile definitions.
-- `:graph-engine` contains no LLM/tool/agent knowledge; it only runs typed suspendable graph nodes.
-- `:agent` implements agent behavior on top of the graph engine.
-- `:ambientAgent` contains shared semantic-block and local task-analysis contracts plus the JVM transcription service.
-- `:sharedLogic` contains shared JVM runtime services, portable tools, sandbox/skills infrastructure, provider clients, and platform-specific runtime implementations. See [`sharedLogic/README.md`](sharedLogic/README.md).
-- `:native` contains local model support used by desktop and backend-capable runtime wiring.
-- `:sharedUI` contains shared Compose and desktop UI, view models, UI adapters, and desktop test coverage.
-- `:skill-oauth-api` contains provider-neutral Skill OAuth contracts.
-- `:skill-oauth-impl` contains the backend OAuth implementation, routes, and PostgreSQL persistence.
-- `:desktopApp` contains the runnable desktop entry points, DI composition root, OS integrations, desktop-only tools/services, and packaging resources.
-- `:backend` exposes the same runtime over HTTP without starting the desktop app.
-
-## Agent graphs
-
-### GraphBasedAgent
-
-`GraphBasedAgent` is the standard tool-calling agent. Its graph is explicit and traceable:
-
-```mermaid
-flowchart TD
-    input["User input"] --> history["Append input to history"]
-    history --> memory["Recall scoped memory"]
-    memory --> classify["Classify request / narrow direct tools"]
-    classify --> skills["Append Skill inventory + core tools"]
-    skills --> mcp["Inject MCP tools"]
-    mcp --> enrich["Append additional context"]
-    enrich --> llm["LLM chat node"]
-    llm --> decision{"LLM result"}
-    decision -->|tool call| tool["Execute tool"]
-    tool --> llm
-    decision -->|final answer| summary["Summarize / save point"]
-    decision -->|error| errorNode["Map error to user-facing output"]
-    summary --> finish["Finish"]
-    errorNode --> finish
-```
-
-Key behavior:
-
-- Memory recall replaces the previous injected memory block and inserts fresh scoped memory before other turn setup.
-- Classification narrows direct tool exposure before the LLM call.
-- Skill inventory appends a compact `<skill_inventory>` block to the effective system message and exposes on-demand Skill/Knowledge tools.
-- MCP tools are injected dynamically.
-- Tool calls loop back into the LLM until the model returns a final answer.
-- Oversized non-exempt tool results are moved to conversation-scoped temporary Knowledge and replaced with references.
-- Session history and graph steps can be persisted for replay/inspection.
-- The execution delegate supports active-job cancellation and trace callbacks.
-- Errors are routed through a dedicated user-facing error node.
-
-### SkillsGraphBasedAgent
-
-`SkillsGraphBasedAgent` is available under the persisted agent ID `skills`; `GraphBasedAgent` under `graph` remains the default. Its graph keeps tool discovery inside the model-driven tool loop:
-
-```mermaid
-flowchart TD
-    input["User input"] --> boundary["Restrict execution context to fixed core tools"]
-    boundary --> history["Append input to history"]
-    history --> memory["Recall scoped memory"]
-    memory --> inventory["Append skill_inventory block\nTool-backed IDs by category\nFile-backed IDs only"]
-    inventory --> enrich["Append additional context"]
-    enrich --> chat["Steerable chat\ninterrupt and replan LLM attempts"]
-
-    additionalInput["Additional user input"] --> queue["Execution-scoped FIFO queue"]
-    queue -.->|cancel active LLM child only| chat
-
-    chat -->|accepted core tool calls| tools["Execute complete tool batch\noffload oversized results"]
-    tools --> chat
-    queue -.->|tools keep running; drain on re-entry| tools
-
-    chat -->|final response and queue atomically sealed| summary["Memory-aware finalization\nsummarize or return"]
-    chat -->|error and queue atomically sealed| errorNode["Map error to user-facing output"]
-    summary --> finish["Finish"]
-    errorNode --> finish
-```
-
-The skills-oriented graph exposes exactly `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and `RunSkillCommand` to the LLM throughout a turn. Its execution boundary replaces both advertised functions and executable tool lookup with that fixed core tool set before the graph starts. It does not run direct-tool classification or MCP injection.
-
-Additional input can be submitted only to an open Skills run. It cancels an active LLM request without cancelling the graph, waits for an already-started tool batch, and is appended after all tool results. Finalization begins only after an empty queue atomically seals the run.
-
-Both graph agents append compact Skill inventory to the effective system message while preserving the configured `AgentContext.systemPrompt`. The inventory lists enabled tool-backed Skill IDs grouped by category plus user-scoped file-backed Skill IDs as opaque escaped identifiers only. File-backed instructions, manifest text, supporting files, bundle hashes, storage paths, and active-skill internals are not embedded in the prompt. Full file-backed bundles are loaded only through exact `GetSkillByName` lookup or `RunSkillCommand` execution. Hosts may add `SkillApprovalGate`; the backend currently invokes its classpath and sandbox-backed providers without a gate.
-
-When conversation-scoped Knowledge storage is available and persistence succeeds, tool-result text larger than 8,192 UTF-8 bytes is retained as temporary Knowledge and replaced in history by a compact reference. Without conversation scope or usable storage, the result remains inline. A result of exactly 8 KiB stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results always remain inline. `GetKnowledge` returns all retained content. `SearchKnowledge` searches retained head and tail segments with UTF-16 offsets; truncated values never match across the omitted gap, and a match without surrounding context omits the redundant excerpt. Knowledge lives until local conversation cleanup, including new-conversation, clear-context, and ViewModel close cleanup. Restoring history after clear-context can therefore restore references whose Knowledge has expired. Backend archive is reversible and does not clear Knowledge.
-
-## Graph engine
-
-`:graph-engine` is a small framework-free runtime for composing typed suspendable Kotlin nodes.
-
-It provides:
-
-- `Node<IN, OUT>` as the unit of work.
-- `Graph<IN, OUT>` as a node-compatible executable graph.
-- Static and dynamic transitions.
-- Nested graphs.
-- FIFO traversal.
-- Retry policies.
-- Step tracing through `onStep`.
-- Cancellation handling that preserves the last context.
-- `maxSteps` protection against accidental loops.
-
-Run the graph engine README example:
-
-```bash
-./gradlew :graph-engine:test --tests ru.souz.graph.GraphReadmeExampleTest
-```
-
-## Sandboxing and safety
-
-Souz separates tool behavior from the execution environment through `RuntimeSandbox`.
-
-```text
-RuntimeSandbox
-├── mode: LOCAL | DOCKER
-├── scope: SandboxScope
-├── runtimePaths: home, workspace, state, sessions, vector index, logs, models, native libs, skills
-├── fileSystem: SandboxFileSystem
-└── commandExecutor: SandboxCommandExecutor
-```
-
-JVM hosts use `LocalRuntimeSandbox` by default or opt into `DockerRuntimeSandbox` through `SOUZ_SANDBOX_MODE=docker`; Docker mode requires the `souz-runtime-sandbox:latest` image to exist locally. Build it with `./gradlew :sharedLogic:buildRuntimeSandboxImage`. Tools plus skill loading, storage, and validation depend on sandbox abstractions instead of directly assuming host access. See [`sharedLogic/README.md`](sharedLogic/README.md) for setup details.
-
-The default JVM state layout is under:
-
-```text
-~/.local/state/souz/
-├── sessions/
-├── vector-index/
-├── logs/
-├── models/
-├── native/
-├── skills/
-└── skill-validations/
-```
-
-Safety mechanisms include:
-
-- SafeMode permission prompts before sensitive tool execution.
-- User approval UI for pending tool requests.
-- Deferred review flow for file modifications.
-- Confirmation requirement for destructive Telegram operations.
-- Ambiguity dialogs for Telegram contact/chat selection.
-- Backend tool restriction to backend-safe categories.
-- Trusted-proxy identity only for backend `/v1/**` routes.
-- Durable tool-call audit rows in the backend with redacted/truncated previews.
-- Opt-in Docker runtime sandbox mode for local app runs and integration tests.
-
-## Tool catalog
-
-Souz has two tool catalogs:
-
-- **Desktop catalog** in `:desktopApp`, composed with shared runtime tools and surfaced through `:sharedUI` approval flows.
-- **Runtime/backend-safe catalog** in `:sharedLogic`, reusable by `:backend` without instantiating desktop-only services.
-
-### Desktop tools
-
-| Category | Tools |
-|---|---|
-| Files | List files, find text in files, create file, delete file, modify file, move file, extract text, find files by name, read PDF pages, open file/path, find folders |
-| Browser | Create new browser tab, Safari info, browser hotkeys, focus tab, Chrome info, open default browser |
-| Web search | Quick internet search, multi-step internet research, web image search, web page text extraction |
-| Config | Sound config, sound config diff, instruction store |
-| Notes | Open note, create note, delete note, list notes, search notes |
-| Applications | Show installed apps, open app/file/path |
-| Data analytics | Create plot from CSV, upload file, download file, read Excel, generate Excel report |
-| Calendar | Create event, delete event, list calendars, list events |
-| Mail | Count unread messages, list messages, read message, reply, send new message, search mail |
-| Text / clipboard | Get clipboard, replace selected text, read selected text |
-| Calculator | Calculator |
-| Telegram | Read inbox, get chat history, set chat state, send message/attachment, forward message, search Telegram, save to Saved Messages |
-| Desktop | Take screenshot, start screen recording |
-
-### Backend-safe runtime tools
-
-The backend-safe catalog avoids desktop-only APIs and includes:
-
-| Category | Tools |
-|---|---|
-| Files | List/find/create/delete/modify/move files, extract text, find files, read PDF pages, find folders |
-| Web search | Internet search, internet research, optional web image search, web page text |
-| Data analytics | CSV plotting, Excel read, Excel report |
-| Calculator | Calculator |
-| Scheduling | Create, list, and cancel one-off and recurring agent tasks ([details](backend/docs/scheduled-tasks.md)) |
-
-The backend intentionally excludes desktop automation, browser control, Mail, Calendar, Notes, desktop Telegram tools, and other OS-bound tools. It separately supports Telegram bot chat bindings for text ingress into existing backend chats.
-
-## UI confirmations and approval flows
-
-Souz treats tool execution as an interactive workflow instead of a hidden side effect.
-
-```mermaid
-sequenceDiagram
-    participant Agent
-    participant Broker as ToolPermissionBroker
-    participant UI as Compose approval UI
-    participant Tool
-
-    Agent->>Broker: requestPermission(description, params)
-    Broker->>UI: emit ToolPermissionRequest
-    UI->>Broker: approve / reject
-    Broker->>Agent: Ok / No
-    Agent->>Tool: invoke only when approved
-```
-
-Confirmation-related flows:
-
-- `ToolPermissionBroker` serializes SafeMode permission prompts and waits for the user decision.
-- `PermissionsUseCase` listens to generic tool permission requests and selection approval sources.
-- `ToolModifyReviewUseCase` manages deferred file-modification review/approval inside chat messages.
-- Telegram tools use selection brokers for ambiguous fuzzy contact/chat matches.
-- Destructive Telegram operations require explicit confirmation before continuing.
-
-## Memory
-
-The desktop host provides a scoped persistent fact store used by agent graphs as untrusted prompt context. Agent graphs accept memory through a host-supplied runtime. The backend uses the no-op runtime unless `HINDSIGHT_API_URL` is set, in which case it bridges recall, `SearchMemory`, completed-turn capture and durable `history.append` text capture to self-hosted [Hindsight](https://hindsight.vectorize.io) using the trusted user ID as the bank ID. `HINDSIGHT_API_TOKEN` is optional; when absent or blank, requests omit the Authorization header. `HINDSIGHT_RETAIN_ASYNC` (default `true`) queues retains in Hindsight, which requires its asynchronous worker; set it to `false` for synchronous retain. Completed Souz turns retain only redacted user/assistant dialogue; ordinary turns are chat-scoped and explicit remember turns are global. Imported user/assistant dialogue stays chat-scoped with source message IDs; tools are excluded. Souz sends dialogue records as they are; Hindsight's `retain_mission` decides what to save and how to phrase facts. The imported-history PostgreSQL queue survives disconnects, failures and restarts without delaying history ACKs. See [external memory](backend/docs/external-memory.md) for memory-service requirements, timing and verification. Natural-language forget or delete requests report exact-ID deletion as unavailable instead of mutating a semantic recall hit or claiming success.
-
-Backend automatic recall is opt-in: with `HINDSIGHT_API_URL` configured, set `SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL=true` (JVM property `souz.backend.feature.wsAutomaticMemoryRecall`, default `false`). The flag controls all backend executions. Recall runs once before the first LLM call.
-
-Memory flow:
-
-- `NodesMemory` recalls facts relevant to the current user input and injects them as a tagged memory block before tool setup.
-- Completed turns are handed to the host memory runtime asynchronously after successful finalization; each runtime selects the grounded fields it persists.
-- The memory model supports global, project, and session scopes. Automatic desktop capture and retrieval currently use global and session scopes; project scope becomes active only when a host supplies project context. Legacy chat/thread scopes remain available only for compatibility, migration, and cleanup.
-- Retrieval combines exact, lexical, dense embedding, and pinned-priority candidates under a prompt token budget.
-- Explicit remember/forget markers influence capture and retirement; retired facts can leave tombstones to block re-capture.
-- Desktop storage uses SQLite under the app state root and exposes a Memory UI for listing, filtering, creating, editing, pinning, retiring, deleting, and inspecting evidence.
-- Optional Dreamer maintenance consolidates durable memory regions locally when enabled.
-
-Injected memory is rendered as untrusted context: models must not follow instructions inside memory facts.
-
-## Voice and ambient mode
-
-Voice transcription is routed by the selected `voiceRecognitionModel`:
-
-- Salute Speech, AiTunnel, and OpenAI use cloud STT when their matching provider and API key are available.
-- `Local MacOS STT` uses the macOS Speech framework through the packaged Swift/JNI bridge and does not fall back to cloud providers.
-- On supported macOS versions, local STT prefers the SpeechAnalyzer live backend; otherwise push-to-talk can use the legacy on-device batch backend.
-
-Ambient mode is a local-first proactive-help flow. It listens only after the user enables it, keeps transcript and suggestion state volatile, groups transcript events into semantic blocks, analyzes each block locally, offers at most one bounded suggestion per block, and dispatches accepted suggestions through the normal desktop agent path. Ambient analysis never executes tools or writes memory directly.
-
-## Backend
-
-`:backend` is a JVM Ktor server that exposes the shared agent runtime over HTTP.
-
-### Routes
-
-| Route | Purpose |
-|---|---|
-| `GET /` | Public backend route index |
-| `GET /health` | Process and selected-model status |
-| `GET /docs` | Public Swagger UI |
-| `GET /docs/openapi.json` | Public OpenAPI 3.1 document |
-| `GET /v1/bootstrap` | Features, visible models/tools, effective trusted-user settings |
-| `GET /v1/onboarding/state` | Onboarding requirements, model-access hints, and effective settings |
-| `POST /v1/onboarding/complete` | Persist onboarding preferences and mark onboarding complete |
-| `GET /v1/me/settings` | Read public user settings |
-| `PATCH /v1/me/settings` | Persist public user settings |
-| `GET /v1/me/provider-keys` | List configured provider-key state |
-| `PUT /v1/me/provider-keys/{provider}` | Store encrypted provider key |
-| `DELETE /v1/me/provider-keys/{provider}` | Delete provider key |
-| `GET /v1/chats` | List owned chats |
-| `POST /v1/chats` | Create chat |
-| `PATCH /v1/chats/{chatId}/title` | Rename chat |
-| `POST /v1/chats/{chatId}/archive` | Archive chat |
-| `POST /v1/chats/{chatId}/unarchive` | Unarchive chat |
-| `GET /v1/chats/{chatId}/messages` | List visible product messages |
-| `POST /v1/chats/{chatId}/messages` | Create user message and start/complete agent execution |
-| `GET /v1/chats/{chatId}/telegram-bot` | Read Telegram bot binding state for an owned chat |
-| `PUT /v1/chats/{chatId}/telegram-bot` | Validate and upsert a Telegram bot binding for an owned chat |
-| `DELETE /v1/chats/{chatId}/telegram-bot` | Remove the Telegram bot binding from an owned chat |
-| `GET /v1/chats/{chatId}/events` | Replay durable chat events |
-| `WS /v1/chats/{chatId}/ws` | Replay and subscribe to live chat events |
-| `WS /v1/ws` | Create chats, replay and subscribe across chats (`clientType=backend`) |
-| `POST /v1/options/{optionId}/answer` | Resume execution after a pending option is answered |
-| `POST /v1/chats/{chatId}/cancel-active` | Cancel active execution |
-| `POST /v1/chats/{chatId}/executions/{executionId}/cancel` | Cancel a specific execution |
-
-### Backend safety model
+| Module | Responsibility |
+| --- | --- |
+| `:backend` | Ktor HTTP/WebSocket host, application lifecycle, persistence composition, integrations |
+| `:agent` | Skills graph, execution kernels, continuation, subagents, Skill discovery and approval |
+| `:graph-engine` | Framework-free typed graph execution |
+| `:llms` | Provider-neutral LLM contracts, model resolution, token accounting, state paths |
+| `:sharedLogic` | Remote provider clients, runtime tools, Skills, local/Docker sandboxes |
+| `:skill-oauth-api` | Provider-neutral Skill OAuth contracts |
+| `:skill-oauth-impl` | OAuth providers, callback routes, encrypted PostgreSQL storage |
+| `:job-api` | Owner-scoped job contracts |
+| `:job-impl` | PostgreSQL scheduling, leased workers, retries |
+
+`build-logic` is a separate included build for repository quality tooling. All product modules use Kotlin/JVM with standard `src/main` and `src/test` source sets and Java 21.
+
+Each backend execution owns one steerable `SkillsGraphBasedAgent`. Its fixed core tools discover the enabled catalog through compact Skill inventory; full instructions and commands load on demand. `SpawnSubagent` creates an isolated bounded model/tool loop with explicitly selected capabilities. See [agent architecture](agent/README.md), [subagents](docs/subagents.md), and [runtime setup](sharedLogic/README.md).
+
+Backend tools include filesystem operations, PDF/text extraction, image viewing and generation, CSV/Excel analytics, chart export, calculator, OAuth, channel messaging, and scheduling. Chart export uses JFreeChart in headless mode and produces 800×600 PNGs. The backend policy excludes compiled web tools; web search and device MCP capabilities come from client Skills.
+
+Supported chat providers are Qwen, AiTunnel, Anthropic, OpenAI-compatible APIs, and Codex OAuth. Server-managed [named connections](backend/docs/named-llm-connections.md) support independent endpoints, credentials, model IDs, subagents, and summarization. Giga is explicitly unsupported by the backend.
+
+## Backend behavior
 
 - Most `/v1/**` routes trust identity only from proxy-managed headers:
   - `X-User-Id`
@@ -457,18 +92,17 @@ Ambient mode is a local-first proactive-help flow. It listens only after the use
 - HTTP chat creation accepts trusted UUID `userId` from the body; WebSocket `chat.create` accepts `payload.userId`. WebSocket `message.submit.payload.device.userId` must match the stored chat owner.
 - Other request bodies are never trusted for user identity.
 - Each chat, execution, option, and setting is scoped to the trusted user.
-- Backend host adapters replace desktop-only services with no-op implementations.
 - The backend composes request-scoped execution from shared agent contracts and graph nodes.
 - Backend turns run through one request-scoped steerable `SkillsGraphBasedAgent` under `AgentId.SKILLS_GRAPH`.
 
-### Backend storage
+### Storage
 
 PostgreSQL is the backend's only structured-data store. JDBC, HikariCP, and Flyway provide durable event replay, per-chat message/event sequence numbers, one active execution per chat, optimistic locking for `agent_conversation_state`, and durable tool-call audit rows.
 Telegram bot tokens are encrypted at rest via `TELEGRAM_TOKEN_ENCRYPTION_KEY`, pending links use one-time `/start <secret>` commands with only the secret hash stored server-side, and binding setup drops pending Telegram updates before long polling starts.
 VK community tokens use `VK_TOKEN_ENCRYPTION_KEY`. With `ENABLE_BACKEND_VK_FEATURE=true`, trusted-proxy clients manage bindings through `GET`, `PUT` (`{"token":"..."}`), and `DELETE /v1/chats/{chatId}/vk-bot`. Send the returned `pendingLinkCommand` as a private message to the community to link the account. Enable Bots Long Poll and `message_new` events in the community settings.
 Runtime sandbox workspaces remain filesystem-backed and are independent from backend database persistence.
 
-### Backend configuration
+### Configuration
 
 ```bash
 # Server
@@ -482,7 +116,6 @@ SOUZ_MASTER_KEY=replace-with-settings-secret
 OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
 QWEN_KEY=...
-GIGA_KEY=...
 AITUNNEL_KEY=...
 CODEX_ACCESS_TOKEN=...
 CODEX_REFRESH_TOKEN=...
@@ -556,173 +189,31 @@ Run the backend:
 
 By default it binds to `127.0.0.1:8080`.
 
-## Skills
+## Development and verification
 
-Souz supports standalone ClawHub/OpenClaw-style skill bundles across `:agent` and `:sharedLogic`.
-
-Skill discovery with an optional host approval gate:
-
-```mermaid
-flowchart LR
-    inventory["Append compact Skill inventory"] --> lookup["GetSkillByName / RunSkillCommand"]
-    lookup --> skillLoad["Load exact file-backed bundle"]
-    skillLoad --> gate{"Host configured SkillApprovalGate?"}
-    gate -->|no| approval["Return instructions or execute command"]
-    gate -->|yes| skillHash["Canonical hash"]
-    skillHash --> validationCache{"Cached validation?"}
-    validationCache -->|approved| approval["Return instructions or execute command"]
-    validationCache -->|rejected| rejection["Return rejection"]
-    validationCache -->|missing or stale| structuralValidation{"Structural validation"}
-    structuralValidation -->|hard reject| rejection
-    structuralValidation -->|pass| staticValidation{"Static validation"}
-    staticValidation -->|hard reject| rejection
-    staticValidation -->|pass| llmValidation["LLM validation"]
-    llmValidation --> verdict{"Approved?"}
-    verdict -->|yes| approval
-    verdict -->|no| rejection
-```
-
-Skill safety and storage:
-
-- Skill inventory is compact and user-scoped: enabled tool-backed Skill IDs by category plus opaque file-backed Skill IDs.
-- Tool-backed Skills are direct tools viewed through the Skill APIs; enabled tool-backed Skills take precedence over stored bundles with the same ID.
-- File-backed bundle content is loaded only on exact lookup or execution.
-- `GetSkillByName` returns the file-backed `SKILL.md` instruction body, parsed name and description, and supporting-file paths; raw YAML frontmatter is not returned. A configured approval gate limits this to approved bundles.
-- `RunSkillCommand` executes file-backed Skill scripts inside the resolved runtime sandbox and binds active Skill identity internally.
-- Bundles are loaded through safe filesystem access.
-- Desktop/local skills are persisted under `~/.local/state/souz/skills/{skillId}/`, with immutable bundles in `bundles/{bundleHash}/` and metadata in `stored-skill.json`.
-- Desktop/local validation records are persisted separately under `~/.local/state/souz/skill-validations/{skillId}/policies/{policy}/`.
-- Validation cache keys include user id, skill id, bundle hash, and policy version.
-- Stale validations are invalidated when the active bundle hash changes.
-- When a host configures `SkillApprovalGate`, rejected validations block instruction lookup and command execution for the exact cached identity. The backend intentionally passes no gate for its classpath- and sandbox-backed providers.
-
-## LLM providers
-
-Souz supports:
-
-- GigaChat REST and voice APIs.
-- Qwen.
-- AiTunnel.
-- Anthropic Claude.
-- OpenAI.
-- Codex through OpenAI device-code OAuth, including GPT-5.3, GPT-5.4, GPT-5.5, and GPT-5.6 Codex model aliases.
-- Local llama.cpp models through `:native`.
-
-Provider/model selection is key-aware: chat, embeddings, and voice-recognition model lists are filtered by configured provider keys or Codex OAuth state, and invalid saved selections are normalized to available providers.
-
-The backend supports API-key providers, server-managed Codex OAuth models, and local models for chat execution. Per-user provider keys do not represent Codex OAuth sessions.
-
-## Local models
-
-`:native` provides local model execution through a JNA bridge into a packaged llama.cpp-based native library.
-
-Features:
-
-- macOS arm64 and x64 packaged bridge binaries.
-- Qwen and Gemma chat profiles.
-- Linked EmbeddingGemma GGUF asset for embeddings.
-- Model storage under `~/.local/state/souz/models/`.
-- Native bridge extraction under `~/.local/state/souz/native/`.
-- Background preload/warmup when selecting a local chat model.
-- Settings-driven context windows capped by model limits.
-- Prompt rendering for Qwen ChatML and Gemma 4 turn formats.
-- Strict JSON tool-call contract and output recovery/parsing.
-- Prompt-prefix/KV reuse in the native runtime.
-- Local generation and embeddings cancellation support.
-
-Rebuild packaged bridge binaries:
+Use JDK 21 and the Gradle wrapper. Docker is required for PostgreSQL-backed backend, job, and OAuth tests; these tests fail rather than skip when Docker is unavailable.
 
 ```bash
-desktopApp/src/main/resources/scripts/build-llama-bridge.sh
+./gradlew :backend:run
+./gradlew build :backend:installDist :build-logic:check --no-parallel
+./gradlew test :koverXmlReport :koverHtmlReport koverLog -Psouz.coverage --no-parallel
+./gradlew souzGateFast --configuration-cache --configuration-cache-problems=fail
+npm ci --prefix quality
+./gradlew souzDuplicationCheck
 ```
 
-## MCP
+Runtime Docker sandbox tests are separately opt-in; see [runtime sandbox setup](sharedLogic/README.md#sandbox-modes). Build the backend image with `scripts/build-backend-image.sh`.
 
-Souz can connect to external tools through Model Context Protocol:
+Operational references:
 
-- stdio transport.
-- HTTP transport.
-- OAuth discovery.
-- Token refresh.
-- Dynamic MCP tool injection into the agent graph.
+- [Public client contract](docs/public-souz-contract/README.md) and [WebSocket ownership](backend/docs/public-client-websocket.md)
+- [Backend testing](backend/docs/testing.md) and [quality gates](docs/quality-gates.md)
+- [External memory](backend/docs/external-memory.md), [conversation Knowledge](backend/docs/conversation-knowledge.md), and [personality settings](backend/docs/personality-settings.md)
+- [Scheduled tasks](backend/docs/scheduled-tasks.md), [workspace hooks](docs/hooks.md), and [file tools](docs/file-tools.md)
+- [Telegram bindings](backend/docs/telegram-bindings.md), [VK bindings](backend/docs/vk-bindings.md), and [S3 file storage](backend/docs/s3-storage.md)
+- [Metrics](backend/docs/metrics.md) and [trusted proxy](backend/docs/trusted-proxy.md)
 
-## Web research
-
-Souz has two web modes:
-
-- **Internet search** for quick factual answers.
-- **Internet research** for multi-step synthesis with LLM-built strategy, broader source coverage, citations, and automatic Markdown export for oversized reports.
-
-## Development
-
-Recommended IntelliJ IDEA plugins:
-
-- Kotlin Multiplatform
-- Compose Multiplatform
-- Compose Multiplatform desktop support, optional
-
-Run the desktop app:
-
-```bash
-./gradlew :desktopApp:run
-```
-
-Run desktop tests:
-
-```bash
-./gradlew :sharedUI:cleanJvmTest :sharedUI:jvmTest
-```
-
-Run agent integration scenarios:
-
-```bash
-export SOUZ_AGENT_INTEGRATION_TESTS_ON=true
-./gradlew :sharedUI:cleanJvmTest :sharedUI:jvmTest --tests "agent.GraphAgentComplexScenarios"
-```
-
-Run backend tests:
-
-```bash
-./gradlew :backend:test
-```
-
-Run all checks:
-
-```bash
-./gradlew check
-```
-
-## Release builds
-
-Useful release scripts:
-
-```bash
-# Prepare universal macOS app bundle
-scripts/kmp-build-macos-universal.sh
-
-# Build notarized arch-specific DMGs and export to dest/homebrew/<version>/
-scripts/kmp-build-macos-dev.sh
-
-# Generate Homebrew cask from exported DMGs
-scripts/prepare-homebrew-release.sh
-```
-
-See JetBrains Compose Multiplatform release docs for signing and notarization details.
-
-## Development principles
-
-- Prefer composition over inheritance.
-- Keep UI free of business logic and IO.
-- Coordinate UI logic from ViewModels and delegate domain work to use cases.
-- Avoid mixing coroutines with low-level JVM concurrency primitives unless there is a clear boundary.
-- Use open/closed design for tools, providers, and runtime adapters.
-- Keep Compose/UI dependencies out of `:sharedLogic`; backend wiring should avoid desktop-only service/tool implementations.
-- Read the nearest `AGENTS.md` before editing a module or nested package.
-
-## Related reading
-
-- [How to Build AI Agents You Can Actually Trust](https://medium.com/@liverm0r/building-ai-agents-for-non-technical-users-50d24c3184a8)
-- [Russian version on Habr](https://habr.com/ru/articles/1010236/)
+Read the owning `AGENTS.md` before changing a module.
 
 ## License
 

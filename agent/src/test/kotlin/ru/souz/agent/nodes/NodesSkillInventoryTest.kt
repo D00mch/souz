@@ -238,7 +238,7 @@ class NodesSkillInventoryTest {
         val repository = repository("paper" to "Summarize papers.")
         val api = mockk<LLMChatAPI>()
         val context = contextWithCatalog().let { it.copy(
-            settings = it.settings.copy(provider = LlmProvider.LOCAL, contextSize = 2048),
+            settings = it.settings.copy(provider = LlmProvider.ANTHROPIC, contextSize = 2048),
             history = it.history + LLMRequest.Message(LLMMessageRole.user, "Use the paper Skill."),
         ) }
         val classifier = SkillClassifier { _, _ -> error("Jev unavailable") }
@@ -257,7 +257,7 @@ class NodesSkillInventoryTest {
             assertContains(prompt, "- skillId: \"paper\"")
         }
         coVerify(exactly = 3) { api.message(match {
-            it.maxTokens == CLASSIFICATION_MAX_OUTPUT_TOKENS && it.contextSize == 2048 && it.provider == LlmProvider.LOCAL && it.messages[1].content == "Use the paper Skill."
+            it.maxTokens == CLASSIFICATION_MAX_OUTPUT_TOKENS && it.contextSize == 2048 && it.provider == LlmProvider.ANTHROPIC && it.messages[1].content == "Use the paper Skill."
         }) }
         coEvery { api.message(any()) } throws CancellationException("cancelled")
         assertFailsWith<CancellationException> { node.execute(contextWithCatalog(), runtime()) }
@@ -293,9 +293,15 @@ class NodesSkillInventoryTest {
         val node = node(catalog(), repository = repository("paper" to "Summarize papers."), llmApi = api,
             classifier = SkillClassifier { _, _ -> error("Skill selection must be skipped") })
             .node(emptyList(), classifySkills = true)
-        val prompt = node.execute(contextWithCatalog().copy(input = "Спасибо большое!"), runtime()).history.first().content
-        assertContains(prompt, "- skillId: \"paper\"\n")
-        assertFalse(prompt.contains("; description:"))
+        for (input in listOf("Спасибо большое!", "привет", "Спасибо, на сегодня всё 🙏", "Thank you so much", "hi")) {
+            val prompt = node.execute(contextWithCatalog().copy(input = input), runtime()).history.first().content
+            assertContains(prompt, "- skillId: \"paper\"\n")
+            assertFalse(prompt.contains("; description:"))
+        }
+        for (input in listOf("да", "ок", "Спасибо, отправь письмо Олегу", "спасибо спасибо спасибо спасибо спасибо спасибо",
+                "покажи", "hire me", "все", "Всё!", "тебе", "Вам!", "большое", "a lot", "so much")) {
+            assertFalse(isThanksOrGreeting(input), input)
+        }
         coVerify(exactly = 0) { api.message(any()) }
     }
 

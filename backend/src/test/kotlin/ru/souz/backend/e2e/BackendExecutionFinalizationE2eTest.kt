@@ -125,7 +125,7 @@ class BackendExecutionFinalizationE2eTest {
 
     private suspend fun BackendE2eScope.requestOption(userId: String, chatId: String): UUID =
         UUID.fromString(client.post(BackendHttpRoutes.chatMessages(chatId)) {
-            trusted(userId); jsonBody("""{"content":"need option","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+            trusted(userId); jsonBody("""{"content":"need option","options":{"model":"${E2E_MODEL.alias}"}}""")
         }.jsonBody()["execution"]["id"].asText())
 
     private fun BackendE2eScope.assertNoTurnSaved(chatId: String, executionId: UUID) = sql { connection ->

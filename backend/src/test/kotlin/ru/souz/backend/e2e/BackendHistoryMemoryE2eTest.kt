@@ -77,7 +77,7 @@ class BackendHistoryMemoryE2eTest {
                     } else {
                         val submitted = client.post(BackendHttpRoutes.chatMessages(chat)) {
                             trusted(owner)
-                            jsonBody(json.writeValueAsString(mapOf("content" to question, "options" to mapOf("model" to E2E_LOCAL_MODEL.alias))))
+                            jsonBody(json.writeValueAsString(mapOf("content" to question, "options" to mapOf("model" to E2E_MODEL.alias))))
                         }
                         assertEquals(HttpStatusCode.OK, submitted.status)
                     }
@@ -147,7 +147,7 @@ class BackendHistoryMemoryE2eTest {
             val chat = createPublicChat(owner)
             val submitted = client.post(BackendHttpRoutes.chatMessages(chat)) {
                 trusted(owner)
-                jsonBody(json.writeValueAsString(mapOf("content" to user, "options" to mapOf("model" to E2E_LOCAL_MODEL.alias))))
+                jsonBody(json.writeValueAsString(mapOf("content" to user, "options" to mapOf("model" to E2E_MODEL.alias))))
             }
             assertEquals(HttpStatusCode.OK, submitted.status)
             val retained = eventually("oversized completed turn") { hindsight.items.singleOrNull() }

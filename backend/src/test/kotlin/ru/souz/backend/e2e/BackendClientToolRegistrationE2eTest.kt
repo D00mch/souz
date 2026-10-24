@@ -138,7 +138,7 @@ class BackendClientToolRegistrationE2eTest {
                             connection.createStatement().use { it.execute("alter table chats drop constraint reject_discovery") }
                         }
                     }
-                    val expected = if (failure in listOf("strict", "self")) "invalid_client_tool_catalogue" else "client_tool_failed"
+                    val expected = if (failure == "strict" || failure == "self") "invalid_client_tool_catalogue" else "client_tool_failed"
                     assertEquals(expected, output()["error"]["code"].asText())
                     assertEquals("current_time", retained["payload"]["name"].asText())
                     assertEquals(first, retained["chatId"].asText())

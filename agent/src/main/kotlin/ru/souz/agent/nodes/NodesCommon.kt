@@ -3,11 +3,7 @@ package ru.souz.agent.nodes
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
 import ru.souz.agent.state.AgentContext
-import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentRuntimeEnvironment
-import ru.souz.agent.spi.AgentSettingsProvider
-import ru.souz.db.StorredData
-import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import java.time.ZonedDateTime
@@ -23,8 +19,6 @@ internal fun LLMRequest.Message.isInjectedContextMessage(): Boolean =
 
 /** Enriches conversation history with host-provided context. */
 internal class NodesCommon(
-    private val desktopInfoRepository: AgentDesktopInfoRepository,
-    private val settingsProvider: AgentSettingsProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
@@ -56,12 +50,12 @@ internal class NodesCommon(
         ctx.map(history = newHistory, activeExchangeStartIndex = activeExchangeStartIndex)
     }
 
-    private suspend fun appendActualInformation(
+    private fun appendActualInformation(
         userText: String,
     ): LLMRequest.Message? {
         if (userText.isBlank()) return null
 
-        val additionalData = loadAdditionalData(userText)
+        val additionalData = loadAdditionalData()
         if (additionalData.isEmpty()) return null
         return LLMRequest.Message(LLMMessageRole.user, buildContextMessage(additionalData))
     }
@@ -105,39 +99,22 @@ internal class NodesCommon(
         null
     }
 
-    private suspend fun loadAdditionalData(userText: String): List<StorredData> = buildList {
-        try {
-            addAll(desktopInfoRepository.search(userText))
-        } catch (e: Exception) {
-            l.error("Error searching desktop info: ${e.message}")
-        }
-        runtimeEnvironment.defaultBrowserDisplayName?.let {
-            add(StorredData(it, StorredType.DEFAULT_BROWSER))
-        }
-        settingsProvider.defaultCalendar
-            ?.takeIf(String::isNotBlank)
-            ?.let { add(StorredData("Календарь по умолчанию: $it", StorredType.GENERAL_FACT)) }
-        buildUserGeoLocationFact()?.let { add(StorredData(it, StorredType.GENERAL_FACT)) }
+    private fun loadAdditionalData(): List<String> = buildList {
+        buildUserGeoLocationFact()?.let(::add)
         add(
-            StorredData(
-                "Текущие дата и время: ${
-                    ZonedDateTime.now(runtimeEnvironment.zoneId).format(
-                        DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss", runtimeEnvironment.locale)
-                    )
-                }",
-                StorredType.GENERAL_FACT,
-            )
+            "Текущие дата и время: ${
+                ZonedDateTime.now(runtimeEnvironment.zoneId).format(
+                    DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss", runtimeEnvironment.locale)
+                )
+            }",
         )
     }
 
-    private fun buildContextMessage(additionalData: List<StorredData>): String = buildString {
+    private fun buildContextMessage(additionalData: List<String>): String = buildString {
         append(INJECTED_CONTEXT_PREFIX)
-        additionalData.forEach { append("- [${it.readableType()}]: ${it.text}\n") }
+        additionalData.forEach { append("- [General fact]: $it\n") }
         append(INJECTED_CONTEXT_SUFFIX)
     }
-
-    private fun StorredData.readableType(): String =
-        type.toString().replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
 }
 
 internal fun AgentContext<*>.toChatRequest(

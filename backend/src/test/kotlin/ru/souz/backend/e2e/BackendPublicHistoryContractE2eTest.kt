@@ -186,11 +186,7 @@ class BackendPublicHistoryContractE2eTest {
 
                 val requestMessages = llm.requests.single().messages
                 val relevantMessages = requestMessages.filter {
-                    it.content in setOf(
-                        "client solved it",
-                        "the client task is complete",
-                        "do something new",
-                    )
+                    when (it.content) { "client solved it", "the client task is complete", "do something new" -> true; else -> false }
                 }
                 assertEquals(
                     listOf(LLMMessageRole.user, LLMMessageRole.assistant, LLMMessageRole.user),

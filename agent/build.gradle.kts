@@ -10,7 +10,6 @@ dependencies {
     implementation(libs.jackson)
     implementation(libs.jackson.dataformat.yaml)
     implementation(libs.slf4j.api)
-    implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlin.testJunit5)

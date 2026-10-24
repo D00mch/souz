@@ -11,12 +11,6 @@ fun interface AgentTelemetry {
 }
 
 data class AgentToolExecutionEvent(
-    val appSessionId: String? = null,
-    val conversationId: String? = null,
-    val requestId: String? = null,
-    val requestSource: String? = null,
-    val model: String? = null,
-    val provider: String? = null,
     val functionName: String,
     val toolCategory: String? = null,
     val argumentKeys: List<String>,

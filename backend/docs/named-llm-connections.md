@@ -21,7 +21,7 @@ Set `SOUZ_LLM_CONFIG_FILE` to a JSON file readable by the backend, and supply th
 }
 ```
 
-All configured model names are advertised in `/v1/bootstrap`; no per-user allowlist is required. Assign a name with trusted `PATCH /v1/me/settings`, for example `{"defaultModel":"test-chat"}`. HTTP `options.model` and WebSocket `payload.meta.model` accept the same names. Settings and execution records persist the name. Unknown or removed names fail explicitly. When no built-in or local model is accessible, the first model in this file is the default for new users and the fallback for unavailable built-in selections.
+All configured model names are advertised in `/v1/bootstrap`; no per-user allowlist is required. Assign a name with trusted `PATCH /v1/me/settings`, for example `{"defaultModel":"test-chat"}`. HTTP `options.model` and WebSocket `payload.meta.model` accept the same names. Settings and execution records persist the name. Unknown or removed names fail explicitly. When no built-in model is accessible, the first model in this file is the default for new users and the fallback for unavailable built-in selections.
 
 `GET /health` reports the server default using the same selection policy, without user settings or user-managed keys.
 

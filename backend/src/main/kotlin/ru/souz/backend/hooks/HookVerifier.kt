@@ -65,7 +65,7 @@ internal class HookVerifier(private val config: HookConfig, private val sandboxe
         check(!output.timedOut && output.exitCode == 0) { "Verifier command failed" }
         require(output.stdout.toByteArray().size <= HookDefinitions.MAX_BODY_BYTES)
         val result = parseHookJson(output.stdout)
-        require(result.isObject && result.fieldNames().asSequence().all { it in setOf("accept", "eventId", "payload") })
+        require(result.isObject && result.fieldNames().asSequence().all { it == "accept" || it == "eventId" || it == "payload" })
         require(result["accept"]?.isBoolean == true)
         if (!result["accept"].booleanValue()) throw hookError(401, "hook_verification_rejected")
         val eventId = result["eventId"]?.takeIf(JsonNode::isTextual)?.textValue()

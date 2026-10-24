@@ -5,16 +5,6 @@ import ru.souz.agent.state.AgentContext
 import ru.souz.graph.Node
 import ru.souz.graph.StepInfo
 import ru.souz.llms.LLMRequest
-import ru.souz.llms.LLMResponse
-
-sealed interface AgentSideEffect {
-    data class Text(
-        val v: String,
-        val streamRevision: Long = 0L,
-    ) : AgentSideEffect
-
-    data class Fn(val call: LLMResponse.FunctionCall) : AgentSideEffect
-}
 
 /** Text produced by the LLM branch identified by [streamRevision]. */
 data class AgentStreamChunk(

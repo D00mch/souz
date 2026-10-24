@@ -20,7 +20,6 @@ import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.model.chatId
 import ru.souz.backend.agent.runtime.BackendAgentErrorMessages
 import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
-import ru.souz.backend.agent.runtime.BackendNoopAgentDesktopInfoRepository
 import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.toConversationSession
@@ -59,8 +58,6 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.anthropic.AnthropicVisionGateway
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.ProviderHttpClients
-import ru.souz.llms.local.LocalChatAPI
-import ru.souz.llms.local.LocalVisionGateway
 import ru.souz.llms.openai.OpenAIImageGenerationGateway
 import ru.souz.llms.openai.OpenAIVisionGateway
 import ru.souz.llms.runtime.LLMCapabilityResolver
@@ -87,7 +84,6 @@ internal class BackendConversationRuntimeFactory(
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
     private val retryPolicy: BackendProviderRetryPolicy,
     private val providerHttpClients: ProviderHttpClients,
-    private val localChatApi: LocalChatAPI,
     private val codexOAuthService: CodexOAuthService,
     private val agentStateRepository: AgentStateRepository,
     private val messageRepository: MessageRepository,
@@ -115,7 +111,7 @@ internal class BackendConversationRuntimeFactory(
     private val executionQuotas: ExecutionQuotaManager,
     private val metrics: BackendMetrics? = null,
     private val namedModels: Map<String, NamedLlmModel> = emptyMap(),
-    private val testLlmApiFactory: (suspend (SettingsProvider) -> LLMChatAPI)? = null,
+    private val providerApiOverride: ((LlmProvider) -> LLMChatAPI?)? = null,
 ) {
     private val modelFailures = ModelFailureMemory()
 
@@ -147,7 +143,6 @@ internal class BackendConversationRuntimeFactory(
             inputMessageSeq = request.inputMessageSeq,
         )
 
-        val testApi = testLlmApiFactory?.invoke(settingsProvider)
         val hookBudget = request.executionId?.let { id -> hookStore.find(key.userId, UUID.fromString(id)) }
             ?.let { HookLlmBudget(it, hookStore, executionQuotas) }
         val executionApi = BackendExecutionLlmChatApi(
@@ -157,10 +152,9 @@ internal class BackendConversationRuntimeFactory(
             credentialResolver = credentialResolver,
             retryPolicy = retryPolicy,
             httpClients = providerHttpClients,
-            localChatApi = localChatApi,
             codexOAuthService = codexOAuthService,
             initialUsage = initialUsage,
-            providerApiOverride = testApi?.let { api -> { api } },
+            providerApiOverride = providerApiOverride,
             hookBudget = hookBudget,
             metrics = metrics,
             fallbackModels = effectiveSettingsResolver.fallbackModels(key.userId, Locale.forLanguageTag(request.locale)),
@@ -170,9 +164,6 @@ internal class BackendConversationRuntimeFactory(
             settingsProvider = settingsProvider,
             openAiGateway = OpenAIVisionGateway(settingsProvider, executionApi),
             anthropicGateway = AnthropicVisionGateway(settingsProvider, executionApi),
-            additionalGateways = mapOf(
-                LlmProvider.LOCAL to LocalVisionGateway(settingsProvider, executionApi),
-            ),
         )
         val imageGenerationGateway = OpenAIImageGenerationGateway(
             settingsProvider = settingsProvider,
@@ -276,7 +267,6 @@ internal class BackendConversationRuntimeFactory(
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,
             settingsProvider = settingsProvider,
-            desktopInfoRepository = BackendNoopAgentDesktopInfoRepository,
             toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
             skillBundleProvider = skillBundleProvider,

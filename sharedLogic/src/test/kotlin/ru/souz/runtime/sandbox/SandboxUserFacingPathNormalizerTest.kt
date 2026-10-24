@@ -12,10 +12,6 @@ class SandboxUserFacingPathNormalizerTest {
         workspaceRootPath = "/workspace",
         stateRootPath = "/state",
         sessionsDirPath = "/state/sessions",
-        vectorIndexDirPath = "/state/vector-index",
-        logsDirPath = "/state/logs",
-        modelsDirPath = "/state/models",
-        nativeLibsDirPath = "/state/native",
         skillsDirPath = "/state/skills",
         skillValidationsDirPath = "/state/skill-validations",
     )
