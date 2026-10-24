@@ -16,7 +16,6 @@ import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.runtime.FridaClassifier
 import ru.souz.llms.runtime.jevState
-import ru.souz.tool.ToolCategory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -32,45 +31,6 @@ class FridaClassifierTest {
             LLMRequest.Message(LLMMessageRole.user, "Check my calendar and email the agenda"),
         ),
     )
-
-    @Test
-    fun `categories are one choice with the top option and options at least 3 above the mean margin`() = runTest {
-        val categories = mapOf(
-            ToolCategory.CALENDAR to "Calendar events",
-            ToolCategory.MAIL to "Email",
-            ToolCategory.FILES to "Files",
-            ToolCategory.DESKTOP to "Screen capture",
-        )
-        val engine = MockEngine { httpRequest ->
-            assertEquals("https://frida.test/pooling", httpRequest.url.toString())
-            assertEquals("Bearer frida-token", httpRequest.headers[HttpHeaders.Authorization])
-            assertEquals(2_000L, httpRequest.getCapabilityOrNull(HttpTimeoutCapability)?.requestTimeoutMillis)
-            val payload = restJsonMapper.readTree(httpRequest.body.toByteArray())
-            assertEquals("frida-decisions", payload["model"].asText())
-            assertEquals(jevState(request.messages), payload["data"]["state"].asText())
-            val question = payload["data"]["questions"]["choice"]
-            assertEquals("choice", question["type"].asText())
-            assertEquals(
-                "Which tool category is needed to fulfil the latest user request? Consider every step of a combined request. " +
-                    "Use history only to resolve missing context. Mentioning a topic alone does not require a tool.",
-                question["instructions"].asText(),
-            )
-            assertEquals(
-                restJsonMapper.valueToTree<JsonNode>(categories.mapKeys { it.key.name } + ("DESKTOP" to "Screen capture; " +
-                    "understanding the current screen needs both screen capture and image analysis, unless a path to an existing image was supplied")),
-                question["criteria"],
-            )
-            respond("""{"data":{"margins":{"choice":{"CALENDAR":6.0,"MAIL":3.0,"FILES":2.0,"DESKTOP":-11.0}}}}""")
-        }
-        HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
-            val client = FridaClient(http, "https://frida.test/pooling", "frida-token", "frida-decisions")
-            val reply = FridaClassifier(client).classify(request, categories)
-            assertEquals(listOf(ToolCategory.CALENDAR, ToolCategory.MAIL), reply.categories)
-            assertNull(reply.confidence)
-            assertEquals(emptyList(), FridaClassifier(client).classify(request, emptyMap()).categories)
-            assertEquals(1, engine.requestHistory.size)
-        }
-    }
 
     @Test
     fun `Skills are one choice over the last two messages with none`() = runTest {

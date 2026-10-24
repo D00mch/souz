@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>SuspendFunSwallowedCancellation:CodexOAuthService.kt:CodexOAuthService$catch (e: CancellationException) { _oauthState.value = CodexOAuthState.Idle throw e }</ID>
+    <ID>SuspendFunSwallowedCancellation:FileSystemSkillRegistryRepository.kt:FileSystemSkillRegistryRepository$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:OrderedShutdown.kt:OrderedShutdown$runCatching</ID>
+  </CurrentIssues>
+</SmellBaseline>

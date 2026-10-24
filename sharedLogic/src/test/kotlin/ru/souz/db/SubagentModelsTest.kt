@@ -34,26 +34,6 @@ class SubagentModelsTest {
         }
     }
 
-    @Test
-    fun `desktop settings prefer stored configuration and snapshot it until restart`() {
-        val stored = ConfigStore.get<String>(SUBAGENT_MODELS_JSON)
-        val property = System.getProperty(SUBAGENT_MODELS_JSON)
-        try {
-            ConfigStore.rm(SUBAGENT_MODELS_JSON)
-            System.setProperty(SUBAGENT_MODELS_JSON, """{"ANTHROPIC":["property-model"]}""")
-            assertEquals(mapOf("property-model" to LlmProvider.ANTHROPIC), settings().subagentModels)
-            ConfigStore.put(SUBAGENT_MODELS_JSON, """{"OPENAI":["stored-model"]}""")
-            val settings = settings()
-            ConfigStore.put(SUBAGENT_MODELS_JSON, "{}")
-            assertEquals(mapOf("stored-model" to LlmProvider.OPENAI), settings.subagentModels)
-            assertTrue(settings().subagentModels.isEmpty())
-            ConfigStore.put(SUBAGENT_MODELS_JSON, "broken")
-            assertFailsWith<IllegalArgumentException> { settings() }
-        } finally {
-            if (stored == null) ConfigStore.rm(SUBAGENT_MODELS_JSON) else ConfigStore.put(SUBAGENT_MODELS_JSON, stored)
-            if (property == null) System.clearProperty(SUBAGENT_MODELS_JSON) else System.setProperty(SUBAGENT_MODELS_JSON, property)
-        }
-    }
 
     @Test
     fun `custom parent resolves to its configured deployment without changing ordinary models`() {
@@ -65,5 +45,4 @@ class SubagentModelsTest {
         assertEquals(LLMModel.OpenAIGpt5Mini.alias, settings.executionModelId(LLMModel.OpenAIGpt5Mini))
     }
 
-    private fun settings() = SettingsProviderImpl(ConfigStore, mockk(relaxed = true))
 }

@@ -16,7 +16,6 @@ import ru.souz.backend.llm.hasCompleteCodexOAuthCredentials
 import ru.souz.backend.settings.repository.BackendServerPreferenceStore
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.LocalModelAvailability
 import ru.souz.db.SUBAGENT_MODELS_JSON
 
 class BackendSettingsProviderTest {
@@ -37,7 +36,7 @@ class BackendSettingsProviderTest {
     @Test
     fun `named models load independent connections and reject broken configuration`() {
         withNamedLlmConfig { source ->
-            val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source)
+            val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), source)
             assertEquals(setOf("test-chat", "tv-agent"), source.loadNamedModels().models.keys)
             assertEquals(mapOf("tv-agent" to LlmProvider.OPENAI), settings.subagentModels)
             assertEquals("https://router.test/v1", settings.openaiSummarizationBaseUrl)
@@ -47,7 +46,7 @@ class BackendSettingsProviderTest {
         val valid = NAMED_LLM_CONFIG
         for (port in listOf(1, 65535)) {
             withNamedLlmConfig(valid.replace("router.test/v1", "router.test:$port/v1")) { source ->
-                val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source)
+                val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), source)
                 assertEquals("https://router.test:$port/v1", settings.openaiSummarizationBaseUrl)
             }
         }
@@ -67,7 +66,7 @@ class BackendSettingsProviderTest {
             valid.replace("\"models\":", "\"models\":{},\"models\":"),
         ).forEach { json ->
             withNamedLlmConfig(json) { source ->
-                assertFailsWith<Exception> { BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source) }
+                assertFailsWith<Exception> { BackendSettingsProvider(MapBackendServerPreferenceStore(), source) }
             }
         }
     }
@@ -95,7 +94,7 @@ class BackendSettingsProviderTest {
     fun `named model names cannot collide with legacy routing`() {
         for ((key, value) in mapOf("OPENAI_MODEL" to " test-chat ", SUBAGENT_MODELS_JSON to """{"OPENAI":["tv-agent"]}""")) {
             withNamedLlmConfig(environment = mapOf(key to value)) { source ->
-                assertFailsWith<IllegalArgumentException> { BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source) }
+                assertFailsWith<IllegalArgumentException> { BackendSettingsProvider(MapBackendServerPreferenceStore(), source) }
             }
         }
     }
@@ -180,7 +179,6 @@ class BackendSettingsProviderTest {
     ): BackendSettingsProvider =
         BackendSettingsProvider(
             preferenceStore = store,
-            localProviderAvailability = NoLocalModels,
             source = MapBackendConfigSource(env, properties),
         )
 }
@@ -206,12 +204,4 @@ internal class MapBackendServerPreferenceStore : BackendServerPreferenceStore {
     override fun remove(key: String) {
         values.remove(key)
     }
-}
-
-internal object NoLocalModels : LocalModelAvailability {
-    override fun availableGigaModels(): List<LLMModel> = emptyList()
-
-    override fun defaultGigaModel(): LLMModel? = null
-
-    override fun isProviderAvailable(): Boolean = false
 }

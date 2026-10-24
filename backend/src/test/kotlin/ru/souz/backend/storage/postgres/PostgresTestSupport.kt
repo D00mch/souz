@@ -1,8 +1,6 @@
 package ru.souz.backend.storage.postgres
 
 import java.util.UUID
-import java.nio.file.Files
-import java.nio.file.Path
 import org.testcontainers.DockerClientFactory
 import org.testcontainers.containers.PostgreSQLContainer
 import ru.souz.backend.app.BackendAppConfig
@@ -79,19 +77,8 @@ internal fun postgresAppConfig(
 }
 
 private fun requireDocker() {
-    configureDockerHostForDesktop()
     if (runCatching { DockerClientFactory.instance().isDockerAvailable }.getOrDefault(false)) {
         return
     }
     error("Docker is required for backend Postgres Testcontainers tests. Start Docker and rerun :backend:test.")
-}
-
-private fun configureDockerHostForDesktop() {
-    if (!System.getenv("DOCKER_HOST").isNullOrBlank() || !System.getProperty("docker.host").isNullOrBlank()) {
-        return
-    }
-    val desktopSocket = Path.of(System.getProperty("user.home"), ".docker", "run", "docker.sock")
-    if (Files.exists(desktopSocket)) {
-        System.setProperty("docker.host", "unix://$desktopSocket")
-    }
 }

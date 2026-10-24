@@ -32,7 +32,7 @@ class BackendTokenUsageE2eTest {
                 withTokenUsageLogs(onRecord = { backend.applicationScope.cancel() }) { logs ->
                     val userId = UUID.randomUUID().toString()
                     val chatId = createPublicChat(userId)
-                    val body = """{"content":"count tokens","clientMessageId":"usage","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}"""
+                    val body = """{"content":"count tokens","clientMessageId":"usage","options":{"model":"${E2E_MODEL.alias}"}}"""
                     val executionId = if (publicThread) withPublicSocket(chatId) { socket ->
                         socket.send(Frame.Text(messageFrame(chatId, userId, "usage")))
                         readJson(socket)["thread"]["id"].asText()

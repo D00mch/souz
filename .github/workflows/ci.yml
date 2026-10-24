@@ -277,7 +277,7 @@ jobs:
         run: |
           coverage_log="$RUNNER_TEMP/kover.log"
           coverage_baseline=quality/coverage-baseline.json
-          ./gradlew test :sharedLogic:allTests :sharedUI:allTests \
+          ./gradlew test \
             :koverXmlReport :koverHtmlReport koverLog -Psouz.coverage \
             --console=plain --stacktrace --no-parallel | tee "$coverage_log"
 

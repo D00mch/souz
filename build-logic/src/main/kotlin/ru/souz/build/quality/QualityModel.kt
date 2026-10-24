@@ -276,7 +276,6 @@ internal fun dependencySourceSet(configurationName: String): String? {
     return when {
         sourceSet == "test" || sourceSet == "testFixtures" ||
             sourceSet.endsWith("Test") || sourceSet.endsWith("TestFixtures") -> null
-        sourceSet.endsWith("Main") -> sourceSet
         else -> UNCLASSIFIED_SOURCE_SET
     }
 }

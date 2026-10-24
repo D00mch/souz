@@ -4,15 +4,11 @@ import java.time.ZoneId
 import java.util.Locale
 
 /**
- * Supplies locale, time-zone and optional browser context for agent execution.
- *
- * Desktop preserves its startup locale and reads live system preferences;
- * backend supplies request-scoped locale and time-zone values.
+ * Supplies request-scoped locale and time-zone context for agent execution.
  */
 interface AgentRuntimeEnvironment {
     val locale: Locale
     val zoneId: ZoneId
-    val defaultBrowserDisplayName: String? get() = null
 }
 
 object SystemAgentRuntimeEnvironment : AgentRuntimeEnvironment {

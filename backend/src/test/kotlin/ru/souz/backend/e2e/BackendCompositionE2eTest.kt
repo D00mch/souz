@@ -46,7 +46,7 @@ class BackendCompositionE2eTest {
             )
         }) { providerHttpClientDefaults() }
         backendE2eTest(
-            "e2e_named_models", settingsSource = source, localModels = emptyList(),
+            "e2e_named_models", settingsSource = source, mockProvider = false,
             featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = true),
             providerClients = ProviderHttpClients(standard = http, openAi = http),
         ) {
@@ -86,7 +86,7 @@ class BackendCompositionE2eTest {
             }
             val socketChat = createPublicChat(userId, requestId = "ws-override")
             withPublicSocket(socketChat) { socket ->
-                socket.send(Frame.Text(messageFrame(socketChat, userId, "named-ws").replace(E2E_LOCAL_MODEL.alias, "test-chat")))
+                socket.send(Frame.Text(messageFrame(socketChat, userId, "named-ws").replace(E2E_MODEL.alias, "test-chat")))
                 assertEquals("accepted", readJson(socket)["status"].asText())
                 assertEquals("thread.status", readJson(socket)["type"].asText())
                 assertEquals("thread.completed", readJson(socket)["type"].asText())
@@ -137,7 +137,7 @@ class BackendCompositionE2eTest {
                 jsonBody(
                     """
                     {
-                      "defaultModel": "${E2E_LOCAL_MODEL.alias}",
+                      "defaultModel": "${E2E_MODEL.alias}",
                       "narrateSteps": true,
                       "locale": "iw-IL",
                       "timeZone": "Europe/Amsterdam",
@@ -158,7 +158,7 @@ class BackendCompositionE2eTest {
             assertEquals(HttpStatusCode.OK, patch.status)
             val settings = patch.jsonBody()["settings"]
             assertEquals(0, settings["enabledTools"].size())
-            assertEquals(E2E_LOCAL_MODEL.alias, settings["defaultModel"].asText())
+            assertEquals(E2E_MODEL.alias, settings["defaultModel"].asText())
             assertEquals("he-IL", settings["locale"].asText())
             assertTrue(settings["narrateSteps"].asBoolean())
             val preserved = client.patch(BackendHttpRoutes.SETTINGS) {
@@ -196,6 +196,7 @@ class BackendCompositionE2eTest {
     fun `stored provider keys decide the default model on each request`() =
         backendE2eTest(
             "e2e_key_model",
+            mockProvider = false,
             settingsSource = object : BackendConfigSource {
                 override fun env(key: String): String? = null
                 override fun property(key: String): String? = null
@@ -225,7 +226,7 @@ class BackendCompositionE2eTest {
             assertEquals(HttpStatusCode.BadRequest, withoutKey.status)
             assertEquals(HttpStatusCode.OK, withKey.status)
             assertEquals(LLMModel.QwenMax.alias, withKey.jsonBody()["settings"]["defaultModel"].asText())
-            assertEquals(E2E_LOCAL_MODEL.alias, afterDelete.jsonBody()["settings"]["defaultModel"].asText())
+            assertEquals(E2E_MODEL.alias, afterDelete.jsonBody()["settings"]["defaultModel"].asText())
         }
 
     @Test
@@ -248,7 +249,7 @@ class BackendCompositionE2eTest {
                     {
                       "content": "remember me",
                       "clientMessageId": "msg-1",
-                      "options": {"model": "${E2E_LOCAL_MODEL.alias}"}
+                      "options": {"model": "${E2E_MODEL.alias}"}
                     }
                     """.trimIndent()
                 )
@@ -290,7 +291,7 @@ class BackendCompositionE2eTest {
             val continued = client.post(BackendHttpRoutes.chatMessages(chatId)) {
                 trusted(userId)
                 jsonBody(
-                    """{"content":"continue after restart","clientMessageId":"msg-2","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}"""
+                    """{"content":"continue after restart","clientMessageId":"msg-2","options":{"model":"${E2E_MODEL.alias}"}}"""
                 )
             }
             assertEquals(HttpStatusCode.OK, continued.status)
@@ -305,7 +306,7 @@ class BackendCompositionE2eTest {
     }
 
     @Test
-    fun `settings affect the next real-kernel local turn`() =
+    fun `settings affect the next real-kernel turn`() =
         backendE2eTest("e2e_settings_turn") {
             val userId = UUID.randomUUID().toString()
             val created = client.post(BackendHttpRoutes.CHATS) {
@@ -314,14 +315,14 @@ class BackendCompositionE2eTest {
             val chatId = created.jsonBody()["chat"]["id"].asText()
             val patched = client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId)
-                jsonBody("""{"defaultModel":"${LLMModel.LocalGemma4_E2B_It.alias}"}""")
+                jsonBody("""{"defaultModel":"${LLMModel.AnthropicHaiku45.alias}"}""")
             }
 
             assertEquals(HttpStatusCode.BadRequest, patched.status)
 
             client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId)
-                jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","temperature":0.2}""")
+                jsonBody("""{"defaultModel":"${E2E_MODEL.alias}","temperature":0.2}""")
             }
             val sent = client.post(BackendHttpRoutes.chatMessages(chatId)) {
                 trusted(userId)
@@ -330,7 +331,7 @@ class BackendCompositionE2eTest {
 
             assertEquals(HttpStatusCode.OK, sent.status)
             eventually("captured LLM request") { llm.requests.singleOrNull() }
-            assertEquals(E2E_LOCAL_MODEL.alias, llm.requests.single().model)
+            assertEquals(E2E_MODEL.alias, llm.requests.single().model)
             assertEquals(0.2f, llm.requests.single().temperature)
         }
 
@@ -352,7 +353,7 @@ class BackendCompositionE2eTest {
             assertTrue((toolNames intersect setOf("InternetSearch", "InternetResearch", "WebPageText", "WebImageSearch")).isEmpty())
             val models = bootstrap.jsonBody()["capabilities"]["models"]
             assertTrue(models.any { model ->
-                model["model"].asText() == E2E_LOCAL_MODEL.alias && model["serverManagedKey"].asBoolean()
+                model["model"].asText() == E2E_MODEL.alias && model["serverManagedKey"].asBoolean()
             })
             assertFalse(models.any { it["provider"].asText() == "giga" })
             assertTrue(initial.jsonBody()["required"].asBoolean())
@@ -365,7 +366,7 @@ class BackendCompositionE2eTest {
                 jsonBody(
                     """
                     {
-                      "defaultModel": "${E2E_LOCAL_MODEL.alias}",
+                      "defaultModel": "${E2E_MODEL.alias}",
                       "locale": "iw-IL",
                       "timeZone": "Europe/Amsterdam",
                       "enabledTools": [],

@@ -21,7 +21,6 @@ ktor {
 dependencies {
     implementation(project(":agent"))
     implementation(project(":llms"))
-    implementation(project(":native"))
     implementation(project(":sharedLogic"))
     implementation(project(":skill-oauth-api"))
     implementation(project(":skill-oauth-impl"))
@@ -70,26 +69,11 @@ dependencies {
 
 application {
     mainClass.set("ru.souz.backend.app.BackendMainKt")
-}
-
-tasks.startScripts {
-    // The full jar list exceeds the 8191-character cmd.exe line limit.
-    doLast {
-        val script = windowsScript.readText()
-        val wildcard = script.replace(Regex("(?m)^set CLASSPATH=.*$"), "set CLASSPATH=%APP_HOME%\\\\lib\\\\*")
-        check(wildcard != script) { "The Windows start script has no CLASSPATH line to replace." }
-        windowsScript.writeText(wildcard)
-    }
+    applicationDefaultJvmArgs = listOf("-Djava.awt.headless=true")
 }
 
 tasks.test {
     useJUnitPlatform()
-    if (System.getenv("DOCKER_HOST").isNullOrBlank()) {
-        val dockerDesktopSocket = file("${System.getProperty("user.home")}/.docker/run/docker.sock")
-        if (dockerDesktopSocket.exists()) {
-            environment("DOCKER_HOST", "unix://${dockerDesktopSocket.absolutePath}")
-        }
-    }
 }
 
 tasks.withType<Sync>().configureEach {

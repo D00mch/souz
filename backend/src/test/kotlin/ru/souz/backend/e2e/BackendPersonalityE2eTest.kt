@@ -163,7 +163,7 @@ class BackendPersonalityE2eTest {
     private fun BackendE2eScope.toolResult() = json.readTree(llm.requests.last { !it.isSummarization }.messages.last { it.name == "RunSkillCommand" }.content)
     private suspend fun BackendE2eScope.turn(chat: String, wish: String) {
         val result = client.post(BackendHttpRoutes.chatMessages(chat)) {
-            trusted(owner); jsonBody("""{"content":"$wish","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+            trusted(owner); jsonBody("""{"content":"$wish","options":{"model":"${E2E_MODEL.alias}"}}""")
         }.jsonBody()
         backend.awaitExecution(UUID.fromString(result["execution"]["id"].asText()))
     }

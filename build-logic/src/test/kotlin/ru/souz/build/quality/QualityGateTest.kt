@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.gradle.testkit.runner.GradleRunner
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -86,6 +87,36 @@ class QualityGateTest {
         assertEquals("fail", result.path("status").asText())
         assertTrue(result.path("diagnostics").single().path("message").asText()
             .contains(":graph-engine main must not depend on :llms"))
+    }
+
+    @Test
+    fun `runtime main dependencies follow the backend JVM module graph`() {
+        val modules = listOf("graph-engine", "llms", "agent", "sharedLogic", "skill-oauth-api", "skill-oauth-impl",
+            "job-api", "job-impl", "backend")
+        val projects = modules.map { ProjectDescriptor(":$it", it, "$it/build.gradle.kts") }
+        fun edge(source: String, target: String) = DependencyEdge(
+            ":$source", "implementation", "main", ":$target", "$source/build.gradle.kts",
+        )
+        val allowed = listOf(
+            edge("agent", "graph-engine"), edge("agent", "llms"),
+            edge("sharedLogic", "agent"), edge("sharedLogic", "llms"), edge("sharedLogic", "skill-oauth-api"),
+            edge("skill-oauth-impl", "skill-oauth-api"), edge("job-impl", "job-api"),
+        ) + modules.filter { it != "graph-engine" && it != "backend" }.map { edge("backend", it) }
+        assertEquals(emptyList<QualityDiagnostic>(), ModuleBoundaries.check(projects, allowed))
+        val forbidden = ModuleBoundaries.check(projects, listOf(edge("sharedLogic", "backend")))
+        assertEquals(1, forbidden.size)
+        assertTrue(forbidden.single().message.contains(":sharedLogic main must not depend on :backend"))
+    }
+
+    @Test
+    fun `JVM configurations identify production and explicitly named tests`() {
+        for (configuration in listOf("api", "implementation", "compileOnly", "compileOnlyApi", "runtimeOnly", "annotationProcessor")) {
+            assertEquals("main", dependencySourceSet(configuration))
+        }
+        for (configuration in listOf("testImplementation", "testFixturesApi", "integrationTestRuntimeOnly")) {
+            assertNull(dependencySourceSet(configuration))
+        }
+        assertEquals(UNCLASSIFIED_SOURCE_SET, dependencySourceSet("unclassifiedImplementation"))
     }
 
     @Test

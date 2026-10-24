@@ -3,11 +3,12 @@ package ru.souz.backend.agent.runtime
 import java.util.Locale
 import java.time.ZoneId
 import ru.souz.agent.AgentId
-import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.memory.hindsight.UNSUPPORTED_MEMORY_MUTATION_NOTICE
+import ru.souz.db.REGION_EN
+import ru.souz.db.REGION_RU
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.findLLMModel
 import ru.souz.llms.LLMModel
@@ -27,7 +28,6 @@ class BackendConversationSettingsProvider(
     override fun executionModelId(model: LLMModel): String =
         namedModel?.takeIf { model == LLMModel.OpenAICompatibleCustom } ?: delegate.executionModelId(model)
 
-    override var defaultCalendar: String? = null
     override var regionProfile: String = localeToRegionProfile(locale)
     override var gigaModel: LLMModel = delegate.gigaModel
     override var useFewShotExamples: Boolean = useFewShotExamples
@@ -63,7 +63,7 @@ class BackendConversationSettingsProvider(
             UNSUPPORTED_MEMORY_MUTATION_NOTICE.takeIf { request.clientToolsEnabled },
             when {
                 !request.narrateSteps -> null
-                regionProfile == SettingsProviderImpl.REGION_EN ->
+                regionProfile == REGION_EN ->
                     "Before every tool call, write ONE short first-person sentence (max ~120 characters, " +
                         "plain text, no Markdown): what you just learned and what you are about to do. " +
                         "This is a status line, not the final answer."
@@ -81,10 +81,10 @@ class BackendConversationSettingsProvider(
     private fun localeToRegionProfile(locale: String): String {
         val language = runCatching { Locale.forLanguageTag(locale).language.lowercase() }
             .getOrDefault("")
-        return if (language == SettingsProviderImpl.REGION_EN) {
-            SettingsProviderImpl.REGION_EN
+        return if (language == REGION_EN) {
+            REGION_EN
         } else {
-            SettingsProviderImpl.REGION_RU
+            REGION_RU
         }
     }
 }
@@ -99,16 +99,6 @@ class BackendRequestRuntimeEnvironment(
         ?: Locale.getDefault()
 
     override val zoneId: ZoneId = ZoneId.of(timeZone)
-}
-
-private object SettingsProviderImpl {
-    const val REGION_RU = "ru"
-    const val REGION_EN = "en"
-}
-
-/** Backend implementation for hosts without desktop indexing. */
-object BackendNoopAgentDesktopInfoRepository : AgentDesktopInfoRepository {
-    override suspend fun search(query: String, limit: Int) = emptyList<ru.souz.db.StorredData>()
 }
 
 /** Backend-owned user-facing error text for shared agent failure paths. */

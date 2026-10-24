@@ -13,21 +13,19 @@ import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.LocalModelAvailability
 
 class BackendBootstrapService(
     private val settingsProvider: SettingsProvider,
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
     toolCatalog: AgentToolCatalog,
     private val featureFlags: BackendFeatureFlags,
-    private val localModelAvailability: LocalModelAvailability,
     private val userProviderKeyRepository: UserProviderKeyRepository,
 ) {
     private val advertisedToolNames: Set<String> =
         BackendToolCapabilityPolicy.advertisedToolNames(toolCatalog)
 
     suspend fun response(identity: RequestIdentity): BootstrapResponse {
-        val buildProfile = LlmBuildProfile(settingsProvider, localModelAvailability)
+        val buildProfile = LlmBuildProfile(settingsProvider)
         val userManagedProviders = userProviderKeyRepository.list(identity.userId)
             .mapNotNullTo(linkedSetOf()) { key ->
                 key.provider.takeIf { it in BackendLlmSupport.userManagedKeyProviders }
@@ -41,7 +39,6 @@ class BackendBootstrapService(
             addAll(userManagedProviders)
             addAll(LlmProvider.entries.filter { provider ->
                 provider in BackendLlmSupport.chatProviders &&
-                    provider != LlmProvider.LOCAL &&
                     settingsProvider.hasKey(provider)
             })
             if (!settingsProvider.hasCompleteCodexOAuthCredentials()) {
@@ -58,10 +55,7 @@ class BackendBootstrapService(
                             return@filter hasConfiguredOpenAiCompatibleChatModel() &&
                                 LlmProvider.OPENAI in capabilityProviders
                         }
-                        when (model.provider) {
-                            LlmProvider.LOCAL -> model in localModelAvailability.availableGigaModels()
-                            else -> model.provider in capabilityProviders
-                        }
+                        model.provider in capabilityProviders
                     }
                     .map { modelCapability(it, userManagedProviders) } + effectiveSettingsResolver.namedModelNames.map {
                         BootstrapModelCapability(provider = "openai", model = it, serverManagedKey = true, userManagedKey = false)
@@ -90,7 +84,6 @@ class BackendBootstrapService(
             hasConfiguredOpenAiCompatibleChatModel() && settingsProvider.hasKey(LlmProvider.OPENAI)
         } else {
             when (model.provider) {
-                LlmProvider.LOCAL -> model in localModelAvailability.availableGigaModels()
                 LlmProvider.CODEX -> settingsProvider.hasCompleteCodexOAuthCredentials()
                 else -> settingsProvider.hasKey(model.provider)
             }
@@ -110,7 +103,7 @@ class BackendBootstrapService(
         provider: LlmProvider,
         userManagedProviders: Set<LlmProvider>,
     ): Boolean =
-        provider != LlmProvider.LOCAL && provider in userManagedProviders
+        provider in userManagedProviders
 
     private fun hasConfiguredOpenAiCompatibleChatModel(): Boolean =
         !settingsProvider.openaiModel.isNullOrBlank()

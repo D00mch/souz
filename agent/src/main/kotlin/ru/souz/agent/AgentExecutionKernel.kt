@@ -13,7 +13,6 @@ import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.SkillClassifier
-import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
@@ -33,7 +32,6 @@ class AgentExecutionKernel(
 class AgentExecutionKernelFactory(
     private val logObjectMapper: ObjectMapper,
     private val settingsProvider: AgentSettingsProvider,
-    private val desktopInfoRepository: AgentDesktopInfoRepository,
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
     private val skillBundleProvider: SkillBundleProvider,
@@ -54,8 +52,6 @@ class AgentExecutionKernelFactory(
     fun create(): AgentExecutionKernel {
         val agentToolExecutor = AgentToolExecutor(telemetry)
         val nodesCommon = NodesCommon(
-            desktopInfoRepository = desktopInfoRepository,
-            settingsProvider = settingsProvider,
             runtimeEnvironment = runtimeEnvironment,
         )
         val nodesSkillInventory = NodesSkillInventory(
@@ -77,7 +73,6 @@ class AgentExecutionKernelFactory(
         val availableAgents = listOf(AgentId.SKILLS_GRAPH)
         val contextFactory = AgentContextFactory(
             settingsProvider = settingsProvider,
-            systemPromptResolver = SystemPromptResolver(),
             toolCatalog = toolCatalog,
             availableAgents = availableAgents,
         )
