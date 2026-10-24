@@ -27,7 +27,7 @@ class ScenarioCodexAuthTest {
 
     @Test
     fun `cached credentials are used without refreshing or changing underlying settings or login`() = runTest {
-        val token = jwt(now.epochSecond + 3_600)
+        val token = jwt(Long.MAX_VALUE)
         val source = login(token)
         val authFile = directory.resolve("auth.json").apply { writeText(source) }
         val baseSettings = mockk<SettingsProvider>()
@@ -37,7 +37,7 @@ class ScenarioCodexAuthTest {
         assertEquals(token, settings.codexAccessToken)
         assertEquals("fixture-account", settings.codexAccountId)
         assertNull(settings.codexRefreshToken)
-        assertNull(settings.codexExpiresAt)
+        assertEquals(Long.MAX_VALUE, settings.codexExpiresAt)
 
         val oauth = CodexOAuthService(settings, client)
         repeat(2) { assertEquals(token, oauth.refreshTokenIfNeeded()) }
@@ -45,6 +45,29 @@ class ScenarioCodexAuthTest {
         settings.codexAccountId = null
         settings.codexRefreshToken = "in-memory-only"
         settings.codexExpiresAt = now.epochSecond
+
+        assertEquals(source, authFile.readText())
+        verify { baseSettings wasNot Called }
+        verify { client wasNot Called }
+    }
+
+    @Test
+    fun `credentials that expire after loading cannot be reused or refreshed`() = runTest {
+        val token = jwt(Long.MAX_VALUE)
+        val source = login(token)
+        val authFile = writeLogin(source)
+        val baseSettings = mockk<SettingsProvider>()
+        val client = mockk<HttpClient>()
+        val settings = scenarioCodexSettings(baseSettings, authFile, now)
+        val oauth = CodexOAuthService(settings, client)
+
+        assertEquals(token, oauth.refreshTokenIfNeeded())
+        settings.codexExpiresAt = 0L
+        repeat(2) {
+            val failure = assertFailsWith<IllegalStateException> { oauth.refreshTokenIfNeeded() }
+            assertEquals("Codex: refresh token is missing", failure.message)
+            assertSafeFailure(failure, source, token, "private-refresh-fixture")
+        }
 
         assertEquals(source, authFile.readText())
         verify { baseSettings wasNot Called }

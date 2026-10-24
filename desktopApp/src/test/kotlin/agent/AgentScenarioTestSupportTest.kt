@@ -253,6 +253,42 @@ class AgentScenarioTestSupportTest {
     }
 
     @Test
+    fun `text only evaluations complete without a tool call`() = runTest {
+        val trace = ScenarioExecutionTrace(requireToolCall = false)
+        val answer = "A completed textual answer."
+        trace.modelCall { response(answer) }
+
+        trace.assertCompleted(result(answer))
+        assertTrue(trace.report(2.seconds).contains("toolCalls=0"))
+    }
+
+    @Test
+    fun `text only evaluations still reject failed incomplete and mismatched answers`() = runTest {
+        val invalidResponses = listOf(
+            LLMResponse.Chat.Error(503, "Provider unavailable"),
+            response(""),
+            response("Incomplete", finishReason = LLMResponse.FinishReason.length),
+            response("<think>Internal deliberation</think>"),
+            response("Pending call").let { response ->
+                response.copy(choices = response.choices.map { choice ->
+                    choice.copy(message = choice.message.copy(
+                        functionCall = LLMResponse.FunctionCall("Open", emptyMap()),
+                    ))
+                })
+            },
+        )
+        for (answer in invalidResponses) {
+            val trace = ScenarioExecutionTrace(requireToolCall = false)
+            trace.modelCall { answer }
+            val output = (answer as? LLMResponse.Chat.Ok)?.choices?.single()?.message?.content.orEmpty()
+            assertFailsWith<AssertionError> { trace.assertCompleted(result(output)) }
+        }
+        val trace = ScenarioExecutionTrace(requireToolCall = false)
+        trace.modelCall { response("Completed") }
+        assertFailsWith<AssertionError> { trace.assertCompleted(result("Different answer")) }
+    }
+
+    @Test
     fun `completion needs executed tool and matching final assistant history`() = runTest {
         val trace = ScenarioExecutionTrace()
         trace.modelCall { response("Telegram запущен.") }

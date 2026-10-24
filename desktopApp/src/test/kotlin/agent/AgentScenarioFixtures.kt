@@ -12,6 +12,13 @@ import ru.souz.tool.files.ToolModifyFile
 import java.nio.file.Path
 import java.time.LocalDate
 
+internal fun assertOneUnreadMessage(answer: String) {
+    assertTrue(
+        Regex("""(?U)(?<!\d)1(?!\d)|\b(?:одно|один|one)\b""", RegexOption.IGNORE_CASE).containsMatchIn(answer),
+        "Expected answer to include an unread count of one, got: $answer",
+    )
+}
+
 internal fun assertAnswerFacts(answer: String, vararg facts: String) {
     val plain = answer.lowercase().replace(Regex("[*`]"), "")
     facts.forEach { fact ->

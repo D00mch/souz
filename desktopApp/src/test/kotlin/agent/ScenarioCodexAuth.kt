@@ -38,6 +38,6 @@ internal fun scenarioCodexSettings(
         override var codexAccessToken: String? = accessToken
         override var codexAccountId: String? = accountId
         override var codexRefreshToken: String? = null
-        override var codexExpiresAt: Long? = null
+        override var codexExpiresAt: Long? = expiresAt
     }
 }

@@ -238,7 +238,7 @@ class AgentScenarioTestSupport(
         val previousFewShotExamplesEnabled = fewShotExamplesEnabled
         fewShotExamplesEnabled = useFewShotExamples
         systemPromptOverride = systemPrompt
-        scenarioTrace = ScenarioExecutionTrace()
+        scenarioTrace = ScenarioExecutionTrace(requireToolCall = mockedTools.isNotEmpty())
         try {
             return runAgent(createScenarioDi(mockedTools), userPrompt)
         } finally {
@@ -337,7 +337,10 @@ internal object ScenarioRuntimeEnvironment : AgentRuntimeEnvironment {
     override val clock: Clock = Clock.fixed(SCENARIO_TODAY.atTime(10, 0).atZone(zoneId).toInstant(), zoneId)
 }
 
-internal class ScenarioExecutionTrace(private val maxModelCalls: Int = 24) : AgentRuntimeEventSink {
+internal class ScenarioExecutionTrace(
+    private val maxModelCalls: Int = 24,
+    private val requireToolCall: Boolean = true,
+) : AgentRuntimeEventSink {
     private val lock = Mutex()
     private val events = mutableListOf<AgentRuntimeEvent>()
     private var lastResponse: LLMResponse.Chat? = null
@@ -388,7 +391,9 @@ internal class ScenarioExecutionTrace(private val maxModelCalls: Int = 24) : Age
             !INTERNAL_DELIBERATION.containsMatchIn(output) && output != finalChoice.message.reasoningContent?.trim(),
             "Scenario returned internal deliberation instead of a user-facing result: $output",
         )
-        assertTrue(events.any { it is AgentRuntimeEvent.ToolCallFinished }, "Scenario completed without executing a tool.")
+        if (requireToolCall) {
+            assertTrue(events.any { it is AgentRuntimeEvent.ToolCallFinished }, "Scenario completed without executing a tool.")
+        }
     }
 
     fun report(duration: Duration): String {

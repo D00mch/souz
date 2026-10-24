@@ -680,7 +680,7 @@ class GraphAgentToolScenariosIntegrationTest {
             ),
         )
         assertAnswerFacts(answer, "Отчет за сегодня", "Daily digest")
-        assertTrue(Regex("(?<!\\d)1(?!\\d)|одно|один|one", RegexOption.IGNORE_CASE).containsMatchIn(answer), answer)
+        assertOneUnreadMessage(answer)
         coVerify(atLeast = 1) { toolMailUnreadMessagesCount.invoke(any(), any()) }
         coVerify(atLeast = 1) { toolMailListMessages.invoke(any(), any()) }
         if (userPrompt.contains("Найди", ignoreCase = true)) coVerify(atLeast = 1) { toolMailSearch.invoke(any(), any()) }

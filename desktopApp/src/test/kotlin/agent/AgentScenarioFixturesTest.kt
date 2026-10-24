@@ -14,6 +14,28 @@ import ru.souz.tool.files.ToolModifyFile
 
 class AgentScenarioFixturesTest {
     @Test
+    fun `unread count accepts whole English and Russian words and the digit one`() {
+        for (answer in listOf("Unread: **1**.", "Unread: ONE.", "Непрочитано: одно письмо.", "Всего: ОДИН.")) {
+            assertOneUnreadMessage(answer)
+        }
+    }
+
+    @Test
+    fun `unread count rejects embedded words and unrelated message IDs`() {
+        for (answer in listOf(
+            "Done. Отчет за сегодня; Daily digest.",
+            "Someone sent the daily digest.",
+            "Одноразовый код; одиннадцать писем.",
+            "неодно; неодин; oneписьмо; письмоone",
+            "ID: 50101 | Отчет за сегодня; ID: 50002 | Daily digest.",
+            "Unread: 11.",
+            "Unread: 21.",
+        )) {
+            assertThrows<AssertionError>(answer) { assertOneUnreadMessage(answer) }
+        }
+    }
+
+    @Test
     fun `browser metadata never returns page text and pageText resolves only the requested page`() {
         val page = ScenarioBrowserPage()
         ToolChromeInfo.InfoType.entries.filter { it != ToolChromeInfo.InfoType.pageText }.forEach {
