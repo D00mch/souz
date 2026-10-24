@@ -419,7 +419,8 @@ Ambient mode is a local-first proactive-help flow. It listens only after the use
 | Route | Purpose |
 |---|---|
 | `GET /` | Public backend route index |
-| `GET /health` | Process and selected-model status |
+| `GET /health` | Process and selected-model status; liveness probe |
+| `GET /ready` | `200` when PostgreSQL accepts writes within 2 seconds, otherwise `503`; readiness probe |
 | `GET /docs` | Public Swagger UI |
 | `GET /docs/openapi.json` | Public OpenAPI 3.1 document |
 | `GET /v1/bootstrap` | Features, visible models/tools, effective trusted-user settings |

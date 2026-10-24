@@ -92,6 +92,7 @@ import ru.souz.backend.storage.postgres.PostgresChatRepository
 import ru.souz.backend.storage.postgres.PostgresClientRequestRepository
 import ru.souz.backend.storage.postgres.PostgresOptionRepository
 import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
+import ru.souz.backend.storage.postgres.PostgresReadinessProbe
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
 import ru.souz.backend.storage.postgres.PostgresToolCallRepository
 import ru.souz.backend.storage.postgres.PostgresTelegramBotBindingRepository
@@ -190,6 +191,7 @@ fun backendDiModule(
     }
     bindSingleton { PostgresJobService(instance<HikariDataSource>()) }
     bindSingleton<JobService> { instance<PostgresJobService>() }
+    bindSingleton { PostgresReadinessProbe(instance<HikariDataSource>()) }
     bindSingleton<BackendServerPreferenceStore> {
         PostgresBackendServerPreferenceStore(
             dataSource = instance(),
@@ -607,6 +609,7 @@ fun backendDiModule(
             telegramBotBindingService = if (featureFlags.telegramBot) instance() else null,
             vkBotBindingService = if (featureFlags.vkBot) instance() else null,
             featureFlags = featureFlags,
+            readinessProbe = instance(),
             selectedModel = { settingsResolver.defaultModel() },
             trustedProxyToken = { appConfig.server.proxyToken },
             ensureTrustedUser = userRepository::ensureUser,
