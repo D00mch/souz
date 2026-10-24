@@ -43,7 +43,7 @@ Omitting recall tags exposes one conversation's transient memory in another. Fin
 
 ## Verification
 
-Run `./gradlew :backend:test --tests 'ru.souz.backend.e2e.BackendHistoryMemory*' --tests 'ru.souz.backend.app.BackendDiModuleTest'`, `./gradlew :sharedLogic:jvmTest --tests 'ru.souz.memory.MemoryRulesTest'`, and `./gradlew souzGateFast`.
+Run `./gradlew :backend:test --tests 'ru.souz.backend.e2e.BackendHistoryMemory*' --tests 'ru.souz.backend.app.BackendDiModuleTest'`, `./gradlew :sharedLogic:test --tests 'ru.souz.memory.MemoryRulesTest'`, and `./gradlew souzGateFast`.
 
 The deterministic suite covers ACK independence, disconnect, restart, leases, filtering, bounded context, live `SearchMemory` and client tools, and imported tool history followed by Souz execution. It checks retain items without `strategy`, the absence of bank configuration requests, redaction of both dialogue roles, quoted role markers, closed/unclosed assistant reasoning blocks, Unicode-safe bounded records, and exclusion of evidence. For real Hindsight verification, use isolated banks with the target `retain_mission` and chunk size: retain a user preference, recall it, then capture a turn whose final answer repeats it. Recall must preserve the original source. Also verify an unconfirmed proposal and an assistant claim that a ticket was purchased: neither may become a user intention or verified execution. Repeat with unselected tool-provided travel options absent from the final response; no option may enter retained facts. HTTP-body assertions alone do not verify extraction quality.
 

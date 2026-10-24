@@ -39,7 +39,7 @@ class BackendAttachmentAccess(
             storage.save(meta.userId, key, resolved.name, bytes.inputStream())
         }
         if ((presentation == FilePresentation.image && !file.mimeType.startsWith("image/")) ||
-            (presentation in setOf(FilePresentation.voice, FilePresentation.audio) && !file.mimeType.startsWith("audio/"))) {
+            ((presentation == FilePresentation.voice || presentation == FilePresentation.audio) && !file.mimeType.startsWith("audio/"))) {
             throw AttachmentException("attachment_presentation_mismatch")
         }
         file.toContent(presentation)

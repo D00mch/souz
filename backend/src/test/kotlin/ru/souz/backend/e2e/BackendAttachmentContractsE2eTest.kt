@@ -58,7 +58,7 @@ class BackendAttachmentContractsE2eTest {
                 val chat = createPublicChat(user)
                 client.patch(BackendHttpRoutes.SETTINGS) {
                     trusted(user)
-                    jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","enabledTools":["PrepareAttachment","AttachFileToReply"]}""")
+                    jsonBody("""{"defaultModel":"${E2E_MODEL.alias}","enabledTools":["PrepareAttachment","AttachFileToReply"]}""")
                 }
                 val stored = backend.attachmentStorage.save(user, "input", "report.md", "# Original".byteInputStream())
                 fileId = stored.id.toString()
@@ -84,7 +84,7 @@ class BackendAttachmentContractsE2eTest {
                     // Same execution after reconstruction keeps its explicit selection (option continuation).
                     val resumed = peer.backend.turnRunner.run(
                         AgentConversationKey(user, chat),
-                        BackendConversationTurnRequest(prompt = "continue", model = E2E_LOCAL_MODEL.alias,
+                        BackendConversationTurnRequest(prompt = "continue", model = E2E_MODEL.alias,
                             locale = "ru-RU", timeZone = "UTC", executionId = sent.execution.id.toString()),
                         AgentRuntimeEventSink.NONE,
                     ) as BackendConversationTurnOutcome.Completed

@@ -15,7 +15,7 @@ internal suspend fun BackendE2eScope.scheduledTaskSetup(userId: String): String 
     val chatId = createPublicChat(userId, "create-$userId")
     val settings = client.patch(BackendHttpRoutes.SETTINGS) {
         trusted(userId)
-        jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","streamingMessages":false,"timeZone":"Europe/Moscow"}""")
+        jsonBody("""{"defaultModel":"${E2E_MODEL.alias}","streamingMessages":false,"timeZone":"Europe/Moscow"}""")
     }
     assertEquals(HttpStatusCode.OK, settings.status)
     return chatId

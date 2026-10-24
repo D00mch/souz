@@ -12,10 +12,8 @@ import ru.souz.llms.toSystemPromptMessage
 
 class AgentContextFactory(
     private val settingsProvider: AgentSettingsProvider,
-    private val systemPromptResolver: SystemPromptResolver,
     private val toolCatalog: AgentToolCatalog,
-    // This list is also exposed by AgentFacade so callers can offer only agents with valid contexts.
-    internal val availableAgents: List<AgentId> = listOf(AgentId.GRAPH, AgentId.SKILLS_GRAPH),
+    internal val availableAgents: List<AgentId> = listOf(AgentId.SKILLS_GRAPH),
 ) {
     init {
         require(availableAgents.isNotEmpty()) { "At least one agent must be available." }
@@ -26,11 +24,7 @@ class AgentContextFactory(
 
     fun systemPromptFor(agentId: AgentId, model: LLMModel): String =
         settingsProvider.getSystemPromptForAgentModel(agentId, model)
-            ?: systemPromptResolver.defaultPrompt(
-                agentId = agentId,
-                model = model,
-                regionProfile = settingsProvider.regionProfile,
-            )
+            ?: DEFAULT_SYSTEM_PROMPT
 
     fun create(agentId: AgentId): AgentContext<String> {
         val normalizedAgentId = normalizeAgentId(agentId)

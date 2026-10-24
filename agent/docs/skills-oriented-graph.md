@@ -2,7 +2,7 @@
 
 ## Invariant
 
-`SkillsGraphBasedAgent` exposes `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand`. `GraphBasedAgent` exposes the universal core subset `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` independently of classification. Both install the host's execution-bound `SpawnSubagent` when supplied through `AgentCoreTools`. The skills graph replaces advertised and executable tools before execution. Its effective system message contains filtered tool-backed IDs, user-scoped escaped file-backed IDs, and concise descriptions beside relevant exact IDs. `AgentContext.systemPrompt` remains the caller-provided prompt. Inventory selects descriptions with Jev and execution-LLM fallback; direct-tool classification and MCP injection are omitted.
+`SkillsGraphBasedAgent` exposes `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand`. It installs the backend's execution-bound `SpawnSubagent` when supplied through `AgentCoreTools`. The graph replaces advertised and executable tools before execution. Its effective system message contains filtered tool-backed IDs, user-scoped escaped file-backed IDs, and concise descriptions beside relevant exact IDs. `AgentContext.systemPrompt` remains the caller-provided prompt. Inventory selects descriptions with Jev and execution-LLM fallback.
 
 Continuation ordering, reserved publication, response acceptance, and stream revisions follow [Execution lifecycle](execution-lifecycle.md).
 
@@ -46,7 +46,7 @@ Advertising a small tool list without replacing executable lookup would let a fa
 - Keep large-result processing in `NodesToolUseWithKnowledge`; `NodesPlain.toolUse()` remains inline-only.
 - Preserve function-result role, name, attachments, and call ID when replacing only its content.
 - Preserve structured `files`, `images`, and `replyFiles` during Knowledge offloading. Compaction retains completed-prefix file references on the summary; selected reply files are execution state, independent of summary text.
-- Keep Knowledge cleanup tied to destructive or local conversation-close lifecycles. Backend archive is non-destructive and does not clear Knowledge.
+- Keep Knowledge cleanup tied to destructive conversation cleanup. Backend archive is non-destructive and does not clear Knowledge.
 
 ## Verification
 

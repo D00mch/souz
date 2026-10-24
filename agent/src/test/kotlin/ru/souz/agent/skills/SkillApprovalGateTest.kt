@@ -154,7 +154,6 @@ class SkillApprovalGateTest {
     ) : AgentSettingsProvider {
         override fun executionModelId(model: LLMModel): String =
             if (model == LLMModel.OpenAICompatibleCustom) "Validation/Deployment" else model.alias
-        override var defaultCalendar: String? = null
         override var regionProfile: String = "default"
         override var activeAgentId: AgentId = AgentId.default
         override var useStreaming: Boolean = false

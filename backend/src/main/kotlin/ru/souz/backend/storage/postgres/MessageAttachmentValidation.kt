@@ -11,7 +11,7 @@ internal fun Connection.validateAttachments(userId: String, files: List<FileCont
     require(files.distinctBy { it.file }.size == files.size) { "attachment_duplicate" }
     for (file in files) {
         if ((file.presentation == ru.souz.llms.FilePresentation.image && !file.mimeType.startsWith("image/")) ||
-            (file.presentation in setOf(ru.souz.llms.FilePresentation.voice, ru.souz.llms.FilePresentation.audio) && !file.mimeType.startsWith("audio/"))) {
+            ((file.presentation == ru.souz.llms.FilePresentation.voice || file.presentation == ru.souz.llms.FilePresentation.audio) && !file.mimeType.startsWith("audio/"))) {
             throw AttachmentException("attachment_presentation_mismatch")
         }
         prepareStatement("""

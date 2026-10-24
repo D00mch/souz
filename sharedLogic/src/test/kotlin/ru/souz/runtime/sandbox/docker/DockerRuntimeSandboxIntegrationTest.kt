@@ -279,10 +279,10 @@ class DockerRuntimeSandboxIntegrationTest {
         if (inspect.exitCode == 0 && inspect.stdout.trim() == TEST_IMAGE_LABEL) {
             return
         }
-        val contextDir = repositoryRoot().resolve("runtime")
+        val contextDir = repositoryRoot().resolve("sharedLogic")
         val build = docker("build", "-t", TEST_IMAGE_NAME, contextDir.toString())
         check(build.exitCode == 0) {
-            "Failed to build Docker sandbox test image.\nstdout:\n${build.stdout}\nstderr:\n${build.stderr}\nRun locally with SOUZ_TEST_DOCKER=1 ./gradlew :sharedLogic:jvmTest"
+            "Failed to build Docker sandbox test image.\nstdout:\n${build.stdout}\nstderr:\n${build.stderr}\nRun locally with SOUZ_TEST_DOCKER=1 ./gradlew :sharedLogic:test"
         }
     }
 

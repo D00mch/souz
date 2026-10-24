@@ -81,17 +81,16 @@ import ru.souz.backend.telegram.TelegramBotApi
 import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.vk.VkBotApi
 import ru.souz.backend.vk.VkBotPollingService
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMModel
-import ru.souz.llms.local.LocalChatAPI
-import ru.souz.llms.local.LocalLlamaRuntime
-import ru.souz.llms.local.LocalProviderAvailability
 import kotlin.time.Duration.Companion.milliseconds
 
 internal const val E2E_PROXY_TOKEN = "proxy-secret"
 internal const val E2E_TELEGRAM_TOKEN_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 internal const val E2E_VK_TOKEN_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 internal const val E2E_POLICY_PROMPT = "Follow the E2E operator policy."
-internal val E2E_LOCAL_MODEL: LLMModel = LLMModel.LocalQwen3_4B_Instruct_2507
+internal val E2E_MODEL: LLMModel = LLMModel.QwenMax
 
 internal fun historyFrame(chatId: String, requestId: String, role: String, text: String): String =
     """{"kind":"history.append","chatId":"$chatId","requestId":"$requestId","payload":{"role":"$role","content":{"type":"text","source":"text","text":"$text"}}}"""
@@ -124,7 +123,7 @@ internal fun messageFrame(
           "text": "$text"
         },
         "meta": {
-          "model": "${E2E_LOCAL_MODEL.alias}",
+          "model": "${E2E_MODEL.alias}",
           "locale": "ru-RU",
           "timeZone": "$timeZone"
         }
@@ -142,7 +141,7 @@ internal fun backendE2eTest(
     turnRunnerOverride: BackendConversationTurnRunner? = null,
     startBackgroundServices: Boolean = false,
     settingsSource: BackendConfigSource? = null,
-    localModels: List<LLMModel> = listOf(E2E_LOCAL_MODEL),
+    mockProvider: Boolean = true,
     providerClients: ProviderHttpClients? = null,
     hindsightUrl: String? = null,
     clock: Clock = Clock.systemUTC(),
@@ -165,7 +164,7 @@ internal fun backendE2eTest(
         turnRunnerOverride = turnRunnerOverride,
         startBackgroundServices = startBackgroundServices,
         settingsSource = settingsSource,
-        localModels = localModels,
+        mockProvider = mockProvider,
         providerClients = providerClients,
         hindsightUrl = hindsightUrl,
         clock = clock,
@@ -354,7 +353,7 @@ internal class BackendE2eBackend(
     turnRunnerOverride: BackendConversationTurnRunner?,
     startBackgroundServices: Boolean,
     private val settingsSource: BackendConfigSource? = null,
-    private val localModels: List<LLMModel> = listOf(E2E_LOCAL_MODEL),
+    private val mockProvider: Boolean = true,
     private val providerClients: ProviderHttpClients? = null,
     private val hindsightUrl: String? = null,
     private val clock: Clock = Clock.systemUTC(),
@@ -380,9 +379,15 @@ internal class BackendE2eBackend(
         policyPrompt = E2E_POLICY_PROMPT,
         attachments = attachments,
     )
-    private val localChatApi = localChatApiBackedBy(llm)
-    private val localAvailability = localProviderAvailability(localModels)
-    private val localRuntime = relaxedLocalRuntime()
+    private val source = object : BackendConfigSource {
+        override fun env(key: String): String? = settingsSource?.env(key) ?: when {
+            mockProvider && key == "QWEN_KEY" -> "e2e-qwen-key"
+            mockProvider && key == "GIGA_MODEL" -> E2E_MODEL.alias
+            else -> null
+        }
+
+        override fun property(key: String): String? = settingsSource?.property(key)
+    }
 
     private val di = DI.invoke(allowSilentOverride = true) {
         import(
@@ -391,18 +396,18 @@ internal class BackendE2eBackend(
                 appConfig = appConfig,
             )
         )
-        bindSingleton<LocalProviderAvailability>(overrides = true) { localAvailability }
         bindSingleton<SkillClassifier>(overrides = true) { SkillClassifier { _, _ -> emptySet() } }
-        bindSingleton<LocalLlamaRuntime>(overrides = true) { localRuntime }
-        bindSingleton<LocalChatAPI>(overrides = true) { localChatApi }
         bindSingleton<Clock>(overrides = true) { clock }
         if (sandboxFactory != null) {
             bindSingleton<RuntimeSandboxFactory>(overrides = true) { sandboxFactory(instance()) }
         }
-        if (settingsSource != null) {
-            bindSingleton<NamedLlmConfig>(overrides = true) { settingsSource.loadNamedModels() }
-            bindSingleton<SettingsProvider>(overrides = true) {
-                BackendSettingsProvider(instance(), localAvailability, settingsSource, instance())
+        bindSingleton<NamedLlmConfig>(overrides = true) { source.loadNamedModels() }
+        bindSingleton<SettingsProvider>(overrides = true) {
+            BackendSettingsProvider(instance(), source, instance())
+        }
+        if (mockProvider) {
+            bindSingleton<(LlmProvider) -> LLMChatAPI?> {
+                { provider -> llm.takeIf { provider == E2E_MODEL.provider } }
             }
         }
         if (providerClients != null) {
@@ -514,7 +519,7 @@ internal class BackendE2eBackend(
             startBackgroundServices = false,
             providerClients = providerClients,
             settingsSource = settingsSource,
-            localModels = localModels,
+            mockProvider = mockProvider,
             hindsightUrl = hindsightUrl,
             clock = clock,
             hookConfig = hookConfig,

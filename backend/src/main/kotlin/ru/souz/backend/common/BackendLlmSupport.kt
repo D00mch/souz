@@ -11,7 +11,6 @@ object BackendLlmSupport {
         LlmProvider.AI_TUNNEL,
         LlmProvider.ANTHROPIC,
         LlmProvider.OPENAI,
-        LlmProvider.LOCAL,
         LlmProvider.CODEX,
     )
 
@@ -31,6 +30,5 @@ object BackendLlmSupport {
         LlmProvider.QWEN,
         LlmProvider.AI_TUNNEL,
         LlmProvider.OPENAI,
-        LlmProvider.LOCAL,
     )
 }

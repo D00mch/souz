@@ -118,7 +118,7 @@ class PostgresClientRequestRepository(
             id = input.messageId,
             createdAt = input.createdAt,
         )
-        if (captureHistoryMemory && input.toolArgumentsJson == null && input.role in setOf(ChatRole.USER, ChatRole.ASSISTANT)) {
+        if (captureHistoryMemory && input.toolArgumentsJson == null && when (input.role) { ChatRole.USER, ChatRole.ASSISTANT -> true; else -> false }) {
             historyMemory.enqueue(this, message)
         }
         insertClientRequest(this, acceptedRequest)

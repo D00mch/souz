@@ -26,7 +26,7 @@ class BackendLlmSupportTest {
             BackendLlmSupport.userManagedKeyProviders,
         )
         assertEquals(
-            setOf(LlmProvider.QWEN, LlmProvider.AI_TUNNEL, LlmProvider.OPENAI, LlmProvider.LOCAL),
+            setOf(LlmProvider.QWEN, LlmProvider.AI_TUNNEL, LlmProvider.OPENAI),
             BackendLlmSupport.embeddingProviders,
         )
     }

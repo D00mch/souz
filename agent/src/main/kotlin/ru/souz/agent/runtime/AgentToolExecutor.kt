@@ -1,9 +1,5 @@
 package ru.souz.agent.runtime
 
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import java.util.UUID
 import kotlin.math.max
 import ru.souz.agent.state.AgentSettings
@@ -17,10 +13,6 @@ import ru.souz.llms.ToolInvocationMeta
 class AgentToolExecutor(
     private val telemetry: AgentTelemetry = AgentTelemetry.NONE,
 ) {
-    private val _toolInvocations = MutableSharedFlow<LLMResponse.FunctionCall>(extraBufferCapacity = 32)
-
-    val toolInvocations: Flow<LLMResponse.FunctionCall> = _toolInvocations.asSharedFlow()
-
     // Completion accounting also runs when cancellation prevents failure-event delivery.
     @Suppress("SuspendFunSwallowedCancellation")
     suspend fun execute(
@@ -30,12 +22,9 @@ class AgentToolExecutor(
         toolCallId: String? = null,
         eventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
     ): LLMRequest.Message {
-        _toolInvocations.tryEmit(functionCall)
         val startedAtNanos = System.nanoTime()
         val runtimeToolCallId = toolCallId ?: UUID.randomUUID().toString()
         val toolCategoryName = settings.tools.categoryByName[functionCall.name]?.name
-        val logContext = currentCoroutineContext()[AgentExecutionLogContext.Element]?.value
-        logContext?.incrementToolExecutionCount()
         telemetry.toolExecutionStarted(functionCall.name)
         var failure: Throwable? = null
         try {
@@ -59,7 +48,7 @@ class AgentToolExecutor(
             )
             throw error
         } finally {
-            recordToolExecution(functionCall, toolCategoryName, startedAtNanos, logContext, failure)
+            recordToolExecution(functionCall, toolCategoryName, startedAtNanos, failure)
         }
     }
 
@@ -67,17 +56,10 @@ class AgentToolExecutor(
         functionCall: LLMResponse.FunctionCall,
         toolCategoryName: String?,
         startedAtNanos: Long,
-        logContext: AgentExecutionLogContext?,
         failure: Throwable?,
     ) {
         telemetry.recordToolExecution(
             AgentToolExecutionEvent(
-                appSessionId = logContext?.appSessionId,
-                conversationId = logContext?.conversationId,
-                requestId = logContext?.requestId,
-                requestSource = logContext?.requestSource,
-                model = logContext?.model,
-                provider = logContext?.provider,
                 functionName = functionCall.name,
                 toolCategory = toolCategoryName,
                 argumentKeys = functionCall.arguments.keys.sorted(),

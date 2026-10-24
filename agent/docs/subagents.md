@@ -14,7 +14,7 @@ Reusing a parent agent cancels its active job. Reusing its LLM nodes or tool exe
 
 ## Safe changes
 
-- Bind spawning to the initial parent execution settings before graph setup can restrict or classify tools. `SubagentToolFactory` in `:sharedLogic` puts only selected capabilities in `SubagentTool.Setup.settings.tools`, using the list-based `AgentTools` factory to reject duplicate names and preserve selected categories. The tool in `:agent` derives advertised schemas from that executable lookup and owns context construction, input validation, and structured results. Hosts supply a `(maxTurns: Int) -> Agent` factory; `ToolLoopGraphBasedAgent` owns graph construction and turn counting and reuses the shared execution delegate for tracing and cancellation.
+- Bind spawning to the initial parent execution settings before graph setup restricts tools. `SubagentToolFactory` in `:sharedLogic` puts only selected capabilities in `SubagentTool.Setup.settings.tools`, using the list-based `AgentTools` factory to reject duplicate names and preserve selected categories. The tool in `:agent` derives advertised schemas from that executable lookup and owns context construction, input validation, and structured results. Hosts supply a `(maxTurns: Int) -> Agent` factory; `ToolLoopGraphBasedAgent` owns graph construction and turn counting and reuses the shared execution delegate for tracing and cancellation.
 - Factories return a fresh agent that respects the supplied context, capabilities, and turn budget. Budget exhaustion throws `AgentTurnLimitException` with this execution's returned tool messages. The tool maps it to `subagent_turn_limit` with incomplete status, a side-effect warning, and bounded recent tool results with truncation and omission indicators. Returned tool messages can contain errors and do not imply task success; exhaustion does not roll back effects or make repeating the task safe. Do not reuse a parent or singleton agent: starting an execution cancels its previous job.
 - Keep child model, tool tables, turn counter, and graph lifecycle private to each invocation. Share plain node helpers rather than adding parent setup flags.
 - Forward the child's optional reasoning effort through `AgentSettings` to both streaming and ordinary LLM requests. Omission leaves it unspecified for provider defaults; do not inherit the parent's effort or retain a previous child's override.
@@ -25,6 +25,6 @@ Reusing a parent agent cancels its active job. Reusing its LLM nodes or tool exe
 
 ## Verification
 
-Run `./gradlew :agent:test :sharedLogic:jvmTest :backend:test :desktopApp:test`. Cover waiting/resumption, queued input, cancellation, exact tool lookup, bundle restrictions, model selection, turn limits, stream isolation, backend client identity, and usage accounting.
+Run `./gradlew :agent:test :sharedLogic:test :backend:test`. Cover waiting/resumption, queued input, cancellation, exact tool lookup, bundle restrictions, model selection, turn limits, stream isolation, backend client identity, and usage accounting.
 
 See [usage and Skill instructions](../../docs/subagents.md).

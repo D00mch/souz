@@ -19,4 +19,4 @@ Session schema 2 reads schema 1 text snapshots and rejects unsupported versions.
 
 ## Verification
 
-Run `./gradlew :llms:test :agent:test :sharedLogic:jvmTest :backend:test` with Docker available. `BackendAttachmentContractsE2eTest` uses the production DI graph, PostgreSQL and MinIO for sandbox preparation, reply persistence, session reconstruction and owner/expiry validation.
+Run `./gradlew :llms:test :agent:test :sharedLogic:test :backend:test` with Docker available. `BackendAttachmentContractsE2eTest` uses the production DI graph, PostgreSQL and MinIO for sandbox preparation, reply persistence, session reconstruction and owner/expiry validation.

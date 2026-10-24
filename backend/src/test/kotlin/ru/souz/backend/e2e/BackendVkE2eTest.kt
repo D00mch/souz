@@ -59,7 +59,7 @@ class BackendVkE2eTest {
             val user = UUID.randomUUID().toString()
             val chat = createPublicChat(user)
             client.patch(BackendHttpRoutes.SETTINGS) {
-                trusted(user); jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","narrateSteps":true,"locale":"ru-RU"}""")
+                trusted(user); jsonBody("""{"defaultModel":"${E2E_MODEL.alias}","narrateSteps":true,"locale":"ru-RU"}""")
             }
             val secret = bind(user, chat).jsonBody()["pendingLinkCommand"].asText()
             vk.responses.add(VkLongPollResponse("2", listOf(update(1, secret))))
@@ -88,7 +88,7 @@ class BackendVkE2eTest {
             val source = createPublicChat(user, "source")
             client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(user)
-                jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}"}""")
+                jsonBody("""{"defaultModel":"${E2E_MODEL.alias}"}""")
             }
             for (token in listOf("", " ", "x".repeat(4097), "invalid")) {
                 assertEquals(HttpStatusCode.BadRequest, bind(user, chat, token).status)
@@ -232,7 +232,7 @@ class BackendVkE2eTest {
     private suspend fun BackendE2eScope.runSkill(user: String, chat: String, prompt: String) {
         val response = client.post(BackendHttpRoutes.chatMessages(chat)) {
             trusted(user)
-            jsonBody("""{"content":"$prompt","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+            jsonBody("""{"content":"$prompt","options":{"model":"${E2E_MODEL.alias}"}}""")
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val thread = response.jsonBody()["execution"]["id"].asText()

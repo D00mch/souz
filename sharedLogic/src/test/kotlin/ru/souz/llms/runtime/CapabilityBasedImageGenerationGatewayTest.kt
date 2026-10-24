@@ -17,7 +17,7 @@ class CapabilityBasedImageGenerationGatewayTest {
     fun `delegates to OpenAI image generation even when chat model is local`() = runTest {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.openaiKey } returns "test-key"
-        every { settingsProvider.gigaModel } returns LLMModel.LocalGemma4_E2B_It
+        every { settingsProvider.gigaModel } returns LLMModel.QwenMax
 
         val openAiGateway = mockk<OpenAIImageGenerationGateway>()
         val generated = GeneratedImage(

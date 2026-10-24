@@ -336,7 +336,7 @@ class BackendPublicWebSocketE2eTest {
                     assertEquals(
                         listOf(LLMMessageRole.assistant, LLMMessageRole.user),
                         replacement
-                            .filter { it.content in setOf("completed by peer", "owner follow up") }
+                            .filter { when (it.content) { "completed by peer", "owner follow up" -> true; else -> false } }
                             .map { it.role },
                     )
                     assertEquals(1, replacement.count { it.content == "completed by peer" })
@@ -647,7 +647,7 @@ class BackendPublicWebSocketE2eTest {
                 val cancelStatus = readJson(session)
                 val terminal = readJson(session)
                 assertEquals("accepted", cancelAck["status"].asText())
-                assertTrue(cancelStatus["status"].asText() in setOf("cancelling", "cancelled"))
+                assertTrue(when (cancelStatus["status"].asText()) { "cancelling", "cancelled" -> true; else -> false })
                 assertEquals("thread.cancelled", terminal["type"].asText())
 
                 session.send(

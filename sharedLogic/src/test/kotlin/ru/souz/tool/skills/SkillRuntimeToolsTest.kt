@@ -47,8 +47,7 @@ import ru.souz.tool.ToolCategory
 import ru.souz.tool.knowledge.ToolGetKnowledge
 import ru.souz.tool.knowledge.ToolSearchKnowledge
 import ru.souz.tool.memory.ToolSearchMemory
-import ru.souz.tool.portableSkillRuntimeToolsDiModule
-import ru.souz.tool.portableSkillToolsDiModule
+import ru.souz.tool.skillRuntimeToolsDiModule
 import ru.souz.agent.SubagentTool
 import kotlin.io.path.createDirectories
 import kotlin.test.AfterTest
@@ -464,73 +463,6 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
-    fun `portable composition exposes core runtime tools outside the catalog`() = runTest {
-        val home = createTempDirectory("skill-di-home-")
-        val stateRoot = home.resolve("state").createDirectories()
-        val repository = repository()
-        val catalog = catalog(ToolCategory.FILES to listOf(RecordingTool("ordinary")))
-        val settings = mockk<SettingsProvider> {
-            every { subagentModels } returns emptyMap()
-            every { gigaModel } returns LLMModel.Max
-            every { useStreaming } returns false
-        }
-        val llm = mockk<LLMChatAPI> {
-            coEvery { message(any()) } returns LLMResponse.Chat.Ok(
-                choices = listOf(LLMResponse.Choice(
-                    message = LLMResponse.Message("delegated result", LLMMessageRole.assistant, functionsStateId = null),
-                    index = 0,
-                    finishReason = LLMResponse.FinishReason.stop,
-                )),
-                created = 0,
-                model = LLMModel.Pro.alias,
-                usage = LLMResponse.Usage(1, 1, 2, 0),
-            )
-        }
-        val direct = DI.direct {
-            bindSingleton<SettingsProvider> { settings }
-            bindSingleton<LLMChatAPI> { llm }
-            bindSingleton<ToolInvocationRuntimeSandboxResolver> {
-                ToolInvocationRuntimeSandboxResolver.fixed(localSandbox(home, stateRoot))
-            }
-            bindSingleton<SkillRegistryRepository> { repository }
-            bindSingleton<AgentToolCatalog> { catalog }
-            bindSingleton<AgentToolsFilter> { TestToolsFilter() }
-            bindSingleton<ConversationKnowledgeStore> { SandboxConversationKnowledgeStore(instance()) }
-            import(portableSkillToolsDiModule())
-        }
-
-        val coreTools = direct.instance<AgentCoreTools>().skillsCoreTools
-        val coreToolNames = coreTools.map { it.fn.name }
-        assertEquals(
-            listOf(
-                ToolGetSkillByName.NAME,
-                ToolGetSkillsByCategory.NAME,
-                ToolGetSkillsNamesByCategory.NAME,
-                ToolGetKnowledge.NAME,
-                ToolSearchKnowledge.NAME,
-                ToolSearchMemory.NAME,
-                ToolInvokeSkill.NAME,
-            ),
-            coreToolNames,
-        )
-        assertSame(direct.instance<ToolInvokeSkill>(), coreTools.last())
-        assertTrue(direct.instance<ConversationKnowledgeStore>() is SandboxConversationKnowledgeStore)
-        assertFalse(
-            catalog.toolsByCategory.values.any { tools -> tools.keys.any { it in coreToolNames } }
-        )
-        val executionSettings = AgentSettings(LLMModel.Pro.alias, LLMModel.Pro.provider, 0.3f, catalog.toolsByCategory, 16_000)
-        val spawn = direct.instance<AgentCoreTools>().skillsTools(executionSettings).last()
-        assertEquals(SubagentTool.NAME, spawn.fn.name)
-        assertEquals("delegated result", spawn.call(mapOf("task" to "Isolated task"))["result"].asText())
-        coVerify(exactly = 1) {
-            llm.message(match {
-                it.model == LLMModel.Pro.alias && it.temperature == 0.3f && it.maxTokens == 4096 && it.contextSize == 16_000 &&
-                    it.functions.isEmpty() && it.messages.last().content == "Isolated task"
-            })
-        }
-    }
-
-    @Test
     fun `portable Skill runtime composition does not require a catalog or registry`() {
         val home = createTempDirectory("skill-runtime-di-home-")
         val stateRoot = home.resolve("state").createDirectories()
@@ -539,7 +471,7 @@ class SkillRuntimeToolsTest {
                 ToolInvocationRuntimeSandboxResolver.fixed(localSandbox(home, stateRoot))
             }
             bindSingleton<ConversationKnowledgeStore> { SandboxConversationKnowledgeStore(instance()) }
-            import(portableSkillRuntimeToolsDiModule())
+            import(skillRuntimeToolsDiModule())
         }
 
         val getKnowledge = direct.instance<ToolGetKnowledge>()

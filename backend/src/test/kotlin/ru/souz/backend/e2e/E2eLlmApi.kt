@@ -1,8 +1,5 @@
 package ru.souz.backend.e2e
 
-import io.mockk.coEvery
-import io.mockk.every
-import io.mockk.mockk
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -16,14 +13,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.MDC
 import ru.souz.llms.LLMChatAPI
-import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.local.LocalChatAPI
-import ru.souz.llms.local.LocalLlamaRuntime
-import ru.souz.llms.local.LocalProviderAvailability
-import ru.souz.llms.local.LocalProviderStatus
 
 internal class E2eLlmApi(
     private val response: (suspend (LLMRequest.Chat) -> LLMResponse.Chat)? = null,
@@ -251,30 +243,3 @@ internal fun reply(
         model = body.model,
         usage = LLMResponse.Usage(7, completionTokens, 7 + completionTokens, 0),
     )
-
-internal fun localChatApiBackedBy(delegate: LLMChatAPI): LocalChatAPI =
-    mockk {
-        coEvery { message(any()) } coAnswers { delegate.message(firstArg()) }
-        coEvery { messageStream(any()) } coAnswers { delegate.messageStream(firstArg()) }
-        coEvery { embeddings(any()) } coAnswers { delegate.embeddings(firstArg()) }
-        coEvery { uploadFile(any()) } coAnswers { delegate.uploadFile(firstArg()) }
-        coEvery { downloadFile(any()) } coAnswers { delegate.downloadFile(firstArg()) }
-        coEvery { balance() } coAnswers { delegate.balance() }
-    }
-
-internal fun localProviderAvailability(models: List<LLMModel> = listOf(E2E_LOCAL_MODEL)): LocalProviderAvailability =
-    mockk {
-        every { isProviderAvailable() } returns models.isNotEmpty()
-        every { availableGigaModels() } returns models
-        every { defaultGigaModel() } returns models.firstOrNull()
-        every { selectedProfile() } returns null
-        every { status() } returns LocalProviderStatus(
-            available = models.isNotEmpty(),
-            message = "OK (backend E2E)",
-            selectedProfile = null,
-            availableModels = models,
-        )
-    }
-
-internal fun relaxedLocalRuntime(): LocalLlamaRuntime =
-    mockk(relaxed = true)
