@@ -13,6 +13,7 @@ Hosts may supply `conversationInstructions` to add ephemeral system instructions
 snapshot per call and reuses it after compaction; the next call reads fresh instructions.
 The prepared message text, tool arguments and schemas share the context estimate;
 transport JSON escaping does not increase the text estimate.
+Automatically routed simple replies prepare a request-only view of the last 20 completed dialogue turns, all system instructions and the full active exchange before budget validation. Compaction of that view does not alter stored history.
 Conversational and summary input must fit 80% of the configured `CONTEXT_SIZE`, shared by all models.
 Compaction runs before a conversational call when the prepared input exceeds that limit, and the rebuilt
 request is checked against the same limit. Exactly 80% fits. `maxTokens` only limits provider output

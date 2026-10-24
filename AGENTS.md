@@ -6,7 +6,7 @@ Backend client Skills are bundled under `backend/src/main/resources/skills/clien
 
 Backend uses one startup-validated `CONTEXT_SIZE` (minimum 24,000 tokens) for all models, including summaries. Compaction and input validation share an 80% limit independent of output limits; context size is not a user or execution setting.
 
-Automatically routed simple replies have no tools and skip Skill inventory and host-context enrichment; uncertain routing uses the strong model.
+Automatically routed simple replies have no tools, skip Skill inventory and host-context enrichment, and send only the last 20 completed dialogue turns plus system instructions and the full active exchange. This request-only window preserves stored history; uncertain routing uses the strong model.
 
 Backend initial waiting uses live `assistant.message` independently of `narrateSteps`; simple turns without memory skip it.
 

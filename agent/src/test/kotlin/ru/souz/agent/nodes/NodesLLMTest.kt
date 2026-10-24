@@ -8,6 +8,7 @@ import io.mockk.mockk
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -306,9 +307,77 @@ class NodesLLMTest {
 
             assertEquals(listOf(chosen to true, chosen to false), calls.map { it.model to it.isSummarization })
             assertEquals(completed, calls.first().messages.dropLast(1))
-            assertEquals(ctx.history.drop(3), calls.last().messages.drop(result.activeExchangeStartIndex))
-            assertEquals(2, result.activeExchangeStartIndex)
+            assertEquals(ctx.history.drop(3), calls.last().messages.drop(2))
+            assertEquals(if (complex) 2 else 3, result.activeExchangeStartIndex)
+            if (!complex) assertEquals(ctx.history, result.history.dropLast(1))
         }
+    }
+
+    @Test
+    fun `simple route limits completed dialogue while retaining canonical history and the active exchange`() = runTest {
+        val retainedSystem = SYSTEM.copy(content = "retained system instructions")
+        val excludedTexts = setOf("stale memory", "old summary", "speaker summary")
+        val completed = listOf(SYSTEM,
+            LLMRequest.Message(LLMMessageRole.assistant, "old summary"),
+            LLMRequest.Message(LLMMessageRole.user, "stale memory", name = INJECTED_MEMORY_MESSAGE_NAME), INJECTED,
+        ) + (1..25).flatMap { turn ->
+            activeTurn("old tool output $turn", "question $turn") + listOf(
+                LLMRequest.Message(LLMMessageRole.assistant, "answer $turn"),
+                LLMRequest.Message(LLMMessageRole.assistant, "speaker summary", name = "souz_speaker_summary"),
+            )
+        } + retainedSystem
+        val active = listOf(
+            LLMRequest.Message(LLMMessageRole.user, "fresh memory", name = INJECTED_MEMORY_MESSAGE_NAME),
+            INJECTED,
+        ) + activeTurn().map { it.copy(attachments = listOf("current-file")) } +
+            LLMRequest.Message(LLMMessageRole.user, "queued follow-up")
+        for (decision in listOf(TurnClassification(false, true), TurnClassification(true, false), null)) for (route in listOf(null, ROUTING)) {
+            val calls = mutableListOf<LLMRequest.Chat>()
+            val api = mockk<LLMChatAPI> { coEvery { message(capture(calls)) } returns block(0, "answer") }
+            val nodes = NodesLLM(api, mockk { every { useStreaming } returns false },
+                conversationInstructions = { "personality" }, turnClassifier = { decision ?: error("Jev down") })
+            val original = context(completed + active, activeExchangeStartIndex = completed.size)
+            val prepared = nodes.prepareTurn().execute(original.copy(settings = original.settings.copy(routing = route)), runtime())
+            val result = nodes.chat().execute(prepared, runtime())
+            val request = calls.single()
+
+            assertEquals(original.history, result.history.dropLast(1))
+            assertEquals(completed.size, result.activeExchangeStartIndex)
+            assertEquals(active, request.messages.takeLast(active.size))
+            assertEquals("system\n\npersonality", request.messages.first().content)
+            assertTrue(retainedSystem in request.messages)
+            if (prepared.simpleReply) {
+                assertEquals((6..25).map { "question $it" }, request.messages.filter { it.content.startsWith("question ") }.map { it.content })
+                assertEquals((6..25).map { "answer $it" }, request.messages.filter { it.content.startsWith("answer ") }.map { it.content })
+                assertTrue(request.messages.none { it.content.startsWith("old tool output") ||
+                    it.content in excludedTexts })
+                val next = nodes.chat().execute(result.map { "continue" }, runtime())
+                assertEquals(request.messages + result.history.last(), calls.last().messages)
+                assertEquals(result.history, next.history.dropLast(1))
+                val fresh = NodesPlain.inputToHistory().execute(next.map { "new turn" }, runtime())
+                assertFalse(fresh.simpleReply)
+            } else {
+                assertTrue(request.messages.any { it.content == "old tool output 1" })
+                assertTrue(request.messages.any { it.content == "old summary" })
+            }
+        }
+    }
+
+    @Test
+    fun `simple request window excludes oversized old history before checking its token budget`() = runTest {
+        val calls = mutableListOf<LLMRequest.Chat>()
+        val api = mockk<LLMChatAPI> { coEvery { message(capture(calls)) } returns block(0, "answer") }
+        val nodes = NodesLLM(api, mockk { every { useStreaming } returns false })
+        val completed = listOf(SYSTEM) + exchange("x".repeat(100_000)) + (1..20).flatMap { exchange("question $it") }
+        val original = context(completed + activeTurn(), activeExchangeStartIndex = completed.size).copy(simpleReply = true)
+
+        val result = nodes.chat().execute(original, runtime())
+
+        assertTrue(result.input is LLMResponse.Chat.Ok)
+        assertEquals(original.history, result.history.dropLast(1))
+        assertEquals(completed.size, result.activeExchangeStartIndex)
+        assertFalse(calls.single().isSummarization)
+        assertTrue(calls.single().messages.none { it.content.startsWith("xxxx") })
     }
 
     private fun exchange(prompt: String) = listOf(

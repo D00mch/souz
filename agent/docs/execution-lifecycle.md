@@ -20,6 +20,8 @@ The skills graph asks `TurnClassifier` once after history input, before memory o
 
 `AgentSettings.routing` selects the simple or complex target from that decision; failed classification selects complex. An explicit model remains unchanged. Automatically routed simple replies expose no tools, remove previous Skill inventory and host context, and skip inventory and enrichment. Other replies rebind core tools to the selected model, so a `SpawnSubagent` child inherits it. The selected settings, without routing, serve the rest of the turn. Conversation instructions, context validation and compaction preserving the active exchange apply to every selected model.
 
+Automatically routed simple replies send the last 20 completed user turns and their plain assistant replies, all system messages, and the entire active exchange. Previous tool calls/results, injected memory and host context, and summaries are excluded from this request-only view. Current memory, attachments, tool results and queued input remain intact in the active exchange. Apply the context budget and any compaction to this view without trimming stored history. Strong, explicit and classifier-fallback routes use full history. The selected view lasts through the active execution and resets with the next turn.
+
 ## Why this is fragile
 
 Execution context, continuation state, model routing, and event delivery have related lifetimes. Sharing them across executions can overwrite newer context or attribute work to another execution. Completed-turn memory capture is graph-owned and uses successful graph finalization as its boundary.

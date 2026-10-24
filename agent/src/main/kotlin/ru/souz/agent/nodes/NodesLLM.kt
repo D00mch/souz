@@ -84,13 +84,15 @@ internal class NodesLLM(
                 .withConversationInstructions(instructions)
 
         var history = ctx.history
-        var request = build(history)
+        val requestHistory = if (ctx.simpleReply) ctx.recentDialogueHistory() else history
+        var request = build(requestHistory)
         if (request.exceedsContextBudget(ctx.settings.contextSize)) {
-            history = llmApi.compactHistory(
-                ctx.toChatRequest(history, maxOutputTokens = SUMMARIZATION_MAX_OUTPUT_TOKENS),
-                ctx.activeExchangeStartIndex,
+            val compacted = llmApi.compactHistory(
+                ctx.toChatRequest(requestHistory, maxOutputTokens = SUMMARIZATION_MAX_OUTPUT_TOKENS),
+                ctx.activeExchangeStartIndex + requestHistory.size - history.size,
             )
-            request = build(history)
+            if (!ctx.simpleReply) history = compacted
+            request = build(compacted)
         }
         val response = if (request.exceedsContextBudget(ctx.settings.contextSize)) {
             LLMResponse.Chat.Error(-1, "The conversation, instructions and tools exceed the context budget. " +
@@ -100,6 +102,20 @@ internal class NodesLLM(
             history = history + (response as? LLMResponse.Chat.Ok)?.choices.orEmpty().mapNotNull { it.toMessage() },
             activeExchangeStartIndex = ctx.activeExchangeStartIndex + history.size - ctx.history.size,
         ) { response }
+    }
+
+    /** A request-only view: system instructions, twenty completed dialogue turns, and the full active exchange. */
+    private fun AgentContext<*>.recentDialogueHistory(): List<LLMRequest.Message> {
+        val previous = history.take(activeExchangeStartIndex)
+        val dialogue = previous.filter { message ->
+            !message.isInjectedContextMessage() && !message.isInjectedMemoryContextMessage() &&
+                (message.role == LLMMessageRole.user || message.role == LLMMessageRole.assistant &&
+                    message.content.isNotBlank() && message.functionCall == null &&
+                    message.functionsStateId == null && message.name != "souz_speaker_summary")
+        }
+        val first = dialogue.indices.filter { dialogue[it].role == LLMMessageRole.user }.takeLast(20).firstOrNull()
+        return previous.filter { it.role == LLMMessageRole.system } +
+            (first?.let { dialogue.drop(it) }.orEmpty()) + history.drop(activeExchangeStartIndex)
     }
 
     private fun AgentSettings.routedTo(target: RoutedModel): AgentSettings =
