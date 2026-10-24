@@ -7,6 +7,7 @@ Before changing this module, read the relevant pain-point topics below.
 - `:agent` owns the provider-agnostic agent contracts, graph orchestration, execution state, session tracing, and skill activation.
 - It depends on `:graph-engine` for graph execution and `:llms` for shared chat, tool, and provider contracts. The adapter under `ru.souz.agent.graph` is internal.
 - Hosts supply settings, tools, runtime services, and other integrations through `ru.souz.agent.spi`; keep UI, application DI, and concrete desktop/backend services outside this module.
+- Context dates and UTC offsets use the host runtime environment's clock and time zone.
 - `AgentToolCatalog` owns immutable tool membership, globally unique function names, category order, filtering, transformation, and composition. Host factories construct its values.
 
 ## Invariants

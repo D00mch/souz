@@ -24,6 +24,10 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
+import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -31,6 +35,26 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class NodesCommonTest {
+    @Test
+    fun `date and UTC offset use the host clock and time zone`() = runTest {
+        val environment = object : AgentRuntimeEnvironment {
+            override val locale: Locale = Locale.US
+            override val zoneId: ZoneId = ZoneId.of("Europe/Berlin")
+            override var clock: Clock = Clock.fixed(Instant.parse("2026-01-01T23:30:00Z"), ZoneId.of("UTC"))
+        }
+        val nodes = nodesCommon(mockk(relaxed = true), environment = environment)
+        for ((instant, date, offset) in listOf(
+            Triple("2026-01-01T23:30:00Z", "Friday, 2026-01-02 00:30:00", "+01:00"),
+            Triple("2026-06-01T23:30:00Z", "Tuesday, 2026-06-02 01:30:00", "+02:00"),
+        )) {
+            environment.clock = Clock.fixed(Instant.parse(instant), ZoneId.of("UTC"))
+            val result = nodes.nodeAppendAdditionalData().execute(stringContext("calendar", "test"), graphRuntime())
+            val content = result.history.single { it.isInjectedContextMessage() }.content
+            assertTrue(content.contains(date), content)
+            assertTrue(content.contains("utc_offset=$offset"), content)
+        }
+    }
+
     @Test
     fun `host context includes desktop search and refreshes across turns`() = runTest {
         val desktopInfoRepository = mockk<AgentDesktopInfoRepository>()

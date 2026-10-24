@@ -2,8 +2,13 @@ package agent
 
 import io.ktor.client.plugins.*
 import io.mockk.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assumptions
 import org.kodein.di.DI
 import org.kodein.di.bindProvider
@@ -11,13 +16,13 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
 import ru.souz.agent.AgentContextFactory
+import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentExecutor
 import ru.souz.agent.AgentId
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.AgentRuntimeEnvironment
-import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.db.ConfigStore
 import ru.souz.db.DesktopInfoRepository
@@ -26,13 +31,16 @@ import ru.souz.db.SettingsProviderImpl
 import ru.souz.di.mainDiModule
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.TokenLoggingChatApi
+import ru.souz.llms.plus
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.findLLMModel
+import ru.souz.llms.restJsonMapper
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.llms.giga.GigaRestChatAPI
@@ -40,6 +48,8 @@ import ru.souz.llms.http.GigaHttpClientResource
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.anthropic.AnthropicChatAPI
+import ru.souz.llms.codex.CodexChatAPI
+import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import ru.souz.llms.runtime.SettingsRoutingLlmChatApi
 import ru.souz.llms.local.LocalChatAPI
@@ -55,8 +65,14 @@ import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolsFactory
 import ru.souz.runtime.files.FilesToolUtil
 import java.util.concurrent.atomic.AtomicLong
+import java.time.Clock
+import java.time.LocalDate
+import java.time.ZoneId
+import java.util.Locale
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.TimeSource
+import kotlin.test.assertTrue
 
 class AgentScenarioTestSupport(
     private val selectedModel: LLMModel,
@@ -76,19 +92,24 @@ class AgentScenarioTestSupport(
             every { gigaModel } returns selectedModel
             every { requestTimeoutMillis } returns 60_000L
             every { temperature } returns 0f
+            if (selectedModel == LLMModel.OpenAICompatibleCustom) {
+                readEnvironment("OPENAI_MODEL")?.let { every { openaiModel } returns it }
+            }
             every { getSystemPromptForAgentModel(any(), any()) } answers {
                 systemPromptOverride ?: scenarioSystemPrompt(firstArg())
             }
         }
     }
 
-    private var tokenLogging: TokenLogging? = null
+    private val codexSettings: SettingsProvider by lazy { scenarioCodexSettings(spySettings) }
     private var providerHttpClients: ProviderHttpClients? = null
     private var gigaHttpClientResource: GigaHttpClientResource? = null
     private var localLlamaRuntime: LocalLlamaRuntime? = null
     private var localChatAPI: LocalChatAPI? = null
     private val httpRequestCount = AtomicLong(0)
     private val httpRequestTotalNanos = AtomicLong(0)
+    private var scenarioTrace = ScenarioExecutionTrace()
+    private var sessionUsage = LLMResponse.Usage(0, 0, 0, 0)
 
     private val testOverrideModule: DI.Module by lazy {
         DI.Module("TestOverrideModule") {
@@ -106,7 +127,7 @@ class AgentScenarioTestSupport(
             bindSingleton<SkillRegistryRepository>(overrides = true) { emptySkillRegistryRepository() }
             bindSingleton<McpToolProvider>(overrides = true) { EmptyMcpToolProvider }
             bindSingleton<ConversationMemoryRuntime>(overrides = true) { NoopConversationMemoryRuntime }
-            bindSingleton<AgentRuntimeEnvironment>(overrides = true) { SystemAgentRuntimeEnvironment }
+            bindSingleton<AgentRuntimeEnvironment>(overrides = true) { ScenarioRuntimeEnvironment }
             bindSingleton<ProviderHttpClients>(overrides = true) {
                 ProviderHttpClients().also { clients ->
                     instrument(clients.standard)
@@ -133,7 +154,7 @@ class AgentScenarioTestSupport(
                     }
             }
             bindSingleton<LLMChatAPI>(overrides = true) {
-                val logger = instance<TokenLogging>().also { tokenLogging = it }
+                val logger = instance<TokenLogging>()
                 val selectedApi = when (selectedModel.provider) {
                     LlmProvider.GIGA -> instance<GigaRestChatAPI>()
                     LlmProvider.QWEN,
@@ -145,16 +166,30 @@ class AgentScenarioTestSupport(
                         client = instance<ProviderHttpClients>().let { clients ->
                             if (selectedModel.provider == LlmProvider.OPENAI) clients.openAi else clients.standard
                         },
+                        apiKey = readEnvironment("OPENAI_API_KEY").takeIf { selectedModel.provider == LlmProvider.OPENAI },
+                        baseUrl = readEnvironment("OPENAI_BASE_URL").takeIf { selectedModel.provider == LlmProvider.OPENAI },
+                        requestParameters = readEnvironment(SOUZ_AGENT_INTEGRATION_TEST_REASONING_EFFORT)?.let {
+                            restJsonMapper.writeValueAsString(mapOf("reasoning_effort" to it))
+                        },
                     )
                     LlmProvider.ANTHROPIC -> instance<AnthropicChatAPI>()
                     LlmProvider.LOCAL -> instance<LocalChatAPI>()
-                    LlmProvider.CODEX -> error("Codex OAuth provider is not supported in integration tests.")
+                    LlmProvider.CODEX -> instance<ProviderHttpClients>().standard.let { client ->
+                        CodexChatAPI(codexSettings, CodexOAuthService(codexSettings, client), client)
+                    }
                 }
                 val router = SettingsRoutingLlmChatApi(instance(), mapOf(selectedModel.provider to selectedApi))
-                if (selectedModel.provider == LlmProvider.LOCAL) {
+                val api = if (selectedModel.provider == LlmProvider.LOCAL) {
                     router
                 } else {
                     TokenLoggingChatApi(router, logger)
+                }
+                object : LLMChatAPI by api {
+                    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
+                        scenarioTrace.modelCall {
+                            api.message(body.copy(reasoningEffort =
+                                readEnvironment(SOUZ_AGENT_INTEGRATION_TEST_REASONING_EFFORT) ?: body.reasoningEffort))
+                        }
                 }
             }
             bindSingleton<DesktopInfoRepository>(overrides = true) {
@@ -173,6 +208,10 @@ class AgentScenarioTestSupport(
             isAgentScenarioIntegrationTestsEnabled(readEnvironment(SOUZ_AGENT_INTEGRATION_TESTS_ON)),
             "Skipping agent scenario integration tests: set $SOUZ_AGENT_INTEGRATION_TESTS_ON=true",
         )
+        if (selectedModel.provider == LlmProvider.CODEX) {
+            codexSettings // Validate the cached login only after explicit integration-test opt-in.
+            return
+        }
         val apiKeyName = when (selectedModel.provider) {
             LlmProvider.GIGA -> "GIGA_KEY"
             LlmProvider.QWEN -> "QWEN_KEY"
@@ -199,11 +238,14 @@ class AgentScenarioTestSupport(
         val previousFewShotExamplesEnabled = fewShotExamplesEnabled
         fewShotExamplesEnabled = useFewShotExamples
         systemPromptOverride = systemPrompt
+        scenarioTrace = ScenarioExecutionTrace(requireToolCall = mockedTools.isNotEmpty())
         try {
             return runAgent(createScenarioDi(mockedTools), userPrompt)
         } finally {
             fewShotExamplesEnabled = previousFewShotExamplesEnabled
             systemPromptOverride = null
+            sessionUsage += scenarioTrace.usage
+            closeHttpClients()
         }
     }
 
@@ -222,30 +264,33 @@ class AgentScenarioTestSupport(
 
     fun finish() {
         val prefix = "[agent=${agentType.storageValue}]"
-        when (selectedModel.provider) {
-            LlmProvider.GIGA,
-            LlmProvider.QWEN,
-            LlmProvider.AI_TUNNEL,
-            LlmProvider.ANTHROPIC,
-            LlmProvider.OPENAI,
-            -> println("$prefix Spent: ${tokenLogging?.sessionTokenUsage() ?: "n/a"}")
-            LlmProvider.LOCAL -> {
-                println("$prefix Spent: local provider")
-                runCatching { localLlamaRuntime?.close() }
-                localChatAPI = null
-                localLlamaRuntime = null
-            }
-            LlmProvider.CODEX -> println("$prefix Spent: codex provider (no session tracking)")
-        }
+        println("$prefix Spent: $sessionUsage")
+        runCatching { localLlamaRuntime?.close() }
+        localChatAPI = null
+        localLlamaRuntime = null
         val requestCount = httpRequestCount.get()
-        providerHttpClients?.close()
-        gigaHttpClientResource?.close()
+        closeHttpClients()
         if (requestCount == 0L) {
             println("$prefix HTTP requests: 0")
             return
         }
         val avgMs = httpRequestTotalNanos.get().toDouble() / requestCount / 1_000_000.0
         println("$prefix HTTP requests: $requestCount, avg/request: ${"%.2f".format(avgMs)} ms")
+    }
+
+    private fun closeHttpClients() {
+        val resources = listOfNotNull(providerHttpClients, gigaHttpClientResource)
+        providerHttpClients = null
+        gigaHttpClientResource = null
+        var failure: Throwable? = null
+        for (resource in resources) {
+            try {
+                resource.close()
+            } catch (error: Throwable) {
+                if (failure == null) failure = error else failure.addSuppressed(error)
+            }
+        }
+        failure?.let { throw it }
     }
 
     private fun instrument(client: io.ktor.client.HttpClient) {
@@ -263,32 +308,108 @@ class AgentScenarioTestSupport(
     private suspend fun runAgent(di: DI, userPrompt: String): String {
         val contextFactory: AgentContextFactory = di.direct.instance()
         val executor: AgentExecutor = di.direct.instance()
-        val toolCalls = mutableListOf<ScenarioToolCall>()
+        val started = TimeSource.Monotonic.markNow()
         try {
-            return executor.execute(
-                agentId = agentType,
-                context = contextFactory.create(agentType),
-                input = userPrompt,
-                eventSink = object : AgentRuntimeEventSink {
-                    override suspend fun emit(event: AgentRuntimeEvent) {
-                        if (event is AgentRuntimeEvent.ToolCallStarted) {
-                            toolCalls += ScenarioToolCall(event.name, event.arguments)
-                        }
-                    }
-                },
-            ).output
+            // A real dispatcher keeps this deadline on wall time under runTest's virtual clock.
+            val result = withContext(Dispatchers.Default) {
+                withTimeout(SCENARIO_TIMEOUT) {
+                    executor.execute(
+                        agentId = agentType,
+                        context = contextFactory.create(agentType),
+                        input = userPrompt,
+                        eventSink = scenarioTrace,
+                    )
+                }
+            }
+            scenarioTrace.assertCompleted(result)
+            return result.output
         } finally {
-            println("[agent=${agentType.storageValue}] Tool calls: ${toolCalls.joinToString { it.traceLabel() }}")
+            println("[agent=${agentType.storageValue}] ${scenarioTrace.report(started.elapsedNow())} prompt=$userPrompt")
         }
     }
 }
 
-private data class ScenarioToolCall(
-    val name: String,
-    val arguments: Map<String, Any?>,
-)
+internal val SCENARIO_TODAY: LocalDate = LocalDate.of(2026, 6, 1)
 
-private fun ScenarioToolCall.traceLabel(): String {
+internal object ScenarioRuntimeEnvironment : AgentRuntimeEnvironment {
+    override val locale: Locale = Locale.forLanguageTag("ru-RU")
+    override val zoneId: ZoneId = ZoneId.of("Europe/Moscow")
+    override val clock: Clock = Clock.fixed(SCENARIO_TODAY.atTime(10, 0).atZone(zoneId).toInstant(), zoneId)
+}
+
+internal class ScenarioExecutionTrace(
+    private val maxModelCalls: Int = 24,
+    private val requireToolCall: Boolean = true,
+) : AgentRuntimeEventSink {
+    private val lock = Mutex()
+    private val events = mutableListOf<AgentRuntimeEvent>()
+    private var lastResponse: LLMResponse.Chat? = null
+    var modelCalls: Int = 0
+        private set
+    var usage = LLMResponse.Usage(0, 0, 0, 0)
+        private set
+
+    suspend fun modelCall(block: suspend () -> LLMResponse.Chat): LLMResponse.Chat {
+        lock.withLock {
+            assertTrue(modelCalls < maxModelCalls, "Scenario exceeded $maxModelCalls model calls without completing.")
+            modelCalls++
+        }
+        return block().also { response ->
+            lock.withLock {
+                lastResponse = response
+                if (response is LLMResponse.Chat.Ok) usage += response.usage
+            }
+        }
+    }
+
+    override suspend fun emit(event: AgentRuntimeEvent) {
+        events += event
+    }
+
+    fun assertCompleted(result: AgentExecutionResult) {
+        val response = lastResponse
+        assertTrue(response is LLMResponse.Chat.Ok, "Scenario ended without a successful model response: $response")
+        val finalChoice = response.choices.lastOrNull { it.message.content.isNotBlank() }
+        assertTrue(finalChoice != null, "Scenario produced no user-facing final answer.")
+        assertTrue(
+            response.choices.all { choice ->
+                choice.message.functionCall == null &&
+                    (choice.finishReason == null || choice.finishReason == LLMResponse.FinishReason.stop)
+            },
+            "Scenario ended with a tool call, truncated output, or provider failure: ${response.choices}",
+        )
+        val output = result.output.trim()
+        val finalMessage = result.context.history.lastOrNull()
+        assertTrue(output.isNotBlank(), "Scenario produced an empty final answer.")
+        assertTrue(
+            finalChoice.message.role == LLMMessageRole.assistant &&
+                finalMessage?.role == LLMMessageRole.assistant && finalMessage.functionCall == null &&
+                finalMessage.content.trim() == output && finalChoice.message.content.trim() == output,
+            "Executor output is not the final assistant message: $output",
+        )
+        assertTrue(
+            !INTERNAL_DELIBERATION.containsMatchIn(output) && output != finalChoice.message.reasoningContent?.trim(),
+            "Scenario returned internal deliberation instead of a user-facing result: $output",
+        )
+        if (requireToolCall) {
+            assertTrue(events.any { it is AgentRuntimeEvent.ToolCallFinished }, "Scenario completed without executing a tool.")
+        }
+    }
+
+    fun report(duration: Duration): String {
+        val calls = events.filterIsInstance<AgentRuntimeEvent.ToolCallStarted>()
+        return "Scenario metrics: modelCalls=$modelCalls, toolCalls=${calls.size}, " +
+            "durationMs=${duration.inWholeMilliseconds}, tokens=$usage; tools=${calls.joinToString { it.traceLabel() }}"
+    }
+
+    private companion object {
+        val INTERNAL_DELIBERATION = Regex(
+            """(?i)<\s*/?\s*(?:think|analysis|reasoning)\b|^(?:analysis|reasoning|thoughts?)\s*:|^(?:I |We )?need to\b|^let['’]s think\b""",
+        )
+    }
+}
+
+private fun AgentRuntimeEvent.ToolCallStarted.traceLabel(): String {
     val skillId = arguments["skillId"] as? String
     val delegatedArguments = arguments["arguments"] as? Map<*, *>
     val argumentKeys = (delegatedArguments?.keys ?: arguments.keys)
@@ -329,6 +450,7 @@ private fun LLMToolSetup.withMockInvocation(mockedTool: LLMToolSetup): LLMToolSe
 
 internal fun emptySkillRegistryRepository(): SkillRegistryRepository = mockk {
     coEvery { listSkills(any()) } returns emptyList()
+    coEvery { listSkillInventoryIds(any()) } returns emptyList()
     coEvery { loadSkillBundle(any(), any()) } returns null
     coEvery { getValidation(any(), any(), any(), any()) } returns null
 }
@@ -340,6 +462,7 @@ internal object EmptyMcpToolProvider : McpToolProvider {
 const val SOUZ_AGENT_INTEGRATION_TESTS_ON = "SOUZ_AGENT_INTEGRATION_TESTS_ON"
 const val SOUZ_AGENT_INTEGRATION_TEST_AGENT = "SOUZ_AGENT_INTEGRATION_TEST_AGENT"
 const val SOUZ_AGENT_INTEGRATION_TEST_MODEL = "SOUZ_AGENT_INTEGRATION_TEST_MODEL"
+const val SOUZ_AGENT_INTEGRATION_TEST_REASONING_EFFORT = "SOUZ_AGENT_INTEGRATION_TEST_REASONING_EFFORT"
 
 private fun isAgentScenarioIntegrationTestsEnabled(envValue: String?): Boolean =
     envValue.equals("true", ignoreCase = true)
@@ -393,3 +516,4 @@ private fun readSystemProperty(name: String): String? = System.getProperty(name)
 private fun readEnvironment(name: String): String? = System.getenv(name)?.takeIf { it.isNotBlank() }
 
 private val DEFAULT_TEST_TIMEOUT: Duration = 5.minutes
+private val SCENARIO_TIMEOUT: Duration = 4.minutes

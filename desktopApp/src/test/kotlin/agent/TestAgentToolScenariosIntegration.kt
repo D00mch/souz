@@ -4,6 +4,10 @@ import io.mockk.*
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Test
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.TestInstance
@@ -36,10 +40,14 @@ import ru.souz.tool.textReplace.ToolGetClipboard
 
 /**
  * Integration tests for tool invocation scenarios across graph agent implementations.
- * Tools are mocked: we verify that LLM calls the required tools with the expected parameters.
+ * Tools are mocked; checks cover completed answers, arguments, and resulting state.
+ * Excel discovery/cell/lookup cases exercise the named operation; query/sort allow any correct read-only solution.
  * Set [SOUZ_AGENT_INTEGRATION_TESTS_ON] to `true` before running these integration tests.
  * Select `graph` (default) or `skills` with [SOUZ_AGENT_INTEGRATION_TEST_AGENT].
  * Override the model with [SOUZ_AGENT_INTEGRATION_TEST_MODEL].
+ * For a compatible endpoint, select `openai-compatible-custom` and set `OPENAI_MODEL`,
+ * `OPENAI_BASE_URL`, and `OPENAI_API_KEY`. [SOUZ_AGENT_INTEGRATION_TEST_REASONING_EFFORT]
+ * sets `reasoning_effort` on compatible chat requests, including classification.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphAgentToolScenariosIntegrationTest {
@@ -91,9 +99,10 @@ class GraphAgentToolScenariosIntegrationTest {
 
         runScenarioWithMocks(userPrompt, listOf(testGetApps.toGiga(), testOpenApp.toGiga()))
 
-        coVerify(atLeast = 1) {
+        coVerify(exactly = 1) {
             testOpenApp.invoke(match { it.target.contains("ru.keepcoder.Telegram", ignoreCase = true) }, any())
         }
+        coVerify(exactly = 1) { testOpenApp.invoke(any(), any()) }
     }
 
     @ParameterizedTest(name = "scenario2_openWebsite[{index}] {0}")
@@ -138,6 +147,8 @@ class GraphAgentToolScenariosIntegrationTest {
             userPrompt,
             listOf(toolOpenDefaultBrowser.toGiga(), toolOpen.toGiga(), toolCreateNewBrowserTab.toGiga()),
         )
+        assertEquals(listOf("example.com"), (openTargets + createNewTabUrls).map { java.net.URI(it).host },
+            "Opening a browser without navigating does not fulfill the request")
         assertEquals(
             1,
             openCalls,
@@ -163,6 +174,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(exactly = 1) {
             toolCreateNewBrowserTab.invoke(match { it.url.contains("example.com") }, any())
         }
+        coVerify(exactly = 1) { toolCreateNewBrowserTab.invoke(any(), any()) }
     }
 
     @ParameterizedTest(name = "scenario4_findSiteInHistory[{index}] {0}")
@@ -186,12 +198,18 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolCreateNewBrowserTab.invoke(any(), any()) } returns "Opened"
 
         try {
-            runScenarioWithMocks(
+            val answer = runScenarioWithMocks(
                 userPrompt,
                 listOf(toolChromeInfo.toGiga(), toolSafariInfo.toGiga(), toolCreateNewBrowserTab.toGiga()),
             )
+            assertAnswerFacts(answer, "example.com")
             coVerify(atLeast = 1) {
                 toolChromeInfo.invoke(match { it.type == ToolChromeInfo.InfoType.history }, any())
+            }
+            if (userPrompt.contains("открой")) {
+                coVerify(exactly = 1) { toolCreateNewBrowserTab.invoke(match { java.net.URI(it.url).host == "example.com" }, any()) }
+            } else {
+                coVerify(exactly = 0) { toolCreateNewBrowserTab.invoke(any(), any()) }
             }
         } finally {
             unmockkStatic("ru.souz.tool.browser.DefaultBrowserKt")
@@ -207,30 +225,14 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario5_readPageInOpenTab(userPrompt: String) = runTest {
-        val realSafari = ToolSafariInfo(ToolRunBashCommand)
-        val toolSafariInfo: ToolSafariInfo = spyk(realSafari)
-
-        val realChrome = ToolChromeInfo(ToolRunBashCommand)
-        val toolChromeInfo: ToolChromeInfo = spyk(realChrome)
-
-        var pageTextCalls = 0
-
-        coEvery { toolSafariInfo.invoke(any(), any()) } answers {
-            val input = firstArg<ToolSafariInfo.Input>()
-            if (input.type == ToolSafariInfo.InfoType.pageText) pageTextCalls++
-            "Page content"
-        }
-        coEvery { toolChromeInfo.invoke(any(), any()) } answers {
-            val input = firstArg<ToolChromeInfo.Input>()
-            if (input.type == ToolChromeInfo.InfoType.pageText) pageTextCalls++
-            "Page content"
-        }
-
-        runScenarioWithMocks(userPrompt, listOf(toolSafariInfo.toGiga(), toolChromeInfo.toGiga()))
-        assertTrue(
-            pageTextCalls >= 1,
-            "Expected at least one pageText action via SafariInfo or ChromeInfo, but got $pageTextCalls"
-        )
+        val page = ScenarioBrowserPage()
+        val safari = spyk(ToolSafariInfo(ToolRunBashCommand))
+        val chrome = spyk(ToolChromeInfo(ToolRunBashCommand))
+        coEvery { safari.invoke(any(), any()) } answers { page.read(firstArg<ToolSafariInfo.Input>()) }
+        coEvery { chrome.invoke(any(), any()) } answers { page.read(firstArg<ToolChromeInfo.Input>()) }
+        val answer = runScenarioWithMocks(userPrompt, listOf(safari.toGiga(), chrome.toGiga()))
+        assertAnswerFacts(answer, "Орион", "пятниц")
+        assertTrue(page.pageTextCalls >= 1, "Read the active page body through pageText; metadata alone is insufficient")
     }
 
     @ParameterizedTest(name = "scenario6_todayCalendarEvents[{index}] {0}")
@@ -242,13 +244,13 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario6_todayCalendarEvents(userPrompt: String) = runTest {
-        val realTool = ToolCalendarListEvents()
-        val toolCalendarListEvents: ToolCalendarListEvents = spyk(realTool)
-
-        coEvery { toolCalendarListEvents.invoke(any(), any()) } returns "[]"
-
-        runScenarioWithMocks(userPrompt, listOf(toolCalendarListEvents.toGiga()))
-        coVerify(exactly = 1) { toolCalendarListEvents.invoke(any(), any()) }
+        val calendar = ScenarioCalendar()
+        val tool = spyk(ToolCalendarListEvents())
+        coEvery { tool.invoke(any(), any()) } answers { calendar.list(firstArg<ToolCalendarListEvents.Input>().date) }
+        val answer = runScenarioWithMocks(userPrompt, listOf(tool.toGiga()))
+        coVerify(atLeast = 1) { tool.invoke(match { it.date.isBlank() || it.date == SCENARIO_TODAY.toString() }, any()) }
+        assertAnswerFacts(answer, "Обзор проекта")
+        assertTrue(Regex("(?<!\\d)0?9[:.]00(?!\\d)").containsMatchIn(answer), answer)
     }
 
     @ParameterizedTest(name = "scenario7_createCalendarEvent[{index}] {0}")
@@ -260,15 +262,17 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario7_createCalendarEvent(userPrompt: String) = runTest {
-        val realTool = ToolCalendarCreateEvent(ToolRunBashCommand)
-        val toolCalendarCreateEvent: ToolCalendarCreateEvent = spyk(realTool)
-
-        coEvery { toolCalendarCreateEvent.invoke(any(), any()) } returns "Event created"
-
-        runScenarioWithMocks(userPrompt, listOf(toolCalendarCreateEvent.toGiga()))
-        coVerify(exactly = 1) {
-            toolCalendarCreateEvent.invoke(match { it.title.isNotBlank() && it.startDateTime.isNotBlank() }, any())
+        val tool = spyk(ToolCalendarCreateEvent(ToolRunBashCommand))
+        val events = mutableListOf<ToolCalendarCreateEvent.Input>()
+        coEvery { tool.invoke(any(), any()) } answers {
+            events += firstArg<ToolCalendarCreateEvent.Input>()
+            "Event created: ${events.last().title}, ${events.last().startDateTime}"
         }
+        runScenarioWithMocks(userPrompt, listOf(tool.toGiga()))
+        assertEquals(1, events.size, "Create exactly one event")
+        assertTrue(events.single().title.contains("встреч", ignoreCase = true))
+        assertEquals(SCENARIO_TODAY.plusDays(1).atTime(10, 0),
+            LocalDateTime.parse(events.single().startDateTime, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
     }
 
     @ParameterizedTest(name = "scenario8_deleteCalendarEvent[{index}] {0}")
@@ -280,35 +284,19 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario8_deleteCalendarEvent(userPrompt: String) = runTest {
-        val realToolList = ToolCalendarListEvents()
-        val toolCalendarListEvents: ToolCalendarListEvents = spyk(realToolList)
-
-        val realToolCreate = ToolCalendarCreateEvent(ToolRunBashCommand)
-        val toolCalendarCreateEvent: ToolCalendarCreateEvent = spyk(realToolCreate)
-
-        val realToolDel = ToolCalendarDeleteEvent(ToolRunBashCommand)
-        val toolCalendarDeleteEvent: ToolCalendarDeleteEvent = spyk(realToolDel)
-
-        coEvery { toolCalendarListEvents.invoke(any(), any()) } returns """
-            2026-02-11 10:00 - 11:00 | Важная встреча
-            2026-02-11 15:00 - 16:00 | Командный синк
-        """.trimIndent()
-        coEvery { toolCalendarCreateEvent.invoke(any(), any()) } returns "Event created"
-        coEvery { toolCalendarDeleteEvent.invoke(any(), any()) } returns "Deleted"
-
-        runScenarioWithMocks(
-            userPrompt,
-            listOf(
-                toolCalendarListEvents.toGiga(),
-                toolCalendarCreateEvent.toGiga(),
-                toolCalendarDeleteEvent.toGiga(),
-            ),
-        )
-
-        coVerify(atLeast = 1) { toolCalendarListEvents.invoke(any(), any()) }
-        coVerify(atLeast = 1) {
-            toolCalendarDeleteEvent.invoke(match { it.title.contains("Важная встреча", ignoreCase = true) }, any())
-        }
+        val calendar = ScenarioCalendar()
+        val before = calendar.events
+        val list = spyk(ToolCalendarListEvents())
+        val create = spyk(ToolCalendarCreateEvent(ToolRunBashCommand))
+        val delete = spyk(ToolCalendarDeleteEvent(ToolRunBashCommand))
+        coEvery { list.invoke(any(), any()) } answers { calendar.list(firstArg<ToolCalendarListEvents.Input>().date) }
+        coEvery { create.invoke(any(), any()) } returns "Error: creation was not requested"
+        coEvery { delete.invoke(any(), any()) } answers { calendar.delete(firstArg<ToolCalendarDeleteEvent.Input>().title) }
+        runScenarioWithMocks(userPrompt, listOf(list.toGiga(), create.toGiga(), delete.toGiga()))
+        coVerify(atLeast = 1) { list.invoke(match { it.date == SCENARIO_TODAY.plusDays(1).toString() }, any()) }
+        coVerify(exactly = 1) { delete.invoke(any(), any()) }
+        coVerify(exactly = 0) { create.invoke(any(), any()) }
+        assertEquals(before.filterNot { it.title == "Важная встреча" }, calendar.events)
     }
 
     @ParameterizedTest(name = "scenario9_findCalendarEvent[{index}] {0}")
@@ -320,26 +308,23 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario9_findCalendarEvent(userPrompt: String) = runTest {
-        val toolCalendarListEvents: ToolCalendarListEvents = spyk(ToolCalendarListEvents())
-        val toolCalendarCreateEvent: ToolCalendarCreateEvent = spyk(ToolCalendarCreateEvent(ToolRunBashCommand))
-        val toolCalendarDeleteEvent: ToolCalendarDeleteEvent = spyk(ToolCalendarDeleteEvent(ToolRunBashCommand))
-
-        coEvery { toolCalendarListEvents.invoke(any(), any()) } returns """
-            2026-02-10 10:00 - 10:30 | Статус встреча
-            2026-02-12 16:00 - 17:00 | Планирование спринта
-        """.trimIndent()
-        coEvery { toolCalendarCreateEvent.invoke(any(), any()) } returns "Event created"
-        coEvery { toolCalendarDeleteEvent.invoke(any(), any()) } returns "Deleted"
-
-        runScenarioWithMocks(
-            userPrompt,
-            listOf(
-                toolCalendarListEvents.toGiga(),
-                toolCalendarCreateEvent.toGiga(),
-                toolCalendarDeleteEvent.toGiga(),
-            ),
-        )
-        coVerify(atLeast = 1) { toolCalendarListEvents.invoke(any(), any()) }
+        val calendar = ScenarioCalendar()
+        val before = calendar.events
+        val list = spyk(ToolCalendarListEvents())
+        val create = spyk(ToolCalendarCreateEvent(ToolRunBashCommand))
+        val delete = spyk(ToolCalendarDeleteEvent(ToolRunBashCommand))
+        val queriedDates = mutableListOf<String>()
+        coEvery { list.invoke(any(), any()) } answers {
+            firstArg<ToolCalendarListEvents.Input>().date.let { queriedDates += it; calendar.list(it) }
+        }
+        coEvery { create.invoke(any(), any()) } returns "Error: creation was not requested"
+        coEvery { delete.invoke(any(), any()) } returns "Error: deletion was not requested"
+        val answer = runScenarioWithMocks(userPrompt, listOf(list.toGiga(), create.toGiga(), delete.toGiga()))
+        assertTrue((0L..6L).all { SCENARIO_TODAY.plusDays(it).toString() in queriedDates.map { date -> date.ifBlank { SCENARIO_TODAY.toString() } } },
+            "A week requires reading all seven dates: $queriedDates")
+        assertAnswerFacts(answer, *before.map { it.title }.toTypedArray())
+        coVerify(exactly = 0) { create.invoke(any(), any()); delete.invoke(any(), any()) }
+        assertEquals(before, calendar.events)
     }
 
     @ParameterizedTest(name = "scenario11_buildChartFromFile[{index}] {0}")
@@ -351,21 +336,34 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario11_buildChartFromFile(userPrompt: String) = runTest {
-        val toolCreatePlotFromCsv: ToolCreatePlotFromCsv = spyk(ToolCreatePlotFromCsv(filesUtil))
-        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
-        val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
+        val plot = spyk(ToolCreatePlotFromCsv(filesUtil))
+        val list = spyk(ToolListFiles(filesUtil))
+        val read = spyk(ToolExtractText(filesUtil))
+        val chart = ScenarioChart("~/tmp/test-data/sample.csv", listOf("Имя", "Возраст"))
+        coEvery { list.invoke(any(), any()) } returns "[\"~/tmp/test-data/sample.csv\"]"
+        coEvery { read.invoke(any(), any()) } returns "Имя,Возраст\nАнна,30\nБорис,42"
+        coEvery { plot.invoke(any(), any()) } answers { chart.plot(firstArg()) }
+        runScenarioWithMocks(userPrompt, listOf(plot.toGiga(), list.toGiga(), read.toGiga()))
+        assertEquals(1, chart.created.size, "Create exactly one chart; header discovery may repeat")
+        assertEquals("имя", chart.created.single().xColumn?.lowercase())
+        assertEquals("возраст", chart.created.single().yColumn?.lowercase())
+        assertEquals(ScenarioFiles.canonical("~/tmp/test-data/sample.csv"), ScenarioFiles.canonical(chart.created.single().path))
+    }
 
-        coEvery { toolCreatePlotFromCsv.invoke(any(), any()) } returns "Plot saved"
-        coEvery { toolListFiles.invoke(any(), any()) } returns "[\"sample.csv\"]"
-        coEvery { excelRead.invoke(any(), any()) } returns """{"headers":["Date","Amount"],"rowCount":10}"""
-
-        runScenarioWithMocks(
-            userPrompt,
-            listOf(toolCreatePlotFromCsv.toGiga(), toolListFiles.toGiga(), excelRead.toGiga()),
+    @Test
+    fun scenario11_missingChartColumns() = runTest {
+        val plot = spyk(ToolCreatePlotFromCsv(filesUtil))
+        val read = spyk(ToolExtractText(filesUtil))
+        val chart = ScenarioChart("~/sample.csv", listOf("Date", "Amount"))
+        coEvery { read.invoke(any(), any()) } returns "Date,Amount\n2026-06-01,1500"
+        coEvery { plot.invoke(any(), any()) } answers { chart.plot(firstArg()) }
+        val answer = runScenarioWithMocks(
+            "Построй график возраста по имени из ~/sample.csv. Если нужных колонок нет, сообщи об этом и не создавай другой график.",
+            listOf(plot.toGiga(), read.toGiga()),
         )
-        coVerify(exactly = 1) {
-            toolCreatePlotFromCsv.invoke(match { it.path.contains("sample.csv") }, any())
-        }
+        assertEquals(0, chart.created.size, "Do not substitute a Date/Amount chart for missing name/age data")
+        assertAnswerFacts(answer, "Date", "Amount")
+        assertTrue(Regex("нет|отсутств|не найден|невозмож|missing|unavailable", RegexOption.IGNORE_CASE).containsMatchIn(answer), answer)
     }
 
     @ParameterizedTest(name = "scenario12_findFileByName[{index}] {0}")
@@ -377,15 +375,18 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario12_findFileByName(userPrompt: String) = runTest {
-        val toolFindFilesByName: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
-
-        coEvery { toolFindFilesByName.invoke(any(), any()) } returns "~/path/to/test.txt"
-        coEvery { toolFindFilesByName.suspendInvoke(any(), any()) } returns "~/path/to/test.txt"
-
-        runScenarioWithMocks(userPrompt, listOf(toolFindFilesByName.toGiga()))
-        coVerify(atLeast = 1) {
-            toolFindFilesByName.suspendInvoke(match { it.fileName.contains("100 ошибок в го") }, any())
+        val path = "~/books/100 ошибок в го.pdf"
+        val files = ScenarioFiles(mapOf(path to ""))
+        val find = spyk(ToolFindFilesByName(filesUtil))
+        var foundTarget = false
+        coEvery { find.suspendInvoke(any(), any()) } answers {
+            firstArg<ToolFindFilesByName.Input>().let { files.find(it.path, it.fileName) }.also {
+                foundTarget = foundTarget || it.contains(ScenarioFiles.canonical(path))
+            }
         }
+        val answer = runScenarioWithMocks(userPrompt, listOf(find.toGiga()))
+        assertTrue(foundTarget, "A successful search must return the target file; partial names are valid")
+        assertAnswerFacts(answer, "100 ошибок в го", ".pdf", "books/")
     }
 
     @ParameterizedTest(name = "scenario13_listFilesInFolder[{index}] {0}")
@@ -397,13 +398,13 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario13_listFilesInFolder(userPrompt: String) = runTest {
-        val realTool = ToolListFiles(filesUtil)
-        val toolListFiles: ToolListFiles = spyk(realTool)
-
-        coEvery { toolListFiles.invoke(any(), any()) } returns "test.txt, read_me.txt, sample.csv"
-
-        runScenarioWithMocks(userPrompt, listOf(toolListFiles.toGiga()))
-        coVerify(exactly = 1) { toolListFiles.invoke(any(), any()) }
+        val path = "~/tmp/test-data"
+        val files = ScenarioFiles(listOf("test.txt", "read_me.txt", "sample.csv").associate { "$path/$it" to "" })
+        val list = spyk(ToolListFiles(filesUtil))
+        coEvery { list.invoke(any(), any()) } answers { files.list(firstArg<ToolListFiles.Input>().path) }
+        val answer = runScenarioWithMocks(userPrompt, listOf(list.toGiga()))
+        assertAnswerFacts(answer, "test.txt", "read_me.txt", "sample.csv")
+        coVerify(atLeast = 1) { list.invoke(match { ScenarioFiles.canonical(it.path) == ScenarioFiles.canonical(path) }, any()) }
     }
 
     @ParameterizedTest(name = "scenario14_createFile[{index}] {0}")
@@ -415,14 +416,14 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario14_createFile(userPrompt: String) = runTest {
-        val realToolNew = ToolNewFile(filesUtil)
-        val toolNewFile: ToolNewFile = spyk(realToolNew)
-
-        coEvery { toolNewFile.invoke(any(), any()) } returns "Created"
-
-        val tempFile = "test_integration.txt"
-        runScenarioWithMocks(userPrompt, listOf(toolNewFile.toGiga()))
-        coVerify(exactly = 1) { toolNewFile.invoke(match { it.path.contains(tempFile) && it.text.contains("Hello") }, any()) }
+        val files = ScenarioFiles(emptyMap())
+        val tool = spyk(ToolNewFile(filesUtil))
+        coEvery { tool.invoke(any(), any()) } answers {
+            firstArg<ToolNewFile.Input>().let { files.create(it.path, it.text) }
+        }
+        runScenarioWithMocks(userPrompt, listOf(tool.toGiga()))
+        coVerify(exactly = 1) { tool.invoke(any(), any()) }
+        assertEquals(mapOf(ScenarioFiles.canonical("~/tmp/test-data/test_integration.txt") to "Hello"), files.snapshot())
     }
 
     @ParameterizedTest(name = "scenario14_readFile[{index}] {0}")
@@ -434,15 +435,17 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario14_readFile(userPrompt: String) = runTest {
-        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
-        val toolFindFilesByName: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
-
-        coEvery { toolExtractText.invoke(any(), any()) } returns "Hello"
-        coEvery { toolFindFilesByName.suspendInvoke(any(), any()) } returns "[\"~/tmp/test-data/test_integration.txt\"]"
-
-        val tempFile = "test_integration.txt"
-        runScenarioWithMocks(userPrompt, listOf(toolExtractText.toGiga(), toolFindFilesByName.toGiga()))
-        coVerify(exactly = 1) { toolExtractText.invoke(match { it.filePath.contains(tempFile) }, any()) }
+        val path = "~/tmp/test-data/test_integration.txt"
+        val files = ScenarioFiles(mapOf(path to "Hello"))
+        val read = spyk(ToolExtractText(filesUtil))
+        val find = spyk(ToolFindFilesByName(filesUtil))
+        coEvery { read.invoke(any(), any()) } answers { files.read(firstArg<ToolExtractText.Input>().filePath) }
+        coEvery { find.suspendInvoke(any(), any()) } answers {
+            firstArg<ToolFindFilesByName.Input>().let { files.find(it.path, it.fileName) }
+        }
+        val answer = runScenarioWithMocks(userPrompt, listOf(read.toGiga(), find.toGiga()))
+        assertAnswerFacts(answer, "Hello")
+        coVerify(atLeast = 1) { read.invoke(match { ScenarioFiles.canonical(it.filePath) == ScenarioFiles.canonical(path) }, any()) }
     }
 
     @ParameterizedTest(name = "scenario14_modifyFile[{index}] {0}")
@@ -454,36 +457,19 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario14_modifyFile(userPrompt: String) = runTest {
-        val realToolMod = ToolModifyFile(filesUtil)
-        val toolModifyFile: ToolModifyFile = spyk(realToolMod)
-
-        val realToolFind = ToolFindFilesByName(filesUtil)
-        val toolFindFilesByName: ToolFindFilesByName = spyk(realToolFind)
-        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
-
-        var currentContent = "Hello"
-        val tempFile = "test_integration"
-        val appendText = "World is over"
-
-        coEvery { toolFindFilesByName.suspendInvoke(any(), any()) } returns "[\"~/test_integration.txt\"]"
-        coEvery { toolExtractText.invoke(any(), any()) } answers { currentContent }
-        coEvery { toolModifyFile.invoke(any(), any()) } answers {
-            val request = firstArg<ToolModifyFile.Input>()
-            currentContent = if (request.replaceAll) {
-                currentContent.replace(request.oldString, request.newString)
-            } else {
-                currentContent.replaceFirst(request.oldString, request.newString)
-            }
-            "Modified"
+        val path = "~/test_integration.txt"
+        val files = ScenarioFiles(mapOf(path to "Hello"))
+        val edit = spyk(ToolModifyFile(filesUtil))
+        val find = spyk(ToolFindFilesByName(filesUtil))
+        val read = spyk(ToolExtractText(filesUtil))
+        coEvery { find.suspendInvoke(any(), any()) } answers {
+            firstArg<ToolFindFilesByName.Input>().let { files.find(it.path, it.fileName) }
         }
-
-        runScenarioWithMocks(
-            userPrompt,
-            listOf(toolExtractText.toGiga(), toolModifyFile.toGiga(), toolFindFilesByName.toGiga()),
-        )
-        coVerify(exactly = 1) {
-            toolModifyFile.invoke(match { it.path.contains(tempFile) && it.newString.contains(appendText) }, any())
-        }
+        coEvery { read.invoke(any(), any()) } answers { files.read(firstArg<ToolExtractText.Input>().filePath) }
+        coEvery { edit.invoke(any(), any()) } answers { files.edit(firstArg()) }
+        runScenarioWithMocks(userPrompt, listOf(read.toGiga(), edit.toGiga(), find.toGiga()))
+        coVerify(exactly = 1) { edit.invoke(any(), any()) }
+        assertEquals("Hello\nWorld is over", files.read(path).trimEnd(), "Preserve the original and append the requested line exactly once")
     }
 
     @ParameterizedTest(name = "scenario14_deleteFile[{index}] {0}")
@@ -495,18 +481,20 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario14_deleteFile(userPrompt: String) = runTest {
-        val realToolDel = ToolDeleteFile(filesUtil)
-        val toolDeleteFile: ToolDeleteFile = spyk(realToolDel)
-
-        val realToolFind = ToolFindFilesByName(filesUtil)
-        val toolFindFilesByName: ToolFindFilesByName = spyk(realToolFind)
-
-        coEvery { toolDeleteFile.invoke(any(), any()) } returns "Deleted"
-        coEvery { toolFindFilesByName.suspendInvoke(any(), any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
-
-        val tempFile = "test_integration.txt"
-        runScenarioWithMocks(userPrompt, listOf(toolDeleteFile.toGiga(), toolFindFilesByName.toGiga()))
-        coVerify(exactly = 1) { toolDeleteFile.invoke(match { it.path.contains(tempFile) }, any()) }
+        val path = "~/tmp/test-data/test_integration.txt"
+        val files = ScenarioFiles(mapOf(path to "Hello", "~/tmp/test-data/keep.txt" to "Keep"))
+        val delete = spyk(ToolDeleteFile(filesUtil))
+        val find = spyk(ToolFindFilesByName(filesUtil))
+        val list = spyk(ToolListFiles(filesUtil))
+        coEvery { delete.invoke(any(), any()) } answers { files.delete(firstArg<ToolDeleteFile.Input>().path) }
+        coEvery { find.suspendInvoke(any(), any()) } answers {
+            firstArg<ToolFindFilesByName.Input>().let { files.find(it.path, it.fileName) }
+        }
+        coEvery { list.invoke(any(), any()) } answers { files.list(firstArg<ToolListFiles.Input>().path) }
+        runScenarioWithMocks(userPrompt, listOf(delete.toGiga(), find.toGiga(), list.toGiga()))
+        coVerify(exactly = 1) { delete.invoke(any(), any()) }
+        assertEquals(mapOf(ScenarioFiles.canonical("~/tmp/test-data/keep.txt") to "Keep"), files.snapshot())
+        assertFalse(files.exists(path))
     }
 
     @ParameterizedTest(name = "scenario15_moveFile[{index}] {0}")
@@ -518,22 +506,21 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario15_moveFile(userPrompt: String) = runTest {
-        val realTool = ToolMoveFile(filesUtil)
-        val toolMoveFile: ToolMoveFile = spyk(realTool)
-        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
-        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
-
-        coEvery { toolMoveFile.invoke(any(), any()) } returns "Moved"
-        coEvery { toolListFiles.invoke(any(), any()) } returns """["sample.csv", "README.md", "/dest"]"""
-        coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns """["~/sample.csv", "~/README.md", "~/dest/"]"""
-
-        runScenarioWithMocks(
-            userPrompt,
-            listOf(toolMoveFile.toGiga(), toolListFiles.toGiga(), toolFindFiles.toGiga()),
-        )
-        coVerify(exactly = 1) {
-            toolMoveFile.invoke(match { it.sourcePath.contains("README") && it.destinationPath.contains("dest") }, any())
+        val files = ScenarioFiles(mapOf("~/README.md" to "Read me", "~/sample.csv" to "Name,Age"), setOf("~/dest"))
+        val move = spyk(ToolMoveFile(filesUtil))
+        val list = spyk(ToolListFiles(filesUtil))
+        val find = spyk(ToolFindFilesByName(filesUtil))
+        coEvery { move.invoke(any(), any()) } answers {
+            firstArg<ToolMoveFile.Input>().let { files.move(it.sourcePath, it.destinationPath) }
         }
+        coEvery { list.invoke(any(), any()) } answers { files.list(firstArg<ToolListFiles.Input>().path) }
+        coEvery { find.suspendInvoke(any(), any()) } answers {
+            firstArg<ToolFindFilesByName.Input>().let { files.find(it.path, it.fileName) }
+        }
+        runScenarioWithMocks(userPrompt, listOf(move.toGiga(), list.toGiga(), find.toGiga()))
+        coVerify(exactly = 1) { move.invoke(any(), any()) }
+        assertEquals(mapOf(ScenarioFiles.canonical("~/dest/README.md") to "Read me",
+            ScenarioFiles.canonical("~/sample.csv") to "Name,Age"), files.snapshot())
     }
 
     @ParameterizedTest(name = "scenario16_extractTextFromFile[{index}] {0}")
@@ -545,15 +532,13 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario16_extractTextFromFile(userPrompt: String) = runTest {
-        val realTool = ToolExtractText(filesUtil)
-        val toolExtractText: ToolExtractText = spyk(realTool)
-
-        coEvery { toolExtractText.invoke(any(), any()) } returns "Test content\nСтрока для проверки извлечения текста."
-
-        runScenarioWithMocks(userPrompt, listOf(toolExtractText.toGiga()))
-        coVerify(exactly = 1) {
-            toolExtractText.invoke(match { it.filePath.contains("test.txt") }, any())
-        }
+        val path = "~/tmp/test.txt"
+        val files = ScenarioFiles(mapOf(path to "Test content\nСтрока для проверки извлечения текста."))
+        val read = spyk(ToolExtractText(filesUtil))
+        coEvery { read.invoke(any(), any()) } answers { files.read(firstArg<ToolExtractText.Input>().filePath) }
+        val answer = runScenarioWithMocks(userPrompt, listOf(read.toGiga()))
+        assertAnswerFacts(answer, "Test content", "Строка для проверки извлечения текста")
+        coVerify(atLeast = 1) { read.invoke(match { ScenarioFiles.canonical(it.filePath) == ScenarioFiles.canonical(path) }, any()) }
     }
 
     @ParameterizedTest(name = "scenario17_readPdfPageByPage[{index}] {0}")
@@ -574,12 +559,13 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolListFiles.invoke(any(), any()) } returns "[\"sample.pdf\"]"
         coEvery { toolReadPdfPages.invoke(any(), any()) } returns "Page 1 content"
 
-        runScenarioWithMocks(
+        val answer = runScenarioWithMocks(
             userPrompt,
             listOf(toolReadPdfPages.toGiga(), toolListFiles.toGiga(), toolFindFiles.toGiga()),
         )
-        coVerify(exactly = 1) {
-            toolReadPdfPages.invoke(match { it.filePath.contains("sample") }, any())
+        assertAnswerFacts(answer, "Page 1 content")
+        coVerify(atLeast = 1) {
+            toolReadPdfPages.invoke(match { it.filePath.contains("sample") && it.startPage == 1 }, any())
         }
     }
 
@@ -601,6 +587,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(exactly = 1) {
             toolOpen.invoke(match { it.target.contains("read_me.txt") }, any())
         }
+        coVerify(exactly = 1) { toolOpen.invoke(any(), any()) }
     }
 
     @ParameterizedTest(name = "scenario19_notesFindCreateDeleteList[{index}] {0}")
@@ -618,21 +605,22 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolDeleteNote: ToolDeleteNote = spyk(ToolDeleteNote(ToolRunBashCommand))
 
         val noteTitle = "тест интеграции"
-        var hasNote = false
-
+        val notes = mutableListOf("Личная заметка")
+        var foundRequestedNote = false
         coEvery { toolCreateNote.invoke(any(), any()) } answers {
-            hasNote = true
+            notes += firstArg<ToolCreateNote.Input>().noteText.lineSequence().first().trim()
             "Created"
         }
         coEvery { toolDeleteNote.invoke(any(), any()) } answers {
-            hasNote = false
-            "Deleted"
+            val title = firstArg<ToolDeleteNote.Input>().noteName
+            if (notes.removeAll { it.equals(title, ignoreCase = true) }) "Deleted" else "Error: Note not found: $title"
         }
-        coEvery { toolListNotes.invoke(any(), any()) } answers {
-            if (hasNote) "[\"$noteTitle\"]" else "[]"
-        }
+        coEvery { toolListNotes.invoke(any(), any()) } answers { notes.joinToString("\n") }
         coEvery { toolSearchNotes.invoke(any(), any()) } answers {
-            if (hasNote) "[\"$noteTitle\"]" else "[]"
+            val query = firstArg<ToolSearchNotes.Input>().query
+            val matches = notes.filter { query.isNotBlank() && it.contains(query, ignoreCase = true) }
+            foundRequestedNote = foundRequestedNote || matches.any { it.equals(noteTitle, ignoreCase = true) }
+            matches.joinToString("\n").ifEmpty { "No matches" }
         }
 
         runScenarioWithMocks(
@@ -644,10 +632,20 @@ class GraphAgentToolScenariosIntegrationTest {
                 toolDeleteNote.toGiga(),
             ),
         )
-        coVerify(exactly = 1) { toolCreateNote.invoke(match { it.noteText.contains(noteTitle) }, any()) }
+        coVerify(exactly = 1) { toolCreateNote.invoke(any(), any()) }
+        coVerify(exactly = 1) { toolCreateNote.invoke(match { it.noteText.trim().equals(noteTitle, ignoreCase = true) }, any()) }
         coVerify(atLeast = 1) { toolListNotes.invoke(any(), any()) }
-        coVerify(atLeast = 0) { toolSearchNotes.invoke(any(), any()) }
-        coVerify(exactly = 1) { toolDeleteNote.invoke(match { it.noteName.contains("тест") }, any()) }
+        coVerify(atLeast = 1) { toolSearchNotes.invoke(match { it.query.isNotBlank() && noteTitle.contains(it.query, ignoreCase = true) }, any()) }
+        coVerify(exactly = 1) { toolDeleteNote.invoke(any(), any()) }
+        coVerify(exactly = 1) { toolDeleteNote.invoke(match { it.noteName.equals(noteTitle, ignoreCase = true) }, any()) }
+        coVerifyOrder {
+            toolCreateNote.invoke(any(), any())
+            toolListNotes.invoke(any(), any())
+            toolSearchNotes.invoke(any(), any())
+            toolDeleteNote.invoke(any(), any())
+        }
+        assertTrue(foundRequestedNote, "Search must return the requested note before deletion")
+        assertEquals(listOf("Личная заметка"), notes, "Delete only the created note")
     }
 
     @ParameterizedTest(name = "scenario20_mailFindUnreadListReply[{index}] {0}")
@@ -673,7 +671,7 @@ class GraphAgentToolScenariosIntegrationTest {
             ID: 50101 | From: Test Contact <test@example.com> | Subject: Отчет за сегодня
         """.trimIndent()
 
-        runScenarioWithMocks(
+        val answer = runScenarioWithMocks(
             userPrompt,
             listOf(
                 toolMailUnreadMessagesCount.toGiga(),
@@ -681,8 +679,11 @@ class GraphAgentToolScenariosIntegrationTest {
                 toolMailSearch.toGiga(),
             ),
         )
-        coVerify(exactly = 1) { toolMailUnreadMessagesCount.invoke(any(), any()) }
-        coVerify(exactly = 1) { toolMailListMessages.invoke(any(), any()) }
+        assertAnswerFacts(answer, "Отчет за сегодня", "Daily digest")
+        assertOneUnreadMessage(answer)
+        coVerify(atLeast = 1) { toolMailUnreadMessagesCount.invoke(any(), any()) }
+        coVerify(atLeast = 1) { toolMailListMessages.invoke(any(), any()) }
+        if (userPrompt.contains("Найди", ignoreCase = true)) coVerify(atLeast = 1) { toolMailSearch.invoke(any(), any()) }
     }
 
     @ParameterizedTest(name = "scenario21_sendEmail[{index}] {0}")
@@ -704,8 +705,9 @@ class GraphAgentToolScenariosIntegrationTest {
 
         runScenarioWithMocks(userPrompt, listOf(toolMailSendNewMessage.toGiga(), toolMailSearch.toGiga()))
         coVerify(exactly = 1) {
-            toolMailSendNewMessage.invoke(match { it.recipientAddress.contains("test@example.com") }, any())
+            toolMailSendNewMessage.invoke(match { it.recipientAddress == "test@example.com" && it.subject == "Тест" }, any())
         }
+        coVerify(exactly = 1) { toolMailSendNewMessage.invoke(any(), any()) }
     }
 
     @ParameterizedTest(name = "scenario22_readSelectedText[{index}] {0}")
@@ -719,10 +721,24 @@ class GraphAgentToolScenariosIntegrationTest {
     fun scenario22_readSelectedText(userPrompt: String) = runTest {
         val toolGetClipboard: ToolGetClipboard = spyk(ToolGetClipboard())
 
-        coEvery { toolGetClipboard.invoke(any(), any()) } returns "Selected text"
+        coEvery { toolGetClipboard.invoke(any(), any()) } returns "Проект Орион завершён. Выпуск назначен на пятницу."
 
-        runScenarioWithMocks(userPrompt, listOf(toolGetClipboard.toGiga()))
+        val answer = runScenarioWithMocks(userPrompt, listOf(toolGetClipboard.toGiga()))
+        assertAnswerFacts(answer, "Орион", "пятниц")
         coVerify(atLeast = 1) { toolGetClipboard.invoke(any(), any()) }
+    }
+
+    private fun excelTools(): Pair<ExcelRead, List<LLMToolSetup>> {
+        val read = spyk(ExcelRead(filesUtil))
+        val find = spyk(ToolFindFilesByName(filesUtil))
+        val list = spyk(ToolListFiles(filesUtil))
+        val files = ScenarioFiles(mapOf("~/sales.xlsx" to "", "~/price.xlsx" to ""))
+        coEvery { read.invoke(any(), any()) } answers { ScenarioExcel.read(firstArg()) }
+        coEvery { find.suspendInvoke(any(), any()) } answers {
+            firstArg<ToolFindFilesByName.Input>().let { files.find(it.path, it.fileName) }
+        }
+        coEvery { list.invoke(any(), any()) } answers { files.list(firstArg<ToolListFiles.Input>().path) }
+        return read to listOf(read.toGiga(), find.toGiga(), list.toGiga())
     }
 
     @ParameterizedTest(name = "excelRead_overview[{index}] {0}")
@@ -734,21 +750,10 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun excelRead_overview(userPrompt: String) = runTest {
-        val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
-        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
-        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
-
-        coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns "[\"~/sales.xlsx\"]"
-        coEvery { excelRead.invoke(any(), any()) } returns """{"headers":["Date","Amount"],"rowCount":10}"""
-        coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx"]"""
-
-        runScenarioWithMocks(
-            userPrompt,
-            listOf(excelRead.toGiga(), toolFindFiles.toGiga(), toolListFiles.toGiga()),
-        )
-        coVerify(atLeast = 1) {
-            excelRead.invoke(match { it.path.contains("sales") && it.operation == ExcelRead.ReadOperation.STRUCTURE }, any())
-        }
+        val (read, tools) = excelTools()
+        val answer = runScenarioWithMocks(userPrompt, tools)
+        coVerify(atLeast = 1) { read.invoke(match { it.path.endsWith("sales.xlsx") && it.operation == ExcelRead.ReadOperation.STRUCTURE }, any()) }
+        assertAnswerFacts(answer, "Date", "Amount")
     }
 
     @ParameterizedTest(name = "excelRead_query[{index}] {0}")
@@ -760,29 +765,11 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun excelRead_query(userPrompt: String) = runTest {
-        val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
-        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
-        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
-
-        coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns "[\"~/sales.xlsx\"]"
-        coEvery { excelRead.invoke(any(), any()) } returns """[
-            |{"Date":"2024-01-01","Amount":"1500"}
-            |{"Date":"2023-02-03","Amount":"2500"}
-            |]""".trimMargin()
-        coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx"]"""
-
-        runScenarioWithMocks(
-            userPrompt,
-            listOf(excelRead.toGiga(), toolFindFiles.toGiga(), toolListFiles.toGiga()),
-        )
-        coVerify(atLeast = 1) {
-            excelRead.invoke(match {
-                val filter = it.filter
-                it.path.contains("sales") &&
-                        it.operation == ExcelRead.ReadOperation.QUERY &&
-                        filter != null && filter.contains(">") && filter.contains("1000")
-            }, any())
-        }
+        val (read, tools) = excelTools()
+        val answer = runScenarioWithMocks("$userPrompt. Результат покажи таблицей с колонками Date и Amount.", tools)
+        // Any correct read-only solution is allowed: QUERY aggregates, CELL can supply the raw rows.
+        coVerify(atLeast = 1) { read.invoke(match { it.path.endsWith("sales.xlsx") }, any()) }
+        assertSalesRows(answer, listOf("2026-05-02" to 2500, "2026-05-04" to 1500))
     }
 
     @ParameterizedTest(name = "excelRead_sort[{index}] {0}")
@@ -790,33 +777,16 @@ class GraphAgentToolScenariosIntegrationTest {
         strings = [
             "Отсортируй продажи в sales.xlsx по Amount по убыванию",
             "Покажи sales.xlsx сортировка по Amount DESC",
-            "Выведи данные из sales.xlsx упорядоченные по Amount"
+            "Выведи данные из sales.xlsx упорядоченные по Amount по убыванию"
         ]
     )
     fun excelRead_sort(userPrompt: String) = runTest {
-        val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
-        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
-        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
-
-        coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns "[\"~/sales.xlsx\"]"
-        coEvery { excelRead.invoke(any(), any()) } returns """[
-            |{"Date":"2024-01-01","Amount":"1500"}
-            |{"Date":"2023-02-03","Amount":"2500"}
-            |]""".trimMargin()
-        coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx"]"""
-
-        runScenarioWithMocks(
-            userPrompt,
-            listOf(excelRead.toGiga(), toolFindFiles.toGiga(), toolListFiles.toGiga()),
-        )
-        coVerify(atLeast = 1) {
-            excelRead.invoke(match {
-                val sortBy = it.sortBy
-                it.path.contains("sales") &&
-                        it.operation == ExcelRead.ReadOperation.QUERY &&
-                        sortBy != null && sortBy.contains("Amount", ignoreCase = true)
-            }, any())
-        }
+        val (read, tools) = excelTools()
+        val answer = runScenarioWithMocks("$userPrompt. Результат покажи таблицей с колонками Date и Amount.", tools)
+        // Any correct read-only solution is allowed: QUERY aggregates, CELL can supply the raw rows.
+        coVerify(atLeast = 1) { read.invoke(match { it.path.endsWith("sales.xlsx") }, any()) }
+        assertSalesRows(answer, listOf("2026-05-02" to 2500, "2026-05-04" to 1500,
+            "2026-05-03" to 750, "2026-05-01" to 500), ordered = true)
     }
 
     @ParameterizedTest(name = "excelRead_cell[{index}] {0}")
@@ -828,27 +798,13 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun excelRead_cell(userPrompt: String) = runTest {
-        val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
-        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
-        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
-
-        coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns "[\"~/sales.xlsx\"]"
-        coEvery { excelRead.invoke(any(), any()) } returns "1500"
-        coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx"]"""
-
-        runScenarioWithMocks(
-            userPrompt,
-            listOf(excelRead.toGiga(), toolFindFiles.toGiga(), toolListFiles.toGiga()),
-        )
+        val (read, tools) = excelTools()
+        val answer = runScenarioWithMocks(userPrompt, tools)
         coVerify(atLeast = 1) {
-            excelRead.invoke(match {
-                val range = it.range
-                it.path.contains("sales") &&
-                        it.operation == ExcelRead.ReadOperation.CELL &&
-                        ((range != null && range.contains("B5")) ||
-                                (it.returnColumn == "B5"))
-            }, any())
+            read.invoke(match { it.path.endsWith("sales.xlsx") && it.operation == ExcelRead.ReadOperation.CELL &&
+                (it.range == "B5" || it.returnColumn == "B5") }, any())
         }
+        assertAnswerFacts(answer, "1500")
     }
 
     @ParameterizedTest(name = "excelRead_lookup[{index}] {0}")
@@ -860,42 +816,14 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun excelRead_lookup(userPrompt: String) = runTest {
-        val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
-        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
-        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
-
-        coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx"]"""
-        coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns """["~/price.xlsx"]"""
-        coEvery { excelRead.invoke(any(), any()) } answers {
-            val input = firstArg<ExcelRead.Input>()
-            if (
-                input.path.contains("price", ignoreCase = true) &&
-                input.operation == ExcelRead.ReadOperation.LOOKUP &&
-                input.lookupValue?.contains("Ноутбук", ignoreCase = true) == true &&
-                !input.lookupColumn.isNullOrBlank() &&
-                !input.returnColumn.isNullOrBlank()
-            ) {
-                "45000"
-            } else {
-                "Error: Lookup requires operation=LOOKUP with lookupValue, lookupColumn and returnColumn."
-            }
-        }
-
-        runScenarioWithMocks(
-            userPrompt,
-            listOf(excelRead.toGiga(), toolFindFiles.toGiga(), toolListFiles.toGiga()),
-        )
+        val (read, tools) = excelTools()
+        val answer = runScenarioWithMocks(userPrompt, tools)
         coVerify(atLeast = 1) {
-            excelRead.invoke(match {
-                val lookupValue = it.lookupValue
-                it.path.contains("price") &&
-                        it.operation == ExcelRead.ReadOperation.LOOKUP &&
-                        lookupValue != null && lookupValue.contains("Ноутбук") &&
-                        it.returnColumn != null
-            }, any())
+            read.invoke(match { it.path.endsWith("price.xlsx") && it.operation == ExcelRead.ReadOperation.LOOKUP &&
+                it.lookupValue.equals("Ноутбук", ignoreCase = true) && it.lookupColumn == "Товар" && it.returnColumn == "Цена" }, any())
         }
+        assertAnswerFacts(answer, "45000")
     }
-
 
     @ParameterizedTest(name = "excelReport_newFile[{index}] {0}")
     @ValueSource(
@@ -914,17 +842,19 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx", "~/sales.xlsx"]"""
         coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns "[]"
 
-        runScenarioWithMocks(
+        val answer = runScenarioWithMocks(
             userPrompt,
             listOf(excelReport.toGiga(), toolFindFiles.toGiga(), toolListFiles.toGiga()),
         )
-        coVerify(atLeast = 1) {
+        assertAnswerFacts(answer, "report.xlsx")
+        coVerify(exactly = 1) {
             excelReport.invoke(match {
                 val headers = it.headers
-                it.path.contains("report") &&
-                        headers != null && headers.contains("Имя")
+                it.path.endsWith("report.xlsx") &&
+                        headers?.split(",")?.map(String::trim) == listOf("Имя", "Телефон")
             }, any())
         }
+        coVerify(exactly = 1) { excelReport.invoke(any(), any()) }
     }
 
     @ParameterizedTest(name = "excelReport_withData[{index}] {0}")
@@ -944,14 +874,18 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx", "~/sales.xlsx"]"""
         coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns "[]"
 
-        runScenarioWithMocks(
+        val answer = runScenarioWithMocks(
             userPrompt,
             listOf(excelReport.toGiga(), toolFindFiles.toGiga(), toolListFiles.toGiga()),
         )
-        coVerify(atLeast = 1) {
+        assertAnswerFacts(answer, "stats.xlsx")
+        coVerify(exactly = 1) {
             excelReport.invoke(match {
-                it.path.contains("stats") && !it.csvData.isNullOrEmpty()
+                val expected = if (userPrompt.contains("2024-01-02")) listOf("2024-01-01,100", "2024-01-02,200") else listOf("2024-01-01,100")
+                it.path.endsWith("stats.xlsx") && it.csvData?.lineSequence()?.filter(String::isNotBlank)
+                    ?.map { row -> row.replace(" ", "").replace("\"", "") }?.toList() == expected
             }, any())
         }
+        coVerify(exactly = 1) { excelReport.invoke(any(), any()) }
     }
 }

@@ -4,7 +4,11 @@ import kotlinx.coroutines.test.runTest
 import org.kodein.di.direct
 import org.kodein.di.instance
 import ru.souz.agent.AgentContextFactory
+import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentId
+import ru.souz.agent.runtime.AgentRuntimeEvent
+import ru.souz.agent.state.AgentContext
+import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -16,6 +20,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.memory.ConversationMemoryRuntime
@@ -32,6 +37,10 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZonedDateTime
 
 class AgentScenarioTestSupportTest {
     @Test
@@ -160,16 +169,184 @@ class AgentScenarioTestSupportTest {
 
         val repository: SkillRegistryRepository = di.direct.instance()
         assertTrue(repository.listSkills(meta.userId).isEmpty())
+        assertTrue(repository.listSkillInventoryIds(meta.userId).isEmpty())
         assertNull(repository.loadSkillBundle(meta.userId, SkillId("installed-browser-skill")))
         assertTrue(di.direct.instance<McpToolProvider>().tools().isEmpty())
         assertSame(NoopConversationMemoryRuntime, di.direct.instance<ConversationMemoryRuntime>())
-        assertNull(di.direct.instance<AgentRuntimeEnvironment>().defaultBrowserDisplayName)
+        val environment: AgentRuntimeEnvironment = di.direct.instance()
+        assertNull(environment.defaultBrowserDisplayName)
+        val now = ZonedDateTime.now(environment.clock)
+        assertEquals(LocalDate.of(2026, 6, 1), now.toLocalDate())
+        assertEquals(LocalTime.of(10, 0), now.toLocalTime())
+        assertEquals("Europe/Moscow", environment.zoneId.id)
+        assertEquals("ru-RU", environment.locale.toLanguageTag())
 
         val toolsFilter: AgentToolsFilter = di.direct.instance()
         assertSame(RuntimePassThroughToolsFilter, toolsFilter)
         assertSame(catalog.toolsByCategory, toolsFilter.applyFilter(catalog.toolsByCategory))
     }
+
+    @Test
+    fun `successful tool call followed by terminal provider failure does not pass`() = runTest {
+        val trace = ScenarioExecutionTrace()
+        trace.emit(toolFinished())
+        trace.modelCall { LLMResponse.Chat.Error(503, "Provider unavailable") }
+
+        assertFailsWith<AssertionError> { trace.assertCompleted(result("Provider unavailable")) }
+    }
+
+    @Test
+    fun `recovered provider and tool failures allow a subsequent completed answer`() = runTest {
+        val trace = ScenarioExecutionTrace()
+        trace.modelCall { LLMResponse.Chat.Error(503, "Temporary failure") }
+        trace.emit(AgentRuntimeEvent.ToolCallFailed("first", "Open", IllegalStateException("temporary"), 1))
+        trace.emit(toolFinished())
+        trace.modelCall { response("Telegram запущен.") }
+
+        trace.assertCompleted(result("Telegram запущен."))
+        assertEquals(2, trace.modelCalls)
+        assertEquals(LLMResponse.Usage(10, 5, 15, 2), trace.usage)
+        assertTrue(trace.report(2.seconds).contains("durationMs=2000"))
+    }
+
+    @Test
+    fun `empty truncated and internal deliberation outputs do not pass`() = runTest {
+        val incomplete = listOf(
+            response(""),
+            response("Telegram запущен.", finishReason = LLMResponse.FinishReason.length),
+            response("<think>I need to launch the app.</think>"),
+            response("Need to launch Telegram using the tool."),
+            response("Проверяю приложение", reasoning = "Проверяю приложение"),
+        )
+        for (answer in incomplete) {
+            val trace = ScenarioExecutionTrace()
+            trace.emit(toolFinished())
+            trace.modelCall { answer }
+            assertFailsWith<AssertionError>(answer.toString()) {
+                trace.assertCompleted(result(answer.choices.single().message.content))
+            }
+        }
+    }
+
+    @Test
+    fun `final text cannot hide a pending call or failed earlier choice`() = runTest {
+        val final = response("Telegram запущен.")
+        val hiddenChoices = listOf(
+            final.choices.single().copy(message = LLMResponse.Message(
+                content = "",
+                role = LLMMessageRole.assistant,
+                functionCall = LLMResponse.FunctionCall("Open", mapOf("target" to "Telegram")),
+                functionsStateId = "pending-call",
+            )),
+            final.choices.single().copy(finishReason = LLMResponse.FinishReason.length),
+            final.choices.single().copy(finishReason = LLMResponse.FinishReason.blacklist),
+            final.choices.single().copy(finishReason = LLMResponse.FinishReason.error),
+        )
+        for (hidden in hiddenChoices) {
+            val trace = ScenarioExecutionTrace()
+            trace.emit(toolFinished())
+            trace.modelCall { final.copy(choices = listOf(hidden) + final.choices) }
+            assertFailsWith<AssertionError>(hidden.toString()) {
+                trace.assertCompleted(result("Telegram запущен."))
+            }
+        }
+    }
+
+    @Test
+    fun `text only evaluations complete without a tool call`() = runTest {
+        val trace = ScenarioExecutionTrace(requireToolCall = false)
+        val answer = "A completed textual answer."
+        trace.modelCall { response(answer) }
+
+        trace.assertCompleted(result(answer))
+        assertTrue(trace.report(2.seconds).contains("toolCalls=0"))
+    }
+
+    @Test
+    fun `text only evaluations still reject failed incomplete and mismatched answers`() = runTest {
+        val invalidResponses = listOf(
+            LLMResponse.Chat.Error(503, "Provider unavailable"),
+            response(""),
+            response("Incomplete", finishReason = LLMResponse.FinishReason.length),
+            response("<think>Internal deliberation</think>"),
+            response("Pending call").let { response ->
+                response.copy(choices = response.choices.map { choice ->
+                    choice.copy(message = choice.message.copy(
+                        functionCall = LLMResponse.FunctionCall("Open", emptyMap()),
+                    ))
+                })
+            },
+        )
+        for (answer in invalidResponses) {
+            val trace = ScenarioExecutionTrace(requireToolCall = false)
+            trace.modelCall { answer }
+            val output = (answer as? LLMResponse.Chat.Ok)?.choices?.single()?.message?.content.orEmpty()
+            assertFailsWith<AssertionError> { trace.assertCompleted(result(output)) }
+        }
+        val trace = ScenarioExecutionTrace(requireToolCall = false)
+        trace.modelCall { response("Completed") }
+        assertFailsWith<AssertionError> { trace.assertCompleted(result("Different answer")) }
+    }
+
+    @Test
+    fun `completion needs executed tool and matching final assistant history`() = runTest {
+        val trace = ScenarioExecutionTrace()
+        trace.modelCall { response("Telegram запущен.") }
+        assertFailsWith<AssertionError> { trace.assertCompleted(result("Telegram запущен.")) }
+        trace.emit(toolFinished())
+        val completed = result("Telegram запущен.")
+        assertFailsWith<AssertionError> {
+            trace.assertCompleted(completed.copy(context = completed.context.copy(
+                history = listOf(LLMRequest.Message(LLMMessageRole.function, "Opened")),
+            )))
+        }
+        assertFailsWith<AssertionError> { trace.assertCompleted(completed.copy(output = "Timeout")) }
+    }
+
+    @Test
+    fun `call bound prevents another provider request and usage includes every successful response`() = runTest {
+        val trace = ScenarioExecutionTrace(maxModelCalls = 2)
+        repeat(2) { trace.modelCall { response("Готово") } }
+        var extraRequestExecuted = false
+        assertFailsWith<AssertionError> {
+            trace.modelCall {
+                extraRequestExecuted = true
+                response("Готово")
+            }
+        }
+        assertFalse(extraRequestExecuted)
+        assertEquals(2, trace.modelCalls)
+        assertEquals(LLMResponse.Usage(20, 10, 30, 4), trace.usage)
+    }
 }
+
+private fun toolFinished() = AgentRuntimeEvent.ToolCallFinished("call", "Open", "Opened", 1)
+
+private fun response(
+    output: String,
+    finishReason: LLMResponse.FinishReason = LLMResponse.FinishReason.stop,
+    reasoning: String? = null,
+) = LLMResponse.Chat.Ok(
+    choices = listOf(LLMResponse.Choice(
+        LLMResponse.Message(output, LLMMessageRole.assistant, functionsStateId = null, reasoningContent = reasoning),
+        index = 0,
+        finishReason = finishReason,
+    )),
+    created = 0,
+    model = "scenario-model",
+    usage = LLMResponse.Usage(10, 5, 15, 2),
+)
+
+private fun result(output: String) = AgentExecutionResult(
+    output,
+    AgentContext(
+        input = output,
+        settings = AgentSettings("scenario-model", LlmProvider.OPENAI, 0f, emptyMap()),
+        history = listOf(LLMRequest.Message(LLMMessageRole.assistant, output)),
+        activeTools = emptyList(),
+        systemPrompt = "",
+    ),
+)
 
 private class RecordingTool(
     name: String,
