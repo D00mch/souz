@@ -40,7 +40,6 @@ class StoredProviderCredentialResolver(
             LlmProvider.ANTHROPIC -> baseSettingsProvider.anthropicKey
             LlmProvider.OPENAI -> baseSettingsProvider.openaiKey
             LlmProvider.GIGA,
-            LlmProvider.LOCAL,
             LlmProvider.CODEX,
             -> null
         }

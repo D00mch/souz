@@ -48,7 +48,7 @@ class BackendModelRoutingE2eTest {
         val classified = AtomicInteger()
         var verdict: () -> Boolean = { false }
         backendE2eTest(
-            "e2e_model_routing", settingsSource = source, localModels = emptyList(),
+            "e2e_model_routing", settingsSource = source, mockProvider = false,
             providerClients = ProviderHttpClients(standard = http, openAi = http),
             complexityClassifier = TaskComplexityClassifier { classified.incrementAndGet(); verdict() },
         ) {

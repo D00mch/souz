@@ -20,7 +20,6 @@ import ru.souz.backend.http.invalidV1Request
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.LocalModelAvailability
 
 data class UserSettingsOverrides(
     val defaultModel: String? = null,
@@ -45,7 +44,6 @@ class EffectiveSettingsResolver(
     private val userProviderKeyRepository: UserProviderKeyRepository,
     private val featureFlags: BackendFeatureFlags,
     toolCatalog: AgentToolCatalog,
-    private val localModelAvailability: LocalModelAvailability,
     val namedModelNames: Set<String> = emptySet(),
 ) {
     val advertisedToolNames: Set<String> =
@@ -166,7 +164,7 @@ class EffectiveSettingsResolver(
     suspend fun fallbackModels(userId: String, locale: Locale): List<String> {
         val providers = loadUserManagedProviders(userId)
         // Upstream IDs: inside an execution on a named model, the custom selector would resolve to that named model.
-        return defaultModelOrder(locale).filter { isDefaultCandidate(it) { providers } }
+        return defaultModelOrder(locale).filter { isSelectableModel(it) { providers } }
             .map { baseSettingsProvider.executionModelId(it.withConfiguredOpenAiCompatibleChatModel()) }
             .distinct() + listOfNotNull(namedModelNames.firstOrNull())
     }
@@ -174,19 +172,15 @@ class EffectiveSettingsResolver(
     private suspend fun fallbackModel(
         locale: Locale,
         userManagedProviders: suspend () -> Set<LlmProvider>,
-    ): String = defaultModelOrder(locale).firstOrNull { isDefaultCandidate(it, userManagedProviders) }?.alias
+    ): String = defaultModelOrder(locale).firstOrNull { isSelectableModel(it, userManagedProviders) }?.alias
         ?: namedModelNames.firstOrNull()
         ?: LlmBuildProfile.defaultsForLanguage(locale.languageOrRegion()).values.first { it in BackendLlmSupport.chatModels }.alias
 
     private fun defaultModelOrder(locale: Locale): List<LLMModel> {
         val defaults = LlmBuildProfile.defaultsForLanguage(locale.languageOrRegion())
         return listOf(LLMModel.OpenAICompatibleCustom) + LlmBuildProfile.providerPrioritiesForLanguage(locale.languageOrRegion())
-            .mapNotNull { provider -> if (provider == LlmProvider.LOCAL) localModelAvailability.defaultGigaModel() else defaults[provider] }
+            .mapNotNull(defaults::get)
     }
-
-    // The local default comes from the host's selected profile and needs no key.
-    private suspend fun isDefaultCandidate(model: LLMModel, userManagedProviders: suspend () -> Set<LlmProvider>): Boolean =
-        model.provider == LlmProvider.LOCAL || isSelectableModel(model, userManagedProviders)
 
     private suspend fun loadUserManagedProviders(userId: String): Set<LlmProvider> =
         userProviderKeyRepository.list(userId)
@@ -201,7 +195,6 @@ class EffectiveSettingsResolver(
         when {
             model !in BackendLlmSupport.chatModels -> false
             model == LLMModel.OpenAICompatibleCustom && !hasConfiguredOpenAiCompatibleChatModel() -> false
-            model.provider == LlmProvider.LOCAL -> model in localModelAvailability.availableGigaModels()
             model.provider == LlmProvider.CODEX -> baseSettingsProvider.hasCompleteCodexOAuthCredentials()
             else -> baseSettingsProvider.hasKey(model.provider) || model.provider in userManagedProviders()
         }

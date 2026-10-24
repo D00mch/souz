@@ -39,6 +39,7 @@ import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.execution.repository.AgentExecutionRepository
@@ -47,9 +48,6 @@ import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.http.providerHttpClientDefaults
-import ru.souz.llms.http.GigaHttpClientResource
-import ru.souz.llms.giga.GigaAuth
-import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntime
 import ru.souz.backend.memory.hindsight.HistoryMemoryDocument
@@ -229,9 +227,6 @@ class BackendDiModuleTest {
             assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
             assertSame(clients, di.direct.instance<ProviderHttpClients>())
             assertEquals("OkHttpEngine", clients.jev.engine.javaClass.simpleName)
-            assertNull(di.direct.instanceOrNull<GigaHttpClientResource>())
-            assertNull(di.direct.instanceOrNull<GigaAuth>())
-            assertNull(di.direct.instanceOrNull<GigaRestChatAPI>())
             assertIs<FileSystemSkillRegistryRepository>(di.direct.instance<SkillRegistryRepository>())
 
             val httpDependencies = di.direct.instance<BackendHttpDependencies>()
@@ -291,7 +286,7 @@ class BackendDiModuleTest {
     }
 
     @Test
-    fun `backend catalog excludes desktop sound configuration tools`() {
+    fun `backend process catalog contains only server-hosted tools`() {
         val dataSource = HikariDataSource()
         val di = testDi(testAppConfig(), dataSource)
 
@@ -299,10 +294,12 @@ class BackendDiModuleTest {
             val toolsByCategory = di.direct.instance<AgentToolCatalog>()
                 .toolsByCategory
 
-            val configTools = toolsByCategory.getValue(ToolCategory.CONFIG)
-
-            assertTrue(configTools.isEmpty())
-            assertEquals(setOf("WebPageText"), toolsByCategory.getValue(ToolCategory.WEB_SEARCH).keys)
+            assertTrue(toolsByCategory.getValue(ToolCategory.CONFIG).isEmpty())
+            assertTrue(toolsByCategory.getValue(ToolCategory.WEB_SEARCH).isEmpty())
+            assertTrue(toolsByCategory.filterValues { it.isNotEmpty() }.keys.all {
+                it in BackendToolCapabilityPolicy.safeCategories
+            })
+            assertEquals(setOf("CreatePlot", "ExcelRead", "ExcelReport"), toolsByCategory.getValue(ToolCategory.DATA_ANALYTICS).keys)
         } finally {
             dataSource.close()
         }

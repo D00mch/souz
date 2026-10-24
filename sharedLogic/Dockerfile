@@ -9,7 +9,8 @@ RUN apt-get update \
 COPY docker/entrypoint.sh /usr/local/bin/souz-runtime-entrypoint
 COPY docker/skills /opt/souz/skills
 
-RUN chmod +x /usr/local/bin/souz-runtime-entrypoint
+RUN chmod 0755 /usr/local/bin/souz-runtime-entrypoint \
+    && chmod -R a+rX /opt/souz/skills
 
 WORKDIR /souz/home
 

@@ -23,7 +23,7 @@ class BackendMetricsE2eTest {
         llm.hangUntilCancelled()
         val submitted = client.post(BackendHttpRoutes.chatMessages(chatId)) {
             trusted(userId)
-            jsonBody("""{"content":"wait","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+            jsonBody("""{"content":"wait","options":{"model":"${E2E_MODEL.alias}"}}""")
         }
         eventually("running LLM") { llm.requests.singleOrNull() }
         val running = client.get("/metrics")

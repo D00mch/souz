@@ -456,7 +456,7 @@ class BackendHooksE2eTest {
     private suspend fun BackendE2eScope.setupOwner(user: String = owner) {
         assertEquals(200, client.patch(BackendHttpRoutes.SETTINGS) {
             trusted(user)
-            jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","streamingMessages":false}""")
+            jsonBody("""{"defaultModel":"${E2E_MODEL.alias}","streamingMessages":false}""")
         }.status.value)
     }
 

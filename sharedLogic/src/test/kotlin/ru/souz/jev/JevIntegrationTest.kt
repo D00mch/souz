@@ -6,17 +6,17 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.http.createStandardProviderHttpClient
 import ru.souz.llms.runtime.JevClassifier
-import ru.souz.tool.ToolCategory
+import ru.souz.agent.skills.SkillId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class JevIntegrationTest {
     @Test
-    fun `hosted Jev selects calendar and mail together`() = runBlocking {
+    fun `hosted Jev selects calendar and mail Skills together`() = runBlocking {
         assumeTrue(System.getenv("SOUZ_TEST_JEV") == "1", "Enable with SOUZ_TEST_JEV=1 and JEV_TOKEN")
         createStandardProviderHttpClient().use { http ->
             val classifier = JevClassifier(JevClient(http))
-            val result = classifier.classify(
+            val result = classifier.selectSkills(
                 LLMRequest.Chat(
                     model = "unused-conversational-model",
                     messages = listOf(LLMRequest.Message(
@@ -24,12 +24,12 @@ class JevIntegrationTest {
                     )),
                 ),
                 mapOf(
-                    ToolCategory.CALENDAR to "Read and edit calendar events",
-                    ToolCategory.MAIL to "Read and send emails",
-                    ToolCategory.FILES to "Read and edit local files",
+                    SkillId("calendar") to "Read and edit calendar events",
+                    SkillId("mail") to "Read and send emails",
+                    SkillId("files") to "Read and edit local files",
                 ),
             )
-            assertEquals(setOf(ToolCategory.CALENDAR, ToolCategory.MAIL), result.categories.toSet())
+            assertEquals(setOf(SkillId("calendar"), SkillId("mail")), result)
         }
     }
 }

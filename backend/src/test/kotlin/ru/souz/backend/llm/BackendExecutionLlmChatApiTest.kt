@@ -9,7 +9,6 @@ import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
-import io.mockk.mockk
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
@@ -34,7 +33,6 @@ import kotlinx.coroutines.test.runTest
 import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.backend.settings.service.BackendSettingsProvider
 import ru.souz.backend.settings.service.MapBackendServerPreferenceStore
-import ru.souz.backend.settings.service.NoLocalModels
 import ru.souz.backend.config.NamedLlmModel
 import ru.souz.backend.config.loadNamedModels
 import ru.souz.db.SettingsProvider
@@ -65,7 +63,6 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.http.providerHttpClientDefaults
-import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.restJsonMapper
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -225,7 +222,7 @@ class BackendExecutionLlmChatApiTest {
         runTest {
             val requests = mutableListOf<CapturedRequest>()
             val config = source.loadNamedModels()
-            val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source, config).apply {
+            val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), source, config).apply {
                 openaiModel = "shared-model"
                 openaiBaseUrl = "https://legacy.test/v1"
             }
@@ -324,7 +321,6 @@ class BackendExecutionLlmChatApiTest {
                 LLMModel.AiTunnelGpt54Mini,
                 LLMModel.AnthropicSonnet45,
                 LLMModel.OpenAIGpt52,
-                LLMModel.LocalQwen3_4B_Instruct_2507,
                 LLMModel.CodexGpt56Sol,
             )
 
@@ -614,7 +610,6 @@ private fun facadeFixture(
         credentialResolver = credentialResolver,
         retryPolicy = retryPolicy,
         httpClients = clients,
-        localChatApi = mockk<LocalChatAPI>(relaxed = true),
         codexOAuthService = CodexOAuthService(settingsProvider, client),
         initialUsage = initialUsage,
         delayMillis = delayMillis,

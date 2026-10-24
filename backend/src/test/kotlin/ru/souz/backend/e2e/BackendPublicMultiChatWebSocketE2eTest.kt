@@ -477,7 +477,7 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     val sourceThread = if (http) {
                         client.post(BackendHttpRoutes.chatMessages(source)) {
                             trusted(user)
-                            jsonBody("""{"content":"$prompt","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+                            jsonBody("""{"content":"$prompt","options":{"model":"${E2E_MODEL.alias}"}}""")
                         }.also { assertEquals(HttpStatusCode.OK, it.status) }.jsonBody()["execution"]["id"].asText()
                     } else {
                         val ack = request(socket, messageFrame(source, user, prompt, text = prompt))

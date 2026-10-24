@@ -7,7 +7,6 @@ import ru.souz.runtime.shutdownStep
 class BackendRuntimeResources(
     cancelAndJoinApplicationWork: suspend () -> Unit = {},
     closeProviderClients: () -> Unit = {},
-    closeLocalRuntime: () -> Unit = {},
     closeSkillOAuthClients: () -> Unit = {},
     closeDataSource: () -> Unit = {},
     closeAttachmentStorage: () -> Unit = {},
@@ -16,7 +15,6 @@ class BackendRuntimeResources(
         steps = listOf(
             shutdownStep("application work", cancelAndJoinApplicationWork),
             shutdownStep("provider HTTP clients") { closeProviderClients() },
-            shutdownStep("local runtime") { closeLocalRuntime() },
             shutdownStep("skill OAuth clients") { closeSkillOAuthClients() },
             shutdownStep("attachment storage") { closeAttachmentStorage() },
             shutdownStep("database") { closeDataSource() },

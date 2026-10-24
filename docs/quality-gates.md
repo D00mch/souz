@@ -19,7 +19,7 @@ summary and report artifacts even when a blocking check fails.
 | --- | --- | --- |
 | `git-metadata` | The gate can identify the tested commit and worktree state. | Run the gate from the repository checkout and remove Git routing overrides that point outside it. |
 | `repository-contracts` | The Gradle project set, root Module Map, module policies, pain-point sections, local policy links, and registered check policy paths agree. | Repair the reported repository-relative policy path or update the owning policy with the reviewed module change. |
-| `module-boundaries` | Direct production `ProjectDependency` edges match the explicit module and KMP source-set allowlist. Test dependencies are excluded. | Remove the edge or update the owning module policy and allowlist together when the architecture change is intentional. |
+| `module-boundaries` | Direct production `ProjectDependency` edges match the explicit JVM module allowlist. Test dependencies are excluded. | Remove the edge or update the owning module policy and allowlist together when the architecture change is intentional. |
 | `cancellation-propagation` | Suspend paths do not swallow `CancellationException`, including through `runCatching`. | Catch the expected exception type or rethrow cancellation immediately. |
 | `coroutine-thread-local` | Every JVM `ThreadLocal` state declaration is reviewed explicitly. | Move the state into coroutine context, or suppress the reviewed declaration and propagate coroutine access with `asContextElement`. |
 | `coroutine-monitor-use` | `synchronized`, `@Synchronized`, and `Collections.synchronized*` use inside suspend execution is reported for review. | Prefer `Mutex` inside suspend execution or keep monitor coordination behind an explicit non-suspending JVM boundary. |
@@ -79,7 +79,7 @@ The custom `MonitorInsideSuspendContext` rule resolves callable identity before
 reporting `kotlin.synchronized`, `java.util.Collections.synchronized*`, or
 `kotlin.jvm.Synchronized` inside suspend functions and suspend-typed lambdas.
 Unrelated APIs with the same short names are ignored. Atomics, volatile fields,
-and monitor coordination at non-suspending JVM or native boundaries are not
+and monitor coordination at non-suspending JVM boundaries are not
 prohibited.
 
 ## Code-review analysis
@@ -133,8 +133,7 @@ with a concurrent map. These rules provide no automatic corrections.
 
 Repository adoption leaves no unsuppressed constant-membership findings in the
 analyzed production or test sources. Advisory getter candidates include Skill
-bundle/validation projections, response-choice scans, and the memory UI model
-lookup. Mutability candidates include staged-file state, streaming response
+bundle/validation projections and response-choice scans. Mutability candidates include staged-file state, streaming response
 assembly, graph transitions, client runtime state, quota windows, and the
 concurrent event-subscriber registry. They remain visible for ownership review;
 no advisory findings are baselined or automatically rewritten.
@@ -175,7 +174,7 @@ Kover JVM coverage reports are generated in the same Gradle task graph as the
 required JVM test suite:
 
 ```bash
-./gradlew test :sharedLogic:allTests :sharedUI:allTests \
+./gradlew test \
   :koverXmlReport :koverHtmlReport koverLog -Psouz.coverage --no-parallel
 ```
 
@@ -184,16 +183,14 @@ Report generation and the presence of `build/reports/kover/report.xml` and
 CI compares the root aggregate and module-local line coverage with the reviewed
 values in [`quality/coverage-baseline.json`](../quality/coverage-baseline.json)
 and publishes baseline, current, and percentage-point delta columns in the job
-summary. Generated resource classes matching
-`*.generated.resources.*` are excluded from every report. No Kover verification
+summary. No Kover verification
 rule or minimum coverage threshold is configured; the baseline is a comparison
 reference. Kover is activated only with
 `-Psouz.coverage`, so `souzGateFast` and ordinary local builds are not
 instrumented.
 
-The root report merges every product module. Kover covers common and JVM source
-sets; non-JVM targets are outside this report. Each module row covers that
-module's classes using its own JVM test tasks, while the root aggregate also
+The root report merges all nine product modules. Each module row covers that
+module's classes using its own JVM test task, while the root aggregate also
 includes coverage produced across module boundaries.
 
 ## RepoWise pull-request quality
@@ -305,5 +302,5 @@ When changing the quality implementation, run:
 ./gradlew souzGateFast --configuration-cache --configuration-cache-problems=fail
 npm ci --prefix quality
 ./gradlew souzDuplicationCheck
-./gradlew test :sharedLogic:allTests :sharedUI:allTests :koverXmlReport :koverHtmlReport :koverLog -Psouz.coverage --no-parallel
+./gradlew test :koverXmlReport :koverHtmlReport :koverLog -Psouz.coverage --no-parallel
 ```

@@ -17,9 +17,6 @@ interface AgentSettingsProvider {
     /** Persists a model-specific system prompt override or clears it when null. */
     fun setSystemPromptForAgentModel(agentId: AgentId, model: LLMModel, prompt: String?)
 
-    /** Default calendar name injected into additional prompt context when available. */
-    var defaultCalendar: String?
-
     /** Active regional profile used to resolve default prompts and other behavior. */
     var regionProfile: String
 

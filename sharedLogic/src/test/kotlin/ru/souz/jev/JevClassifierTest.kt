@@ -17,7 +17,6 @@ import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.runtime.JevClassifier
 import ru.souz.llms.runtime.jevState
-import ru.souz.tool.ToolCategory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -35,13 +34,6 @@ class JevClassifierTest {
             LLMRequest.Message(LLMMessageRole.assistant, " You have two meetings. " + "x".repeat(400)),
             LLMRequest.Message(LLMMessageRole.user, "Check my calendar and email the agenda"),
         ),
-    )
-    private val categories = mapOf(
-        ToolCategory.CALENDAR to "Read and edit calendar events",
-        ToolCategory.MAIL to "Read and send email",
-        ToolCategory.FILES to "Read and edit files",
-        ToolCategory.DESKTOP to "Capture the screen",
-        ToolCategory.IMAGE to "Analyze images",
     )
     private val sides = mapOf(
         "true" to "the request or at least one of its steps needs it",
@@ -62,49 +54,6 @@ class JevClassifierTest {
             jevState(request.messages, historyLimit = 2),
         )
         assertEquals("Check my calendar", jevState(listOf(request.messages[0], LLMRequest.Message(LLMMessageRole.user, "Check my calendar"))))
-    }
-
-    @Test
-    fun `categories are Noul questions selected strictly above the threshold`() = runTest {
-        val screen = "; understanding the current screen needs both screen capture and image analysis, " +
-            "unless a path to an existing image was supplied"
-        val expectedQuestions = categories.entries.associate { (category, description) ->
-            val rule = if (category == ToolCategory.DESKTOP || category == ToolCategory.IMAGE) screen else ""
-            category.name to mapOf(
-                "instructions" to "Does fulfilling the latest user request require this tool category: ${category.name} ($description$rule)?",
-                "type" to "noul",
-                "criteria" to sides,
-            )
-        }
-        val engine = MockEngine { httpRequest ->
-            assertEquals("https://api.typesafe.ai/v1/systemone", httpRequest.url.toString())
-            assertEquals(HttpMethod.Post, httpRequest.method)
-            assertEquals("Bearer test-token", httpRequest.headers[HttpHeaders.Authorization])
-            assertEquals(2_000L, httpRequest.getCapabilityOrNull(HttpTimeoutCapability)?.requestTimeoutMillis)
-            val payload = restJsonMapper.readTree(httpRequest.body.toByteArray())
-            assertEquals("jev-configured", payload["model"].asText())
-            assertEquals(jevState(request.messages), payload["state"].asText())
-            assertEquals(restJsonMapper.valueToTree<JsonNode>(expectedQuestions), payload["questions"])
-            respond(
-                """{"answers":{"CALENDAR":{"type":"noul","noul":0.9},"MAIL":{"type":"noul","noul":0.5},""" +
-                    """"FILES":{"type":"noul","noul":0.51},"DESKTOP":{"type":"noul","noul":0.2},"IMAGE":{"type":"noul","noul":0}}}""",
-            )
-        }
-        HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
-            val client = JevClient(http, "test-token", "jev-configured")
-            val cases = mapOf(
-                0.0 to listOf(ToolCategory.CALENDAR, ToolCategory.MAIL, ToolCategory.FILES, ToolCategory.DESKTOP),
-                0.5 to listOf(ToolCategory.CALENDAR, ToolCategory.FILES),
-                0.9 to emptyList(),
-            )
-            cases.forEach { (threshold, expected) ->
-                val result = JevClassifier(client, threshold).classify(request, categories)
-                assertEquals(expected, result.categories)
-                assertNull(result.confidence)
-            }
-            assertEquals(emptyList(), JevClassifier(client).classify(request, emptyMap()).categories)
-            assertEquals(cases.size, engine.requestHistory.size)
-        }
     }
 
     @Test

@@ -8,7 +8,7 @@ import kotlin.test.assertNull
 
 class ChatRoutingMetadataTest {
     @Test
-    fun `provider route and local context survive copies but cannot cross the JSON boundary`() {
+    fun `provider route and agent context budget survive copies but cannot cross the JSON boundary`() {
         val request = LLMRequest.Chat(model = "Deployment/v2", provider = LlmProvider.ANTHROPIC, messages = emptyList(), contextSize = 125_000, maxTokens = 512)
         assertEquals(request.provider, request.copy(stream = true).provider)
         assertEquals(125_000, request.copy(stream = true).contextSize)

@@ -58,7 +58,7 @@ class BackendTelegramE2eTest {
             for ((index, enabled) in listOf(false, true).withIndex()) {
                 client.patch(BackendHttpRoutes.SETTINGS) {
                     trusted(user)
-                    jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","narrateSteps":$enabled,"locale":"en-US","systemPrompt":"custom base"}""")
+                    jsonBody("""{"defaultModel":"${E2E_MODEL.alias}","narrateSteps":$enabled,"locale":"en-US","systemPrompt":"custom base"}""")
                 }
                 api.sentMessages.clear()
                 val prompt = if (enabled) "enabled" else "disabled"
@@ -148,7 +148,7 @@ class BackendTelegramE2eTest {
             val chatId = createPublicChat(userId, "create-polling")
             val settings = client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId)
-                jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}"}""")
+                jsonBody("""{"defaultModel":"${E2E_MODEL.alias}"}""")
             }
             assertEquals(HttpStatusCode.OK, settings.status)
             val token = "123456:polling-token"
@@ -196,7 +196,7 @@ class BackendTelegramE2eTest {
             llm.requestSkillForPrompt("discover channels", "ListActiveChannels", emptyMap())
             val discovery = client.post(BackendHttpRoutes.chatMessages(discoveryChatId)) {
                 trusted(userId)
-                jsonBody("""{"content":"discover channels","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+                jsonBody("""{"content":"discover channels","options":{"model":"${E2E_MODEL.alias}"}}""")
             }
             assertEquals(HttpStatusCode.OK, discovery.status)
             val channelResult = eventually("production channel discovery result") {
@@ -300,7 +300,7 @@ class BackendTelegramE2eTest {
             )
             val deliveredTurn = client.post(BackendHttpRoutes.chatMessages(sourceChatId)) {
                 trusted(userId)
-                jsonBody("""{"content":"send telegram outbound","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+                jsonBody("""{"content":"send telegram outbound","options":{"model":"${E2E_MODEL.alias}"}}""")
             }
             assertEquals(HttpStatusCode.OK, deliveredTurn.status)
             awaitTerminal(sourceChatId, userId)
@@ -328,7 +328,7 @@ class BackendTelegramE2eTest {
             )
             val failedTurn = client.post(BackendHttpRoutes.chatMessages(failedSourceChatId)) {
                 trusted(userId)
-                jsonBody("""{"content":"send telegram outbound failure","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+                jsonBody("""{"content":"send telegram outbound failure","options":{"model":"${E2E_MODEL.alias}"}}""")
             }
             assertEquals(HttpStatusCode.OK, failedTurn.status)
             awaitTerminal(failedSourceChatId, userId)

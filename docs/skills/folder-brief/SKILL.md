@@ -1,6 +1,6 @@
 ---
 name: folder-brief
-description: Brief a local folder of Markdown or text notes by delegating reading to one subagent with only ListFiles and ExtractTextFromFile. Use for project handoffs, meeting notes, and manual desktop delegation tests.
+description: Brief a local folder of Markdown or text notes by delegating reading to one subagent with only ListFiles and ExtractTextFromFile. Use for project handoffs, meeting notes, and manual backend delegation tests.
 ---
 
 # Folder brief

@@ -16,8 +16,8 @@
 Implementations overview:
 
 - [Agent module](../agent/README.md)
-- [Shared runtime and MCP integration](../sharedLogic/README.md)
-- [MCP transport details](../sharedLogic/src/jvmMain/kotlin/ru/souz/service/mcp/README.md)
+- [Backend JVM runtime](../sharedLogic/README.md)
+- [Public client contract](public-souz-contract/README.md)
 
 Use each documentation surface for one purpose:
 
