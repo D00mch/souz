@@ -48,6 +48,7 @@ import org.kodein.di.direct
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
+import ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntime
 import ru.souz.backend.scheduler.ScheduledTaskConfig
 import ru.souz.backend.scheduler.ScheduledTaskRunner
 import ru.souz.jobs.JobService
@@ -84,6 +85,7 @@ import ru.souz.backend.vk.VkBotPollingService
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMModel
+import ru.souz.memory.ConversationMemoryRuntime
 import kotlin.time.Duration.Companion.milliseconds
 
 internal const val E2E_PROXY_TOKEN = "proxy-secret"
@@ -396,6 +398,16 @@ internal class BackendE2eBackend(
         bindSingleton<Clock>(overrides = true) { clock }
         bindSingleton<PostgresJobService>(overrides = true) {
             PostgresJobService(instance<HikariDataSource>(), pollIntervalMillis = 50)
+        }
+        if (appConfig.hindsightApiUrl != null) {
+            bindSingleton<HistoryMemoryWorker>(overrides = true) {
+                HistoryMemoryWorker(
+                    repository = instance(),
+                    memory = instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime,
+                    clock = instance(),
+                    pollIntervalMillis = 50,
+                )
+            }
         }
         if (sandboxFactory != null) {
             bindSingleton<RuntimeSandboxFactory>(overrides = true) { sandboxFactory(instance()) }
