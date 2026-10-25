@@ -111,6 +111,8 @@ object LLMResponse {
     enum class FinishReason { stop, length, function_call, blacklist, error }
 }
 
+fun LLMResponse.Chat.Ok.isToolUse(): Boolean = choices.any { it.message.functionCall != null }
+
 enum class EmbeddingInputKind {
     QUERY,
     DOCUMENT,

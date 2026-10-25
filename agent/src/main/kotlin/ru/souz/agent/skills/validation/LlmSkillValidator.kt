@@ -70,7 +70,7 @@ class LlmSkillValidator(
         appendLine(if (input.previousFindings.isEmpty()) "[]" else input.previousFindings.joinToString("\n"))
         appendLine()
         appendLine("Files:")
-        input.filePaths.forEach { appendLine("- $it") }
+        input.filePaths().forEach { appendLine("- $it") }
         appendLine()
         appendLine("SKILL.md:")
         appendLine(input.skillMarkdown.take(8_000))
