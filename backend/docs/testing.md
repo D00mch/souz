@@ -14,6 +14,7 @@ Partial route contexts and in-memory repositories can pass while the production 
 
 - Add backend workflow coverage under `ru.souz.backend.e2e`.
 - Use the shared E2E harness to allocate a unique Postgres schema, install production HTTP routes, override only external boundaries (including Jev Skill selection), and close runtime resources.
+- PostgreSQL fixtures in `:backend`, `:job-impl` and `:skill-oauth-impl` store `/var/lib/postgresql/data` on a container-local `tmpfs`; schemas remain isolated and migrations run against the real database.
 - The E2E harness uses the real PostgreSQL job worker with a 50 ms idle polling interval. Lease, heartbeat and retry timings retain their production defaults.
 - Use HTTP or WebSocket helpers for assertions. Direct SQL is reserved for encryption-at-rest, legacy compatibility, lease/crash recovery, restart persistence checks, and deterministic database barriers/faults for acceptance and shutdown races.
 - Synchronize stalled hook intake tests on the server body read before sending competing requests; polling ingress can acquire the permit first and reject the intended stalled request.
