@@ -87,9 +87,11 @@ Durable replay preserves the event's original device values, including omission 
 
 ## Intermediate assistant messages
 
-Progress is opt-in through the trusted settings API: `PATCH /v1/settings` with `{"narrateSteps":true}`. Settings responses expose the effective value, defaulting to `false`. The preference controls the additive RU/EN prompt instruction and live WebSocket, Telegram, and VK delivery independently of `streamingMessages` and `showToolEvents`. Each execution snapshots it, including option continuations; settings changes affect subsequent executions.
+Souz sends one initial waiting phrase through `assistant.message` after turn classification, unless routing selects the simple model. This phrase is independent of `narrateSteps`, `streamingMessages` and `showToolEvents`. Duplicate submissions, reconnects, tool loops and active-thread continuations do not repeat it. It is absent from history and replay.
 
-`assistant.message` carries one complete, nonblank assistant text block in `payload:{"content":"Let me check.","deviceId":"device-tv-456","deviceType":"tv_box"}`. An accepted LLM response containing tool calls can produce several such events, in the original block order, before those tools execute. Separate blocks stay separate, including repeated text. Streaming providers assemble the full response and pass the agent's acceptance check first; stream chunks are not messages. Reasoning, discarded attempts and final answers do not produce these events.
+Other progress is opt-in through the trusted settings API: `PATCH /v1/me/settings` with `{"narrateSteps":true}`. Settings responses expose the effective value, defaulting to `false`. The preference controls the additive RU/EN prompt instruction and live WebSocket, Telegram, and VK delivery independently of `streamingMessages` and `showToolEvents`. Each execution snapshots it, including option continuations; settings changes affect subsequent executions.
+
+`assistant.message` carries one complete, nonblank text block in `payload:{"content":"Let me check.","deviceId":"device-tv-456","deviceType":"tv_box"}`. An accepted LLM response containing tool calls can produce several such events, in the original block order, before those tools execute. Separate blocks stay separate, including repeated text. Streaming providers assemble the full response and pass the agent's acceptance check first; stream chunks are not messages. Reasoning, discarded attempts and final answers do not produce these events.
 
 The envelope has `kind:"event"`, `type:"assistant.message"`, `seq:null`, `chatId`, the active `threadId`, and `createdAt`. On the submitting connection, the originating client request's ACK precedes its assistant events. These events are informational: send neither an ACK nor `tool.result`. Tool execution does not wait for receipt or speech synthesis. Continue waiting for `thread.completed`, `thread.failed`, or `thread.cancelled`; the final answer is only in `thread.completed.payload.response`.
 
@@ -155,3 +157,5 @@ JSON decoding rejection ACKs include `error.details` with a JSON Pointer `path` 
 - `/v1/chats/{chatId}/ws?clientType=...&afterSeq=...`: single-chat socket for either client type. Replays from the cursor (default `0`) before processing input; does not accept `chat.create`, `chat.subscribe` or `chat.unsubscribe`.
 
 Server-configured model names from bootstrap are accepted in `payload.meta.model`; see [named LLM connections](../../backend/docs/named-llm-connections.md).
+
+Orion appends query-based memory results as assistant tool calls through the existing history contract and awaits every ACK before submission. See [conditional startup memory](../orion-memory-profiles.md).

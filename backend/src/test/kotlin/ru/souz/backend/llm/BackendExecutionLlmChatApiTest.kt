@@ -253,6 +253,63 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
+    fun `named model parameters stay isolated for chat streaming and summarization`() = withNamedLlmConfig(
+        NAMED_LLM_CONFIG.replace("\"modelId\":\"shared-model\"}",
+            """"modelId":"shared-model","parameters":{"thinking":{"type":"disabled"},"top_p":0.8}}"""),
+    ) { source ->
+        runTest {
+            val requests = mutableListOf<CapturedRequest>()
+            val config = source.loadNamedModels()
+            val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), source, config)
+            val enabled = NamedLlmModel("shared-model", "https://experiment.test/v1", "experiment-secret",
+                """{"thinking":{"type":"enabled"},"top_p":0.6}""")
+            facadeFixture(settingsProvider = settings, namedModels = config.models + ("enabled-chat" to enabled),
+                providerApiOverride = null, client = recordingClient(requests)).use { fixture ->
+                for ((model, thinking) in listOf("test-chat" to "disabled", "enabled-chat" to "enabled",
+                    "test-chat" to "disabled", "raw-model" to null)) {
+                    val before = requests.size
+                    val request = chat(model).copy(provider = LlmProvider.OPENAI, reasoningEffort = "low")
+                    assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
+                    assertTrue(fixture.api.messageStream(request).toList().any { it is LLMResponse.Chat.Ok })
+                    requests.drop(before).forEach {
+                        assertEquals(thinking, it.body.path("thinking").path("type").textValue())
+                        assertEquals("low", it.body["reasoning_effort"].asText())
+                        assertEquals(request.maxTokens, it.body["max_completion_tokens"].asInt())
+                    }
+                }
+                assertIs<LLMResponse.Chat.Ok>(fixture.api.message(chat("test-chat").copy(isSummarization = true)))
+                assertEquals("disabled", requests.last().body["thinking"]["type"].asText())
+                assertEquals(0.8, requests.last().body["top_p"].asDouble())
+            }
+        }
+    }
+
+    @Test
+    fun `builtin effort is model scoped in Codex payloads with explicit legacy effort taking precedence`() = runTest {
+        val requests = mutableListOf<JsonNode>()
+        val settings = LlmSettingsStub().apply { codexAccessToken = "test-token"; codexAccountId = "test-account" }
+        val client = HttpClient(MockEngine { request ->
+            requests.add(restJsonMapper.readTree(request.body.toByteArray()))
+            respond("event: response.completed\ndata: {\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":0,\"total_tokens\":1}}}\n\ndata: [DONE]\n\n",
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Text.EventStream.toString()))
+        }) { providerHttpClientDefaults() }
+        facadeFixture(settingsProvider = settings, providerApiOverride = null, client = client,
+            builtinReasoningEfforts = mapOf("gpt-6.1-sol" to "low", "gpt-6-luna" to "minimal")).use { fixture ->
+            for (streaming in listOf(false, true)) {
+                for ((model, explicit, expected) in listOf(
+                    Triple("gpt-6.1-sol", null, "low"), Triple("gpt-6-luna", null, "minimal"),
+                    Triple("gpt-6.1-sol", "high", "high"), Triple("raw-codex-model", null, null),
+                )) {
+                    val request = chat(model).copy(provider = LlmProvider.CODEX, reasoningEffort = explicit)
+                    if (streaming) fixture.api.messageStream(request).toList() else fixture.api.message(request)
+                    assertEquals(model, requests.last()["model"].asText())
+                    assertEquals(expected, requests.last().path("reasoning").path("effort").textValue())
+                }
+            }
+        }
+    }
+
+    @Test
     fun `custom selectors use host model resolution while raw IDs are never rewritten`() = runTest {
         val requests = mutableListOf<CapturedRequest>()
         val settings = LlmSettingsStub().apply { gigaModel = LLMModel.OpenAIGpt52 }
@@ -588,6 +645,7 @@ private fun recordingClient(requests: MutableList<CapturedRequest>): HttpClient 
 private fun facadeFixture(
     userId: String = "user-a",
     namedModels: Map<String, NamedLlmModel> = emptyMap(),
+    builtinReasoningEfforts: Map<String, String> = emptyMap(),
     settingsProvider: SettingsProvider = LlmSettingsStub(),
     credentialResolver: CountingCredentialResolver = CountingCredentialResolver("test-key"),
     retryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(max429Retries = 0),
@@ -605,6 +663,7 @@ private fun facadeFixture(
     val metrics = BackendMetrics()
     val api = BackendExecutionLlmChatApi(
         namedModels = namedModels,
+        builtinReasoningEfforts = builtinReasoningEfforts,
         userId = userId,
         settingsProvider = settingsProvider,
         credentialResolver = credentialResolver,

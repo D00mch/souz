@@ -40,8 +40,10 @@ internal class NodesLLM(
     private val complexityClassifier: TaskComplexityClassifier? = null,
     /** Rebinds a routed turn's tools to the chosen model: a `SpawnSubagent` child defaults to its parent's model. */
     private val routedTools: ((AgentSettings) -> List<LLMToolSetup>)? = null,
+    private val initialWaiting: Boolean = false,
 ) {
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
+    private var initialWaitDecided = false
 
     private val mutableSideEffects = MutableSharedFlow<AgentStreamChunk>(extraBufferCapacity = 16)
     val sideEffects: Flow<AgentStreamChunk> = mutableSideEffects
@@ -63,6 +65,7 @@ internal class NodesLLM(
             if (routing != null && complexityClassifier != null) {
                 route(ctx, routing, complexityClassifier, instructions, streamRevision)
             } else {
+                decideInitialWait(ctx, send = true)
                 call(ctx, instructions, streamRevision)
             }
         }
@@ -110,7 +113,7 @@ internal class NodesLLM(
         streamRevision: Long,
     ): AgentContext<LLMResponse.Chat> {
         val normal = ctx.settings.copy(routing = null)
-        val simple = ctx.on(normal.routedTo(routing.simple))
+        val simple = ctx.copy(settings = normal.routedTo(routing.simple)).withOnlyTools(emptyList())
         val complex = ctx.on(normal.routedTo(routing.complex))
         // A failed speculative call matters only when the simple model is chosen.
         return supervisorScope {
@@ -118,14 +121,16 @@ internal class NodesLLM(
             val speculative = async { call(simple, instructions, streamRevision, decided) }
             val started = TimeSource.Monotonic.markNow()
             val (verdict, target) = try {
-                if (classifier.isComplex(ctx.classificationRequest())) "complex" to complex else "simple" to simple
+                if (classifier.isComplex(ctx.classificationRequest(), ctx.routingCapabilities)) "complex" to complex else "simple" to simple
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 l.warn("Model routing classifier failed: {}", error.message)
                 "unknown" to ctx.on(normal)
             }
-            l.info("Model routing class={} model={} durationMs={}", verdict, target.settings.model, started.elapsedNow().inWholeMilliseconds)
+            l.info("Model routing class={} model={} durationMs={} capabilities={}", verdict, target.settings.model,
+                started.elapsedNow().inWholeMilliseconds, ctx.routingCapabilities.size)
+            decideInitialWait(ctx, send = target !== simple)
             if (target === simple) {
                 decided.complete(Unit)
                 speculative.await()
@@ -138,6 +143,13 @@ internal class NodesLLM(
 
     private fun AgentSettings.routedTo(target: RoutedModel): AgentSettings =
         copy(model = target.model, provider = target.provider, routing = null)
+
+    /** Execution-local: tool loops, retries and steering never repeat the waiting phrase. */
+    private suspend fun decideInitialWait(ctx: AgentContext<*>, send: Boolean) {
+        if (initialWaitDecided) return
+        initialWaitDecided = true
+        if (initialWaiting && send) ctx.runtimeEventSink.emit(AgentRuntimeEvent.InitialWait)
+    }
 
     private fun AgentContext<String>.on(settings: AgentSettings): AgentContext<String> =
         routedTools?.let { copy(settings = settings).withOnlyTools(it(settings)) } ?: copy(settings = settings)

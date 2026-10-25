@@ -16,6 +16,7 @@ import ru.souz.backend.llm.hasCompleteCodexOAuthCredentials
 import ru.souz.backend.settings.repository.BackendServerPreferenceStore
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.restJsonMapper
 import ru.souz.db.SUBAGENT_MODELS_JSON
 
 class BackendSettingsProviderTest {
@@ -68,6 +69,55 @@ class BackendSettingsProviderTest {
             withNamedLlmConfig(json) { source ->
                 assertFailsWith<Exception> { BackendSettingsProvider(MapBackendServerPreferenceStore(), source) }
             }
+        }
+    }
+
+    @Test
+    fun `named model parameters validate objects and merge summary defaults with model precedence`() {
+        val configuredModel = "\"modelId\":\"shared-model\""
+        withNamedLlmConfig(
+            NAMED_LLM_CONFIG.replace(configuredModel,
+                """$configuredModel,"parameters":{"thinking":{"type":"disabled"},"reasoning_effort":"low"}"""),
+            environment = mapOf("OPENAI_SUMMARIZATION_PARAMETERS" to
+                """{"thinking":{"type":"enabled"},"reasoning_effort":"high","top_p":0.9}"""),
+        ) { source ->
+            val models = source.loadNamedModels()
+            assertEquals("disabled", restJsonMapper.readTree(models.models.getValue("test-chat").parameters)["thinking"]["type"].asText())
+            val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), source, models)
+            val summary = restJsonMapper.readTree(settings.openaiSummarizationParameters)
+            assertEquals("disabled", summary["thinking"]["type"].asText())
+            assertEquals("low", summary["reasoning_effort"].asText())
+            assertEquals(0.9, summary["top_p"].asDouble())
+        }
+        withNamedLlmConfig { source -> assertNull(source.loadNamedModels().models.getValue("test-chat").parameters) }
+        for (parameters in listOf("null", "[]", "true", "1", "\"disabled\"",
+            """{"thinking":{"type":"disabled","type":"enabled"}}""") +
+            listOf("model", "messages", "stream", "tools", "tool_choice", "max_tokens", "max_completion_tokens", "context_size")
+                .map { """{"$it":null}""" }) {
+            withNamedLlmConfig(NAMED_LLM_CONFIG.replace(configuredModel, "$configuredModel,\"parameters\":$parameters")) { source ->
+                assertFailsWith<Exception> { source.loadNamedModels() }
+            }
+        }
+    }
+
+    @Test
+    fun `builtin model effort accepts parameter-only entries without changing named selections`() {
+        val model = ru.souz.llms.findLLMModel("gpt-6.1-sol")!!
+        fun configuration(entry: String) = NAMED_LLM_CONFIG.replace("\"models\": {", "\"models\": {$entry,")
+        val entry = """"${model.alias}":{"parameters":{"reasoning_effort":"low"}}"""
+        withNamedLlmConfig(configuration(entry)) { source ->
+            val config = source.loadNamedModels()
+            assertEquals(mapOf(model.alias to "low"), config.builtinReasoningEfforts)
+            assertEquals(setOf("test-chat", "tv-agent"), config.models.keys)
+        }
+        for (invalid in listOf(
+            """"${model.alias}":{}""",
+            """"${model.alias}":{"parameters":{"reasoning_effort":false}}""",
+            """"${model.alias}":{"parameters":{"reasoning_effort":" "}}""",
+            """"${model.alias}":{"parameters":{"thinking":{"type":"disabled"}}}""",
+            """$entry,"${model.name}":{"parameters":{"reasoning_effort":"high"}}""",
+        )) {
+            withNamedLlmConfig(configuration(invalid)) { source -> assertFailsWith<IllegalArgumentException> { source.loadNamedModels() } }
         }
     }
 

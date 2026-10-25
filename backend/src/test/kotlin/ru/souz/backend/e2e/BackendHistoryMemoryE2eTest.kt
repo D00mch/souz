@@ -49,6 +49,43 @@ class BackendHistoryMemoryE2eTest {
     private val clock = HistoryTestClock()
 
     @Test
+    fun `acknowledged bank results reach the next turn without automatic recall or imported fact capture`() {
+        backendE2eTest("memory_handoff", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock,
+            featureFlags = BackendFeatureFlags(wsEvents = true), providerClients = hindsight.clients()) {
+            val owner = UUID.randomUUID().toString()
+            val chat = createPublicChat(owner)
+            withPublicSocket(chat) { socket ->
+                for (scope in listOf("household", "personal")) {
+                    val frame = json.readTree(memoryToolHistory(chat, owner)) as ObjectNode
+                    frame.put("requestId", "recall-$scope")
+                    val arguments = frame["payload"]["content"]["arguments"] as ObjectNode
+                    arguments.put("scope", scope)
+                    if (scope == "personal") arguments.put("bankId", "person:$owner:voice-1").put("embeddingId", "voice-1")
+                    (frame["payload"]["content"]["result"]["facts"][0] as ObjectNode).put("text", "$scope-sentinel")
+                    socket.send(Frame.Text(frame.toString()))
+                    assertEquals("accepted", readJson(socket)["status"].asText())
+                }
+                assertTrue(llm.requests.isEmpty())
+                clock.advance(31)
+                assertFalse(backend.captureHistoryMemory())
+                socket.send(Frame.Text(messageFrame(chat, owner, "with-memory", text = "Use the supplied facts")))
+                assertEquals("accepted", readJson(socket)["status"].asText())
+                assertEquals("thread.status", readJson(socket)["type"].asText())
+                assertEquals("thread.completed", readJson(socket)["type"].asText())
+            }
+            val messages = llm.requests.single().messages
+            assertEquals(listOf("household-sentinel", "personal-sentinel"), messages.filter {
+                it.role == LLMMessageRole.function
+            }.map { json.readTree(it.content)["facts"][0]["text"].asText() })
+            assertEquals("Use the supplied facts", messages.last().content)
+            assertTrue(messages.any { it.functionCall?.arguments?.contains("voice-1") == true })
+            assertTrue(hindsight.recalls.isEmpty())
+            eventually("completed turn captured") { hindsight.items.singleOrNull() }
+            assertTrue(hindsight.items.none { it.item["content"].asText().contains("sentinel") })
+        }
+    }
+
+    @Test
     fun `recall flag preserves explicit search on both APIs`() {
         val question = "What do you remember about my travel preferences?"
         val recalled = "The user prefers quiet sleeper trains"
@@ -69,9 +106,10 @@ class BackendHistoryMemoryE2eTest {
                     if (webSocket) {
                         withPublicSocket(chat) { socket ->
                             socket.send(Frame.Text(messageFrame(chat, owner, "search", text = question)))
-                            assertEquals("accepted", readJson(socket)["status"].asText())
-                            assertEquals("thread.status", readJson(socket)["type"].asText())
-                            assertEquals("thread.completed", readJson(socket)["type"].asText())
+                            assertEquals("accepted", readJson(socket, includeProgress = true)["status"].asText())
+                            assertEquals("thread.status", readJson(socket, includeProgress = true)["type"].asText())
+                            assertEquals("assistant.message", readJson(socket, includeProgress = true)["type"].asText())
+                            assertEquals("thread.completed", readJson(socket, includeProgress = true)["type"].asText())
                         }
                     } else {
                         val submitted = client.post(BackendHttpRoutes.chatMessages(chat)) {
@@ -107,20 +145,21 @@ class BackendHistoryMemoryE2eTest {
             val initial = messageFrame(chat, owner, "travel", text = "Find travel options for the weekend")
             val started = withPublicSocket(chat) { socket ->
                 socket.send(Frame.Text(initial))
-                repeat(2) { readJson(socket) }
-                readJson(socket)
+                repeat(2) { readJson(socket, includeProgress = true) }
+                assertEquals("assistant.message", readJson(socket, includeProgress = true)["type"].asText())
+                readJson(socket, includeProgress = true)
             }
             withPublicSocket(chat) { socket ->
-                readJson(socket) // Replayed tool call.
+                readJson(socket, includeProgress = true) // Replayed tool call.
                 socket.send(Frame.Text(initial))
-                repeat(2) { readJson(socket) }
+                repeat(2) { readJson(socket, includeProgress = true) }
                 socket.send(Frame.Text(messageFrame(chat, owner, "follow-up", text = "Prefer a train")))
-                repeat(2) { readJson(socket) }
+                repeat(2) { readJson(socket, includeProgress = true) }
                 socket.send(Frame.Text(
                     """{"kind":"tool.result","chatId":"$chat","threadId":${started["threadId"]},"toolCallId":${started["payload"]["toolCallId"]},"status":"succeeded","result":{"documents":[{"text":"Unselected options: Paris by plane or Kazan by train"}]}}"""
                 ))
-                readJson(socket)
-                assertEquals("thread.completed", readJson(socket)["type"].asText())
+                readJson(socket, includeProgress = true)
+                assertEquals("thread.completed", readJson(socket, includeProgress = true)["type"].asText())
             }
             assertTrue(llm.requests.last().messages.any {
                 it.role == LLMMessageRole.function && it.content.contains("Unselected options")
@@ -184,9 +223,10 @@ class BackendHistoryMemoryE2eTest {
                     if (zone != null) {
                         val before = hindsight.items.size
                         socket.send(Frame.Text(messageFrame(chat, owner, "turn-$zone", timeZone = zone)))
-                        assertEquals("accepted", readJson(socket)["status"].asText())
-                        assertEquals("thread.status", readJson(socket)["type"].asText())
-                        assertEquals("thread.completed", readJson(socket)["type"].asText())
+                        assertEquals("accepted", readJson(socket, includeProgress = true)["status"].asText())
+                        assertEquals("thread.status", readJson(socket, includeProgress = true)["type"].asText())
+                        assertEquals("assistant.message", readJson(socket, includeProgress = true)["type"].asText())
+                        assertEquals("thread.completed", readJson(socket, includeProgress = true)["type"].asText())
                         val turn = eventually("completed-turn timestamp") { hindsight.items.getOrNull(before) }
                         assertEquals(clock.instant().atZone(ZoneId.of(zone)).toOffsetDateTime(),
                             OffsetDateTime.parse(turn.item["timestamp"].asText()))
@@ -234,19 +274,19 @@ class BackendHistoryMemoryE2eTest {
             val owner = UUID.randomUUID().toString()
             val chat = createPublicChat(owner)
             withPublicSocket(chat) { socket ->
-                socket.send(Frame.Text(memoryToolHistory(chat)))
-                assertEquals("accepted", readJson(socket)["status"].asText())
+                socket.send(Frame.Text(memoryToolHistory(chat, owner)))
+                assertEquals("accepted", readJson(socket, includeProgress = true)["status"].asText())
                 clock.advance(31)
                 assertFalse(backend.captureHistoryMemory())
                 val first = appendHistory(socket, chat, "u1", "user", "Recommend a train trip")
                 socket.send(Frame.Text(historyFrame(chat, "u1", "user", "Recommend a train trip")))
-                assertEquals(first.deepCopy<ObjectNode>().put("duplicate", true), readJson(socket))
+                assertEquals(first.deepCopy<ObjectNode>().put("duplicate", true), readJson(socket, includeProgress = true))
                 socket.send(Frame.Text(historyFrame(chat, "u1", "user", "different payload")))
-                assertEquals("idempotency_conflict", readJson(socket)["error"]["code"].asText())
+                assertEquals("idempotency_conflict", readJson(socket, includeProgress = true)["error"]["code"].asText())
                 socket.send(Frame.Text(historyFrame(chat, "bad", "system", "rejected history")))
-                assertEquals("rejected", readJson(socket)["status"].asText())
-                socket.send(Frame.Text(memoryToolHistory(chat)))
-                val duplicateTool = readJson(socket)
+                assertEquals("rejected", readJson(socket, includeProgress = true)["status"].asText())
+                socket.send(Frame.Text(memoryToolHistory(chat, owner)))
+                val duplicateTool = readJson(socket, includeProgress = true)
                 assertEquals("accepted", duplicateTool["status"].asText())
                 assertTrue(duplicateTool["duplicate"].asBoolean())
                 appendHistory(socket, chat, "a1", "assistant", "I propose Kazan or Paris")
@@ -287,9 +327,10 @@ class BackendHistoryMemoryE2eTest {
 
             withPublicSocket(chat) { socket ->
                 socket.send(Frame.Text(messageFrame(chat, owner, "execute", text = "A new Souz request")))
-                assertEquals("accepted", readJson(socket)["status"].asText())
-                readJson(socket)
-                readJson(socket)
+                assertEquals("accepted", readJson(socket, includeProgress = true)["status"].asText())
+                readJson(socket, includeProgress = true)
+                assertEquals("assistant.message", readJson(socket, includeProgress = true)["type"].asText())
+                readJson(socket, includeProgress = true)
             }
             eventually("completed-turn memory") { hindsight.items.firstOrNull { it.item["document_id"].asText().startsWith("souz-turn-") } }
             assertCompletedDialogue(hindsight.items.last().item, "A new Souz request", "assistant reply to A new Souz request")
@@ -522,11 +563,11 @@ private suspend fun BackendE2eScope.appendHistory(
     val frame = json.readTree(historyFrame(chat, request, role, "placeholder"))
     (frame["payload"]["content"] as ObjectNode).put("text", text)
     socket.send(Frame.Text(frame.toString()))
-    return withTimeout(5_000) { readJson(socket) }.also { assertEquals("accepted", it["status"].asText()) }
+    return withTimeout(5_000) { readJson(socket, includeProgress = true) }.also { assertEquals("accepted", it["status"].asText()) }
 }
 
-private fun memoryToolHistory(chat: String): String =
-    """{"kind":"history.append","chatId":"$chat","requestId":"tool","payload":{"role":"assistant","content":{"type":"tool_call","name":"SearchMemory","arguments":{"semanticQuery":"tool-sentinel"},"result":{"facts":[{"body":"tool-sentinel"}]}}}}"""
+private fun memoryToolHistory(chat: String, owner: String): String =
+    """{"kind":"history.append","chatId":"$chat","requestId":"tool","payload":{"role":"assistant","content":{"type":"tool_call","name":"memory.recall","arguments":{"scope":"household","bankId":"$owner","query":"Current request: tool-sentinel"},"result":{"status":"ok","fetchedAt":"2026-10-25T08:00:00Z","facts":[{"text":"tool-sentinel","basis":"direct","source_ids":["10000000-0000-4000-8000-000000000001"]}]}}}}"""
 
 private class HistoryTestClock : Clock() {
     @Volatile private var now = Instant.parse("2026-09-18T10:00:00Z")

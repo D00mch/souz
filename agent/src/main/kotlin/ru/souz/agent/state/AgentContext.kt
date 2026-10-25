@@ -19,6 +19,8 @@ data class AgentContext<I>(
     val runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
     /** Execution-local boundary; messages from here onward must survive compaction unchanged. */
     val activeExchangeStartIndex: Int = 0,
+    /** Execution-local discovery metadata for model routing; never advertised as executable tools. */
+    val routingCapabilities: Map<String, String> = emptyMap(),
 ) {
     init {
         require(activeExchangeStartIndex in 0..history.size) { "Active exchange boundary must be within history." }
@@ -39,6 +41,7 @@ data class AgentContext<I>(
         activeTools: List<LLMRequest.Function> = this.activeTools,
         systemPrompt: String = this.systemPrompt,
         activeExchangeStartIndex: Int = this.activeExchangeStartIndex,
+        routingCapabilities: Map<String, String> = this.routingCapabilities,
         transform: (I) -> O = { it as O },
     ): AgentContext<O> = AgentContext(
         input = transform(input),
@@ -49,6 +52,7 @@ data class AgentContext<I>(
         toolInvocationMeta = toolInvocationMeta,
         runtimeEventSink = runtimeEventSink,
         activeExchangeStartIndex = activeExchangeStartIndex,
+        routingCapabilities = routingCapabilities,
     )
 }
 

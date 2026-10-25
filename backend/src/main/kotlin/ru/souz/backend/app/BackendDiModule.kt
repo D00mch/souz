@@ -327,6 +327,7 @@ fun backendDiModule(
             userSettingsRepository = instance(),
             personalitySync = instance(),
             namedModels = instance<NamedLlmConfig>().models,
+            builtinReasoningEfforts = instance<NamedLlmConfig>().builtinReasoningEfforts,
             skillClassifier = instance(),
             fallbackSkillClassifier = instanceOrNull<SkillClassifier>(tag = FRIDA_FALLBACK_TAG),
             // Routing needs Jev: a configured routing block without JEV_TOKEN fails at startup.

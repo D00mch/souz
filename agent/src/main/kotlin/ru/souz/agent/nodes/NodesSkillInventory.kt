@@ -43,9 +43,22 @@ internal class NodesSkillInventory(
                 .filterNot { it.value in compiledIds }.distinct().sortedBy { it.value }
         }
         val descriptions = if (classifySkills && ids.isNotEmpty() && !isThanksOrGreeting(ctx.input)) {
-            selectedDescriptions(ctx, ids)
+            discoveryOr(emptyMap()) {
+                skillBundleProvider.listSkillDescriptions(ctx.toolInvocationMeta.userId)
+                    .filterKeys { it in ids }
+                    .mapValues { (_, text) -> text.replace(WHITESPACE, " ").trim().take(1000) }
+                    .filterValues { it.isNotBlank() }
+            }
         } else emptyMap()
-        val message = "${ctx.systemPrompt}\n\n${inventoryBlock(tools, ids, descriptions)}".toSystemPromptMessage()
+        val selected = if (descriptions.isEmpty()) emptyMap() else selectedDescriptions(ctx, descriptions)
+        val catalogIds = toolCatalog.toolsByCategory.values.flatMapTo(mutableSetOf()) { it.keys }
+        val capabilities = buildMap {
+            (ctx.activeTools + skillTools.map { it.fn }).filterNot { it.name in catalogIds }
+                .forEach { put(it.name, it.description.shortDescription()) }
+            tools.values.forEach { entries -> entries.values.forEach { put(it.fn.name, it.fn.description.shortDescription()) } }
+            ids.forEach { put(it.value, descriptions[it].orEmpty().shortDescription()) }
+        }
+        val message = "${ctx.systemPrompt}\n\n${inventoryBlock(tools, ids, selected)}".toSystemPromptMessage()
         val replaced = if (ctx.history.firstOrNull()?.role == LLMMessageRole.system) 1 else 0
         ctx.map(
             settings = ctx.settings.copy(
@@ -54,16 +67,12 @@ internal class NodesSkillInventory(
             activeTools = (ctx.activeTools + skillTools.map { it.fn }).distinctBy { it.name },
             history = listOf(message) + ctx.history.drop(replaced),
             activeExchangeStartIndex = ctx.activeExchangeStartIndex + 1 - replaced,
+            routingCapabilities = capabilities,
         ) { it }
     }
 
-    private suspend fun selectedDescriptions(ctx: AgentContext<String>, ids: List<SkillId>): Map<SkillId, String> =
+    private suspend fun selectedDescriptions(ctx: AgentContext<String>, descriptions: Map<SkillId, String>): Map<SkillId, String> =
         discoveryOr(emptyMap()) {
-            val descriptions = skillBundleProvider.listSkillDescriptions(ctx.toolInvocationMeta.userId)
-                .filterKeys { it in ids }
-                .mapValues { (_, text) -> text.replace(WHITESPACE, " ").trim().take(1000) }
-                .filterValues { it.isNotBlank() }
-            if (descriptions.isEmpty()) return@discoveryOr emptyMap()
             val history = ctx.history.filter {
                 (it.role == LLMMessageRole.user || it.role == LLMMessageRole.assistant) &&
                     !it.isInjectedContextMessage() && !it.isInjectedMemoryContextMessage()
@@ -134,6 +143,8 @@ internal class NodesSkillInventory(
         }
         append("</skill_inventory>")
     }
+
+    private fun String.shortDescription(): String = replace(WHITESPACE, " ").trim().take(240)
 
     private companion object {
         val WHITESPACE = Regex("""\s+""")

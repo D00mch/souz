@@ -69,7 +69,7 @@ class AgentExecutionKernelFactory(
         val nodesMemory = NodesMemory(memoryRuntime, captureScope, automaticMemoryRecall)
         val nodesErrorHandling = NodesErrorHandling(errorMessages)
         val nodesLLM = NodesLLM(llmApi, settingsProvider, conversationInstructions, complexityClassifier,
-            routedTools = coreTools::skillsTools)
+            routedTools = coreTools::skillsTools, initialWaiting = true)
         val availableAgents = listOf(AgentId.SKILLS_GRAPH)
         val contextFactory = AgentContextFactory(
             settingsProvider = settingsProvider,

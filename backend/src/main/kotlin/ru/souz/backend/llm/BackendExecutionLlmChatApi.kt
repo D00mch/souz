@@ -47,6 +47,7 @@ internal class BackendExecutionLlmChatApi(
     private val hookBudget: HookLlmBudget? = null,
     private val metrics: BackendMetrics? = null,
     private val namedModels: Map<String, NamedLlmModel> = emptyMap(),
+    private val builtinReasoningEfforts: Map<String, String> = emptyMap(),
     private val fallbackModels: List<String> = emptyList(),
     private val failureMemory: ModelFailureMemory = ModelFailureMemory(),
 ) : LLMChatAPI {
@@ -171,7 +172,8 @@ internal class BackendExecutionLlmChatApi(
             }
         }
         body.provider?.let { provider ->
-            return if (provider in BackendLlmSupport.chatProviders) ChatRoute.Ready(provider, body)
+            val effort = body.reasoningEffort ?: builtinReasoningEfforts[findLLMModel(body.model)?.alias ?: body.model]
+            return if (provider in BackendLlmSupport.chatProviders) ChatRoute.Ready(provider, body.copy(reasoningEffort = effort))
             else rejectChatRoute(ModelResolution.UnsupportedProvider(body, provider))
         }
         return when (val resolution = resolveChatModel(
@@ -207,6 +209,7 @@ internal class BackendExecutionLlmChatApi(
                     },
                     apiKey = namedModel?.apiKey ?: resolveCredentialLocked(provider).apiKey,
                     baseUrl = namedModel?.baseUrl,
+                    requestParameters = namedModel?.parameters,
                 )
                 LlmProvider.ANTHROPIC -> AnthropicChatAPI(
                     settingsProvider,

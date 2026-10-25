@@ -39,6 +39,18 @@ import kotlin.test.assertTrue
 
 class NodesMemoryTest {
     @Test
+    fun `disabled recall also applies to identified voice and preserves imported recall results`() = runTest {
+        val memory = RecordingMemoryRuntime(retrievalResult = memoryResult("Unwanted recall"))
+        val imported = LLMRequest.Message(LLMMessageRole.function, "Recall result", name = "memory.recall")
+        val ctx = stringContext("hello", meta = ToolInvocationMeta(
+            userId = "owner", conversationId = "chat", attributes = mapOf("voiceEmbeddingId" to "voice-1"),
+        )).copy(history = listOf(imported, memoryMessage("stale")))
+        val result = NodesMemory(memory, backgroundScope, automaticMemoryRecall = false).recall().execute(ctx, graphRuntime())
+        assertEquals(null, memory.retrievalRequest)
+        assertEquals(listOf(imported), result.history)
+    }
+
+    @Test
     fun `memory node recalls scoped memory and emits its augmentation event`() = runTest {
         val memoryRuntime = RecordingMemoryRuntime(
             retrievalResult = memoryResult("Relevant memory:\n- User prefers Kotlin",

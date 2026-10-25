@@ -16,7 +16,11 @@ The request-scoped kernel exposes one steerable skills graph under `AgentId.SKIL
 
 ### Model routing
 
-`AgentSettings.routing` marks a skills-graph turn whose first LLM call may run on a simple or a complex model. With a `TaskComplexityClassifier`, `NodesLLM` starts the simple model at once and publishes none of its streamed output until the classifier decides; a complex decision cancels that call and calls the complex model, and a classifier failure keeps the turn's own model. Each target call uses the ordinary request preparation with that target's tools: conversation instructions, the turn's context budget, and compaction that keeps the active exchange. The chosen settings, without routing, serve the rest of the turn, and the core tools are rebound to them, so a `SpawnSubagent` child defaults to the chosen model.
+`AgentSettings.routing` marks a skills-graph turn whose first LLM call may run on a simple or a complex model. With a `TaskComplexityClassifier`, `NodesLLM` starts the simple model at once and publishes none of its streamed output until the classifier decides; a complex decision cancels that call and calls the complex model, and a classifier failure keeps the turn's own model. The simple target has no tools; complex and fallback targets retain tools bound to their model. Each call uses ordinary request preparation: conversation instructions, the turn's context budget, and compaction that keeps the active exchange. The chosen settings, without routing, serve the rest of the turn, and available core tools are rebound to them, so a `SpawnSubagent` child defaults to the chosen model.
+
+Before routing, inventory retains enabled capability names and descriptions bounded to 240 characters in execution-local state. File-backed descriptions are reused from the existing metadata read, including unselected descriptions; skipped or failed reads retain ID-only entries. The classifier receives these hints separately from the bounded dialogue, without tool schemas, additional metadata reads or an extra classifier call. The hints do not grant tool execution or enter persisted history.
+
+The parent execution emits one `InitialWait` live event after choosing a non-simple model, or before its first model call when routing is absent. Simple selection suppresses it for the entire execution. Provider retries, tool loops, queued inputs and child agents do not repeat waiting. The event is independent of memory and step narration.
 
 ## Why this is fragile
 

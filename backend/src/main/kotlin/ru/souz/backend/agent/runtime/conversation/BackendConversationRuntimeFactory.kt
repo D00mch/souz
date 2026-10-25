@@ -111,6 +111,7 @@ internal class BackendConversationRuntimeFactory(
     private val executionQuotas: ExecutionQuotaManager,
     private val metrics: BackendMetrics? = null,
     private val namedModels: Map<String, NamedLlmModel> = emptyMap(),
+    private val builtinReasoningEfforts: Map<String, String> = emptyMap(),
     private val providerApiOverride: ((LlmProvider) -> LLMChatAPI?)? = null,
 ) {
     private val modelFailures = ModelFailureMemory()
@@ -147,6 +148,7 @@ internal class BackendConversationRuntimeFactory(
             ?.let { HookLlmBudget(it, hookStore, executionQuotas) }
         val executionApi = BackendExecutionLlmChatApi(
             namedModels = namedModels,
+            builtinReasoningEfforts = builtinReasoningEfforts,
             userId = key.userId,
             settingsProvider = settingsProvider,
             credentialResolver = credentialResolver,

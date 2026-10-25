@@ -25,7 +25,13 @@ All configured model names are advertised in `/v1/bootstrap`; no per-user allowl
 
 `GET /health` reports the server default using the same selection policy, without user settings or user-managed keys.
 
-`subagentModels` and `summarization` are optional. A child without an explicit model inherits the parent's named selection. Dedicated summarization uses its own connection and preserves `OPENAI_SUMMARIZATION_PARAMETERS`. Existing `OPENAI_*`, summarization model/connection/parameter settings and `SUBAGENT_MODELS_JSON` remain usable when no named override is configured.
+Each model can define an optional JSON object `parameters` for provider-specific options, such as `{"thinking":{"type":"disabled"}}`. These options apply to ordinary and streaming calls, including children that use this named model. Parameters stay isolated between model names even when the endpoint and upstream model ID match. Explicit request reasoning effort takes precedence over `parameters.reasoning_effort`. Unknown provider options pass through unchanged; their meaning and support belong to the provider.
+
+Built-in Codex and OpenAI model IDs or selectors can appear in `models` as parameter-only entries, without `connection` or `modelId`. These entries accept only a nonblank string `parameters.reasoning_effort`; provider authentication and routing remain built-in. They do not add custom model names or change the default-model order. Duplicate selectors for the same built-in model reject startup. The provider boundary resolves effort for the selected model on each call, including fallback and child calls. An explicit legacy profile or request effort takes precedence; otherwise the model default applies. Codex sends it as `reasoning.effort`, while OpenAI-compatible calls use `reasoning_effort`.
+
+`parameters` cannot contain `model`, `messages`, `stream`, `tools`, `tool_choice`, `max_tokens`, `max_completion_tokens` or `context_size`; the runtime owns request structure and token limits. Non-object values and duplicate JSON keys reject startup.
+
+`subagentModels` and `summarization` are optional. A child without an explicit model inherits the parent's named selection. Dedicated summarization uses its own connection and merges `OPENAI_SUMMARIZATION_PARAMETERS` with named model parameters, with model values taking precedence for matching top-level keys. Existing `OPENAI_*`, summarization model/connection/parameter settings and `SUBAGENT_MODELS_JSON` remain usable when no named override is configured.
 
 `CONTEXT_SIZE` is the single server context window for conversation, subagents and summaries (default `125000`). Startup rejects values that are not integers of at least `24000` tokens. All configured models must support that window; no model-specific effective window is calculated. Users and HTTP request options cannot override it, and continuations use the running server value.
 

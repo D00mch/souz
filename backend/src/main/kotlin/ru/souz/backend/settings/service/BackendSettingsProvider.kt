@@ -1,5 +1,6 @@
 package ru.souz.backend.settings.service
 
+import com.fasterxml.jackson.module.kotlin.readValue
 import ru.souz.agent.AgentId
 import ru.souz.backend.config.NamedLlmConfig
 import ru.souz.backend.config.loadNamedModels
@@ -18,6 +19,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.findLLMModel
+import ru.souz.llms.restJsonMapper
 
 class BackendSettingsProvider(
     private val preferenceStore: BackendServerPreferenceStore,
@@ -44,7 +46,12 @@ class BackendSettingsProvider(
     override val openaiSummarizationApiKey: String? = namedModels.summarization?.apiKey ?: configured("OPENAI_SUMMARIZATION_API_KEY")
     override val openaiSummarizationBaseUrl: String? = namedModels.summarization?.baseUrl ?: configured("OPENAI_SUMMARIZATION_BASE_URL")
     override val openaiSummarizationModel: String? = namedModels.summarization?.modelId ?: configured("OPENAI_SUMMARIZATION_MODEL")
-    override val openaiSummarizationParameters: String? = configured("OPENAI_SUMMARIZATION_PARAMETERS")
+    override val openaiSummarizationParameters: String? = namedModels.summarization?.parameters?.let { parameters ->
+        val defaults = configured("OPENAI_SUMMARIZATION_PARAMETERS")?.let {
+            restJsonMapper.readValue<Map<String, Any?>>(it)
+        }.orEmpty()
+        restJsonMapper.writeValueAsString(defaults + restJsonMapper.readValue<Map<String, Any?>>(parameters))
+    } ?: configured("OPENAI_SUMMARIZATION_PARAMETERS")
     override var regionProfile: String = normalizeRegion(configured(APP_LANGUAGE))
     override var activeAgentId: AgentId = AgentId.fromStorageValue(configured(ACTIVE_AGENT_ID))
     override var useFewShotExamples: Boolean = configured(USE_FEW_SHOTS)?.toBooleanStrictOrNull() ?: false

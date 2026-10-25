@@ -85,19 +85,53 @@ class JevClassifierTest {
     }
 
     @Test
-    fun `complexity is one choice over the last two messages`() = runTest {
-        var complex = 0.0
+    fun `complexity requires confident text only answer and includes supplied tool facts`() = runTest {
+        var simple = 0.0
         val engine = MockEngine { httpRequest ->
             val payload = restJsonMapper.readTree(httpRequest.body.toByteArray())
-            assertEquals(jevState(request.messages, historyLimit = 2), payload["state"].asText())
-            val question = payload["questions"]["choice"]
-            assertEquals("choice", question["type"].asText())
-            assertEquals(listOf("simple", "complex"), question["criteria"].fieldNames().asSequence().toList())
-            respond("""{"answers":{"choice":{"type":"choice","probabilities":{"simple":${1 - complex},"complex":$complex}}}}""")
+            kotlin.test.assertTrue(payload["state"]["previous_dialogue"].asText().contains("private tool result"))
+            kotlin.test.assertFalse(payload["state"]["previous_dialogue"].asText().contains("LLM formatting instructions"))
+            assertEquals(mapOf("application.action" to "Read or change application state"),
+                restJsonMapper.convertValue(payload["state"]["available_capabilities"], Map::class.java))
+            assertEquals("user: Check my calendar and email the agenda", payload["state"]["current_request"].asText())
+            kotlin.test.assertFalse(payload["state"]["previous_dialogue"].asText().contains("email the agenda"))
+            val question = payload["questions"]["simple"]
+            assertEquals("noul", question["type"].asText())
+            kotlin.test.assertTrue(question["instructions"].asText().contains("without tools"))
+            respond("""{"answers":{"simple":{"type":"noul","noul":$simple}}}""")
         }
         HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
             val classifier = JevClassifier(JevClient(http, "test-token"))
-            assertEquals(listOf(false, true, true), listOf(0.49, 0.5, 0.9).map { complex = it; classifier.isComplex(request) })
+            assertEquals(listOf(true, true, false, false), listOf(0.0, 0.89, 0.9, 1.0).map { simple = it; classifier.isComplex(request, mapOf("application.action" to "Read or change application state")) })
+        }
+    }
+
+    @Test
+    fun `current request stays separate from bounded action history and keeps speaker identity`() = runTest {
+        val engine = MockEngine { httpRequest ->
+            val state = restJsonMapper.readTree(httpRequest.body.toByteArray())["state"]
+            assertEquals("user [souz_speaker_unknown]: Are you there?", state["current_request"].asText())
+            val previous = state["previous_dialogue"].asText()
+            assertEquals(9, previous.lines().size)
+            kotlin.test.assertFalse(previous.contains("old user"))
+            kotlin.test.assertFalse(previous.contains("Are you there?"))
+            kotlin.test.assertTrue(previous.endsWith("assistant: I will check the device."))
+            respond("""{"answers":{"simple":{"type":"noul","noul":0.95}}}""")
+        }
+        HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
+            val messages = listOf(LLMRequest.Message(LLMMessageRole.user, "old user")) +
+                List(9) { LLMRequest.Message(LLMMessageRole.assistant, "I will check the device.") } +
+                LLMRequest.Message(LLMMessageRole.user, "Are you there?", name = "souz_speaker_unknown")
+            assertEquals(false, JevClassifier(JevClient(http, "test-token")).isComplex(request.copy(messages = messages), emptyMap()))
+        }
+    }
+
+    @Test
+    fun `attachments force complex without classification IO`() = runTest {
+        HttpClient(MockEngine { error("Attachments must not reach classification") }).use { http ->
+            val attached = request.copy(messages = listOf(LLMRequest.Message(
+                LLMMessageRole.user, "What is in this file?", attachments = listOf("file-id"))))
+            assertEquals(true, JevClassifier(JevClient(http, "test-token")).isComplex(attached, emptyMap()))
         }
     }
 
