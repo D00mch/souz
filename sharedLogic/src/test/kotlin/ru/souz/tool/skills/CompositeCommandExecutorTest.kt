@@ -91,7 +91,7 @@ class CompositeCommandExecutorTest {
         for ((ending, success) in listOf(
             "" to true,
             "  - {id: validation, script: scripts/check.py, runtime: PYTHON}" to false,
-            "  - {id: wait, waitMs: 100}" to false,
+            "  - {id: wait, waitMs: 60001}" to false,
         )) {
             val command = bundle("""
                 steps:
@@ -100,10 +100,13 @@ class CompositeCommandExecutorTest {
                   - {id: corrected, tool: AttachFileToReply, arguments: {fileId: v2}}
             """.trimIndent() + "\n" + ending + "\nreturns: '\${corrected}'")
             val result = runner(command, tools).invoke(LLMResponse.FunctionCall(ToolInvokeSkill.NAME, mapOf(
-                "skillId" to "skill", "arguments" to mapOf("composite" to "run", "timeoutMillis" to 10),
+                // The runner also checks real elapsed time; leave CPU headroom under coverage.
+                // runTest advances the final wait virtually beyond this deadline.
+                "skillId" to "skill", "arguments" to mapOf("composite" to "run", "timeoutMillis" to 60_000),
             )), meta)
             val payload = restJsonMapper.readValue(result.content, SandboxCommandResult::class.java)
-            assertEquals(success, payload.exitCode == 0 && !payload.timedOut)
+            assertEquals(success, payload.exitCode == 0 && !payload.timedOut, "Ending '$ending': $payload")
+            assertEquals(ending.contains("waitMs"), payload.timedOut)
             assertEquals(listOf(first, corrected), result.files)
             assertEquals(if (success) listOf(corrected) else emptyList(), result.replyFiles)
             assertEquals(if (success) listOf(first.file) else emptyList(), result.detachedReplyFiles)
