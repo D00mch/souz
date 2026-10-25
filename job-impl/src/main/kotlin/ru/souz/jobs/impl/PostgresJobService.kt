@@ -32,6 +32,12 @@ internal data class JobWorkerTiming(
 class PostgresJobService internal constructor(dataSource: DataSource, private val timing: JobWorkerTiming) : JobService {
     constructor(dataSource: DataSource) : this(dataSource, JobWorkerTiming())
 
+    constructor(dataSource: DataSource, pollIntervalMillis: Long) : this(
+        dataSource, JobWorkerTiming(pollMillis = pollIntervalMillis),
+    ) {
+        require(pollIntervalMillis > 0) { "Job poll interval must be positive." }
+    }
+
     internal val store = PostgresJobStore(dataSource, timing)
     private val logger = LoggerFactory.getLogger(PostgresJobService::class.java)
     private val startup = Mutex()

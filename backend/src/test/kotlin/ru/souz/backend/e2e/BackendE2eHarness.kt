@@ -394,6 +394,9 @@ internal class BackendE2eBackend(
         )
         bindSingleton<SkillClassifier>(overrides = true) { SkillClassifier { _, _ -> emptySet() } }
         bindSingleton<Clock>(overrides = true) { clock }
+        bindSingleton<PostgresJobService>(overrides = true) {
+            PostgresJobService(instance<HikariDataSource>(), pollIntervalMillis = 50)
+        }
         if (sandboxFactory != null) {
             bindSingleton<RuntimeSandboxFactory>(overrides = true) { sandboxFactory(instance()) }
         }
