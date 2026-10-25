@@ -29,6 +29,7 @@ import ru.souz.agent.runtime.ActiveRunInputController
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.isToolUse
 
 /**
  * Agent graph whose model always sees only the core skill-discovery, Knowledge, and execution tools.
@@ -82,7 +83,9 @@ class SkillsGraphBasedAgent internal constructor(
                 is LLMResponse.Chat.Ok -> chatOk
             }
         }
-        chatOk.edgeTo { ctx -> if (ctx.input.isToolUse) toolUse else finalizeTurn }
+        chatOk.edgeTo { ctx ->
+            if (ctx.input.isToolUse()) toolUse else finalizeTurn
+        }
         toolUse.edgeTo(chat)
         finalizeTurn.edgeTo(nodeFinish)
         chatErrorToFinish.edgeTo(nodeFinish)
@@ -116,7 +119,4 @@ class SkillsGraphBasedAgent internal constructor(
             }
         }
     }
-
-    private val LLMResponse.Chat.Ok.isToolUse: Boolean
-        get() = choices.any { it.message.functionCall != null }
 }

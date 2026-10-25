@@ -25,6 +25,7 @@ import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.isToolUse
 
 class GraphBasedAgent internal constructor(
     logObjectMapper: ObjectMapper,
@@ -79,7 +80,7 @@ class GraphBasedAgent internal constructor(
                 is LLMResponse.Chat.Ok -> chatOk
             }
         }
-        chatOk.edgeTo { ctx -> if (ctx.input.isToolUse) toolUse else finalizeTurn }
+        chatOk.edgeTo { ctx -> if (ctx.input.isToolUse()) toolUse else finalizeTurn }
         toolUse.edgeTo(chatSubgraph)
         finalizeTurn.edgeTo(nodeFinish)
         chatErrorToFinish.edgeTo(nodeFinish)
@@ -98,6 +99,4 @@ class GraphBasedAgent internal constructor(
         ctx = ctx,
         onStep = onStep,
     )
-
-    private val LLMResponse.Chat.Ok.isToolUse get() = choices.any { it.message.functionCall != null }
 }

@@ -11,8 +11,7 @@ data class SkillBundle(
     val files: List<SkillFile>,
     val skillMarkdownBody: String,
 ) {
-    val skillMarkdownFile: SkillFile
-        get() = files.first { it.normalizedPath == SKILL_MD_PATH }
+    fun skillMarkdownFile(): SkillFile = files.first { it.normalizedPath == SKILL_MD_PATH }
 
     companion object {
         fun fromFiles(

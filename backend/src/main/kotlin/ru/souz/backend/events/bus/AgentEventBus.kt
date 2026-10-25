@@ -22,7 +22,7 @@ class AgentEventBus(private val metrics: BackendMetrics? = null) {
     }
 
     private val subscribers =
-        ConcurrentHashMap<AgentEventStreamKey, MutableSet<Subscriber>>()
+        ConcurrentHashMap<AgentEventStreamKey, Set<Subscriber>>()
 
     fun hasSubscriber(userId: String, chatId: UUID): Boolean =
         subscribers[AgentEventStreamKey(userId, chatId)]?.any { it.acceptsClientCommands } == true
@@ -34,17 +34,14 @@ class AgentEventBus(private val metrics: BackendMetrics? = null) {
         val key = AgentEventStreamKey(userId = userId, chatId = chatId)
         val subscriber = Subscriber(acceptsClientCommands, metrics)
         subscribers.compute(key) { _, existing ->
-            (existing ?: ConcurrentHashMap.newKeySet()).apply {
-                add(subscriber)
-            }
+            existing.orEmpty() + subscriber
         }
         return AgentEventSubscription(
             events = subscriber.events,
             commands = subscriber.commands,
             close = {
                 subscribers.computeIfPresent(key) { _, existing ->
-                    existing.remove(subscriber)
-                    existing.takeUnless { it.isEmpty() }
+                    (existing - subscriber).takeUnless { it.isEmpty() }
                 }
                 subscriber.events.cancel()
                 subscriber.commands.cancel()
@@ -67,7 +64,7 @@ class AgentEventBus(private val metrics: BackendMetrics? = null) {
 
     suspend fun publish(event: AgentEventEnvelope) {
         val key = AgentEventStreamKey(userId = event.userId, chatId = event.chatId)
-        // Iterate the concurrent set directly; toList's size-based fast path races with disconnect.
+        // Each publication keeps a stable snapshot while subscriptions change atomically per key.
         val targets = subscribers[key] ?: return
         val closedTargets = ArrayList<Subscriber>()
         targets.forEach { subscriber ->
@@ -79,9 +76,9 @@ class AgentEventBus(private val metrics: BackendMetrics? = null) {
         if (closedTargets.isEmpty()) {
             return
         }
+        val closed = closedTargets.toSet()
         subscribers.computeIfPresent(key) { _, existing ->
-            existing.removeAll(closedTargets.toSet())
-            existing.takeUnless { it.isEmpty() }
+            (existing - closed).takeUnless { it.isEmpty() }
         }
     }
 }

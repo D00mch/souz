@@ -19,8 +19,8 @@ class ExecutionQuotaManager(
 ) {
     private val mutex = Mutex()
     private val activeExecutionsByUser = LinkedHashMap<String, Int>()
-    private val requestsByUser = LinkedHashMap<String, ArrayDeque<Instant>>()
-    private val tokenUsageByUser = LinkedHashMap<String, ArrayDeque<TokenSpend>>()
+    private val requestsByUser = LinkedHashMap<String, List<Instant>>()
+    private val tokenUsageByUser = LinkedHashMap<String, List<TokenSpend>>()
     private val providerSemaphores = LlmProvider.entries.associateWith {
         Semaphore(permits = limits.globalProviderConcurrency)
     }
@@ -39,22 +39,24 @@ class ExecutionQuotaManager(
 
     suspend fun checkRequestRate(userId: String) {
         mutex.withLock {
-            val queue = requestsByUser.getOrPut(userId) { ArrayDeque() }
-            pruneRequests(queue)
+            val cutoff = now().minus(Duration.ofMinutes(1))
+            val queue = requestsByUser[userId].orEmpty().dropWhile { it.isBefore(cutoff) }
+            requestsByUser[userId] = queue
             if (queue.size >= limits.perUserRequestsPerMinute) {
                 throw QuotaExceededException(
                     code = "per_user_requests_per_minute_exceeded",
                     message = "Per-user request rate limit exceeded.",
                 )
             }
-            queue.addLast(now())
+            requestsByUser[userId] = queue + now()
         }
     }
 
     suspend fun checkTokenQuota(userId: String) {
         mutex.withLock {
-            val queue = tokenUsageByUser.getOrPut(userId) { ArrayDeque() }
-            pruneTokens(queue)
+            val cutoff = now().minus(Duration.ofMinutes(1))
+            val queue = tokenUsageByUser[userId].orEmpty().dropWhile { it.at.isBefore(cutoff) }
+            tokenUsageByUser[userId] = queue
             if (queue.sumOf { it.totalTokens } >= limits.perUserTokensPerMinute) {
                 throw QuotaExceededException(
                     code = "per_user_token_quota_exceeded",
@@ -69,9 +71,9 @@ class ExecutionQuotaManager(
         totalTokens: Int,
     ) {
         mutex.withLock {
-            val queue = tokenUsageByUser.getOrPut(userId) { ArrayDeque() }
-            pruneTokens(queue)
-            queue.addLast(TokenSpend(at = now(), totalTokens = totalTokens))
+            val cutoff = now().minus(Duration.ofMinutes(1))
+            val queue = tokenUsageByUser[userId].orEmpty().dropWhile { it.at.isBefore(cutoff) }
+            tokenUsageByUser[userId] = queue + TokenSpend(at = now(), totalTokens = totalTokens)
         }
     }
 
@@ -114,20 +116,6 @@ class ExecutionQuotaManager(
             } else {
                 activeExecutionsByUser[userId] = active - 1
             }
-        }
-    }
-
-    private fun pruneRequests(queue: ArrayDeque<Instant>) {
-        val cutoff = now().minus(Duration.ofMinutes(1))
-        while (queue.firstOrNull()?.isBefore(cutoff) == true) {
-            queue.removeFirst()
-        }
-    }
-
-    private fun pruneTokens(queue: ArrayDeque<TokenSpend>) {
-        val cutoff = now().minus(Duration.ofMinutes(1))
-        while (queue.firstOrNull()?.at?.isBefore(cutoff) == true) {
-            queue.removeFirst()
         }
     }
 

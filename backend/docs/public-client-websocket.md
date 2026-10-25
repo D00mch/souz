@@ -56,7 +56,7 @@ Creation validates the complete catalogue and stores it with the chat in one ins
 - `PublicClientConnection.run` owns the connection coroutine scope, subscription jobs, and writer mutex. Launch subscriptions in that scope, including when sending an acknowledgement inside a nested logging context. Keep one sender per chat and hold the writer mutex across command handling, acknowledgement, `afterSend`, and status. Subscription preparation/replacement and unsubscribe join their old sender outside this lock. Runtime persistence and publication never wait for socket delivery; other connections and reconnect replay can precede a retried ACK. Never join a sender while holding the writer mutex. Close stream resources on disconnect without cancelling runtime work.
 - Keep replay subscription-before-query, re-query durable events from the last covered sequence before consuming bounded live signals, and suppress duplicate delivery by sequence.
 - Assistant progress uses the droppable live queue and `seq:null`, without persistence or transcript rows. Check cancellation before publishing; the submitting connection orders delivery after its ACK. Its internal durable position lets replay suppress overtaken progress; tools never wait for progress receipts or speech.
-- Iterate the event bus's concurrent subscriber set directly during publication; Kotlin collection-size fast paths can race with disconnect and throw while copying it.
+- Publish against the event bus's stable subscriber snapshot. Replace membership atomically per key so concurrent subscriptions and disconnects cannot mutate a publication's iteration.
 
 ## Diagnostics
 
