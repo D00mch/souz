@@ -51,6 +51,12 @@ subprojects {
     }
 
     tasks.withType<Test>().configureEach {
+        // These modules mix unit tests with tests that depend on external state.
+        when (project.path) {
+            ":backend", ":job-impl", ":sharedLogic", ":skill-oauth-impl" ->
+                doNotTrackState("These test suites depend on Docker or external services.")
+        }
+
         val toolchains = project.extensions.getByType<JavaToolchainService>()
         javaLauncher.set(
             toolchains.launcherFor {

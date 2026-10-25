@@ -16,7 +16,12 @@ internal class HistoryMemoryWorker(
     private val repository: PostgresHistoryMemoryRepository,
     private val memory: HindsightConversationMemoryRuntime,
     private val clock: Clock = Clock.systemUTC(),
+    private val pollIntervalMillis: Long = 5_000,
 ) {
+    init {
+        require(pollIntervalMillis > 0) { "History memory poll interval must be positive." }
+    }
+
     private val logger = LoggerFactory.getLogger(HistoryMemoryWorker::class.java)
 
     fun start(scope: CoroutineScope) = scope.launch {
@@ -28,7 +33,7 @@ internal class HistoryMemoryWorker(
             } catch (error: Exception) {
                 logger.warn("History memory poll failed category={}", error.javaClass.simpleName)
             }
-            delay(5_000)
+            delay(pollIntervalMillis)
         }
     }
 

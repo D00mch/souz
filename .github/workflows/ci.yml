@@ -267,10 +267,15 @@ jobs:
         with:
           distribution: zulu
           java-version: 21
-          cache: gradle
 
-      - name: Assemble
-        run: ./gradlew assemble --console=plain --stacktrace --no-parallel
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          # This workflow runs only on PRs; keep their cache warm across commits.
+          cache-read-only: false
+
+      - name: Compile application and tests
+        run: ./gradlew classes testClasses --console=plain --stacktrace --no-parallel
 
       - name: Run test suite and publish coverage summary
         shell: bash
