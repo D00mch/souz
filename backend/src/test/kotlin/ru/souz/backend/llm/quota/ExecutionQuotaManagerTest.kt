@@ -1,5 +1,6 @@
 package ru.souz.backend.llm.quota
 
+import java.time.Instant
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -8,6 +9,39 @@ import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.llms.LlmProvider
 
 class ExecutionQuotaManagerTest {
+    @Test
+    fun `quota windows include the cutoff and release only expired usage for each user`() = runTest {
+        var now = Instant.EPOCH
+        val manager = ExecutionQuotaManager(
+            limits = BackendLlmLimits(perUserRequestsPerMinute = 2, perUserTokensPerMinute = 10),
+            now = { now },
+        )
+        manager.checkRequestRate("user-a")
+        manager.recordTokenUsage("user-a", 7)
+        now = now.plusSeconds(30)
+        manager.checkRequestRate("user-a")
+        manager.recordTokenUsage("user-a", 3)
+        manager.checkRequestRate("user-b")
+        manager.recordTokenUsage("user-b", 10)
+
+        now = Instant.EPOCH.plusSeconds(60)
+        assertSuspendFailsWith<QuotaExceededException> { manager.checkRequestRate("user-a") }
+        assertSuspendFailsWith<QuotaExceededException> { manager.checkTokenQuota("user-a") }
+
+        now = now.plusNanos(1)
+        manager.checkRequestRate("user-a")
+        manager.checkTokenQuota("user-a")
+        manager.recordTokenUsage("user-a", 7)
+        assertSuspendFailsWith<QuotaExceededException> { manager.checkRequestRate("user-a") }
+        assertSuspendFailsWith<QuotaExceededException> { manager.checkTokenQuota("user-a") }
+        assertSuspendFailsWith<QuotaExceededException> { manager.checkTokenQuota("user-b") }
+
+        now = Instant.EPOCH.plusSeconds(90).plusNanos(1)
+        manager.checkRequestRate("user-a")
+        manager.checkTokenQuota("user-a")
+        manager.checkTokenQuota("user-b")
+    }
+
     @Test
     fun `per user concurrent execution limit rejects second active execution`() = runTest {
         val manager = ExecutionQuotaManager(

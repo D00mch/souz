@@ -51,7 +51,7 @@ class GraphBuilder<IN, OUT> internal constructor(
     val nodeInput: Node<IN, IN> = Node("$graphName::enter") { it }
     val nodeFinish: Node<OUT, OUT> = Node("$graphName::exit") { it }
 
-    private val transitions: MutableMap<Node<*, *>, MutableList<Transition<*>>> = mutableMapOf()
+    private val transitions = mutableMapOf<Node<*, *>, List<Transition<*>>>()
 
     fun <IN, OUT, OUT2> Node<IN, OUT>.edgeTo(target: Node<OUT, OUT2>): Node<OUT, OUT2> {
         registerTransition(this, Transition.Static(target))
@@ -63,8 +63,7 @@ class GraphBuilder<IN, OUT> internal constructor(
     }
 
     private fun <OUT> registerTransition(from: Node<*, OUT>, transition: Transition<OUT>) {
-        val bucket = transitions.getOrPut(from) { mutableListOf() }
-        bucket += transition
+        transitions[from] = transitions[from].orEmpty() + transition
     }
 
     internal fun build(): Graph<IN, OUT> = Graph(
@@ -72,7 +71,7 @@ class GraphBuilder<IN, OUT> internal constructor(
         nodeInput,
         nodeFinish,
         retryPolicy,
-        GraphDefinition(transitions.mapValues { it.value.toList() }),
+        GraphDefinition(transitions.toMap()),
     )
 }
 

@@ -43,7 +43,9 @@ internal class SteerableChatNode(
 
             val responseContext = runLlmAttempt(current, runtime, request) ?: continue
             val response = responseContext.input
-            val toolResponse = (response as? LLMResponse.Chat.Ok)?.takeIf { it.isToolUse }
+            val toolResponse = (response as? LLMResponse.Chat.Ok)?.takeIf { ok ->
+                ok.choices.any { it.message.functionCall != null }
+            }
             val queuedInputs = if (toolResponse != null) {
                 // An empty drain accepts this tool batch. Later input waits for its results.
                 controller.drain()
@@ -94,9 +96,6 @@ internal class SteerableChatNode(
             }
         }
     }
-
-    private val LLMResponse.Chat.Ok.isToolUse: Boolean
-        get() = choices.any { it.message.functionCall != null }
 
     private fun AgentContext<*>.appendInputs(inputs: List<ActiveRunInput>): AgentContext<String> {
         require(inputs.isNotEmpty()) { "Queued input is required" }

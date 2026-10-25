@@ -637,6 +637,41 @@ class OpenAICompatibleChatAPIRequestTest {
         }
     }
 
+    @Test
+    fun `stream assembles interleaved tool fragments across choices and emits each call once`() = runTest {
+        val chunks = listOf(
+            """{"choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_a","function":{"name":"tool_a","arguments":"{\"x\":"}}]}}]}""",
+            """{"choices":[{"index":1,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_b","function":{"name":"tool_b","arguments":"{\"text\":\""}}]}}]}""",
+            """{"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_c","function":{"name":"tool_c","arguments":"{"}},{"index":0,"function":{"arguments":"1}"}}]}}]}""",
+            """{"choices":[{"index":1,"delta":{"content":"Working","tool_calls":[{"index":0,"function":{"arguments":"value\"}"}}]}}]}""",
+            """{"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"\"z\":3}"}}]},"finish_reason":"tool_calls"}]}""",
+            """{"choices":[{"index":1,"delta":{},"finish_reason":"tool_calls"}]}""",
+            """{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}""",
+        )
+        val engine = MockEngine {
+            respond(
+                content = chunks.joinToString("") { "data: $it\n\n" } + "data: [DONE]\n\n",
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Text.EventStream.toString()),
+            )
+        }
+        HttpClient(engine) { providerHttpClientDefaults() }.use { client ->
+            val choices = createApi(client).messageStream(
+                LLMRequest.Chat(
+                    model = LLMModel.OpenAIGpt5Mini.alias,
+                    messages = listOf(LLMRequest.Message(LLMMessageRole.user, "run tools")),
+                ),
+            ).toList().flatMap { assertIs<LLMResponse.Chat.Ok>(it).choices }
+            val calls = choices.filter { it.message.functionCall != null }
+            assertEquals(listOf("call_a", "call_c", "call_b"), calls.map { it.message.functionsStateId })
+            assertEquals(3, calls.map { it.index }.distinct().size)
+            assertEquals(listOf("tool_a", "tool_c", "tool_b"), calls.map { it.message.functionCall!!.name })
+            assertEquals(listOf(mapOf("x" to 1), mapOf("z" to 3), mapOf("text" to "value")),
+                calls.map { it.message.functionCall!!.arguments })
+            assertTrue(calls.all { it.finishReason == LLMResponse.FinishReason.function_call })
+            assertEquals("Working", choices.single { it.message.functionCall == null }.message.content)
+        }
+    }
+
     private fun createApi(
         client: HttpClient,
         provider: LlmProvider = LlmProvider.OPENAI,

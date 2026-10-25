@@ -82,7 +82,9 @@ class SkillsGraphBasedAgent internal constructor(
                 is LLMResponse.Chat.Ok -> chatOk
             }
         }
-        chatOk.edgeTo { ctx -> if (ctx.input.isToolUse) toolUse else finalizeTurn }
+        chatOk.edgeTo { ctx ->
+            if (ctx.input.choices.any { it.message.functionCall != null }) toolUse else finalizeTurn
+        }
         toolUse.edgeTo(chat)
         finalizeTurn.edgeTo(nodeFinish)
         chatErrorToFinish.edgeTo(nodeFinish)
@@ -116,7 +118,4 @@ class SkillsGraphBasedAgent internal constructor(
             }
         }
     }
-
-    private val LLMResponse.Chat.Ok.isToolUse: Boolean
-        get() = choices.any { it.message.functionCall != null }
 }

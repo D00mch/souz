@@ -131,12 +131,11 @@ their existing design after explicit review. A finding is not proof of a race
 or a performance improvement; it does not justify replacing a coroutine mutex
 with a concurrent map. These rules provide no automatic corrections.
 
-Repository adoption leaves no unsuppressed constant-membership findings in the
-analyzed production or test sources. Advisory getter candidates include Skill
-bundle/validation projections and response-choice scans. Mutability candidates include staged-file state, streaming response
-assembly, graph transitions, client runtime state, quota windows, and the
-concurrent event-subscriber registry. They remain visible for ownership review;
-no advisory findings are baselined or automatically rewritten.
+Code-review findings are neither baselined nor automatically rewritten.
+Collection scans use explicit calls where evaluation must stay live. Client
+runtime records, quota windows, graph transitions, streaming response state and
+event-subscriber membership use entry replacement under their existing ownership
+and coordination boundaries.
 
 ## Duplicate code
 

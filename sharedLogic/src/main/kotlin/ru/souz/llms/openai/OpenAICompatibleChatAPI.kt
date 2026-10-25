@@ -760,16 +760,15 @@ private class OpenAiStreamAccumulator {
     private var nextToolChoiceIndex = -1
 
     data class ChoiceState(
-        var role: LLMMessageRole? = null,
-        val content: StringBuilder = StringBuilder(),
-        val toolCalls: MutableMap<Int, ToolCallState> = mutableMapOf(),
-        var finishReason: LLMResponse.FinishReason? = null
+        val role: LLMMessageRole? = null,
+        val toolCalls: Map<Int, ToolCallState> = emptyMap(),
     )
 
     data class ToolCallState(
-        var id: String? = null,
-        var name: String? = null,
-        val arguments: StringBuilder = StringBuilder()
+        val id: String? = null,
+        val name: String? = null,
+        // The collecting coroutine owns this buffer; metadata copies preserve it without recopying prior chunks.
+        val arguments: StringBuilder = StringBuilder(),
     )
 
     fun processChunk(chunkNode: JsonNode): List<LLMResponse.Choice> {
@@ -780,7 +779,7 @@ private class OpenAiStreamAccumulator {
 
         choicesNode.forEach { choiceNode ->
             val index = choiceNode["index"]?.asInt() ?: 0
-            val state = choicesState.getOrPut(index) { ChoiceState() }
+            var state = choicesState[index] ?: ChoiceState()
 
             val delta = choiceNode["delta"]
             val finishReasonText = choiceNode["finish_reason"]?.asText()
@@ -788,7 +787,7 @@ private class OpenAiStreamAccumulator {
 
             // Update Role
             delta?.get("role")?.asText()?.let {
-                if (it.isNotBlank()) state.role = LLMMessageRole.valueOf(it)
+                if (it.isNotBlank()) state = state.copy(role = LLMMessageRole.valueOf(it))
             }
 
             // Append Content
@@ -812,19 +811,22 @@ private class OpenAiStreamAccumulator {
             // Process Tool Calls
             val toolCallsNode = delta?.get("tool_calls")
             if (toolCallsNode != null && toolCallsNode.isArray) {
+                val toolCalls = state.toolCalls.toMutableMap()
                 toolCallsNode.forEach { tcNode ->
                     val tcIndex = tcNode["index"]?.asInt() ?: 0
-                    val tcState = state.toolCalls.getOrPut(tcIndex) { ToolCallState() }
-
-                    tcNode["id"]?.asText()?.let { tcState.id = it }
-                    tcNode["function"]?.get("name")?.asText()?.let { tcState.name = it }
-                    tcNode["function"]?.get("arguments")?.asText()?.let { tcState.arguments.append(it) }
+                    val tcState = toolCalls[tcIndex] ?: ToolCallState()
+                    val function = tcNode["function"]
+                    function?.get("arguments")?.asText()?.let { tcState.arguments.append(it) }
+                    toolCalls[tcIndex] = tcState.copy(
+                        id = tcNode["id"]?.asText() ?: tcState.id,
+                        name = function?.get("name")?.asText() ?: tcState.name,
+                    )
                 }
+                state = state.copy(toolCalls = toolCalls)
             }
 
             // Handle Finish Reason
             if (finishReason != null) {
-                state.finishReason = finishReason
                 // If finish reason implies tool calls, emit them now
                 if (state.toolCalls.isNotEmpty()) {
                     state.toolCalls.forEach { (toolCallIndex, tcState) ->
@@ -838,7 +840,7 @@ private class OpenAiStreamAccumulator {
                                         content = "",
                                         role = state.role ?: LLMMessageRole.assistant,
                                         functionCall = LLMResponse.FunctionCall(
-                                            name = tcState.name!!,
+                                            name = tcState.name,
                                             arguments = argsMap
                                         ),
                                         functionsStateId = tcState.id
@@ -850,7 +852,7 @@ private class OpenAiStreamAccumulator {
                         }
                     }
                     // Clear tool calls after emitting to avoid duplicate emissions if multiple finish reasons (unlikely)
-                    state.toolCalls.clear()
+                    state = state.copy(toolCalls = emptyMap())
                 } else if (finishReason != LLMResponse.FinishReason.function_call) {
                     // Signal end of stream
                     resultChoices.add(
@@ -867,6 +869,7 @@ private class OpenAiStreamAccumulator {
                     )
                 }
             }
+            choicesState[index] = state
         }
         return resultChoices
     }
