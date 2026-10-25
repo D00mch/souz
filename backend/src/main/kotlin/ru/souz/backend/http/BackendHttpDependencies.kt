@@ -12,12 +12,14 @@ import ru.souz.backend.hooks.HookService
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.options.service.OptionService
+import ru.souz.backend.personality.PersonalitySync
 import ru.souz.backend.settings.service.UserSettingsService
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.vk.VkBotBindingService
 import ru.souz.skilloauth.impl.SkillOAuthGatewayImpl
 
 internal data class BackendHttpDependencies(
+    val personalitySync: PersonalitySync,
     val bootstrapService: BackendBootstrapService,
     val metrics: BackendMetrics,
     val selectedModel: suspend () -> String,

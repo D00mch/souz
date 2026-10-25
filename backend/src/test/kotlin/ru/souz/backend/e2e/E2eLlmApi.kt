@@ -1,8 +1,5 @@
 package ru.souz.backend.e2e
 
-import io.mockk.coEvery
-import io.mockk.every
-import io.mockk.mockk
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -16,14 +13,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.MDC
 import ru.souz.llms.LLMChatAPI
-import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.local.LocalChatAPI
-import ru.souz.llms.local.LocalLlamaRuntime
-import ru.souz.llms.local.LocalProviderAvailability
-import ru.souz.llms.local.LocalProviderStatus
 
 internal class E2eLlmApi(
     private val response: (suspend (LLMRequest.Chat) -> LLMResponse.Chat)? = null,
@@ -41,7 +33,7 @@ internal class E2eLlmApi(
     private var hangAfterStreaming = false
     private var skill: SkillScript? = null
     private val promptReleaseGates = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
-    private val promptSkills = ConcurrentHashMap<String, SkillScript>()
+    private val promptSkills = ConcurrentHashMap<String, List<SkillScript>>()
 
     fun hangUntilCancelled() {
         hang = true
@@ -78,8 +70,12 @@ internal class E2eLlmApi(
         skill = SkillScript(skillId, arguments)
     }
 
-    fun requestSkillForPrompt(prompt: String, skillId: String, arguments: Map<String, Any>) {
-        promptSkills[prompt] = SkillScript(skillId, arguments)
+    fun requestSkillForPrompt(
+        prompt: String, skillId: String, arguments: Map<String, Any>,
+        vararg subsequentSkills: Pair<String, Map<String, Any>>,
+    ) {
+        promptSkills[prompt] = listOf(SkillScript(skillId, arguments)) +
+            subsequentSkills.map { (name, args) -> SkillScript(name, args) }
     }
 
     fun pausePromptUntilReleased(prompt: String) {
@@ -109,7 +105,7 @@ internal class E2eLlmApi(
         releaseGate?.await()
         promptReleaseGates[prompt]?.await()
         return response?.invoke(body)
-            ?: (promptSkills[prompt] ?: skill)?.let { scriptedSkillReply(body, it) }
+            ?: (promptSkills[prompt] ?: skill?.let(::listOf))?.let { scriptedSkillReply(body, it) }
             ?: reply(body, "assistant reply to $prompt")
     }
 
@@ -128,7 +124,7 @@ internal class E2eLlmApi(
             emit(reply)
             return@flow
         }
-        (promptSkills[prompt] ?: skill)?.let {
+        (promptSkills[prompt] ?: skill?.let(::listOf))?.let {
             emit(scriptedSkillReply(body, it))
             return@flow
         }
@@ -170,22 +166,21 @@ internal class E2eLlmApi(
         mutex.withLock { gates.getOrPut(prompt) { CompletableDeferred() } }
 }
 
-private data class SkillScript(
+internal data class SkillScript(
     val skillId: String,
     val arguments: Map<String, Any>,
 )
 
-private fun scriptedSkillReply(
+internal fun scriptedSkillReply(
     body: LLMRequest.Chat,
-    script: SkillScript,
+    scripts: List<SkillScript>,
 ): LLMResponse.Chat.Ok {
     val latestUserIndex = body.messages.indexOfLast { it.role == LLMMessageRole.user }
     val currentTurn = body.messages.drop(latestUserIndex.coerceAtLeast(0))
+    val completed = currentTurn.count { it.role == LLMMessageRole.function && it.name == "RunSkillCommand" }
+    val script = scripts.getOrNull(completed) ?: return reply(body, "client tool completed")
     return when {
-        currentTurn.any { it.role == LLMMessageRole.function && it.name == "RunSkillCommand" } ->
-            reply(body, "client tool completed")
-
-        currentTurn.any { it.role == LLMMessageRole.function && it.name == "GetSkillByName" } ->
+        currentTurn.count { it.role == LLMMessageRole.function && it.name == "GetSkillByName" } > completed ->
             toolCallReply(
                 body = body,
                 name = "RunSkillCommand",
@@ -248,30 +243,3 @@ internal fun reply(
         model = body.model,
         usage = LLMResponse.Usage(7, completionTokens, 7 + completionTokens, 0),
     )
-
-internal fun localChatApiBackedBy(delegate: LLMChatAPI): LocalChatAPI =
-    mockk {
-        coEvery { message(any()) } coAnswers { delegate.message(firstArg()) }
-        coEvery { messageStream(any()) } coAnswers { delegate.messageStream(firstArg()) }
-        coEvery { embeddings(any()) } coAnswers { delegate.embeddings(firstArg()) }
-        coEvery { uploadFile(any()) } coAnswers { delegate.uploadFile(firstArg()) }
-        coEvery { downloadFile(any()) } coAnswers { delegate.downloadFile(firstArg()) }
-        coEvery { balance() } coAnswers { delegate.balance() }
-    }
-
-internal fun localProviderAvailability(models: List<LLMModel> = listOf(E2E_LOCAL_MODEL)): LocalProviderAvailability =
-    mockk {
-        every { isProviderAvailable() } returns models.isNotEmpty()
-        every { availableGigaModels() } returns models
-        every { defaultGigaModel() } returns models.firstOrNull()
-        every { selectedProfile() } returns null
-        every { status() } returns LocalProviderStatus(
-            available = models.isNotEmpty(),
-            message = "OK (backend E2E)",
-            selectedProfile = null,
-            availableModels = models,
-        )
-    }
-
-internal fun relaxedLocalRuntime(): LocalLlamaRuntime =
-    mockk(relaxed = true)

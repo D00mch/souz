@@ -29,8 +29,8 @@ internal class BackendPluginHttp(
     override suspend fun execute(request: PluginHttpRequest): PluginHttpResponse {
         validatePluginUrl(request.url)
         require(request.body.size <= PLUGIN_MAX_BYTES) { "HTTP request body exceeds 1 MiB" }
-        require(request.method in setOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")) { "Unsupported HTTP method" }
-        require(request.headers.keys.none { it.lowercase() in setOf("host", "connection", "content-length", "transfer-encoding", "proxy-authorization") }) {
+        require(request.method in httpMethods) { "Unsupported HTTP method" }
+        require(request.headers.keys.none { it.lowercase() in reservedHeaders }) {
             "Reserved HTTP header"
         }
         return client.prepareRequest(request.url) {
@@ -75,7 +75,7 @@ internal fun OkHttpClient.Builder.pluginHttpPolicy() {
 
 internal fun validatePluginUrl(raw: String) {
     val uri = URI(raw)
-    require(uri.scheme?.lowercase() in setOf("http", "https") && uri.host != null && uri.rawUserInfo == null) { "Expected an HTTP(S) URL without credentials" }
+    require(uri.scheme?.lowercase() in urlSchemes && uri.host != null && uri.rawUserInfo == null) { "Expected an HTTP(S) URL without credentials" }
     require(uri.port in -1..65535 && uri.port != 0) { "Invalid HTTP port" }
     val host = uri.host.removeSurrounding("[", "]")
     // OkHttp bypasses custom DNS for numeric IP literals.
@@ -92,7 +92,7 @@ internal fun isPublicPluginAddress(address: InetAddress): Boolean {
         val (a, b, c) = bytes
         return !(a == 0 || a == 10 || a == 127 || a >= 224 ||
             (a == 100 && b in 64..127) || (a == 169 && b == 254) ||
-            (a == 172 && b in 16..31) || (a == 192 && (b == 168 || (b == 0 && c in setOf(0, 2)) || (b == 88 && c == 99))) ||
+            (a == 172 && b in 16..31) || (a == 192 && (b == 168 || (b == 0 && (c == 0 || c == 2)) || (b == 88 && c == 99))) ||
             (a == 198 && (b in 18..19 || (b == 51 && c == 100))) ||
             (a == 203 && b == 0 && c == 113))
     }
@@ -107,3 +107,7 @@ internal fun pluginDns(delegate: Dns = Dns.SYSTEM): Dns = Dns { host ->
         if (addresses.isEmpty() || addresses.any { !isPublicPluginAddress(it) }) throw UnknownHostException("Non-public HTTP destination")
     }
 }
+
+private val httpMethods = setOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+private val reservedHeaders = setOf("host", "connection", "content-length", "transfer-encoding", "proxy-authorization")
+private val urlSchemes = setOf("http", "https")

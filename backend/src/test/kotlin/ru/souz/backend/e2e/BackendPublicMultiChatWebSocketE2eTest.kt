@@ -52,7 +52,7 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     assertEquals(terminals[0], readJson(socket))
                     assertEquals(terminals[2], readJson(socket))
                     eventually("live and replay event logs") {
-                        logs.count { (message, _) -> message == "WebSocket event sent" }.takeIf { it == 5 }
+                        logs.count { (message, fields) -> message == "WebSocket event sent" && "seq" in fields }.takeIf { it == 5 }
                     }
 
                     val owners = chats.zip(users).toMap()
@@ -69,9 +69,11 @@ class BackendPublicMultiChatWebSocketE2eTest {
                         assertEquals(event["threadId"].asText(), fields["threadId"])
                         assertEquals(owners[fields["chatId"]], fields["userId"])
                     }
-                    acknowledgements.filter { (_, fields) -> fields["clientRequestId"] in setOf("create", "history", "subscribe") }
+                    acknowledgements.filter { (_, fields) -> when (fields["clientRequestId"]) { "create", "history", "subscribe" -> true; else -> false } }
                         .forEach { (_, fields) -> assertFalse(fields.containsKey("threadId")) }
-                    logs.filter { (message, _) -> message == "WebSocket event sent" || message.startsWith("Public client event stored") }
+                    logs.filter { (message, fields) ->
+                        (message == "WebSocket event sent" && "seq" in fields) || message.startsWith("Public client event stored")
+                    }
                         .forEach { (_, fields) ->
                             assertEquals(threadChats[fields["threadId"]], fields["chatId"])
                             assertEquals(owners[fields["chatId"]], fields["userId"])
@@ -475,7 +477,7 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     val sourceThread = if (http) {
                         client.post(BackendHttpRoutes.chatMessages(source)) {
                             trusted(user)
-                            jsonBody("""{"content":"$prompt","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+                            jsonBody("""{"content":"$prompt","options":{"model":"${E2E_MODEL.alias}"}}""")
                         }.also { assertEquals(HttpStatusCode.OK, it.status) }.jsonBody()["execution"]["id"].asText()
                     } else {
                         val ack = request(socket, messageFrame(source, user, prompt, text = prompt))

@@ -59,7 +59,7 @@ internal fun emailContext(message: JsonNode): ObjectNode {
         if (part.path("filename").asText().isNotEmpty() || properties["content-disposition"].orEmpty().startsWith("attachment", ignoreCase = true)) return@repeat
         part.path("parts").reversed().forEach(stack::addLast)
         val mime = part.path("mimeType").asText()
-        if (mime !in setOf("text/plain", "text/html")) return@repeat
+        if (mime !in textMimeTypes) return@repeat
         val data = part.path("body").path("data").asText()
         if (data.isEmpty()) { incomplete = incomplete || part.path("body").has("attachmentId"); return@repeat }
         try {
@@ -102,15 +102,19 @@ private fun htmlText(value: String): String {
     var hidden = 0
     ParserDelegator().parse(StringReader(value), object : HTMLEditorKit.ParserCallback() {
         override fun handleStartTag(tag: HTML.Tag, attributes: MutableAttributeSet, position: Int) {
-            if (tag in setOf(HTML.Tag.HEAD, HTML.Tag.SCRIPT, HTML.Tag.STYLE)) hidden++
-            if (hidden == 0 && tag.toString() in setOf("p", "div", "li", "tr")) output.append('\n')
+            if (tag in hiddenTags) hidden++
+            if (hidden == 0 && tag.toString() in blockTags) output.append('\n')
         }
         override fun handleEndTag(tag: HTML.Tag, position: Int) {
-            if (tag in setOf(HTML.Tag.HEAD, HTML.Tag.SCRIPT, HTML.Tag.STYLE)) hidden = maxOf(0, hidden - 1)
-            if (hidden == 0 && tag.toString() in setOf("p", "div", "li", "tr")) output.append('\n')
+            if (tag in hiddenTags) hidden = maxOf(0, hidden - 1)
+            if (hidden == 0 && tag.toString() in blockTags) output.append('\n')
         }
         override fun handleSimpleTag(tag: HTML.Tag, attributes: MutableAttributeSet, position: Int) { if (hidden == 0 && tag == HTML.Tag.BR) output.append('\n') }
         override fun handleText(data: CharArray, position: Int) { if (hidden == 0) output.append(data) }
     }, true)
     return output.toString().trim()
 }
+
+private val textMimeTypes = setOf("text/plain", "text/html")
+private val hiddenTags = setOf(HTML.Tag.HEAD, HTML.Tag.SCRIPT, HTML.Tag.STYLE)
+private val blockTags = setOf("p", "div", "li", "tr")

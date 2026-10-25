@@ -57,7 +57,7 @@ class BackendExecutionToolCatalogTest {
                     includeFewShotExamples = false,
                     metrics = metrics,
                 )
-                val helper = ToolInvokeSkill(catalog, RuntimePassThroughToolsFilter, { _, _ -> null }, mockk())
+                val helper = ToolInvokeSkill({ catalog }, RuntimePassThroughToolsFilter, { _, _ -> null }, mockk())
                 val executor = AgentToolExecutor(metrics.toolTelemetry(toolNames(catalog)))
                 val settings = AgentSettings("test", LlmProvider.OPENAI, 0f, catalog.toolsByCategory)
                 for ((index, delegated) in listOf(true, false).withIndex()) {
@@ -87,7 +87,8 @@ class BackendExecutionToolCatalogTest {
     @Test
     fun `compiled tool selection preserves plugins and exposes only client web search`() {
         val selections = mapOf(
-            null to setOf("ReadFile", "ViewImage", "GenerateImage"),
+            null to setOf("ReadFile", "ViewImage", "GenerateImage", "personality.update"),
+            setOf("ViewImage", "personality.update", "ControlBrowser", "UnsafeConfig") to setOf("ViewImage", "personality.update"),
             setOf("ReadFile") to setOf("ReadFile"),
             setOf("InternetSearch", "InternetResearch", "WebPageText", "FutureWebTool") to emptySet(),
             emptySet<String>() to emptySet(),
@@ -144,11 +145,13 @@ class BackendExecutionToolCatalogTest {
                 ToolCategory.FILES to listOf("ReadFile"),
                 ToolCategory.WEB_SEARCH to listOf("WebPageText", ToolWebImageSearch.NAME, "FutureWebTool"),
                 ToolCategory.BROWSER to listOf("ControlBrowser"),
+                ToolCategory.CONFIG to listOf("UnsafeConfig"),
             ),
             executionLlmToolCatalog = TestToolCatalog(
                 ToolCategory.WEB_SEARCH to listOf("InternetSearch", "InternetResearch"),
                 ToolCategory.IMAGE to listOf("ViewImage"),
                 ToolCategory.IMAGE_GENERATION to listOf("GenerateImage"),
+                ToolCategory.CONFIG to listOf("personality.update", "UnsafeConfig"),
             ),
             enabledCompiledToolNames = enabledCompiledToolNames,
             pluginToolCatalog = TestToolCatalog(ToolCategory.BROWSER to listOf("fixture__version")),

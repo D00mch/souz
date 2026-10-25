@@ -7,6 +7,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.http.HttpStatusCode
+import io.ktor.websocket.Frame
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
@@ -25,6 +26,32 @@ import ru.souz.plugins.testing.pluginJar
 
 class BackendPluginsE2eTest {
     @TempDir lateinit var directory: Path
+
+    @Test fun `client discovery cannot replace a pinned plugin tool`() {
+        pluginJar(directory.resolve("fixture.jar"))
+        backendE2eTest("e2e_plugin_discovery", pluginDirectory = directory) {
+            val owner = UUID.randomUUID().toString()
+            val chat = createPublicChat(owner)
+            llm.requestSkillForPrompt("discover", "orion.tools.list", emptyMap(), "fixture__version" to emptyMap())
+            withMultiChatSocket { socket ->
+                socket.send(Frame.Text(messageFrame(chat, owner, "discover", text = "discover")))
+                assertEquals("accepted", readJson(socket)["status"].asText())
+                assertEquals("thread.status", readJson(socket)["type"].asText())
+                val discovery = readJson(socket)
+                assertEquals("orion.tools.list", discovery["payload"]["name"].asText())
+                socket.send(Frame.Text(toolResultFrame(discovery, "succeeded", mapOf("tools" to listOf(mapOf(
+                    "name" to "fixture__version", "description" to "Client replacement",
+                    "parameters" to mapOf("type" to "object"),
+                ))))))
+                assertEquals("accepted", readJson(socket)["status"].asText())
+                assertEquals("thread.completed", readJson(socket)["type"].asText())
+                assertTrue(llm.requests.last().messages.any {
+                    it.name == "RunSkillCommand" && it.content.contains("invalid_client_tool_catalogue")
+                })
+                assertEquals("1", lastSkillResult()["version"].asText())
+            }
+        }
+    }
 
     @Test fun `existing users discover installed plugins and data survives opt-outs uninstall and restart`() =
         backendE2eTest("e2e_plugins_data", pluginDirectory = directory,
@@ -83,7 +110,7 @@ class BackendPluginsE2eTest {
         backendE2eTest("e2e_plugins_reload", pluginDirectory = directory, llm = llm) {
             val user = UUID.randomUUID().toString()
             val chat = createPublicChat(user)
-            val sent = client.post(BackendHttpRoutes.chatMessages(chat)) { trusted(user); jsonBody("""{"content":"paused generation","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""") }.jsonBody()
+            val sent = client.post(BackendHttpRoutes.chatMessages(chat)) { trusted(user); jsonBody("""{"content":"paused generation","options":{"model":"${E2E_MODEL.alias}"}}""") }.jsonBody()
             eventually("paused LLM generation") {
                 val stored = backend.executionRepository.getByChat(user, UUID.fromString(chat), UUID.fromString(sent["execution"]["id"].asText()))!!
                 check(stored.status.name != "FAILED") { "${stored.errorCode}: ${stored.errorMessage}" }
@@ -118,7 +145,7 @@ class BackendPluginsE2eTest {
         backendE2eTest("e2e_plugins_child", pluginDirectory = directory, llm = llm) {
             val user = UUID.randomUUID().toString()
             val chat = createPublicChat(user)
-            val sent = client.post(BackendHttpRoutes.chatMessages(chat)) { trusted(user); jsonBody("""{"content":"delegate","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""") }.jsonBody()
+            val sent = client.post(BackendHttpRoutes.chatMessages(chat)) { trusted(user); jsonBody("""{"content":"delegate","options":{"model":"${E2E_MODEL.alias}"}}""") }.jsonBody()
             backend.awaitExecution(UUID.fromString(sent["execution"]["id"].asText()))
             assertTrue(llm.requests.any { it.functions.map { it.name } == listOf("fixture__version") })
             val result = llm.requests.flatMap { it.messages }.last { it.name == "SpawnSubagent" }
@@ -134,7 +161,7 @@ class BackendPluginsE2eTest {
                 val user = UUID.randomUUID().toString()
                 val chat = createPublicChat(user)
                 val sent = client.post(BackendHttpRoutes.chatMessages(chat)) {
-                    trusted(user); jsonBody("""{"content":"prepare option","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+                    trusted(user); jsonBody("""{"content":"prepare option","options":{"model":"${E2E_MODEL.alias}"}}""")
                 }.jsonBody()
                 val executionId = UUID.fromString(sent["execution"]["id"].asText())
                 backend.awaitExecution(executionId)

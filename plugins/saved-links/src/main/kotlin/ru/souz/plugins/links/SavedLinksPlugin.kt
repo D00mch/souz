@@ -74,7 +74,7 @@ private val json = JsonNodeFactory.instance
 internal fun normalizeUrl(raw: String): String {
     val uri = URI(raw.trim()).normalize()
     val scheme = uri.scheme?.lowercase()
-    require(scheme in setOf("http", "https") && uri.host != null && uri.rawUserInfo == null) { "Expected a public HTTP(S) URL" }
+    require(scheme in urlSchemes && uri.host != null && uri.rawUserInfo == null) { "Expected a public HTTP(S) URL" }
     require(uri.port in -1..65535 && uri.port != 0)
     val port = uri.port.takeUnless { it == (if (scheme == "https") 443 else 80) } ?: -1
     val authority = uri.host.lowercase() + if (port == -1) "" else ":$port"
@@ -93,3 +93,5 @@ internal fun pageTitle(html: String): String {
     }, true)
     return title.toString().trim()
 }
+
+private val urlSchemes = setOf("http", "https")

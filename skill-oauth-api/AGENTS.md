@@ -6,7 +6,7 @@ Before changing this module, read the relevant pain-point topics below.
 
 - `:skill-oauth-api` owns provider-neutral Skill OAuth contracts.
 - Keep host, HTTP transport, provider implementation, and persistence dependencies outside this module.
-- Implementations depend on this API; the API must not depend on `:skill-oauth-impl`, `:backend`, desktop, or UI modules.
+- Implementations depend on this API; the API must not depend on `:skill-oauth-impl` or `:backend`.
 
 ## Pain points
 

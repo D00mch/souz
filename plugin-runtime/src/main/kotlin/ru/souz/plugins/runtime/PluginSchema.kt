@@ -16,7 +16,7 @@ private fun validateSchema(schema: JsonNode, root: Boolean, depth: Int) {
         else setOf("type", "description", "enum", "items", "properties")
     require(schema.fieldNames().asSequence().all { it in allowed }) { "Unsupported tool schema keyword" }
     val type = schema.path("type").asText()
-    require(type in setOf("object", "array", "string", "number", "integer", "boolean")) { "Unsupported schema type" }
+    require(type in schemaTypes) { "Unsupported schema type" }
     require(!root || type == "object") { "Tool arguments must be an object" }
     schema.get("description")?.let { require(it.isTextual) }
     schema.get("properties")?.let { properties ->
@@ -30,3 +30,5 @@ private fun validateSchema(schema: JsonNode, root: Boolean, depth: Int) {
     schema.get("items")?.let { require(type == "array"); validateSchema(it, false, depth + 1) }
     require(type != "array" || schema.has("items")) { "Array schema requires items" }
 }
+
+private val schemaTypes = setOf("object", "array", "string", "number", "integer", "boolean")

@@ -147,10 +147,10 @@ internal fun SQLException.isConstraintViolation(constraintName: String): Boolean
     sqlState == "23505" && ((this as? PSQLException)?.serverErrorMessage?.constraint == constraintName ||
         message.orEmpty().contains(constraintName))
 
+@JsonIgnoreProperties(value = ["contextSize"])
 internal data class StoredSettingsPayload(
     val reasoningEffort: String? = null,
     val defaultModel: String? = null,
-    val contextSize: Int? = null,
     val temperature: Float? = null,
     val locale: String? = null,
     val timeZone: String? = null,
@@ -390,11 +390,12 @@ internal fun ResultSet.toUserSettings(): UserSettings {
         userId = getString("user_id"),
         defaultModel = payload.defaultModel.toModelOrNull(),
         reasoningEffort = payload.reasoningEffort,
-        contextSize = payload.contextSize,
         temperature = payload.temperature,
         locale = payload.locale.toLocaleOrNull(),
         timeZone = payload.timeZone.toZoneIdOrNull(),
         systemPrompt = payload.systemPrompt,
+        personalityPrompt = getString("personality_prompt"),
+        personalityRevision = getLong("personality_revision"),
         enabledTools = payload.enabledTools,
         disabledPlugins = payload.disabledPlugins,
         showToolEvents = payload.showToolEvents,
@@ -429,7 +430,6 @@ internal fun UserSettings.toSettingsJson(): String =
         StoredSettingsPayload(
             reasoningEffort = reasoningEffort,
             defaultModel = defaultModel,
-            contextSize = contextSize,
             temperature = temperature,
             locale = locale?.toLanguageTag(),
             timeZone = timeZone?.id,

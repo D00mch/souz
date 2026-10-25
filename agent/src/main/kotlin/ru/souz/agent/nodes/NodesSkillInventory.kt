@@ -27,6 +27,7 @@ internal class NodesSkillInventory(
     private val skillBundleProvider: SkillBundleProvider,
     private val llmApi: LLMChatAPI? = null,
     private val skillClassifier: SkillClassifier? = null,
+    private val fallbackSkillClassifier: SkillClassifier? = null,
 ) {
     private val logger = LoggerFactory.getLogger(NodesSkillInventory::class.java)
 
@@ -41,14 +42,18 @@ internal class NodesSkillInventory(
             skillBundleProvider.listSkillInventoryIds(ctx.toolInvocationMeta.userId)
                 .filterNot { it.value in compiledIds }.distinct().sortedBy { it.value }
         }
-        val descriptions = if (classifySkills && ids.isNotEmpty()) selectedDescriptions(ctx, ids) else emptyMap()
+        val descriptions = if (classifySkills && ids.isNotEmpty() && !isThanksOrGreeting(ctx.input)) {
+            selectedDescriptions(ctx, ids)
+        } else emptyMap()
         val message = "${ctx.systemPrompt}\n\n${inventoryBlock(tools, ids, descriptions)}".toSystemPromptMessage()
+        val replaced = if (ctx.history.firstOrNull()?.role == LLMMessageRole.system) 1 else 0
         ctx.map(
             settings = ctx.settings.copy(
                 tools = ctx.settings.tools.copy(byName = ctx.settings.tools.byName + skillTools.associateBy { it.fn.name }),
             ),
             activeTools = (ctx.activeTools + skillTools.map { it.fn }).distinctBy { it.name },
-            history = listOf(message) + ctx.history.drop(if (ctx.history.firstOrNull()?.role == LLMMessageRole.system) 1 else 0),
+            history = listOf(message) + ctx.history.drop(replaced),
+            activeExchangeStartIndex = ctx.activeExchangeStartIndex + 1 - replaced,
         ) { it }
     }
 
@@ -60,7 +65,7 @@ internal class NodesSkillInventory(
                 .filterValues { it.isNotBlank() }
             if (descriptions.isEmpty()) return@discoveryOr emptyMap()
             val history = ctx.history.filter {
-                it.role in listOf(LLMMessageRole.user, LLMMessageRole.assistant) &&
+                (it.role == LLMMessageRole.user || it.role == LLMMessageRole.assistant) &&
                     !it.isInjectedContextMessage() && !it.isInjectedMemoryContextMessage()
             }
             val last = history.lastOrNull()
@@ -70,7 +75,8 @@ internal class NodesSkillInventory(
             val request = LLMRequest.Chat(
                 model = ctx.settings.model,
                 provider = ctx.settings.provider,
-                maxTokens = ctx.settings.contextSize,
+                maxTokens = CLASSIFICATION_MAX_OUTPUT_TOKENS,
+                contextSize = ctx.settings.contextSize,
                 functions = emptyList(),
                 messages = listOf(LLMRequest.Message(LLMMessageRole.system, """
                     Select Skills useful for the latest user request, considering every step.
@@ -82,9 +88,9 @@ internal class NodesSkillInventory(
                     LLMRequest.Message(it.role, it.content.trimMiddle(4000))
                 } + LLMRequest.Message(LLMMessageRole.user, ctx.input),
             )
-            val selected = skillClassifier?.let { classifier ->
-                discoveryOr(null) { classifier.selectSkills(request, descriptions) }
-            } ?: selectWithLlm(request)
+            val selected = skillClassifier?.let { discoveryOr(null) { it.selectSkills(request, descriptions) } }
+                ?: fallbackSkillClassifier?.let { discoveryOr(null) { it.selectSkills(request, descriptions) } }
+                ?: selectWithLlm(request)
             descriptions.filterKeys { it in selected }.mapValues { (_, text) -> text.take(240) }
         }
 
@@ -144,3 +150,21 @@ private fun renderDiscoveryData(value: String): String = buildString {
         }
     }
 }
+
+private val THANKS_OR_GREETING_PHRASES = setOf(
+    "спасибо", "спасибо большое", "большое спасибо", "спасибо огромное", "огромное спасибо",
+    "спасибо тебе", "спасибо вам", "спасибо тебе большое", "спасибо вам большое",
+    "благодарю", "спс", "пасиб", "пасибо", "пасиба", "мерси",
+    "привет", "приветик", "здравствуй", "здравствуйте", "доброе утро", "добрый день", "добрый вечер",
+    "спокойной ночи", "пока", "до свидания", "на сегодня все", "спасибо на сегодня все", "понятно", "ясно",
+    "thanks", "thank you", "thx", "thanks a lot", "thank you so much", "hi", "hello", "hey", "bye", "good night",
+)
+
+/**
+ * A whole message that is one of the known thanks, greeting or goodbye phrases needs no tools or Skills.
+ * Fragments such as "тебе" or "a lot" and confirmations such as "да" or "ок" stay out: they may answer
+ * the assistant's question or approve an action it offered.
+ */
+internal fun isThanksOrGreeting(message: String): Boolean =
+    message.lowercase().replace('ё', 'е').replace(Regex("""[\s\p{P}\p{S}]+"""), " ").trim() in
+        THANKS_OR_GREETING_PHRASES

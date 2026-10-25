@@ -13,20 +13,14 @@ import ru.souz.db.REGION_RU
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SUBAGENT_MODELS_JSON
 import ru.souz.db.parseSubagentModels
-import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.LocalModelAvailability
-import ru.souz.llms.VoiceRecognitionModel
-import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.findLLMModel
-import ru.souz.llms.local.LocalEmbeddingProfiles
 
 class BackendSettingsProvider(
     private val preferenceStore: BackendServerPreferenceStore,
-    private val localProviderAvailability: LocalModelAvailability,
     private val source: BackendConfigSource = SystemBackendConfigSource,
     namedModels: NamedLlmConfig = source.loadNamedModels(),
 ) : SettingsProvider {
@@ -38,7 +32,7 @@ class BackendSettingsProvider(
     } + namedModels.subagentModels.associateWith { LlmProvider.OPENAI }
 
     private val promptOverrides = mutableMapOf<Pair<AgentId, LLMModel>, String>()
-    private val llmBuildProfile by lazy { LlmBuildProfile(this, localProviderAvailability) }
+    private val llmBuildProfile by lazy { LlmBuildProfile(this) }
 
     override var gigaChatKey: String? = configured("GIGA_KEY")
     override var qwenChatKey: String? = configured("QWEN_KEY")
@@ -51,58 +45,33 @@ class BackendSettingsProvider(
     override val openaiSummarizationBaseUrl: String? = namedModels.summarization?.baseUrl ?: configured("OPENAI_SUMMARIZATION_BASE_URL")
     override val openaiSummarizationModel: String? = namedModels.summarization?.modelId ?: configured("OPENAI_SUMMARIZATION_MODEL")
     override val openaiSummarizationParameters: String? = configured("OPENAI_SUMMARIZATION_PARAMETERS")
-    override val summarizationContextSize: Int? = namedModels.summarizationContextSize ?: openaiSummarizationModel
-        ?.let { configured("OPENAI_SUMMARIZATION_CONTEXT_SIZE")?.toIntOrNull() }
-        ?.takeIf { it > 0 }
-    override var saluteSpeechKey: String? = configured("VOICE_KEY")
-    override var supportEmail: String? = configured(SUPPORT_EMAIL)
-    override var defaultCalendar: String? = configured(DEFAULT_CALENDAR)
     override var regionProfile: String = normalizeRegion(configured(APP_LANGUAGE))
     override var activeAgentId: AgentId = AgentId.fromStorageValue(configured(ACTIVE_AGENT_ID))
-    override var ambientAnalysisModel: LLMModel = configured(AMBIENT_ANALYSIS_MODEL)
-        ?.let(::findLLMModel)
-        ?.let(llmBuildProfile::normalizeAmbientAnalysisModel)
-        ?: llmBuildProfile.defaultAmbientAnalysisModel()
     override var useFewShotExamples: Boolean = configured(USE_FEW_SHOTS)?.toBooleanStrictOrNull() ?: false
     override var useStreaming: Boolean = configured(USE_STREAMING)?.toBooleanStrictOrNull()
         ?: configured(USE_GRPC_LEGACY)?.toBooleanStrictOrNull()
         ?: false
-    override var notificationSoundEnabled: Boolean =
-        configured(NOTIFICATION_SOUND_ENABLED)?.toBooleanStrictOrNull() ?: true
-    override var voiceInputReviewEnabled: Boolean =
-        configured(VOICE_INPUT_REVIEW_ENABLED)?.toBooleanStrictOrNull() ?: false
-    override var safeModeEnabled: Boolean = configured(SAFE_MODE_ENABLED)?.toBooleanStrictOrNull() ?: true
-    override var needsOnboarding: Boolean = configured(NEEDS_ONBOARDING)?.toBooleanStrictOrNull() ?: false
-    override var onboardingCompleted: Boolean = configured(ONBOARDING_COMPLETED)?.toBooleanStrictOrNull() ?: false
     override var requestTimeoutMillis: Long =
         configured(REQUEST_TIMEOUT_MILLIS)?.toLongOrNull() ?: DEFAULT_REQUEST_TIMEOUT_MILLIS
     override var contextSize: Int =
-        configured(CONTEXT_SIZE)?.toIntOrNull()?.takeIf { it > 0 } ?: DEFAULT_MAX_TOKENS
-    override var initialWindowWidthDp: Int = configured(INITIAL_WINDOW_WIDTH_DP)?.toIntOrNull() ?: 580
-    override var initialWindowHeightDp: Int = configured(INITIAL_WINDOW_HEIGHT_DP)?.toIntOrNull() ?: 780
+        source.value(CONTEXT_SIZE, CONTEXT_SIZE)?.let { value ->
+            requireNotNull(value.trim().toIntOrNull()?.takeIf { it >= 24_000 }) {
+                "CONTEXT_SIZE must be an integer of at least 24000 tokens."
+            }
+        } ?: 125_000
     override var temperature: Float = configured(TEMPERATURE)?.toFloatOrNull() ?: 0.7f
     override var forbiddenFolders: List<String> = configured(FORBIDDEN_FOLDERS)
         ?.lines()
         ?.map(String::trim)
         ?.filter(String::isNotBlank)
         ?: DEFAULT_FORBIDDEN_FOLDERS
-    private var configuredEmbeddingsModel: EmbeddingsModel = configured(EMBEDDINGS_MODEL)
+    override var embeddingsModel: EmbeddingsModel = configured(EMBEDDINGS_MODEL)
         ?.let { value ->
             EmbeddingsModel.entries.firstOrNull {
                 it.name.equals(value, ignoreCase = true) || it.alias.equals(value, ignoreCase = true)
             }
         }
         ?: EmbeddingsModel.GigaEmbeddings
-    override var voiceRecognitionModel: VoiceRecognitionModel = configured(VOICE_RECOGNITION_MODEL)
-        ?.let { value ->
-            VoiceRecognitionModel.entries.firstOrNull {
-                it.name.equals(value, ignoreCase = true) || it.alias.equals(value, ignoreCase = true)
-            }
-        }
-        ?: VoiceRecognitionModel.SaluteSpeech
-    override var mcpServersJson: String? = configured(MCP_SERVERS_JSON)
-    override var mcpServersFile: String? = configured(MCP_SERVERS_FILE)
-
     override var codexAccessToken: String?
         get() = storedOrConfigured(CODEX_ACCESS_TOKEN)
         set(value) = putOrTombstone(CODEX_ACCESS_TOKEN, value)
@@ -127,12 +96,6 @@ class BackendSettingsProvider(
             field = llmBuildProfile.normalizeConfiguredModel(value, openaiModel) { defaultLlmModel() }
         }
 
-    override var embeddingsModel: EmbeddingsModel
-        get() = enforcedEmbeddingsModel() ?: configuredEmbeddingsModel
-        set(value) {
-            configuredEmbeddingsModel = value
-        }
-
     override fun getSystemPromptForAgentModel(agentId: AgentId, model: LLMModel): String? {
         val key = agentId to model
         return promptOverrides[key] ?: configured("${SYSTEM_PROMPT}_${agentId.storageValue}_${model.name}")
@@ -153,15 +116,7 @@ class BackendSettingsProvider(
         LlmProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
         LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
         LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
-        LlmProvider.LOCAL -> true
         LlmProvider.CODEX -> !codexAccessToken.isNullOrBlank()
-    }
-
-    override fun hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
-        VoiceRecognitionProvider.SALUTE_SPEECH -> !saluteSpeechKey.isNullOrBlank()
-        VoiceRecognitionProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
-        VoiceRecognitionProvider.OPENAI -> !openaiKey.isNullOrBlank()
-        VoiceRecognitionProvider.LOCAL_MACOS -> true
     }
 
     private fun configured(envKey: String, propertyKey: String = envKey): String? =
@@ -199,12 +154,6 @@ class BackendSettingsProvider(
 
     private fun defaultLlmModel(): LLMModel = llmBuildProfile.defaultConfiguredModel(::hasKey)
 
-    private fun enforcedEmbeddingsModel(): EmbeddingsModel? = when {
-        gigaModel.provider == LlmProvider.LOCAL && localProviderAvailability.isProviderAvailable() ->
-            LocalEmbeddingProfiles.default().embeddingsModel
-        else -> null
-    }
-
     private companion object {
         const val OPENAI_BASE_URL = "OPENAI_BASE_URL"
         const val OPENAI_MODEL = "OPENAI_MODEL"
@@ -216,28 +165,15 @@ class BackendSettingsProvider(
         const val APP_LANGUAGE = "APP_LANGUAGE"
         const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
         const val USE_STREAMING = "USE_STREAMING"
-        const val NOTIFICATION_SOUND_ENABLED = "NOTIFICATION_SOUND_ENABLED"
-        const val VOICE_INPUT_REVIEW_ENABLED = "VOICE_INPUT_REVIEW_ENABLED"
-        const val SAFE_MODE_ENABLED = "SAFE_MODE_ENABLED"
         const val USE_GRPC_LEGACY = "USE_GRPC"
-        const val SUPPORT_EMAIL = "SUPPORT_EMAIL"
         const val SYSTEM_PROMPT = "SYSTEM_PROMPT"
         const val ACTIVE_AGENT_ID = "ACTIVE_AGENT_ID"
-        const val DEFAULT_CALENDAR = "DEFAULT_CALENDAR"
         const val GIGA_MODEL = "GIGA_MODEL"
-        const val AMBIENT_ANALYSIS_MODEL = "AMBIENT_ANALYSIS_MODEL"
-        const val NEEDS_ONBOARDING = "NEEDS_ONBOARDING"
-        const val ONBOARDING_COMPLETED = "ONBOARDING_COMPLETED"
         const val REQUEST_TIMEOUT_MILLIS = "REQUEST_TIMEOUT_MILLIS"
         const val CONTEXT_SIZE = "CONTEXT_SIZE"
-        const val INITIAL_WINDOW_WIDTH_DP = "INITIAL_WINDOW_WIDTH_DP"
-        const val INITIAL_WINDOW_HEIGHT_DP = "INITIAL_WINDOW_HEIGHT_DP"
         const val TEMPERATURE = "TEMPERATURE"
         const val FORBIDDEN_FOLDERS = "FORBIDDEN_FOLDERS"
         const val EMBEDDINGS_MODEL = "EMBEDDINGS_MODEL"
-        const val VOICE_RECOGNITION_MODEL = "VOICE_RECOGNITION_MODEL"
-        const val MCP_SERVERS_JSON = "MCP_SERVERS_JSON"
-        const val MCP_SERVERS_FILE = "MCP_SERVERS_FILE"
         val CODEX_CREDENTIAL_KEYS = listOf(
             CODEX_ACCESS_TOKEN,
             CODEX_REFRESH_TOKEN,

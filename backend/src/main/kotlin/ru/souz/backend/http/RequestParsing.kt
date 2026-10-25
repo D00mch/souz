@@ -22,8 +22,6 @@ internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrBadReques
 internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(namedModels: Set<String> = emptySet()): UserSettingsOverrides =
     UserSettingsOverrides(
         defaultModel = defaultModel?.let { parseModel(it, fieldName = "defaultModel", namedModels = namedModels) },
-        contextSize = contextSize?.takeIf { it > 0 }
-            ?: contextSize?.let { throw invalidV1Request("contextSize must be positive.") },
         temperature = temperature?.takeIf { it.isFinite() }
             ?: temperature?.let { throw invalidV1Request("temperature must be finite.") },
         locale = locale?.let { parseLocale(it, fieldName = "locale") },
@@ -61,8 +59,6 @@ internal fun BackendV1OnboardingCompleteRequest.toUserSettingsOverrides(namedMod
 internal fun BackendV1MessageOptionsRequest?.toUserSettingsOverrides(namedModels: Set<String> = emptySet()): UserSettingsOverrides =
     UserSettingsOverrides(
         defaultModel = this?.model?.let { parseModel(it, fieldName = "options.model", namedModels = namedModels) },
-        contextSize = this?.contextSize?.takeIf { it > 0 }
-            ?: this?.contextSize?.let { throw invalidV1Request("options.contextSize must be positive.") },
         temperature = this?.temperature?.takeIf { it.isFinite() }
             ?: this?.temperature?.let { throw invalidV1Request("options.temperature must be finite.") },
         locale = this?.locale?.let { parseLocale(it, fieldName = "options.locale") },

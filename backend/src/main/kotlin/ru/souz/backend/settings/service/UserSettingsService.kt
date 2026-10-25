@@ -36,12 +36,12 @@ class UserSettingsService(
         userSettingsRepository.save(
             existing.copy(
                 defaultModel = overrides.defaultModel ?: existing.defaultModel,
-                contextSize = overrides.contextSize ?: existing.contextSize,
                 temperature = overrides.temperature ?: existing.temperature,
                 locale = overrides.locale ?: existing.locale,
                 timeZone = overrides.timeZone ?: existing.timeZone,
                 systemPrompt = overrides.systemPrompt ?: existing.systemPrompt,
-                enabledTools = overrides.enabledTools ?: existing.enabledTools,
+                enabledTools = if (overrides.enabledTools == null) existing.enabledTools
+                    else overrides.enabledTools.takeUnless { it.containsAll(effectiveSettingsResolver.advertisedToolNames) },
                 disabledPlugins = overrides.disabledPlugins ?: existing.disabledPlugins,
                 showToolEvents = overrides.showToolEvents ?: existing.showToolEvents,
                 streamingMessages = overrides.streamingMessages ?: existing.streamingMessages,

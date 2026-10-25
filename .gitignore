@@ -6,7 +6,6 @@ build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
-sharedUI/kls_database.db
 local.properties
 .repowise/
 node_modules/
@@ -52,12 +51,5 @@ bin/
 ### Mac OS ###
 .DS_Store
 
-### Local release output ###
-/dest/
-/desk/
-
-### Local native/vendor artifacts ###
-/third_party/llama.cpp/
-/native/llama-bridge/build-*/
 hs_err_pid*.log
 .claude/

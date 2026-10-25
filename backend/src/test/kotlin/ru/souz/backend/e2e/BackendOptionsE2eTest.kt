@@ -115,7 +115,7 @@ class BackendOptionsE2eTest {
                 }.jsonBody()["items"]
                 assertTrue(events.any { it["type"].asText() == "option.answered" })
                 assertTrue(events.filter {
-                    it["type"].asText() in setOf("option.requested", "option.answered", "execution.finished")
+                    when (it["type"].asText()) { "option.requested", "option.answered", "execution.finished" -> true; else -> false }
                 }.all {
                     it["executionId"].asText() == executionId
                 })

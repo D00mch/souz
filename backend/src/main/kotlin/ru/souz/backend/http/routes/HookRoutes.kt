@@ -48,7 +48,7 @@ internal fun Route.hookRoutes(service: HookService) {
             if (isBearer && keys != null && keys.size != 1) throw hookError(400, "invalid_idempotency_key")
             service.accept(definition, HookRequest(
                 call.request.local.method.value, call.request.path(),
-                headers.filterKeys { it !in setOf("host", "x-user-id", "x-souz-proxy-auth") }, body,
+                headers.filterKeys { it != "host" && it != "x-user-id" && it != "x-souz-proxy-auth" }, body,
             ), keys?.singleOrNull())
         }
         call.respond(if (accepted.duplicate) HttpStatusCode.OK else HttpStatusCode.Accepted, accepted)

@@ -12,6 +12,10 @@ class ModelResolutionTest {
             resolveChatModel("  gigachat-2-max  "),
         )
         assertEquals(
+            ModelResolution.Resolved(LLMModel.CodexGpt61Sol),
+            resolveChatModel("  GPT-6.1-SOL  ", supportedProviders = setOf(LlmProvider.CODEX)),
+        )
+        assertEquals(
             ModelResolution.Unknown("not-a-model"),
             resolveChatModel(" not-a-model "),
         )

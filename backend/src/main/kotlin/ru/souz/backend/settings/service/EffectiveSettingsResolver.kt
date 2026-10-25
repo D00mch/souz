@@ -20,11 +20,9 @@ import ru.souz.backend.http.invalidV1Request
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.LocalModelAvailability
 
 data class UserSettingsOverrides(
     val defaultModel: String? = null,
-    val contextSize: Int? = null,
     val temperature: Float? = null,
     val locale: Locale? = null,
     val timeZone: ZoneId? = null,
@@ -47,10 +45,9 @@ class EffectiveSettingsResolver(
     private val userProviderKeyRepository: UserProviderKeyRepository,
     private val featureFlags: BackendFeatureFlags,
     toolCatalog: AgentToolCatalog,
-    private val localModelAvailability: LocalModelAvailability,
     val namedModelNames: Set<String> = emptySet(),
 ) {
-    private val advertisedToolNames: Set<String> =
+    val advertisedToolNames: Set<String> =
         BackendToolCapabilityPolicy.advertisedToolNames(toolCatalog)
 
     internal suspend fun defaultModel(
@@ -105,11 +102,12 @@ class EffectiveSettingsResolver(
             userId = userId,
             reasoningEffort = persisted.reasoningEffort,
             defaultModel = defaultModel,
-            contextSize = requestOverrides?.contextSize ?: persisted.contextSize ?: baseSettingsProvider.contextSize,
             temperature = requestOverrides?.temperature ?: persisted.temperature ?: baseSettingsProvider.temperature,
             locale = locale,
             timeZone = timeZone,
             systemPrompt = requestOverrides?.systemPrompt ?: persisted.systemPrompt,
+            personalityPrompt = persisted.personalityPrompt,
+            personalityRevision = persisted.personalityRevision,
             enabledTools = enabledTools,
             disabledPlugins = requestOverrides?.disabledPlugins ?: persisted.disabledPlugins,
             showToolEvents = featureFlags.toolEvents && showToolEventsPreference,
@@ -132,12 +130,10 @@ class EffectiveSettingsResolver(
         return UserSettings(
             userId = userId,
             defaultModel = defaultModel(userManagedProviders),
-            contextSize = baseSettingsProvider.contextSize,
             temperature = baseSettingsProvider.temperature,
             locale = locale,
             timeZone = ZoneId.systemDefault(),
             systemPrompt = null,
-            enabledTools = normalizeEnabledTools(null),
             showToolEvents = true,
             streamingMessages = baseSettingsProvider.useStreaming,
             interfaceLanguage = defaultInterfaceLanguage(),
@@ -166,26 +162,26 @@ class EffectiveSettingsResolver(
             ?: fallbackModel(locale, userManagedProviders)
     }
 
+    /** Models the user can access, in the default-model order; executions fall back along this list. */
+    suspend fun fallbackModels(userId: String, locale: Locale): List<String> {
+        val providers = loadUserManagedProviders(userId)
+        // Upstream IDs: inside an execution on a named model, the custom selector would resolve to that named model.
+        return defaultModelOrder(locale).filter { isSelectableModel(it) { providers } }
+            .map { baseSettingsProvider.executionModelId(it.withConfiguredOpenAiCompatibleChatModel()) }
+            .distinct() + listOfNotNull(namedModelNames.firstOrNull())
+    }
+
     private suspend fun fallbackModel(
         locale: Locale,
         userManagedProviders: suspend () -> Set<LlmProvider>,
-    ): String {
-        if (isSelectableModel(LLMModel.OpenAICompatibleCustom, userManagedProviders)) {
-            return LLMModel.OpenAICompatibleCustom.alias
-        }
+    ): String = defaultModelOrder(locale).firstOrNull { isSelectableModel(it, userManagedProviders) }?.alias
+        ?: namedModelNames.firstOrNull()
+        ?: LlmBuildProfile.defaultsForLanguage(locale.languageOrRegion()).values.first { it in BackendLlmSupport.chatModels }.alias
+
+    private fun defaultModelOrder(locale: Locale): List<LLMModel> {
         val defaults = LlmBuildProfile.defaultsForLanguage(locale.languageOrRegion())
-        val localDefault = localModelAvailability.defaultGigaModel()
-        return LlmBuildProfile.providerPrioritiesForLanguage(locale.languageOrRegion())
-            .firstNotNullOfOrNull { provider ->
-                when (provider) {
-                    LlmProvider.LOCAL -> localDefault
-                    else -> defaults[provider]?.takeIf { isSelectableModel(it, userManagedProviders) }
-                }
-            }
-            ?.alias
-            ?: localDefault?.alias
-            ?: namedModelNames.firstOrNull()
-            ?: defaults.values.first { it in BackendLlmSupport.chatModels }.alias
+        return listOf(LLMModel.OpenAICompatibleCustom) + LlmBuildProfile.providerPrioritiesForLanguage(locale.languageOrRegion())
+            .mapNotNull(defaults::get)
     }
 
     private suspend fun loadUserManagedProviders(userId: String): Set<LlmProvider> =
@@ -201,7 +197,6 @@ class EffectiveSettingsResolver(
         when {
             model !in BackendLlmSupport.chatModels -> false
             model == LLMModel.OpenAICompatibleCustom && !hasConfiguredOpenAiCompatibleChatModel() -> false
-            model.provider == LlmProvider.LOCAL -> model in localModelAvailability.availableGigaModels()
             model.provider == LlmProvider.CODEX -> baseSettingsProvider.hasCompleteCodexOAuthCredentials()
             else -> baseSettingsProvider.hasKey(model.provider) || model.provider in userManagedProviders()
         }

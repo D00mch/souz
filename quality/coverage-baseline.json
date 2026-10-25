@@ -1,24 +1,20 @@
 {
   "schemaVersion": 1,
-  "referenceCommitSha": "c4b718c5ecdfafd04c18b9cd57565b0994191335",
-  "aggregate": 49.434,
+  "referenceCommitSha": "113d4473e8c75477d7a21dcadd3174dfe353955e",
+  "aggregate": 86.3289,
   "modules": {
-    ":agent": 69.2616,
-    ":ambientAgent": 81.7185,
-    ":backend": 87.0506,
-    ":desktopApp": 37.6907,
+    ":agent": 88.1276,
+    ":backend": 91.8153,
     ":graph-engine": 73.75,
     ":job-api": 0,
-    ":job-impl": 99.1803,
-    ":llms": 37.8022,
-    ":native": 77.2606,
+    ":job-impl": 99.3865,
+    ":llms": 41.6058,
+    ":sharedLogic": 74.1287,
     ":plugin-api": 0,
     ":plugin-runtime": 94.6721,
     ":plugins:gmail": 93.2432,
     ":plugins:saved-links": 87.2727,
-    ":sharedLogic": 53.4602,
-    ":sharedUI": 15.3267,
     ":skill-oauth-api": 0,
-    ":skill-oauth-impl": 84.5011
+    ":skill-oauth-impl": 94.6067
   }
 }

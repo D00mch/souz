@@ -111,6 +111,8 @@ object LLMResponse {
     enum class FinishReason { stop, length, function_call, blacklist, error }
 }
 
+fun LLMResponse.Chat.Ok.isToolUse(): Boolean = choices.any { it.message.functionCall != null }
+
 enum class EmbeddingInputKind {
     QUERY,
     DOCUMENT,
@@ -129,15 +131,7 @@ enum class LlmProvider {
     AI_TUNNEL,
     ANTHROPIC,
     OPENAI,
-    LOCAL,
     CODEX,
-}
-
-enum class VoiceRecognitionProvider {
-    SALUTE_SPEECH,
-    AI_TUNNEL,
-    OPENAI,
-    LOCAL_MACOS,
 }
 
 enum class LLMModel(
@@ -170,10 +164,8 @@ enum class LLMModel(
     AnthropicOpus46("Claude Opus 4.6", "claude-opus-4-6", LlmProvider.ANTHROPIC),
     AnthropicSonnet45("Claude Sonnet 4.5", "claude-sonnet-4-5-20250929", LlmProvider.ANTHROPIC),
     AnthropicHaiku45("Claude Haiku 4.5", "claude-haiku-4-5-20251001", LlmProvider.ANTHROPIC),
-    LocalQwen3_4B_Instruct_2507("Local Qwen3 4B Instruct", "local-qwen3-4b-instruct-2507", LlmProvider.LOCAL),
-    LocalGemma4_E2B_It("Local Gemma 4 E2B Instruct", "local-gemma-4-e2b-it", LlmProvider.LOCAL),
-    LocalGemma4_E4B_It("Local Gemma 4 E4B Instruct", "local-gemma-4-e4b-it", LlmProvider.LOCAL),
     CodexGpt6Astra("GPT-6 Astra (Codex)", "gpt-6-astra", LlmProvider.CODEX),
+    CodexGpt61Sol("GPT-6.1 Sol (Codex)", "gpt-6.1-sol", LlmProvider.CODEX),
     CodexGpt6Sol("GPT-6 Sol (Codex)", "gpt-6-sol", LlmProvider.CODEX),
     CodexGpt6Luna("GPT-6 Luna (Codex)", "gpt-6-luna", LlmProvider.CODEX),
     CodexGpt56Sol("GPT-5.6 Sol (Codex)", "gpt-5.6-sol", LlmProvider.CODEX),
@@ -205,30 +197,9 @@ enum class EmbeddingsModel(
     AiTunnelEmbeddingAda("AI-Tunnel: text-embedding-ada-002", "text-embedding-ada-002", LlmProvider.AI_TUNNEL),
     AiTunnelQwen3Embedding("AI-Tunnel: qwen3-embedding-8b", "qwen3-embedding-8b", LlmProvider.AI_TUNNEL),
     OpenAITextEmbedding3Small("OpenAI: text-embedding-3-small", "text-embedding-3-small", LlmProvider.OPENAI),
-    LocalEmbeddingGemma300M("Local EmbeddingGemma 300M", "local-embeddinggemma-300m", LlmProvider.LOCAL),
-}
-
-enum class VoiceRecognitionModel(
-    val displayName: String,
-    val alias: String,
-    val provider: VoiceRecognitionProvider,
-) {
-    SaluteSpeech("Salute Speech", "salute-speech", VoiceRecognitionProvider.SALUTE_SPEECH),
-    AiTunnelGpt4oTranscribe("AI-Tunnel: gpt-4o-transcribe", "gpt-4o-transcribe", VoiceRecognitionProvider.AI_TUNNEL),
-    AiTunnelGpt4oMiniTranscribe("AI-Tunnel: gpt-4o-mini-transcribe", "gpt-4o-mini-transcribe", VoiceRecognitionProvider.AI_TUNNEL),
-    OpenAIGpt4oTranscribe("OpenAI: gpt-4o-transcribe", "gpt-4o-transcribe", VoiceRecognitionProvider.OPENAI),
-    OpenAIGpt4oMiniTranscribe("OpenAI: gpt-4o-mini-transcribe", "gpt-4o-mini-transcribe", VoiceRecognitionProvider.OPENAI),
-    OpenAIGptTranscribe("OpenAI: gpt-transcribe", "gpt-transcribe", VoiceRecognitionProvider.OPENAI),
-    OpenAIWhisper1("OpenAI: whisper-1", "whisper-1", VoiceRecognitionProvider.OPENAI),
-    LocalMacOsStt("Local MacOS STT", "local-macos-stt", VoiceRecognitionProvider.LOCAL_MACOS),
 }
 
 object LLMRequest {
-    enum class LocalOutputFormat {
-        ENVELOPE,
-        RAW,
-    }
-
     data class Chat(
         val model: String = LLMModel.Max.alias,
         val messages: List<Message>,
@@ -239,8 +210,13 @@ object LLMRequest {
         @field:JsonInclude(JsonInclude.Include.NON_NULL)
         @field:JsonProperty("top_p") val topP: Float? = null,
         val stream: Boolean = false,
+        /** Maximum generated output tokens, independent of the context window. */
         @field:JsonProperty("max_tokens")
         val maxTokens: Int = DEFAULT_MAX_TOKENS,
+        /** Context budget for agent input validation and summarization; never serialized to provider APIs. */
+        @get:JsonIgnore
+        @field:JsonIgnore
+        val contextSize: Int? = null,
         @field:JsonInclude(JsonInclude.Include.NON_NULL)
         @field:JsonProperty("repetition_penalty") val repetitionPenalty: Float? = null,
         @field:JsonProperty("update_interval") val updateInterval: Int? = 0,
@@ -251,9 +227,6 @@ object LLMRequest {
         @get:JsonIgnore
         @field:JsonIgnore
         val isSummarization: Boolean = false,
-        @get:JsonIgnore
-        @field:JsonIgnore
-        val localOutputFormat: LocalOutputFormat = LocalOutputFormat.ENVELOPE,
         /** Host-resolved route: when present, [model] is already the exact provider request ID. */
         @get:JsonIgnore
         @field:JsonIgnore

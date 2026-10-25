@@ -55,8 +55,8 @@ class AgentEventBusTest {
     }
 
     @Test
-    fun `replay drops stale progress but preserves current progress and client commands`() = runTest {
-        for (initialReplay in listOf(false, true)) for (tool in listOf(false, true)) {
+    fun `replay completes writes before signaling readiness and drops stale progress`() = runTest {
+        for (phase in listOf("initial", "catch-up", "live")) for (tool in listOf(false, true)) {
             val progress = AgentLiveEvent(UUID.randomUUID(), "user", UUID.randomUUID(), UUID.randomUUID(),
                 AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload("Checking"), Instant.EPOCH, discardAfterSeq = 5)
             val durable = AgentEvent(UUID.randomUUID(), progress.userId, progress.chatId, progress.executionId, 6,
@@ -68,12 +68,31 @@ class AgentEventBusTest {
                 payload = PublicToolCallStartedPayload("live-call", "user.ask", arguments = restJsonMapper.createObjectNode()),
                 discardAfterSeq = null)
             val live = Channel<AgentEventEnvelope>(Channel.UNLIMITED)
-            var stored = if (initialReplay) listOf(durable) else emptyList()
-            val stream = AgentEventStream(stored, live, Channel(), {}, { after -> stored.filter { it.seq > after } }, 5)
+            var stored = if (phase == "live") emptyList() else listOf(durable)
+            val stream = AgentEventStream(if (phase == "initial") stored else emptyList(), live, Channel(), {},
+                { after -> stored.filter { it.seq > after } }, 5)
             val ready = CompletableDeferred<Unit>()
+            val writing = CompletableDeferred<Unit>()
+            val resume = CompletableDeferred<Unit>()
             val sent = mutableListOf<AgentEventEnvelope>()
             val dropped = mutableListOf<String>()
-            val forwarding = async { stream.forwardPublicEvents(ready, dropped::add) { sent += it } }
+            val forwarding = async {
+                stream.forwardPublicEvents(onReplayComplete = {
+                    assertEquals<List<AgentEventEnvelope>>(stored, sent)
+                    ready.complete(Unit)
+                }, onDrop = dropped::add) {
+                    if (it == durable) {
+                        writing.complete(Unit)
+                        resume.await()
+                    }
+                    sent += it
+                }
+            }
+            if (phase != "live") {
+                writing.await()
+                assertFalse(ready.isCompleted)
+            }
+            resume.complete(Unit)
             ready.await()
             stored = listOf(durable)
             listOf(progress, durable, current, command).forEach { live.send(it) }
@@ -158,7 +177,7 @@ class AgentEventBusTest {
             }, 0)
             val dropped = mutableListOf<String>()
             assertFailsWith<Exception> {
-                stream.forwardPublicEvents(CompletableDeferred(), dropped::add) {
+                stream.forwardPublicEvents(onDrop = dropped::add) {
                     fail()
                 }
             }

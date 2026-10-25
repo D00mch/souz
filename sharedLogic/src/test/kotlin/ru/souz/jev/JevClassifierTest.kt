@@ -16,9 +16,8 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.runtime.JevClassifier
-import ru.souz.tool.ToolCategory
+import ru.souz.llms.runtime.jevState
 import kotlin.test.Test
-import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
@@ -28,69 +27,77 @@ class JevClassifierTest {
         model = "conversational-model",
         messages = listOf(
             LLMRequest.Message(LLMMessageRole.system, "LLM formatting instructions"),
-            LLMRequest.Message(LLMMessageRole.user, "History:\nUSER: Prepare for today's meetings"),
-            LLMRequest.Message(LLMMessageRole.user, "New message:\nCheck my calendar and email the agenda"),
+            LLMRequest.Message(LLMMessageRole.user, "Prepare for today's meetings"),
+            LLMRequest.Message(LLMMessageRole.user, "Summarize them"),
+            LLMRequest.Message(LLMMessageRole.assistant, "", functionCall = LLMRequest.FunctionCall("ListEvents", "{}")),
+            LLMRequest.Message(LLMMessageRole.function, "private tool result"),
+            LLMRequest.Message(LLMMessageRole.assistant, " You have two meetings. " + "x".repeat(400)),
+            LLMRequest.Message(LLMMessageRole.user, "Check my calendar and email the agenda"),
         ),
     )
-    private val categories = mapOf(
-        ToolCategory.CALENDAR to "Read and edit calendar events",
-        ToolCategory.MAIL to "Read and send email",
-        ToolCategory.FILES to "Read and edit files",
+    private val sides = mapOf(
+        "true" to "the request or at least one of its steps needs it",
+        "false" to "no step of the request needs this; a mentioned topic alone does not count",
     )
 
     @Test
-    fun `selects exact Skill IDs by description using the shared transport`() = runTest {
+    fun `state puts the new message first and earlier non-empty ones newest first, cut to 300 characters`() {
+        val assistant = ("You have two meetings. " + "x".repeat(400)).take(299)
+        assertEquals(
+            "New user message:\nCheck my calendar and email the agenda\n\nPrevious messages, newest first:\n" +
+                "Assistant: $assistant\nUser: Summarize them\nUser: Prepare for today's meetings",
+            jevState(request.messages),
+        )
+        assertEquals(
+            "New user message:\nCheck my calendar and email the agenda\n\nPrevious messages, newest first:\n" +
+                "Assistant: $assistant\nUser: Summarize them",
+            jevState(request.messages, historyLimit = 2),
+        )
+        assertEquals("Check my calendar", jevState(listOf(request.messages[0], LLMRequest.Message(LLMMessageRole.user, "Check my calendar"))))
+    }
+
+    @Test
+    fun `Skills are Noul questions over the last two messages`() = runTest {
         val paper = SkillId("Paper.S17")
         val music = SkillId("music")
         val descriptions = mapOf(paper to "Summarize papers.", music to "Compose music.")
         val engine = MockEngine { httpRequest ->
             val payload = restJsonMapper.readTree(httpRequest.body.toByteArray())
-            assertEquals(descriptions.keys.map { it.value }.toSet(), payload["questions"].fieldNames().asSequence().toSet())
-            assertContains(payload["questions"][paper.value]["instructions"].asText(), descriptions.getValue(paper))
-            assertEquals(request.messages.drop(1).map { it.content }, payload["state"].map { it["content"].asText() })
+            assertEquals(jevState(request.messages, historyLimit = 2), payload["state"].asText())
+            assertEquals(
+                restJsonMapper.valueToTree<JsonNode>(descriptions.entries.associate { (id, description) ->
+                    id.value to mapOf(
+                        "instructions" to "Does fulfilling the latest user request require this Skill: ${id.value} ($description)?",
+                        "type" to "noul",
+                        "criteria" to sides,
+                    )
+                }),
+                payload["questions"],
+            )
             respond("""{"answers":{"Paper.S17":{"type":"noul","noul":0.9},"music":{"type":"noul","noul":0.5}}}""")
         }
         HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
             val client = JevClient(http, "test-token")
-            assertEquals(setOf(paper), JevClassifier(client, 0.5).selectSkills(request, descriptions))
-            assertEquals(emptySet(), JevClassifier(client, 0.95).selectSkills(request, descriptions))
+            assertEquals(setOf(paper), JevClassifier(client).selectSkills(request, descriptions))
             assertEquals(emptySet(), JevClassifier(client).selectSkills(request, emptyMap()))
-            assertEquals(2, engine.requestHistory.size)
+            assertEquals(1, engine.requestHistory.size)
         }
     }
 
     @Test
-    fun `request uses Jev configuration and filtered history with independent category thresholds`() = runTest {
+    fun `complexity is one choice over the last two messages`() = runTest {
+        var complex = 0.0
         val engine = MockEngine { httpRequest ->
-            assertEquals("https://api.typesafe.ai/v1/systemone", httpRequest.url.toString())
-            assertEquals(HttpMethod.Post, httpRequest.method)
-            assertEquals("Bearer test-token", httpRequest.headers[HttpHeaders.Authorization])
-            assertEquals(2_000L, httpRequest.getCapabilityOrNull(HttpTimeoutCapability)?.requestTimeoutMillis)
             val payload = restJsonMapper.readTree(httpRequest.body.toByteArray())
-            assertEquals("jev-configured", payload["model"].asText())
-            assertEquals(request.messages.drop(1).map { it.content }, payload["state"].map { it["content"].asText() })
-            assertEquals(listOf("user", "user"), payload["state"].map { it["role"].asText() })
-            assertEquals(categories.keys.map { it.name }.toSet(), payload["questions"].fieldNames().asSequence().toSet())
-            categories.forEach { (category, description) ->
-                assertEquals("noul", payload["questions"][category.name]["type"].asText())
-                assertContains(payload["questions"][category.name]["instructions"].asText(), description)
-            }
-            respond("""{"answers":{"CALENDAR":{"type":"noul","noul":0.4},"MAIL":{"type":"noul","noul":0.3},"FILES":{"type":"noul","noul":0}}}""")
+            assertEquals(jevState(request.messages, historyLimit = 2), payload["state"].asText())
+            val question = payload["questions"]["choice"]
+            assertEquals("choice", question["type"].asText())
+            assertEquals(listOf("simple", "complex"), question["criteria"].fieldNames().asSequence().toList())
+            respond("""{"answers":{"choice":{"type":"choice","probabilities":{"simple":${1 - complex},"complex":$complex}}}}""")
         }
         HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
-            val client = JevClient(http, "test-token", "jev-configured")
-            val cases = mapOf(
-                0.0 to listOf(ToolCategory.CALENDAR, ToolCategory.MAIL),
-                0.3 to listOf(ToolCategory.CALENDAR),
-                0.5 to emptyList(),
-            )
-            cases.forEach { (threshold, expected) ->
-                val result = JevClassifier(client, threshold).classify(request, categories)
-                assertEquals(expected, result.categories)
-                assertNull(result.confidence)
-            }
-            assertEquals(emptyList(), JevClassifier(client).classify(request, emptyMap()).categories)
-            assertEquals(cases.size, engine.requestHistory.size)
+            val classifier = JevClassifier(JevClient(http, "test-token"))
+            assertEquals(listOf(false, true, true), listOf(0.49, 0.5, 0.9).map { complex = it; classifier.isComplex(request) })
         }
     }
 
@@ -109,6 +116,12 @@ class JevClassifierTest {
             for (response in invalid) {
                 body = response
                 assertFailsWith<IllegalStateException>(response) { client.evaluate(state, questions) }
+            }
+            // Probability values share the Noul validation above.
+            val invalidChoice = listOf("""{"type":"noul","probabilities":{"A":0.5,"B":0.5}}""", """{"type":"choice","probabilities":{"A":1.0}}""")
+            for (response in invalidChoice) {
+                body = """{"answers":{"choice":$response}}"""
+                assertFailsWith<IllegalStateException>(response) { client.choose(state, "Which one?", mapOf("A" to "A", "B" to "B")) }
             }
             status = HttpStatusCode.Unauthorized
             body = "test-token and private message"

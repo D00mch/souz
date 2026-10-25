@@ -1,101 +1,53 @@
 plugins {
-    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.kotlinJvm)
 }
 
-fun skikoAwtRuntimeModule(): String {
-    val osName = System.getProperty("os.name", "").lowercase()
-    val osArch = System.getProperty("os.arch", "").lowercase()
-    val arch = if (osArch.contains("aarch64") || osArch.contains("arm64")) "arm64" else "x64"
-    val os = when {
-        osName.contains("mac") -> "macos"
-        osName.contains("win") -> "windows"
-        osName.contains("linux") -> "linux"
-        else -> error("Unsupported OS for skiko runtime: $osName ($osArch)")
-    }
-    return "org.jetbrains.skiko:skiko-awt-runtime-$os-$arch:0.9.22.2"
+dependencies {
+    implementation(projects.agent)
+    implementation(projects.llms)
+    implementation(projects.skillOauthApi)
+    implementation(kotlin("stdlib"))
+    implementation(kotlin("reflect"))
+    implementation(libs.kotlinx.coroutines)
+    implementation(libs.jackson)
+    implementation(libs.ktor.serializationJackson)
+    implementation(libs.bundles.ktorClient)
+    implementation(libs.ktor.clientOkhttp)
+    implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
+    implementation(libs.jsoup)
+    implementation(libs.re2j)
+    implementation(libs.slf4j.api)
+    implementation(libs.commons.csv)
+    implementation(libs.tika.core)
+    implementation(libs.tika.parsersStandardPackage)
+    implementation(libs.jfreechart)
+    implementation(libs.poi)
+    implementation(libs.poi.ooxml)
+    implementation(libs.logback)
+    implementation(libs.slfj)
+    implementation(libs.slf4j.jcl)
+    implementation(libs.log4j.to.slf4j)
+
+    testImplementation(projects.graphEngine)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlin.testJunit5)
+    testImplementation(libs.kotlinx.coroutinesTest)
+    testImplementation(libs.mockk)
+    testImplementation("io.ktor:ktor-client-mock:${libs.versions.ktor.get()}")
+    testImplementation("com.squareup.okhttp3:mockwebserver3:5.3.2")
+    testImplementation("com.squareup.okhttp3:okhttp-tls:5.3.2")
 }
 
-val runtimeSandboxImageName = "souz-runtime-sandbox:latest"
-val dockerCli = providers.environmentVariable("SOUZ_DOCKER_CLI")
-    .orElse(
-        providers.provider {
-            listOf("/opt/homebrew/bin/docker", "/usr/local/bin/docker")
-                .firstOrNull { file(it).canExecute() }
-                ?: "docker"
-        }
-    )
-
-kotlin {
-    jvm()
-
-    sourceSets {
-        val commonMain by getting
-        val commonJvmMain by creating {
-            dependsOn(commonMain)
-            dependencies {
-                implementation(projects.agent)
-                implementation(projects.llms)
-                implementation(projects.skillOauthApi)
-                implementation(kotlin("stdlib"))
-                implementation(kotlin("reflect"))
-                implementation(libs.kotlinx.coroutines)
-                implementation(libs.jackson)
-                implementation(libs.ktor.serializationJackson)
-                implementation(libs.bundles.ktorClient)
-                implementation(libs.ktor.clientOkhttp)
-                implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
-                implementation(libs.java.diffUtils)
-                implementation(libs.jsoup)
-                implementation(libs.re2j)
-                implementation(libs.slf4j.api)
-            }
-        }
-
-        val jvmMain by getting {
-            dependsOn(commonJvmMain)
-            kotlin.srcDir("src/jvmMain/kotlin")
-            resources.srcDir("src/jvmMain/resources")
-            dependencies {
-                implementation(projects.native)
-                implementation(libs.commons.csv)
-                implementation(libs.tika.core)
-                implementation(libs.tika.parsersStandardPackage)
-                implementation(libs.bundles.letsPlot)
-                implementation(libs.poi)
-                implementation(libs.poi.ooxml)
-                implementation(libs.lucene.core)
-                implementation(libs.logback)
-                implementation(libs.slfj)
-                implementation(libs.slf4j.jcl)
-                implementation(libs.log4j.to.slf4j)
-                implementation("org.jetbrains.skiko:skiko-awt:0.9.22.2")
-                runtimeOnly(skikoAwtRuntimeModule())
-            }
-        }
-
-        val jvmTest by getting {
-            kotlin.srcDir("src/test/kotlin")
-            resources.srcDir("src/test/resources")
-            dependencies {
-                implementation(projects.graphEngine)
-                implementation(libs.kotlin.test)
-                implementation(libs.kotlin.testJunit5)
-                implementation(libs.kotlinx.coroutinesTest)
-                implementation(libs.mockk)
-                implementation("io.ktor:ktor-client-mock:${libs.versions.ktor.get()}")
-                implementation("com.squareup.okhttp3:mockwebserver3:5.3.2")
-                implementation("com.squareup.okhttp3:okhttp-tls:5.3.2")
-            }
-        }
-    }
-}
-
-tasks.withType<Test>().configureEach {
+tasks.test {
     useJUnitPlatform()
+    systemProperty("java.awt.headless", "true")
 }
 
 tasks.register<Exec>("buildRuntimeSandboxImage") {
     group = "docker"
-    description = "Builds the Docker runtime sandbox image used by local runs."
-    commandLine(dockerCli.get(), "build", "-t", runtimeSandboxImageName, projectDir.absolutePath)
+    description = "Builds the Docker runtime sandbox image."
+    commandLine(
+        providers.environmentVariable("SOUZ_DOCKER_CLI").orElse("docker").get(),
+        "build", "-t", "souz-runtime-sandbox:latest", projectDir.absolutePath,
+    )
 }

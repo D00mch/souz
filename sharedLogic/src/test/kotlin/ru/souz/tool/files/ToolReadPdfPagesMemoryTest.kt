@@ -124,10 +124,6 @@ class ToolReadPdfPagesMemoryTest {
             workspaceRootPath = root.toString(),
             stateRootPath = stateRoot.toString(),
             sessionsDirPath = stateRoot.resolve("sessions").toString(),
-            vectorIndexDirPath = stateRoot.resolve("vector-index").toString(),
-            logsDirPath = stateRoot.resolve("logs").toString(),
-            modelsDirPath = stateRoot.resolve("models").toString(),
-            nativeLibsDirPath = stateRoot.resolve("native").toString(),
             skillsDirPath = stateRoot.resolve("skills").toString(),
             skillValidationsDirPath = stateRoot.resolve("skill-validations").toString(),
         )

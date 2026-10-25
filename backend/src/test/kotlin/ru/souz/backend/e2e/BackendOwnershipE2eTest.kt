@@ -1,25 +1,51 @@
 package ru.souz.backend.e2e
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteArray
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.HttpHeaders
+import io.ktor.http.headersOf
 import java.util.UUID
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
+import ru.souz.llms.http.ProviderHttpClients
+import ru.souz.llms.http.providerHttpClientDefaults
+import ru.souz.llms.restJsonMapper
 
 class BackendOwnershipE2eTest {
     @Test
-    fun `provider keys are scoped to the trusted proxy user`() =
-        backendE2eTest("e2e_provider_key_ownership") {
-            val userA = "provider-owner-a"
-            val userB = "provider-owner-b"
+    fun `provider keys and execution credentials are scoped to the trusted proxy user`() {
+        val capturedCredentials = CopyOnWriteArrayList<Pair<String, String?>>()
+        val http = HttpClient(MockEngine { request ->
+            val body = restJsonMapper.readTree(request.body.toByteArray())
+            val prompt = body["messages"].map { it["content"].asText() }
+                .first { it == "credentials-a" || it == "credentials-b" }
+            capturedCredentials += prompt to request.headers[HttpHeaders.Authorization]
+            respond(
+                """{"choices":[{"index":0,"message":{"role":"assistant","content":"credentials checked"},"finish_reason":"stop"}],"created":1}""",
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }) { providerHttpClientDefaults() }
+        backendE2eTest(
+            "e2e_provider_key_ownership",
+            mockProvider = false,
+            providerClients = ProviderHttpClients(standard = http, openAi = http),
+        ) {
+            val userA = UUID.randomUUID().toString()
+            val userB = UUID.randomUUID().toString()
 
             val createdByA = client.put(BackendHttpRoutes.providerKey("qwen")) {
                 trusted(userA)
@@ -34,6 +60,30 @@ class BackendOwnershipE2eTest {
             val listedByAAfterForeignDelete = client.get(BackendHttpRoutes.PROVIDER_KEYS) {
                 trusted(userA)
             }
+            assertEquals(HttpStatusCode.OK, client.put(BackendHttpRoutes.providerKey("qwen")) {
+                trusted(userB)
+                jsonBody("""{"apiKey":"qwen-secret-b"}""")
+            }.status)
+            coroutineScope {
+                listOf(userA to "credentials-a", userB to "credentials-b").map { (userId, prompt) ->
+                    async {
+                        val chatId = createPublicChat(userId)
+                        assertEquals(HttpStatusCode.OK, client.post(BackendHttpRoutes.chatMessages(chatId)) {
+                            trusted(userId)
+                            jsonBody("""{"content":"$prompt"}""")
+                        }.status)
+                        eventually("owner-specific provider reply") {
+                            client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
+                                .takeIf { it.last()["content"].asText() == "credentials checked" }
+                        }
+                    }
+                }.awaitAll()
+            }
+            assertEquals(2, capturedCredentials.size)
+            assertEquals(
+                mapOf("credentials-a" to "Bearer qwen-secret-a", "credentials-b" to "Bearer qwen-secret-b"),
+                capturedCredentials.toMap(),
+            )
             val deleteByA = client.delete(BackendHttpRoutes.providerKey("qwen")) {
                 trusted(userA)
             }
@@ -54,6 +104,7 @@ class BackendOwnershipE2eTest {
             assertEquals(HttpStatusCode.NoContent, deleteByA.status)
             assertEquals(0, listedByAAfterOwnerDelete.jsonBody()["items"].size())
         }
+    }
 
     @Test
     fun `foreign users cannot replay events or cancel executions by chat or execution id`() =
@@ -70,7 +121,7 @@ class BackendOwnershipE2eTest {
                 val runningSend = async {
                     client.post(BackendHttpRoutes.chatMessages(chatId)) {
                         trusted(userA)
-                        jsonBody("""{"content":"owned running turn","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+                        jsonBody("""{"content":"owned running turn","options":{"model":"${E2E_MODEL.alias}"}}""")
                     }
                 }
                 llm.awaitPrompt("owned running turn")

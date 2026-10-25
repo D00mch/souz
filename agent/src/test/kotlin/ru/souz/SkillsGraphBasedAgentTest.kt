@@ -13,7 +13,6 @@ import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
-import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
@@ -39,7 +38,6 @@ class SkillsGraphBasedAgentTest {
         val nodesLLM = mockk<NodesLLM>()
         val nodesCommon = mockk<NodesCommon>()
         val nodesErrorHandling = mockk<NodesErrorHandling>()
-        val nodesSummarization = mockk<NodesSummarization>()
         val nodesMemory = mockk<NodesMemory>()
         val agentToolExecutor = mockk<AgentToolExecutor>()
         val executed = mutableListOf<String>()
@@ -62,11 +60,7 @@ class SkillsGraphBasedAgentTest {
             executed += "toolUse"
             LLMRequest.Message(LLMMessageRole.function, "{}", name = secondArg<LLMResponse.FunctionCall>().name)
         }
-        every { nodesSummarization.summarize() } returns Node("Summary") { ctx ->
-            executed += "Summary"
-            ctx.map { "final" }
-        }
-        every { nodesMemory.finalizeTurn(any()) } returns Node("Memory-aware finalization") { ctx ->
+        every { nodesMemory.finalizeTurn() } returns Node("Memory-aware finalization") { ctx ->
             executed += "Memory-aware finalization"
             ctx.map { "final" }
         }
@@ -76,7 +70,6 @@ class SkillsGraphBasedAgentTest {
             nodesLLM,
             nodesCommon,
             nodesErrorHandling,
-            nodesSummarization,
             nodesMemory,
             agentToolExecutor,
         )
@@ -106,7 +99,6 @@ class SkillsGraphBasedAgentTest {
         val nodesLLM = mockk<NodesLLM>()
         val nodesCommon = mockk<NodesCommon>()
         val nodesErrorHandling = mockk<NodesErrorHandling>()
-        val nodesSummarization = mockk<NodesSummarization>()
         val nodesMemory = mockk<NodesMemory>()
         val executed = mutableListOf<String>()
 
@@ -117,15 +109,13 @@ class SkillsGraphBasedAgentTest {
             executed += "LLM"
             ctx.map { LLMResponse.Chat.Error(500, "provider failed") }
         }
-        every { nodesSummarization.summarize() } returns Node("Summary") { it.map { "" } }
-        every { nodesMemory.finalizeTurn(any()) } returns Node("Memory-aware finalization") { it.map { "" } }
+        every { nodesMemory.finalizeTurn() } returns Node("Memory-aware finalization") { it.map { "" } }
         every { nodesErrorHandling.chatErrorToFinish() } returns errorNode(executed)
 
         val result = agent(
             nodesLLM,
             nodesCommon,
             nodesErrorHandling,
-            nodesSummarization,
             nodesMemory,
         ).execute(baseContext())
 
@@ -145,7 +135,6 @@ class SkillsGraphBasedAgentTest {
         nodesLLM: NodesLLM,
         nodesCommon: NodesCommon,
         nodesErrorHandling: NodesErrorHandling,
-        nodesSummarization: NodesSummarization,
         nodesMemory: NodesMemory,
         agentToolExecutor: AgentToolExecutor = AgentToolExecutor(),
     ) = SkillsGraphBasedAgent(
@@ -153,7 +142,6 @@ class SkillsGraphBasedAgentTest {
         nodesLLM = nodesLLM,
         nodesCommon = nodesCommon,
         nodesErrorHandling = nodesErrorHandling,
-        nodesSummarization = nodesSummarization,
         nodesMemory = nodesMemory,
         nodesSkillInventory = NodesSkillInventory(
             toolCatalog = testCatalog(),

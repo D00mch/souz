@@ -54,14 +54,4 @@ class ProviderHttpClientsTest {
         verify(exactly = 1) { jev.close() }
     }
 
-    @Test
-    fun `Giga resource closes exactly once`() {
-        val client = mockk<HttpClient>(relaxed = true)
-        val resource = GigaHttpClientResource(client)
-
-        resource.close()
-        resource.close()
-
-        verify(exactly = 1) { client.close() }
-    }
 }

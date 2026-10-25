@@ -3,11 +3,7 @@ package ru.souz.agent.nodes
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
 import ru.souz.agent.state.AgentContext
-import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentRuntimeEnvironment
-import ru.souz.agent.spi.AgentSettingsProvider
-import ru.souz.db.StorredData
-import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import java.time.ZonedDateTime
@@ -23,8 +19,6 @@ internal fun LLMRequest.Message.isInjectedContextMessage(): Boolean =
 
 /** Enriches conversation history with host-provided context. */
 internal class NodesCommon(
-    private val desktopInfoRepository: AgentDesktopInfoRepository,
-    private val settingsProvider: AgentSettingsProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
@@ -40,24 +34,27 @@ internal class NodesCommon(
         val additionalMessage = appendActualInformation(ctx.input)
 
         val currentUserIndex = ctx.history.indexOfLast { it.role == LLMMessageRole.user }
+        var activeExchangeStartIndex = ctx.activeExchangeStartIndex
         val newHistory = ctx.history
             .filterIndexed { index, message ->
-                index == currentUserIndex || !message.isInjectedContextMessage()
+                val keep = index == currentUserIndex || !message.isInjectedContextMessage()
+                if (!keep && index < ctx.activeExchangeStartIndex) activeExchangeStartIndex--
+                keep
             }
             .toMutableList()
         additionalMessage?.let {
             l.info("Injecting additional context ({} chars)", it.content.length)
-            if (newHistory.isEmpty()) newHistory += it else newHistory.add(newHistory.lastIndex, it)
+            newHistory.add(maxOf(activeExchangeStartIndex, newHistory.lastIndex), it)
         }
-        ctx.map(history = newHistory)
+        ctx.map(history = newHistory, activeExchangeStartIndex = activeExchangeStartIndex)
     }
 
-    private suspend fun appendActualInformation(
+    private fun appendActualInformation(
         userText: String,
     ): LLMRequest.Message? {
         if (userText.isBlank()) return null
 
-        val additionalData = loadAdditionalData(userText)
+        val additionalData = loadAdditionalData()
         if (additionalData.isEmpty()) return null
         return LLMRequest.Message(LLMMessageRole.user, buildContextMessage(additionalData))
     }
@@ -101,50 +98,44 @@ internal class NodesCommon(
         null
     }
 
-    private suspend fun loadAdditionalData(userText: String): List<StorredData> = buildList {
-        try {
-            addAll(desktopInfoRepository.search(userText))
-        } catch (e: Exception) {
-            l.error("Error searching desktop info: ${e.message}")
-        }
-        runtimeEnvironment.defaultBrowserDisplayName?.let {
-            add(StorredData(it, StorredType.DEFAULT_BROWSER))
-        }
-        settingsProvider.defaultCalendar
-            ?.takeIf(String::isNotBlank)
-            ?.let { add(StorredData("Календарь по умолчанию: $it", StorredType.GENERAL_FACT)) }
-        buildUserGeoLocationFact()?.let { add(StorredData(it, StorredType.GENERAL_FACT)) }
+    private fun loadAdditionalData(): List<String> = buildList {
+        buildUserGeoLocationFact()?.let(::add)
         add(
-            StorredData(
-                "Текущие дата и время: ${
-                    ZonedDateTime.now(runtimeEnvironment.zoneId).format(
-                        DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss", runtimeEnvironment.locale)
-                    )
-                }",
-                StorredType.GENERAL_FACT,
-            )
+            "Текущие дата и время: ${
+                ZonedDateTime.now(runtimeEnvironment.zoneId).format(
+                    DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss", runtimeEnvironment.locale)
+                )
+            }",
         )
     }
 
-    private fun buildContextMessage(additionalData: List<StorredData>): String = buildString {
+    private fun buildContextMessage(additionalData: List<String>): String = buildString {
         append(INJECTED_CONTEXT_PREFIX)
-        additionalData.forEach { append("- [${it.readableType()}]: ${it.text}\n") }
+        additionalData.forEach { append("- [General fact]: $it\n") }
         append(INJECTED_CONTEXT_SUFFIX)
     }
-
-    private fun StorredData.readableType(): String =
-        type.toString().replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
 }
 
-internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>): LLMRequest.Chat {
-    val ctx = this
-    return LLMRequest.Chat(
-        model = ctx.settings.model,
-        provider = ctx.settings.provider,
-        messages = history,
-        functions = ctx.activeTools,
-        temperature = ctx.settings.temperature,
-        maxTokens = ctx.settings.contextSize,
-        reasoningEffort = ctx.settings.reasoningEffort,
-    )
+internal fun AgentContext<*>.toChatRequest(
+    history: List<LLMRequest.Message>,
+    maxOutputTokens: Int,
+): LLMRequest.Chat = LLMRequest.Chat(
+    model = settings.model,
+    provider = settings.provider,
+    messages = history,
+    functions = activeTools,
+    temperature = settings.temperature,
+    maxTokens = maxOutputTokens,
+    contextSize = settings.contextSize,
+    reasoningEffort = settings.reasoningEffort,
+)
+
+/** Merge ephemeral host instructions without changing the stored conversation. */
+internal fun LLMRequest.Chat.withConversationInstructions(instructions: String): LLMRequest.Chat {
+    if (instructions.isEmpty()) return this
+    val system = messages.indexOfFirst { it.role == LLMMessageRole.system }
+    val prepared = messages.toMutableList()
+    if (system < 0) prepared.add(0, LLMRequest.Message(LLMMessageRole.system, instructions))
+    else prepared[system] = prepared[system].copy(content = prepared[system].content + "\n\n" + instructions)
+    return copy(messages = prepared)
 }

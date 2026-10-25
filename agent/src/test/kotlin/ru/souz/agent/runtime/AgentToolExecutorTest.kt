@@ -2,7 +2,6 @@ package ru.souz.agent.runtime
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withContext
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolExecutionEvent
 import ru.souz.agent.state.AgentSettings
@@ -31,21 +30,12 @@ class AgentToolExecutorTest {
         val telemetryEvents = mutableListOf<AgentToolExecutionEvent>()
         val runtimeEvents = mutableListOf<AgentRuntimeEvent>()
         val executor = AgentToolExecutor(AgentTelemetry { telemetryEvents += it })
-        val context = AgentExecutionLogContext(
-            appSessionId = "app-session", requestId = "request-id", conversationId = "conversation-id",
-            requestSource = "chat_ui", model = "test-model", provider = "test-provider",
-        )
-        val response = withContext(context.asCoroutineContext()) {
-            executor.execute(settingsWithFileTool { _, _ -> result }, call,
-                toolCallId = "call-1", eventSink = collectingSink(runtimeEvents))
-        }
+        val response = executor.execute(settingsWithFileTool { _, _ -> result }, call,
+            toolCallId = "call-1", eventSink = collectingSink(runtimeEvents))
         assertSame(result, response)
-        assertEquals(1, context.toolExecutionCount)
         val event = telemetryEvents.single()
         assertEquals(
             AgentToolExecutionEvent(
-                appSessionId = "app-session", conversationId = "conversation-id", requestId = "request-id",
-                requestSource = "chat_ui", model = "test-model", provider = "test-provider",
                 functionName = call.name, toolCategory = ToolCategory.FILES.name,
                 argumentKeys = listOf("path"), durationMs = event.durationMs,
             ), event,

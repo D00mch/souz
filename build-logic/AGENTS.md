@@ -11,6 +11,7 @@ relevant pain-point topics below.
 - Treat unclassified project-dependency scopes as failures. Exclude a test scope only when it does not feed a production configuration.
 - Keep check IDs and report contracts stable. Internal checker failures are `error`, and reports are written before the task fails.
 - Reports must be deterministic and repository-relative, without source bodies, secrets, or absolute user paths.
+- Resolve types and callable identities in custom review rules. Every enabled rule needs explicit fast-gate routing and enforcement tests; keep code-review findings out of coroutine baseline maintenance.
 
 ## Pain points
 

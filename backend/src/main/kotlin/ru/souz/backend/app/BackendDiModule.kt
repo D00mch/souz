@@ -10,12 +10,18 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
+import ru.souz.backend.attachments.AttachmentCleanupWorker
+import ru.souz.backend.attachments.AttachmentStorage
+import ru.souz.backend.attachments.S3AttachmentObjects
+import ru.souz.backend.client.LiveClientToolDispatcher
+import ru.souz.backend.storage.postgres.PostgresAttachmentRepository
 import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.backend.hooks.HookDefinitions
 import ru.souz.backend.hooks.HookService
 import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.hooks.HookVerifier
+import ru.souz.backend.personality.PersonalitySync
 import ru.souz.backend.storage.postgres.PostgresConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.backend.plugins.BackendPlugins
@@ -52,6 +58,8 @@ import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.config.NamedLlmConfig
 import ru.souz.backend.config.SystemBackendConfigSource
 import ru.souz.backend.config.loadNamedModels
+import ru.souz.agent.spi.TaskComplexityClassifier
+import ru.souz.llms.runtime.JevClassifier
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.options.service.OptionService
@@ -98,13 +106,11 @@ import ru.souz.backend.user.repository.UserRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.ProviderHttpClients
-import ru.souz.llms.local.LocalChatAPI
-import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.llms.giga.toGiga
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.NoopConversationMemoryRuntime
-import ru.souz.runtime.di.runtimeCoreDiModule
-import ru.souz.runtime.di.runtimeLocalLlmDiModule
+import ru.souz.agent.skills.SkillClassifier
+import ru.souz.runtime.di.FRIDA_FALLBACK_TAG
 import ru.souz.runtime.di.runtimeProviderHttpDiModule
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.skills.registry.fileSystemSkillRegistryDiModule
@@ -125,7 +131,7 @@ import ru.souz.jobs.impl.PostgresJobService
 import ru.souz.tool.RuntimeToolsFactory
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.runtimeToolsDiModule
-import ru.souz.tool.portableSkillRuntimeToolsDiModule
+import ru.souz.tool.skillRuntimeToolsDiModule
 import ru.souz.tool.knowledge.ToolGetKnowledge
 import ru.souz.tool.knowledge.ToolSearchKnowledge
 import ru.souz.tool.memory.ToolSearchMemory
@@ -149,18 +155,14 @@ fun backendDiModule(
             .enable(SerializationFeature.INDENT_OUTPUT)
     }
 
-    import(runtimeCoreDiModule(bindSettingsProvider = false))
     import(
-        // Compiled web tools are excluded by policy; skip the image-search downloader's construction.
         runtimeToolsDiModule(
-            includeWebImageSearch = false,
             scopeResolver = BackendSandboxScopeResolver,
         )
     )
     import(runtimeProviderHttpDiModule())
-    import(runtimeLocalLlmDiModule())
     import(fileSystemSkillRegistryDiModule())
-    import(portableSkillRuntimeToolsDiModule())
+    import(skillRuntimeToolsDiModule())
     val skillOAuthConfig = SkillOAuthBackendConfig.from(appConfig)
     import(skillOAuthBackendModule(skillOAuthConfig))
 
@@ -180,6 +182,12 @@ fun backendDiModule(
         )
     }
     bindSingleton<Clock> { Clock.systemUTC() }
+    appConfig.attachments?.let { config ->
+        bindSingleton { S3AttachmentObjects(config) }
+        bindSingleton { PostgresAttachmentRepository(instance<HikariDataSource>()) }
+        bindSingleton { AttachmentStorage(config, instance(), instance(), instance()) }
+        bindSingleton { AttachmentCleanupWorker(instance()) }
+    }
     bindSingleton<BackendFeatureFlags> { appConfig.featureFlags }
     bindSingleton { BackendMetrics() }
     bindSingleton<HikariDataSource> {
@@ -200,7 +208,6 @@ fun backendDiModule(
     bindSingleton<SettingsProvider> {
         BackendSettingsProvider(
             preferenceStore = instance(),
-            localProviderAvailability = instance<LocalProviderAvailability>(),
             namedModels = instance(),
         )
     }
@@ -234,7 +241,6 @@ fun backendDiModule(
                 instance<ProviderHttpClients>().close()
                 (instanceOrNull<VkBotApi>() as? AutoCloseable)?.close()
             },
-            closeLocalRuntime = { instance<ru.souz.llms.local.LocalLlamaRuntime>().close() },
             closeSkillOAuthClients = {
                 skillOAuthConfig?.providers?.values.orEmpty().filterIsInstance<AutoCloseable>().forEach { it.close() }
                 instanceOrNull<SkillOAuthGatewayImpl>()?.close()
@@ -243,6 +249,7 @@ fun backendDiModule(
                 instance<HikariDataSource>().close()
                 instance<BackendMetrics>().close()
             },
+            closeAttachmentStorage = { instanceOrNull<S3AttachmentObjects>()?.close() },
         )
     }
     bindSingleton { AgentEventBus(instance()) }
@@ -279,7 +286,6 @@ fun backendDiModule(
             userProviderKeyRepository = instance(),
             featureFlags = instance(),
             toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
-            localModelAvailability = instance<LocalProviderAvailability>(),
         )
     }
     bindSingleton {
@@ -303,8 +309,11 @@ fun backendDiModule(
                 .toolsByCategory.values.flatMap { it.keys }.toSet() + BackendToolCapabilityPolicy.executionBoundToolNames,
         )
     }
+    bindSingleton { LiveClientToolDispatcher(instance(), instance(), instance()) }
+    bindSingleton { PersonalitySync(instance(), instance(), instance(), instance()) }
     bindSingleton {
         BackendClientSkills(
+            liveTools = instance(),
             registry = instance(),
             toolCallRepository = instance(),
             eventService = instance(),
@@ -332,20 +341,28 @@ fun backendDiModule(
             HistoryMemoryWorker(instance(), instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance())
         }
     }
+    bindSingleton<TaskComplexityClassifier> { JevClassifier(instance()) }
     bindSingleton {
         BackendConversationRuntimeFactory(
+            userSettingsRepository = instance(),
+            personalitySync = instance(),
             namedModels = instance<NamedLlmConfig>().models,
             skillClassifier = instance(),
+            fallbackSkillClassifier = instanceOrNull<SkillClassifier>(tag = FRIDA_FALLBACK_TAG),
+            // Routing needs Jev: a configured routing block without JEV_TOKEN fails at startup.
+            complexityClassifier = instance<NamedLlmConfig>().routing?.let { instance<TaskComplexityClassifier>() },
             baseSettingsProvider = instance(),
             credentialResolver = instance(),
+            effectiveSettingsResolver = instance(),
             retryPolicy = appConfig.providerRetryPolicy,
             providerHttpClients = instance(),
-            localChatApi = instance<LocalChatAPI>(),
+            providerApiOverride = instanceOrNull(),
             codexOAuthService = instance<CodexOAuthService>(),
             agentStateRepository = instance(),
             messageRepository = instance(),
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
+            policyPrompt = appConfig.policyPrompt,
             toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
             clientSkills = instance(),
             chatRepository = instance(),
@@ -370,6 +387,7 @@ fun backendDiModule(
             pluginRegistry = instance<BackendPlugins>().registry,
             effectiveSettingsResolver = instance(),
             clientThreadRegistry = instance(),
+            modelRouting = instance<NamedLlmConfig>().routing,
         )
     }
     bindSingleton<BackendConversationTurnRunner> {
@@ -574,7 +592,6 @@ fun backendDiModule(
             effectiveSettingsResolver = instance(),
             toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
             featureFlags = instance(),
-            localModelAvailability = instance<LocalProviderAvailability>(),
             userProviderKeyRepository = instance(),
         )
     }
@@ -583,6 +600,7 @@ fun backendDiModule(
         val settingsResolver = instance<EffectiveSettingsResolver>()
         val userRepository = instance<UserRepository>()
         BackendHttpDependencies(
+            personalitySync = instance(),
             bootstrapService = instance(),
             metrics = instance(),
             skillOAuthGatewayImpl = if (skillOAuthConfig != null) instance() else null,

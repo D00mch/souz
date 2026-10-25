@@ -74,7 +74,7 @@ class CompositeCommandExecutorTest {
         }
         val catalog = AgentToolCatalog(mapOf(ToolCategory.FILES to listOf(read, send)))
         val provider = mockk<SkillBundleProvider> { coEvery { loadSkillBundle(meta.userId, bundle.skillId) } returns bundle }
-        val detail = ToolGetSkillByName(catalog, RuntimePassThroughToolsFilter, provider)
+        val detail = ToolGetSkillByName({ catalog }, RuntimePassThroughToolsFilter, provider)
             .invoke(LLMResponse.FunctionCall(ToolGetSkillByName.NAME, mapOf("skillId" to "skill")), meta)
         assertEquals(listOf("target", "options", "empty"), restJsonMapper.readTree(detail.content)["skill"]["commands"]["run"]["inputs"].map { it.asText() })
         val result = runner(bundle, listOf(read, send)).run(inputs = mapOf("target" to text, "options" to "{\"x\":7}", "empty" to ""), timeout = 5_000)
@@ -142,7 +142,7 @@ class CompositeCommandExecutorTest {
     )))
 
     private fun runner(bundle: SkillBundle, tools: List<LLMToolSetup> = emptyList(), filter: AgentToolsFilter = RuntimePassThroughToolsFilter) = ToolInvokeSkill(
-        AgentToolCatalog(mapOf(ToolCategory.FILES to tools)), filter, { _, _ -> bundle }, scripts,
+        { AgentToolCatalog(mapOf(ToolCategory.FILES to tools)) }, filter, { _, _ -> bundle }, scripts,
     )
 
     private suspend fun ToolInvokeSkill.run(inputs: Map<String, String> = emptyMap(), command: String = "run", timeout: Long = 60_000): SandboxCommandResult =

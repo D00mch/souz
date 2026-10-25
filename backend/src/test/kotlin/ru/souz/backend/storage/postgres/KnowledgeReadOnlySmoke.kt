@@ -27,7 +27,7 @@ import ru.souz.tool.knowledge.ToolSearchKnowledge
 
 /** Runs in two disposable read-only JVM containers via tools/knowledge-readonly-smoke.sh. */
 fun main(args: Array<String>) = runBlocking {
-    check(args.size == 2 && args[0] in setOf("write", "read-clear"))
+    check(args.size == 2 && (args[0] == "write" || args[0] == "read-clear"))
     check(!Files.isWritable(Path.of("/app")) && !Files.isWritable(Path.of("/tmp")))
     check(!Files.exists(Path.of("/var/run/docker.sock")))
     val config = BackendAppConfig(

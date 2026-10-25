@@ -3,7 +3,6 @@ package ru.souz.agent
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.skills.registry.SkillBundleProvider
-import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
@@ -27,7 +26,6 @@ class AgentExecutionKernelFactoryTest {
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = restJsonMapper,
             settingsProvider = mockk<AgentSettingsProvider>(relaxed = true),
-            desktopInfoRepository = mockk<AgentDesktopInfoRepository>(relaxed = true),
             toolCatalog = AgentToolCatalog(),
             toolsFilter = PassThroughToolsFilter,
             skillBundleProvider = mockk<SkillBundleProvider>(relaxed = true),

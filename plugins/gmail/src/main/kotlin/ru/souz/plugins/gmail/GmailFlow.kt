@@ -48,7 +48,7 @@ internal class GmailFlow(private val context: PluginCallContext, private val now
                 val message = messageId(args.text("message"))
                 val pending = state.path("pending").path(message)
                 require(pending.path("status").asText() == "uncertain" && pending.path("claim").asText() == args.text("claim"))
-                require(args.text("outcome") in setOf("delivered", "skipped"))
+                require(args.text("outcome") in resolutionOutcomes)
                 finish(state, message)
                 result("resolved")
             }
@@ -88,7 +88,7 @@ internal class GmailFlow(private val context: PluginCallContext, private val now
             ?: newState(connection.text("mailboxEmail"))
         validateState(imported, connection)
         imported.path("pending").forEach { item ->
-            if (item.path("status").asText() in setOf("claimed", "delivering")) (item as ObjectNode).put("status", "uncertain")
+            if (item.path("status").asText() in activeDeliveryStatuses) (item as ObjectNode).put("status", "uncertain")
         }
         context.data.update(key(args.text("config"))) { existing ->
             require(existing == null) { "Connection already exists" }
@@ -156,7 +156,7 @@ internal class GmailFlow(private val context: PluginCallContext, private val now
                     result("ready").apply {
                         put("watchRequired", current.path("watchExpiresAt").asLong() < time + 86_400_000)
                         put("moreHistory", backlog || !current.path("pageToken").isNull && current.path("pageToken").asText("").isNotEmpty())
-                        put("uncertainCount", pending.count { it.path("status").asText() in setOf("uncertain", "delivering") })
+                        put("uncertainCount", pending.count { it.path("status").asText() in uncertainDeliveryStatuses })
                         put("pendingRemaining", pending.count { it.path("status").asText() == "pending" })
                         set<JsonNode>("message", message ?: json.nullNode())
                     }
@@ -185,7 +185,7 @@ internal class GmailFlow(private val context: PluginCallContext, private val now
                 } else {
                     val headers = headers(body.path("payload"))
                     var text = "В Gmail новое письмо"
-                    if (mode in setOf("subject", "summary")) text += ". Тема: " + cleanHeader(headers["subject"].orEmpty(), 300).ifBlank { "без темы" }
+                    if (mode in subjectNotificationModes) text += ". Тема: " + cleanHeader(headers["subject"].orEmpty(), 300).ifBlank { "без темы" }
                     if (mode == "summary") text += ". " + cleanHeader(body.path("snippet").asText(), 500)
                     result("prepared").apply { set<JsonNode>("inputs", inputs.put("text", text)) }
                 }
@@ -207,7 +207,7 @@ internal class GmailFlow(private val context: PluginCallContext, private val now
             val destination = record["connection"]["destination"]
             require(args.text("channelType") == destination["channelType"].asText() && args.text("channelId") == destination["channelId"].asText()) { "Destination differs from connection" }
             val item = state.path("pending").path(message)
-            if (item.path("claim").asText() == claim && item.path("status").asText() in setOf("uncertain", "delivering")) result("uncertain")
+            if (item.path("claim").asText() == claim && item.path("status").asText() in uncertainDeliveryStatuses) result("uncertain")
             else { claimed(state, message, claim).put("status", "delivering"); result("reserved") }
         }
         if (reservation.path("status").asText() != "reserved") return reservation
@@ -244,7 +244,7 @@ internal class GmailFlow(private val context: PluginCallContext, private val now
             val record = stored?.deepCopy<ObjectNode>() ?: throw PluginException("gmail_connection_missing", "Configure or import this connection first")
             val state = record["state"] as ObjectNode
             state.path("pending").forEach { item ->
-                if (item.path("status").asText() in setOf("claimed", "delivering") && item.path("expiresAt").asDouble() <= time) {
+                if (item.path("status").asText() in activeDeliveryStatuses && item.path("expiresAt").asDouble() <= time) {
                     (item as ObjectNode).put("status", "uncertain")
                 }
             }
@@ -256,3 +256,8 @@ internal class GmailFlow(private val context: PluginCallContext, private val now
         return output
     }
 }
+
+private val resolutionOutcomes = setOf("delivered", "skipped")
+private val activeDeliveryStatuses = setOf("claimed", "delivering")
+private val uncertainDeliveryStatuses = setOf("uncertain", "delivering")
+private val subjectNotificationModes = setOf("subject", "summary")

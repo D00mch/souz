@@ -1,6 +1,6 @@
 # Subagents
 
-`SpawnSubagent` delegates a self-contained task and suspends the parent until the child returns. The child receives a fresh history, selected capabilities, and a final-answer instruction. It cannot delegate further. Desktop and backend use the same child graph.
+`SpawnSubagent` delegates a self-contained task and suspends the parent until the child returns. The child receives a fresh history, selected capabilities, and a final-answer instruction. It cannot delegate further. The backend creates a separate child graph for each invocation.
 
 ```json
 {
@@ -26,7 +26,7 @@ Tools requested on the last allowed model turn still execute. Exhaustion does no
 
 ## Model configuration
 
-`SUBAGENT_MODELS_JSON` adds model IDs grouped by provider. For example, launch either host with:
+`SUBAGENT_MODELS_JSON` adds model IDs grouped by provider. For example, configure the backend with:
 
 ```sh
 export SUBAGENT_MODELS_JSON='{"OPENAI":["my-custom-model","my-deployment/v2"],"ANTHROPIC":["my-anthropic-model"]}'
@@ -34,9 +34,9 @@ export SUBAGENT_MODELS_JSON='{"OPENAI":["my-custom-model","my-deployment/v2"],"A
 
 The tool advertises the configured IDs plus the parent's current model. Without the setting, with `{}`, or with empty provider lists, only the parent model is available. Unlisted providers contribute no additional models. The parent model is always allowed; if its ID is configured under another provider, the parent's provider takes precedence for that execution. A custom OpenAI parent contributes its actual `OPENAI_MODEL` deployment ID.
 
-The host selects the provider API and existing credentials; the tool accepts no provider argument. Children can use a different provider from the parent. Model IDs are case-sensitive, preserved unchanged, and need not appear in `LLMModel`. An unadvertised ID returns `subagent_model_unavailable` before child execution. Configuration authorizes a choice; the provider still checks whether that model exists and is accessible. Local inference requires an installed, supported model profile.
+The host selects the provider API and existing credentials; the tool accepts no provider argument. Children can use a different provider from the parent. Model IDs are case-sensitive, preserved unchanged, and need not appear in `LLMModel`. An unadvertised ID returns `subagent_model_unavailable` before child execution. Configuration authorizes a choice; the provider still checks whether that model exists and is accessible.
 
-Configuration is validated when host settings initialize. Malformed JSON, unknown or host-unsupported providers (including Giga on backend), blank IDs, and IDs assigned to multiple providers are errors. Repeated IDs within one provider are deduplicated. Desktop lookup uses stored preferences, then environment, then JVM system properties; backend uses environment, then JVM system properties. Restart the host after changing this setting. Each parent execution uses the same choice snapshot for its schema and validation.
+Configuration is validated when host settings initialize. Malformed JSON, unknown or host-unsupported providers (including Giga on backend), blank IDs, and IDs assigned to multiple providers are errors. Repeated IDs within one provider are deduplicated. The backend reads environment variables, then JVM system properties. Restart it after changing this setting. Each parent execution uses the same choice snapshot for its schema and validation.
 
 ## Delegating from a Skill
 
@@ -58,17 +58,10 @@ Pass every needed detail in `task`: children do not inherit the parent's convers
 
 The existing tool activity indicates delegation. Child intermediate text and graph events do not become parent chat output. Tools retain the host's normal permission and client-interaction behavior. Backend recovery and durable child execution records are outside this execution model.
 
-## Desktop manual test
+## Example Skill
 
-[folder-brief](skills/folder-brief/SKILL.md) delegates a local notes brief to one child with only `ListFiles` and `ReadFile`, capped at eight model turns. Enable both tools in desktop settings.
+[folder-brief](skills/folder-brief/SKILL.md) delegates a notes brief to one child with only `ListFiles` and `ExtractTextFromFile`, capped at eight model turns. Install the Skill in the user's sandbox registry and enable both compiled tools for the parent execution.
 
-For the default local sandbox, install the Skill from the repository root:
+Ask the backend to use it on the sandbox-visible notes folder. The [sample notes](skills/folder-brief/sample-notes/01-meeting.md) and [handoff](skills/folder-brief/sample-notes/02-handoff.md) contain three actions (Mia, Anton, Lina) and conflicting launch dates (September 18 and 21, 2026); approved budget is not an open action.
 
-```sh
-mkdir -p ~/.local/state/souz/skills/folder-brief
-cp -n docs/skills/folder-brief/SKILL.md ~/.local/state/souz/skills/folder-brief/SKILL.md
-```
-
-Start a fresh desktop turn and ask: "Use the folder-brief Skill to brief REPO/docs/skills/folder-brief/sample-notes. Focus on open actions and conflicting dates." Replace `REPO` with the absolute checkout path. The [sample notes](skills/folder-brief/sample-notes/01-meeting.md) and [handoff](skills/folder-brief/sample-notes/02-handoff.md) contain three actions (Mia, Anton, Lina) and conflicting launch dates (September 18 and 21, 2026); approved budget is not an open action.
-
-Check that the parent invokes `SpawnSubagent` with exactly those two Skill IDs and resumes with a brief citing both files. For trace-level verification, child requests must advertise only those two tools; the final text alone does not prove delegation. Disabling `ReadFile` and repeating in a fresh turn should produce `skill_disabled` without the parent doing the reading itself. Restore the setting after this check.
+Verify that the parent invokes `SpawnSubagent` with exactly those two Skill IDs and resumes with a brief citing both files. Child requests must advertise only those tools; the final text alone does not prove delegation. Disabling `ExtractTextFromFile` and repeating in a fresh turn should produce `skill_disabled`.

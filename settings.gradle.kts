@@ -12,13 +12,7 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositories {
-        google {
-            mavenContent {
-                includeGroupAndSubgroups("androidx")
-            }
-        }
         mavenCentral()
-        maven("https://mvn.mchv.eu/repository/mchv")
     }
 }
 
@@ -30,15 +24,11 @@ plugins {
 include(":agent")
 include(":graph-engine")
 include(":llms")
-include(":native")
-include(":ambientAgent")
 include(":sharedLogic")
-include(":sharedUI")
 include(":skill-oauth-api")
 include(":skill-oauth-impl")
 include(":job-api")
 include(":job-impl")
-include(":desktopApp")
 include(":backend")
 
 include(":plugin-api", ":plugin-runtime", ":plugins:saved-links", ":plugins:gmail", ":plugins:github")

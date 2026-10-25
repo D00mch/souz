@@ -2,6 +2,7 @@ package ru.souz.backend.storage.postgres
 
 import com.fasterxml.jackson.module.kotlin.readValue
 import ru.souz.backend.client.ClientToolDefinition
+import ru.souz.backend.client.DiscoveredClientTools
 import ru.souz.llms.restJsonMapper
 import java.time.Instant
 import java.util.UUID
@@ -82,6 +83,29 @@ class PostgresChatRepository(
             statement.setObject(2, chatId)
             statement.executeQuery().use { result ->
                 if (result.next()) restJsonMapper.readValue(result.getString("client_tools")) else emptyList()
+            }
+        }
+    }
+
+    override suspend fun discoveredClientTools(userId: String, chatId: UUID): DiscoveredClientTools? = dataSource.read { connection ->
+        connection.prepareStatement("select discovered_client_tools from chats where user_id = ? and id = ?").use { statement ->
+            statement.setString(1, userId)
+            statement.setObject(2, chatId)
+            statement.executeQuery().use { result ->
+                if (result.next()) result.getString("discovered_client_tools")?.let {
+                    restJsonMapper.readValue<DiscoveredClientTools>(it)
+                } else null
+            }
+        }
+    }
+
+    override suspend fun replaceDiscoveredClientTools(userId: String, chatId: UUID, tools: DiscoveredClientTools) {
+        dataSource.write { connection ->
+            connection.prepareStatement("update chats set discovered_client_tools = ?::jsonb where user_id = ? and id = ?").use { statement ->
+                statement.setString(1, restJsonMapper.writeValueAsString(tools))
+                statement.setString(2, userId)
+                statement.setObject(3, chatId)
+                check(statement.executeUpdate() == 1) { "Discovery conversation is unavailable." }
             }
         }
     }

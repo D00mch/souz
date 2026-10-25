@@ -9,18 +9,17 @@ import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkillInventory
-import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.SkillClassifier
-import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
+import ru.souz.agent.spi.TaskComplexityClassifier
 import ru.souz.llms.LLMChatAPI
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.NoopConversationMemoryRuntime
@@ -33,7 +32,6 @@ class AgentExecutionKernel(
 class AgentExecutionKernelFactory(
     private val logObjectMapper: ObjectMapper,
     private val settingsProvider: AgentSettingsProvider,
-    private val desktopInfoRepository: AgentDesktopInfoRepository,
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
     private val skillBundleProvider: SkillBundleProvider,
@@ -43,16 +41,17 @@ class AgentExecutionKernelFactory(
     private val telemetry: AgentTelemetry,
     private val errorMessages: AgentErrorMessages,
     private val llmApi: LLMChatAPI,
+    private val conversationInstructions: suspend () -> String = { "" },
     private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
     private val captureScope: CoroutineScope,
     private val automaticMemoryRecall: Boolean = true,
     private val skillClassifier: SkillClassifier? = null,
+    private val fallbackSkillClassifier: SkillClassifier? = null,
+    private val complexityClassifier: TaskComplexityClassifier? = null,
 ) {
     fun create(): AgentExecutionKernel {
         val agentToolExecutor = AgentToolExecutor(telemetry)
         val nodesCommon = NodesCommon(
-            desktopInfoRepository = desktopInfoRepository,
-            settingsProvider = settingsProvider,
             runtimeEnvironment = runtimeEnvironment,
         )
         val nodesSkillInventory = NodesSkillInventory(
@@ -61,22 +60,19 @@ class AgentExecutionKernelFactory(
             skillBundleProvider = skillBundleProvider,
             llmApi = llmApi,
             skillClassifier = skillClassifier,
+            fallbackSkillClassifier = fallbackSkillClassifier,
         )
         val nodesToolUseWithKnowledge = NodesToolUseWithKnowledge(
             agentToolExecutor = agentToolExecutor,
             knowledgeStore = knowledgeStore,
         )
         val nodesMemory = NodesMemory(memoryRuntime, captureScope, automaticMemoryRecall)
-        val nodesLLM = NodesLLM(llmApi = llmApi, settingsProvider = settingsProvider)
         val nodesErrorHandling = NodesErrorHandling(errorMessages)
-        val nodesSummarization = NodesSummarization(
-            llmApi = llmApi,
-            settingsProvider = settingsProvider,
-        )
+        val nodesLLM = NodesLLM(llmApi, settingsProvider, conversationInstructions, complexityClassifier,
+            routedTools = coreTools::skillsTools)
         val availableAgents = listOf(AgentId.SKILLS_GRAPH)
         val contextFactory = AgentContextFactory(
             settingsProvider = settingsProvider,
-            systemPromptResolver = SystemPromptResolver(),
             toolCatalog = toolCatalog,
             availableAgents = availableAgents,
         )
@@ -85,7 +81,6 @@ class AgentExecutionKernelFactory(
             nodesLLM = nodesLLM,
             nodesCommon = nodesCommon,
             nodesErrorHandling = nodesErrorHandling,
-            nodesSummarization = nodesSummarization,
             nodesMemory = nodesMemory,
             nodesSkillInventory = nodesSkillInventory,
             nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,

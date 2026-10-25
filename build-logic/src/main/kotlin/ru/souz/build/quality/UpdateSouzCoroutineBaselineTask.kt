@@ -57,6 +57,10 @@ internal object DetektBaselines {
                 files.asSequence()
                     .sortedBy(File::getPath)
                     .flatMap(::currentIssueIds)
+                    .filter {
+                        val rule = it.substringBefore(':')
+                        rule in CANCELLATION_RULES || rule in THREAD_LOCAL_RULES || rule in MONITOR_RULES
+                    }
                     .toSortedSet()
             }
             .filterValues(Set<String>::isNotEmpty)

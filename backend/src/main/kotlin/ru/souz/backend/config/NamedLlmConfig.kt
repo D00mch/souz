@@ -5,7 +5,12 @@ import com.fasterxml.jackson.databind.JsonNode
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import ru.souz.agent.spi.ModelRouting
+import ru.souz.agent.spi.RoutedModel
+import ru.souz.llms.LLMModel
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.ModelResolution
+import ru.souz.llms.findLLMModel
 import ru.souz.llms.resolveChatModel
 import ru.souz.llms.restJsonMapper
 
@@ -16,7 +21,7 @@ class NamedLlmConfig(
     val models: Map<String, NamedLlmModel> = emptyMap(),
     val subagentModels: Set<String> = emptySet(),
     val summarization: NamedLlmModel? = null,
-    val summarizationContextSize: Int? = null,
+    val routing: ModelRouting? = null,
 )
 
 /** Resolve and validate deployment routes once, before accepting requests. */
@@ -28,12 +33,12 @@ internal fun BackendConfigSource.loadNamedModels(): NamedLlmConfig {
         require(node != null && parser.nextToken() == null) { "Expected one LLM configuration object." }
         node
     }
-    root.fieldsOnly("openaiConnections", "models", "subagentModels", "summarization")
+    root.fieldsOnly("openaiConnections", "models", "subagentModels", "summarization", "routing")
     val connections = root.entries("openaiConnections").mapValues { (id, node) ->
         node.fieldsOnly("baseUrl", "apiKeyEnv")
         val url = node.text("baseUrl")
         val uri = URI(url)
-        require(uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank() &&
+        require(when (uri.scheme) { "http", "https" -> true; else -> false } && !uri.host.isNullOrBlank() &&
             uri.userInfo == null && uri.query == null && uri.fragment == null &&
             (uri.port == -1 || uri.port in 1..65535)) { "Invalid baseUrl for connection $id." }
         val keyEnv = node.text("apiKeyEnv")
@@ -53,12 +58,21 @@ internal fun BackendConfigSource.loadNamedModels(): NamedLlmConfig {
         require(node.isArray && node.all { it.isTextual }) { "subagentModels must be an array of model names." }
         node.mapTo(linkedSetOf()) { it.textValue().also(::model) }
     }.orEmpty()
-    val summary = root["summarization"]?.also { it.fieldsOnly("model", "contextSize") }
-    val contextSize = summary?.get("contextSize")?.let {
-        require(it.isIntegralNumber && it.canConvertToInt() && it.intValue() > 0) { "summarization.contextSize must be positive." }
-        it.intValue()
+    val summary = root["summarization"]?.also { it.fieldsOnly("model") }
+    val routing = root["routing"]?.let { node ->
+        node.fieldsOnly("simple", "complex")
+        fun target(name: String): RoutedModel {
+            val target = requireNotNull(node[name]) { "routing.$name is required." }
+            target.fieldsOnly("model")
+            val id = target.text("model")
+            val builtin = if (id in models) null else requireNotNull(findLLMModel(id)) { "Unknown routing.$name model $id." }
+            // A routed call sends the model name as is, so the custom selector would never reach OPENAI_MODEL.
+            require(builtin != LLMModel.OpenAICompatibleCustom) { "routing.$name cannot use $id; name a configured model instead." }
+            return RoutedModel(builtin?.alias ?: id, builtin?.provider ?: LlmProvider.OPENAI)
+        }
+        ModelRouting(target("simple"), target("complex"))
     }
-    return NamedLlmConfig(models, subagents, summary?.text("model")?.let(::model), contextSize)
+    return NamedLlmConfig(models, subagents, summary?.text("model")?.let(::model), routing)
 }
 
 private fun JsonNode.fieldsOnly(vararg names: String) {

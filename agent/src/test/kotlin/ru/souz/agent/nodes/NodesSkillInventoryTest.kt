@@ -5,6 +5,8 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.CancellationException
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.RetryPolicy
@@ -28,17 +30,20 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class NodesSkillInventoryTest {
-    @Test
-    fun `node adds skill tools and augments history without changing supplied prompt`() = runTest {
+    @ParameterizedTest
+    @ValueSource(booleans = [true, false])
+    fun `inventory preserves the exchange when replacing or prepending instructions`(replace: Boolean) = runTest {
         val coreTool = FixedTool("GetSkillByName")
         val catalogTool = FixedTool("CatalogTool")
         val context = contextWithCatalog(catalogTool).copy(
             history = listOf(
                 LLMRequest.Message(LLMMessageRole.system, "obsolete effective prompt"),
                 LLMRequest.Message(LLMMessageRole.user, "hello"),
-            )
+            ).drop(if (replace) 0 else 1),
+            activeExchangeStartIndex = if (replace) 1 else 0,
         )
 
         val repository = repository(
@@ -53,6 +58,7 @@ class NodesSkillInventoryTest {
         assertEquals(listOf(catalogTool.fn, coreTool.fn), result.activeTools)
         assertEquals(setOf(catalogTool.fn.name, coreTool.fn.name), result.settings.tools.byName.keys)
         assertEquals(2, result.history.size)
+        assertEquals(1, result.activeExchangeStartIndex)
         assertContains(result.history.first().content, PROVIDED_SYSTEM_PROMPT)
         assertContains(result.history.first().content, "<skill_inventory>")
         assertContains(result.history.first().content, "- FILES: CatalogTool")
@@ -232,7 +238,7 @@ class NodesSkillInventoryTest {
         val repository = repository("paper" to "Summarize papers.")
         val api = mockk<LLMChatAPI>()
         val context = contextWithCatalog().let { it.copy(
-            settings = it.settings.copy(provider = LlmProvider.LOCAL, contextSize = 2048),
+            settings = it.settings.copy(provider = LlmProvider.ANTHROPIC, contextSize = 2048),
             history = it.history + LLMRequest.Message(LLMMessageRole.user, "Use the paper Skill."),
         ) }
         val classifier = SkillClassifier { _, _ -> error("Jev unavailable") }
@@ -251,7 +257,7 @@ class NodesSkillInventoryTest {
             assertContains(prompt, "- skillId: \"paper\"")
         }
         coVerify(exactly = 3) { api.message(match {
-            it.maxTokens == 2048 && it.provider == LlmProvider.LOCAL && it.messages[1].content == "Use the paper Skill."
+            it.maxTokens == CLASSIFICATION_MAX_OUTPUT_TOKENS && it.contextSize == 2048 && it.provider == LlmProvider.ANTHROPIC && it.messages[1].content == "Use the paper Skill."
         }) }
         coEvery { api.message(any()) } throws CancellationException("cancelled")
         assertFailsWith<CancellationException> { node.execute(contextWithCatalog(), runtime()) }
@@ -263,22 +269,60 @@ class NodesSkillInventoryTest {
         coVerify(exactly = 4) { api.message(any()) }
     }
 
+    @Test
+    fun `fallback classifier answers only when the classifier fails, before the LLM`() = runTest {
+        val api = mockk<LLMChatAPI>()
+        coEvery { api.message(any()) } throws IllegalStateException("LLM unavailable")
+        val failing = SkillClassifier { _, _ -> error("Jev unavailable") }
+        val paper = SkillClassifier { _, _ -> setOf(SkillId("paper")) }
+        suspend fun described(classifier: SkillClassifier, fallback: SkillClassifier) =
+            node(catalog(), repository = repository("paper" to "Summarize papers."), classifier = classifier,
+                fallbackClassifier = fallback, llmApi = api).node(emptyList(), classifySkills = true)
+                .execute(contextWithCatalog(), runtime()).history.first().content.contains("; description:")
+
+        assertTrue(described(failing, paper))
+        assertFalse(described(SkillClassifier { _, _ -> emptySet() }, paper))
+        coVerify(exactly = 0) { api.message(any()) }
+        assertFalse(described(failing, failing))
+        coVerify(exactly = 1) { api.message(any()) }
+    }
+
+    @Test
+    fun `thanks and greetings skip Skill selection`() = runTest {
+        val api = mockk<LLMChatAPI>()
+        val node = node(catalog(), repository = repository("paper" to "Summarize papers."), llmApi = api,
+            classifier = SkillClassifier { _, _ -> error("Skill selection must be skipped") })
+            .node(emptyList(), classifySkills = true)
+        for (input in listOf("Спасибо большое!", "привет", "Спасибо, на сегодня всё 🙏", "Thank you so much", "hi")) {
+            val prompt = node.execute(contextWithCatalog().copy(input = input), runtime()).history.first().content
+            assertContains(prompt, "- skillId: \"paper\"\n")
+            assertFalse(prompt.contains("; description:"))
+        }
+        for (input in listOf("да", "ок", "Спасибо, отправь письмо Олегу", "спасибо спасибо спасибо спасибо спасибо спасибо",
+                "покажи", "hire me", "все", "Всё!", "тебе", "Вам!", "большое", "a lot", "so much")) {
+            assertFalse(isThanksOrGreeting(input), input)
+        }
+        coVerify(exactly = 0) { api.message(any()) }
+    }
+
     private fun node(
         catalog: AgentToolCatalog,
         toolsFilter: AgentToolsFilter = PassThroughToolsFilter,
         repository: SkillRegistryRepository = repository(),
         classifier: SkillClassifier? = null,
+        fallbackClassifier: SkillClassifier? = null,
         llmApi: LLMChatAPI? = null,
     ): NodesSkillInventory = NodesSkillInventory(
         toolCatalog = catalog,
         toolsFilter = toolsFilter,
         skillBundleProvider = repository,
         skillClassifier = classifier,
+        fallbackSkillClassifier = fallbackClassifier,
         llmApi = llmApi,
     )
 
     private fun contextWithCatalog(vararg tools: LLMToolSetup): AgentContext<String> = AgentContext(
-        input = "hello",
+        input = "summarize the paper",
         settings = AgentSettings(
             model = "test",
             provider = LlmProvider.OPENAI,

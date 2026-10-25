@@ -36,27 +36,36 @@ internal class BackendClientSkills(
     private val channelDeliveryService: ChannelDeliveryService,
     private val now: () -> Instant = Instant::now,
     private val metrics: BackendMetrics? = null,
+    private val liveTools: LiveClientToolDispatcher = LiveClientToolDispatcher(registry, eventService, metrics, now),
 ) {
     private val bundledGuidance = loadBundledClientSkillGuidance()
 
-    fun catalog(definitions: List<ClientToolDefinition>): AgentToolCatalog {
-        val useDefaults = definitions.isEmpty()
-        val selected = definitions.ifEmpty {
+    fun catalog(
+        definitions: List<ClientToolDefinition>,
+        boundChannelId: UUID? = null,
+        onDiscovery: (suspend (JsonNode, UUID) -> ClientError?)? = null,
+    ): AgentToolCatalog {
+        val selected = (definitions + if (boundChannelId == null) {
             bundledGuidance.map { (name, guidance) ->
-                ClientToolDefinition(name, guidance.description, LLMRequest.Parameters(type = "object"))
+                ClientToolDefinition(name, guidance.description, LLMRequest.Parameters(
+                    type = "object", additionalProperties = false.takeIf { name == CLIENT_TOOL_DISCOVERY_NAME },
+                ))
             }
-        }
+        } else emptyList()).distinctBy { it.name }
         return AgentToolCatalog(
             selected.groupBy { bundledGuidance[it.name]?.category ?: ToolCategory.APPLICATIONS }
                 .mapValues { (category, tools) ->
                     tools.map { definition ->
                         val guidance = bundledGuidance[definition.name]
-                        val enriched = if (useDefaults || guidance == null) definition else definition.copy(
+                        val enriched = if (definition !in definitions || guidance == null) definition else definition.copy(
                             description = "${definition.description}\n\n${guidance.description}",
                         )
                         ClientWebSocketSkill(
                             enriched, category, registry, toolCallRepository, eventService, channelDeliveryService, now, metrics,
                             timeout = guidance?.timeout ?: Duration.ofMinutes(1),
+                            liveTools = liveTools,
+                            boundChannelId = boundChannelId?.toString(),
+                            onDiscovery = onDiscovery.takeIf { definition.name == CLIENT_TOOL_DISCOVERY_NAME },
                         )
                     }
                 },
@@ -107,6 +116,9 @@ private class ClientWebSocketSkill(
     private val now: () -> Instant,
     private val metrics: BackendMetrics?,
     private val timeout: Duration,
+    private val liveTools: LiveClientToolDispatcher,
+    private val boundChannelId: String?,
+    private val onDiscovery: (suspend (JsonNode, UUID) -> ClientError?)?,
 ) : LLMToolSetup {
     private val metricCategory = category.name.lowercase()
 
@@ -132,6 +144,15 @@ private class ClientWebSocketSkill(
             val received = invokeClient(functionCall, meta)
             val result = if (received.status == "succeeded" && received.result?.isObject != true) {
                 failed("invalid_tool_result", "Successful client tool results must be JSON objects.")
+            } else if (received.status == "succeeded" && onDiscovery != null) {
+                try {
+                    val channelId = UUID.fromString((functionCall.arguments["channelId"] as? String)?.trim() ?: meta.conversationId)
+                    onDiscovery(requireNotNull(received.result), channelId)?.let { ClientToolOutcome("failed", null, it) } ?: received
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    failed("client_tool_failed", "Could not save the discovered client tools; the previous catalogue remains available.")
+                }
             } else received
             outcome = when (result.status) {
                 "succeeded" -> "success"
@@ -150,8 +171,15 @@ private class ClientWebSocketSkill(
     }
 
     private suspend fun invokeClient(functionCall: LLMResponse.FunctionCall, meta: ToolInvocationMeta): ClientToolOutcome {
+        if (boundChannelId != null && "channelId" in functionCall.arguments &&
+            runCatching { UUID.fromString((functionCall.arguments["channelId"] as? String)?.trim()).toString() }.getOrNull() != boundChannelId) {
+            return failed("client_context_mismatch", "This Skill is bound to channel $boundChannelId. Discover tools on the other channel first.")
+        }
         val arguments = restJsonMapper.valueToTree<JsonNode>(functionCall.arguments - "channelId")
         clientArgumentsError(fn.parameters, arguments)?.let { return failed("mcp_invalid_arguments", it) }
+        if (boundChannelId != null && meta.conversationId != boundChannelId) {
+            return invokeOnChannel(functionCall.copy(arguments = functionCall.arguments + ("channelId" to boundChannelId)), meta)
+        }
         if ("channelId" in functionCall.arguments) return invokeOnChannel(functionCall, meta)
         val threadId = meta.requestId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
             ?: return failed("client_context_missing", "Thread ID is unavailable.")
@@ -160,8 +188,11 @@ private class ClientWebSocketSkill(
         val toolCallId = UUID.randomUUID().toString()
         val pending = PendingClientTool(toolCallId)
         val device = when (val beginTool = registry.beginTool(threadId, pending)) {
-            BeginClientToolResult.Missing ->
-                return failed("client_context_missing", "Client device is unavailable. Use ListActiveChannels and pass channelId to reach another device.")
+            BeginClientToolResult.Missing -> return if (boundChannelId != null) {
+                invokeOnChannel(functionCall.copy(arguments = functionCall.arguments + ("channelId" to boundChannelId)), meta)
+            } else {
+                failed("client_context_missing", "Client device is unavailable. Use ListActiveChannels and pass channelId to reach another device.")
+            }
             BeginClientToolResult.Busy ->
                 return failed("client_tool_busy", "Another client tool call is already pending.")
             is BeginClientToolResult.Started -> beginTool.device
@@ -226,29 +257,8 @@ private class ClientWebSocketSkill(
         if (!eventService.hasLiveSubscriber(chat.userId, chat.id)) {
             return failed("client_context_missing", "No device is connected on that channel.")
         }
-        val threadId = UUID.randomUUID()
-        val context = ToolCallContext(meta.userId, chatId.toString(), threadId.toString(), UUID.randomUUID().toString())
-        val deadlineAt = now().plus(timeout)
-        return registry.withChannelTool(context, deadlineAt) { pending ->
-            val published = eventService.publishClientToolCall(
-                userId = meta.userId,
-                chatId = chatId,
-                executionId = threadId,
-                payload = PublicToolCallStartedPayload(
-                    toolCallId = context.toolCallId,
-                    name = fn.name,
-                    arguments = restJsonMapper.valueToTree(functionCall.arguments - "channelId"),
-                    deadlineAt = deadlineAt.toString(),
-                ),
-            )
-            if (!published) return@withChannelTool failed(
-                "client_tool_busy", "Device command queues are full or disconnected.",
-            )
-            val sourceExecution = meta.requestId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
-            sourceExecution?.let { metrics?.executions?.beginClientWait(it) }.use {
-                pending.awaitResult(now())
-            }
-        }
+        return liveTools.call(chat, fn.name, functionCall.arguments - "channelId", timeout,
+            meta.requestId?.let { runCatching { UUID.fromString(it) }.getOrNull() })
     }
 
     private fun outcomeMessage(functionName: String, outcome: ClientToolOutcome): LLMRequest.Message =

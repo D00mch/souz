@@ -6,16 +6,12 @@ import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaToolchainService
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
-import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 
 plugins {
     id("souz.quality")
     alias(libs.plugins.kotlinJvm) apply false
-    alias(libs.plugins.kotlinMultiplatform) apply false
     alias(libs.plugins.kover) apply false
     alias(libs.plugins.ktor) apply false
-    alias(libs.plugins.composeMultiplatform) apply false
-    alias(libs.plugins.composeCompiler) apply false
 }
 
 if (providers.gradleProperty("souz.coverage").isPresent) {
@@ -28,11 +24,6 @@ if (providers.gradleProperty("souz.coverage").isPresent) {
         coverageProject.extensions.configure<KoverProjectExtension> {
             reports {
                 total {
-                    filters {
-                        excludes {
-                            classes("*.generated.resources.*")
-                        }
-                    }
                     log {
                         format = if (coverageProject == rootProject) {
                             "SOUZ_KOVER_LINE_COVERAGE=<value>%"
@@ -59,13 +50,13 @@ subprojects {
         }
     }
 
-    plugins.withId("org.jetbrains.kotlin.multiplatform") {
-        extensions.configure<KotlinMultiplatformExtension>("kotlin") {
-            jvmToolchain(souzJvmToolchainVersion)
-        }
-    }
-
     tasks.withType<Test>().configureEach {
+        // These modules mix unit tests with tests that depend on external state.
+        when (project.path) {
+            ":backend", ":job-impl", ":sharedLogic", ":skill-oauth-impl" ->
+                doNotTrackState("These test suites depend on Docker or external services.")
+        }
+
         val toolchains = project.extensions.getByType<JavaToolchainService>()
         javaLauncher.set(
             toolchains.launcherFor {

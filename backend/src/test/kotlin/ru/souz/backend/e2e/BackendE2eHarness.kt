@@ -3,6 +3,7 @@ package ru.souz.backend.e2e
 import ru.souz.backend.plugins.BackendPlugins
 import ru.souz.backend.plugins.BackendPluginHttp
 import java.nio.file.Path
+import ru.souz.agent.spi.TaskComplexityClassifier
 import ru.souz.agent.skills.SkillClassifier
 
 import ru.souz.backend.execution.service.AgentExecutionLauncher
@@ -50,6 +51,7 @@ import org.kodein.di.direct
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
+import ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntime
 import ru.souz.backend.scheduler.ScheduledTaskConfig
 import ru.souz.backend.scheduler.ScheduledTaskRunner
 import ru.souz.jobs.JobService
@@ -83,16 +85,17 @@ import ru.souz.backend.telegram.TelegramBotApi
 import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.vk.VkBotApi
 import ru.souz.backend.vk.VkBotPollingService
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMModel
-import ru.souz.llms.local.LocalChatAPI
-import ru.souz.llms.local.LocalLlamaRuntime
-import ru.souz.llms.local.LocalProviderAvailability
+import ru.souz.memory.ConversationMemoryRuntime
 import kotlin.time.Duration.Companion.milliseconds
 
 internal const val E2E_PROXY_TOKEN = "proxy-secret"
 internal const val E2E_TELEGRAM_TOKEN_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 internal const val E2E_VK_TOKEN_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
-internal val E2E_LOCAL_MODEL: LLMModel = LLMModel.LocalQwen3_4B_Instruct_2507
+internal const val E2E_POLICY_PROMPT = "Follow the E2E operator policy."
+internal val E2E_MODEL: LLMModel = LLMModel.QwenMax
 
 internal fun historyFrame(chatId: String, requestId: String, role: String, text: String): String =
     """{"kind":"history.append","chatId":"$chatId","requestId":"$requestId","payload":{"role":"$role","content":{"type":"text","source":"text","text":"$text"}}}"""
@@ -125,7 +128,7 @@ internal fun messageFrame(
           "text": "$text"
         },
         "meta": {
-          "model": "${E2E_LOCAL_MODEL.alias}",
+          "model": "${E2E_MODEL.alias}",
           "locale": "ru-RU",
           "timeZone": "$timeZone"
         }
@@ -143,7 +146,7 @@ internal fun backendE2eTest(
     turnRunnerOverride: BackendConversationTurnRunner? = null,
     startBackgroundServices: Boolean = false,
     settingsSource: BackendConfigSource? = null,
-    localModels: List<LLMModel> = listOf(E2E_LOCAL_MODEL),
+    mockProvider: Boolean = true,
     providerClients: ProviderHttpClients? = null,
     hindsightUrl: String? = null,
     clock: Clock = Clock.systemUTC(),
@@ -154,18 +157,21 @@ internal fun backendE2eTest(
     pluginHttpClient: (() -> HttpClient)? = null,
     pluginOAuthClient: (() -> HttpClient)? = null,
     sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
+    skillOAuth: Boolean = false,
+    complexityClassifier: TaskComplexityClassifier? = null,
     block: suspend BackendE2eScope.() -> Unit,
 ) = testApplication {
     val backend = BackendE2eBackend(
         schema = schema,
         featureFlags = featureFlags,
+        skillOAuth = skillOAuth,
         llm = llm,
         telegramApi = telegramApi,
         vkApi = vkApi,
         turnRunnerOverride = turnRunnerOverride,
         startBackgroundServices = startBackgroundServices,
         settingsSource = settingsSource,
-        localModels = localModels,
+        mockProvider = mockProvider,
         providerClients = providerClients,
         hindsightUrl = hindsightUrl,
         clock = clock,
@@ -176,6 +182,7 @@ internal fun backendE2eTest(
         pluginHttpClient = pluginHttpClient,
         pluginOAuthClient = pluginOAuthClient,
         sandboxFactory = sandboxFactory,
+        complexityClassifier = complexityClassifier,
     )
     application {
         backendApplication(backend.dependencies)
@@ -209,7 +216,7 @@ internal class BackendE2eScope(
         llm.requestSkill(skill, arguments)
         val chat = createPublicChat(user, UUID.randomUUID().toString())
         val sent = client.post(BackendHttpRoutes.chatMessages(chat)) {
-            trusted(user); jsonBody("""{"content":"plugin test ${UUID.randomUUID()}","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+            trusted(user); jsonBody("""{"content":"plugin test ${UUID.randomUUID()}","options":{"model":"${E2E_MODEL.alias}"}}""")
         }
         assertEquals(HttpStatusCode.OK, sent.status)
         val execution = sent.jsonBody()["execution"]["id"].asText()
@@ -223,8 +230,30 @@ internal class BackendE2eScope(
         llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content,
     )
 
-    suspend fun readJson(session: DefaultClientWebSocketSession): JsonNode =
+    suspend fun readRawJson(session: DefaultClientWebSocketSession): JsonNode =
         json.readTree((session.incoming.receive() as Frame.Text).readText())
+
+    fun toolResultFrame(frame: JsonNode, status: String, result: Map<String, Any>): String =
+        json.writeValueAsString(mapOf(
+            "kind" to "tool.result", "chatId" to frame["chatId"].asText(), "threadId" to frame["threadId"].asText(),
+            "toolCallId" to frame["payload"]["toolCallId"].asText(), "status" to status,
+            (if (status == "succeeded") "result" else "error") to result,
+        ))
+
+    private val personalityCalls = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    // Emulate Orion's settings handler in unrelated workflows. Protocol tests read raw frames.
+    suspend fun readJson(session: DefaultClientWebSocketSession): JsonNode {
+        while (true) {
+            val frame = readRawJson(session)
+            if (frame.path("payload").path("name").asText() == ru.souz.backend.personality.PERSONALITY_SYNC_COMMAND) {
+                personalityCalls.add(frame["payload"]["toolCallId"].asText())
+                session.send(Frame.Text(toolResultFrame(frame, "succeeded", mapOf(
+                    "outcome" to "applied", "revision" to frame["payload"]["arguments"]["revision"].longValue(),
+                ))))
+            } else if (frame.path("toolCallId").asText() !in personalityCalls) return frame
+        }
+    }
 
     suspend fun <T> withPublicSocket(chatId: String, block: suspend (DefaultClientWebSocketSession) -> T): T =
         withSocket("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend", block)
@@ -344,13 +373,14 @@ internal class BackendE2eScope(
 internal class BackendE2eBackend(
     private val schema: String,
     private val featureFlags: BackendFeatureFlags,
+    private val skillOAuth: Boolean = false,
     llm: E2eLlmApi,
     telegramApi: TelegramBotApi?,
     vkApi: VkBotApi?,
     turnRunnerOverride: BackendConversationTurnRunner?,
     startBackgroundServices: Boolean,
     private val settingsSource: BackendConfigSource? = null,
-    private val localModels: List<LLMModel> = listOf(E2E_LOCAL_MODEL),
+    private val mockProvider: Boolean = true,
     private val providerClients: ProviderHttpClients? = null,
     private val hindsightUrl: String? = null,
     private val clock: Clock = Clock.systemUTC(),
@@ -361,6 +391,7 @@ internal class BackendE2eBackend(
     private val pluginHttpClient: (() -> HttpClient)? = null,
     private val pluginOAuthClient: (() -> HttpClient)? = null,
     private val sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
+    private val complexityClassifier: TaskComplexityClassifier? = null,
 ) : AutoCloseable {
     private val appConfig: BackendAppConfig = postgresAppConfig(
         schema = schema,
@@ -368,12 +399,24 @@ internal class BackendE2eBackend(
         proxyToken = E2E_PROXY_TOKEN,
         telegramTokenEncryptionKey = E2E_TELEGRAM_TOKEN_KEY.takeIf { featureFlags.telegramBot },
         vkTokenEncryptionKey = E2E_VK_TOKEN_KEY.takeIf { featureFlags.vkBot },
-        includeSkillOAuthConfig = false,
-    ).copy(hindsightApiUrl = hindsightUrl, hooks = hookConfig, scheduledTasks = scheduledTasks,
-        llmLimits = llmLimits, pluginDirectory = pluginDirectory)
-    private val localChatApi = localChatApiBackedBy(llm)
-    private val localAvailability = localProviderAvailability(localModels)
-    private val localRuntime = relaxedLocalRuntime()
+        includeSkillOAuthConfig = skillOAuth,
+    ).copy(
+        hindsightApiUrl = hindsightUrl,
+        hooks = hookConfig,
+        scheduledTasks = scheduledTasks,
+        llmLimits = llmLimits,
+        policyPrompt = E2E_POLICY_PROMPT,
+        pluginDirectory = pluginDirectory,
+    )
+    private val source = object : BackendConfigSource {
+        override fun env(key: String): String? = settingsSource?.env(key) ?: when {
+            mockProvider && key == "QWEN_KEY" -> "e2e-qwen-key"
+            mockProvider && key == "GIGA_MODEL" -> E2E_MODEL.alias
+            else -> null
+        }
+
+        override fun property(key: String): String? = settingsSource?.property(key)
+    }
 
     private val di = DI.invoke(allowSilentOverride = true) {
         import(
@@ -382,18 +425,31 @@ internal class BackendE2eBackend(
                 appConfig = appConfig,
             )
         )
-        bindSingleton<LocalProviderAvailability>(overrides = true) { localAvailability }
         bindSingleton<SkillClassifier>(overrides = true) { SkillClassifier { _, _ -> emptySet() } }
-        bindSingleton<LocalLlamaRuntime>(overrides = true) { localRuntime }
-        bindSingleton<LocalChatAPI>(overrides = true) { localChatApi }
         bindSingleton<Clock>(overrides = true) { clock }
+        bindSingleton<PostgresJobService>(overrides = true) {
+            PostgresJobService(instance<HikariDataSource>(), pollIntervalMillis = 50)
+        }
+        if (appConfig.hindsightApiUrl != null) {
+            bindSingleton<HistoryMemoryWorker>(overrides = true) {
+                HistoryMemoryWorker(
+                    repository = instance(),
+                    memory = instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime,
+                    clock = instance(),
+                    pollIntervalMillis = 50,
+                )
+            }
+        }
         if (sandboxFactory != null) {
             bindSingleton<RuntimeSandboxFactory>(overrides = true) { sandboxFactory(instance()) }
         }
-        if (settingsSource != null) {
-            bindSingleton<NamedLlmConfig>(overrides = true) { settingsSource.loadNamedModels() }
-            bindSingleton<SettingsProvider>(overrides = true) {
-                BackendSettingsProvider(instance(), localAvailability, settingsSource, instance())
+        bindSingleton<NamedLlmConfig>(overrides = true) { source.loadNamedModels() }
+        bindSingleton<SettingsProvider>(overrides = true) {
+            BackendSettingsProvider(instance(), source, instance())
+        }
+        if (mockProvider) {
+            bindSingleton<(LlmProvider) -> LLMChatAPI?> {
+                { provider -> llm.takeIf { provider == E2E_MODEL.provider } }
             }
         }
         if (pluginHttpClient != null) {
@@ -427,6 +483,9 @@ internal class BackendE2eBackend(
         }
         if (turnRunnerOverride != null) {
             bindSingleton<BackendConversationTurnRunner>(overrides = true) { turnRunnerOverride }
+        }
+        if (complexityClassifier != null) {
+            bindSingleton<TaskComplexityClassifier>(overrides = true) { complexityClassifier }
         }
     }
 
@@ -511,6 +570,7 @@ internal class BackendE2eBackend(
         BackendE2eBackend(
             schema = schema,
             featureFlags = featureFlags,
+            skillOAuth = skillOAuth,
             llm = llm,
             telegramApi = null,
             vkApi = null,
@@ -518,7 +578,7 @@ internal class BackendE2eBackend(
             startBackgroundServices = false,
             providerClients = providerClients,
             settingsSource = settingsSource,
-            localModels = localModels,
+            mockProvider = mockProvider,
             hindsightUrl = hindsightUrl,
             clock = clock,
             hookConfig = hookConfig,

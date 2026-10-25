@@ -2,6 +2,7 @@ package ru.souz.backend.settings.service
 
 import io.mockk.coEvery
 import io.mockk.mockk
+import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -18,7 +19,6 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMModel.AiTunnelClaudeHaiku
 import ru.souz.llms.LLMModel.AnthropicHaiku45
 import ru.souz.llms.LLMModel.CodexGpt54
-import ru.souz.llms.LLMModel.LocalQwen3_4B_Instruct_2507
 import ru.souz.llms.LLMModel.OpenAICompatibleCustom
 import ru.souz.llms.LLMModel.OpenAIGpt5Mini
 import ru.souz.llms.LLMModel.QwenMax
@@ -27,7 +27,6 @@ import ru.souz.llms.LlmProvider.AI_TUNNEL
 import ru.souz.llms.LlmProvider.ANTHROPIC
 import ru.souz.llms.LlmProvider.OPENAI
 import ru.souz.llms.LlmProvider.QWEN
-import ru.souz.llms.LocalModelAvailability
 
 class EffectiveSettingsResolverTest {
     @Test
@@ -37,7 +36,6 @@ class EffectiveSettingsResolverTest {
             Case(null, selected = named, saved = named, listings = 1, newUser = true, named = true),
             Case(QwenMax.alias, selected = named, listings = 1, named = true),
             Case(null, selected = named, saved = named, listings = 1, newUser = true, named = true, region = "en"),
-            Case(QwenMax.alias, selected = LocalQwen3_4B_Instruct_2507.alias, listings = 1, local = true, named = true),
             Case(named, selected = named, listings = 0, named = true),
             Case(QwenMax.alias, requestModel = named, selected = named, listings = 0, named = true),
             Case(QwenMax.alias, selected = QwenMax.alias, listings = 1, region = "en", customOpenAi = true, keys = setOf(QWEN)),
@@ -46,17 +44,17 @@ class EffectiveSettingsResolverTest {
             Case(OpenAICompatibleCustom.alias, selected = OpenAICompatibleCustom.alias, listings = 0, region = "en", customOpenAi = true, serverKeys = setOf(OPENAI)),
             Case(CodexGpt54.alias, selected = CodexGpt54.alias, listings = 0, region = "en", customOpenAi = true, codex = true),
             Case(LLMModel.Max.alias, selected = LLMModel.Max.alias, listings = 0),
-            Case(LocalQwen3_4B_Instruct_2507.alias, selected = LocalQwen3_4B_Instruct_2507.alias, listings = 0, local = true),
             Case(OpenAIGpt5Mini.alias, selected = OpenAICompatibleCustom.alias, listings = 1, region = "en", customOpenAi = true, keys = setOf(OPENAI)),
             Case(QwenMax.alias, selected = CodexGpt54.alias, listings = 1, region = "en", customOpenAi = true),
             Case(QwenMax.alias, selected = AiTunnelClaudeHaiku.alias, listings = 1, keys = setOf(AI_TUNNEL, ANTHROPIC)),
             Case(QwenMax.alias, selected = AnthropicHaiku45.alias, listings = 1, region = "en", keys = setOf(AI_TUNNEL, ANTHROPIC)),
-            Case(QwenMax.alias, selected = LocalQwen3_4B_Instruct_2507.alias, listings = 1, local = true),
-            Case(LocalQwen3_4B_Instruct_2507.alias, selected = QwenMax.alias, listings = 1, keys = setOf(QWEN)),
-            Case(LocalQwen3_4B_Instruct_2507.alias, selected = AiTunnelClaudeHaiku.alias, listings = 0, serverKeys = setOf(AI_TUNNEL)),
             Case(OpenAICompatibleCustom.alias, selected = QwenMax.alias, listings = 1, region = "en", customOpenAi = true, keys = setOf(QWEN)),
             Case(OpenAICompatibleCustom.alias, selected = OpenAIGpt5Mini.alias, listings = 1, region = "en", keys = setOf(OPENAI)),
             Case(null, selected = OpenAICompatibleCustom.alias, listings = 1, region = "en", customOpenAi = true, keys = setOf(OPENAI)),
+            Case(
+                null, selected = OpenAICompatibleCustom.alias, listings = 1, region = "en", customOpenAi = true,
+                keys = setOf(OPENAI, ANTHROPIC), named = true, fallbacks = listOf("custom-model", AnthropicHaiku45.alias, named),
+            ),
             Case(QwenMax.alias, selected = QwenMax.alias, listings = 0, supplied = setOf(QWEN)),
             Case(AiTunnelClaudeHaiku.alias, selected = QwenMax.alias, listings = 0, keys = setOf(AI_TUNNEL), supplied = emptySet()),
             Case(
@@ -109,18 +107,14 @@ class EffectiveSettingsResolverTest {
             userProviderKeyRepository = keyRepository,
             featureFlags = BackendFeatureFlags(),
             toolCatalog = TestToolCatalog(),
-            localModelAvailability = object : LocalModelAvailability {
-                override fun availableGigaModels() = listOfNotNull(LocalQwen3_4B_Instruct_2507.takeIf { case.local })
-                override fun defaultGigaModel() = availableGigaModels().firstOrNull()
-                override fun isProviderAvailable() = case.local
-            },
         )
         val resolved = resolver.resolve(USER, UserSettingsOverrides(defaultModel = case.requestModel), userManagedProviders = case.supplied)
-        return case.copy(selected = resolved.defaultModel, saved = saved, listings = listings)
+        val selection = case.copy(selected = resolved.defaultModel, saved = saved, listings = listings)
+        return selection.copy(fallbacks = if (case.fallbacks == null) null else resolver.fallbackModels(USER, Locale.forLanguageTag(case.region)))
     }
 }
 
-/** Resolution inputs with the expected selected model, new-user saved default, and stored key listings. */
+/** Resolution inputs with the expected selected model, new-user saved default, stored key listings and fallback chain. */
 private data class Case(
     val model: String?,
     val requestModel: String? = null,
@@ -133,10 +127,10 @@ private data class Case(
     val serverKeys: Set<LlmProvider> = emptySet(),
     val customOpenAi: Boolean = false,
     val codex: Boolean = false,
-    val local: Boolean = false,
     val newUser: Boolean = false,
     val named: Boolean = false,
     val serverDefault: LLMModel = LLMModel.Max,
+    val fallbacks: List<String>? = null,
 )
 
 private const val USER = "user-1"

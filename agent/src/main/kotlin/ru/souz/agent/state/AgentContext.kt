@@ -1,6 +1,7 @@
 package ru.souz.agent.state
 
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.spi.ModelRouting
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
@@ -16,7 +17,13 @@ data class AgentContext<I>(
     val systemPrompt: String,
     val toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     val runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
+    /** Execution-local boundary; messages from here onward must survive compaction unchanged. */
+    val activeExchangeStartIndex: Int = 0,
 ) {
+    init {
+        require(activeExchangeStartIndex in 0..history.size) { "Active exchange boundary must be within history." }
+    }
+
     /** Replaces advertised and executable tools without inheriting catalog categories. */
     internal fun withOnlyTools(tools: List<LLMToolSetup>): AgentContext<I> {
         val selected = AgentTools(tools)
@@ -31,6 +38,7 @@ data class AgentContext<I>(
         history: List<LLMRequest.Message> = this.history,
         activeTools: List<LLMRequest.Function> = this.activeTools,
         systemPrompt: String = this.systemPrompt,
+        activeExchangeStartIndex: Int = this.activeExchangeStartIndex,
         transform: (I) -> O = { it as O },
     ): AgentContext<O> = AgentContext(
         input = transform(input),
@@ -40,6 +48,7 @@ data class AgentContext<I>(
         systemPrompt = systemPrompt,
         toolInvocationMeta = toolInvocationMeta,
         runtimeEventSink = runtimeEventSink,
+        activeExchangeStartIndex = activeExchangeStartIndex,
     )
 }
 
@@ -71,6 +80,8 @@ data class AgentSettings(
     val tools: AgentTools,
     val contextSize: Int = DEFAULT_MAX_TOKENS,
     val reasoningEffort: String? = null,
+    /** Pending model routing for the turn's first LLM call; cleared once the model is chosen. */
+    val routing: ModelRouting? = null,
 ) {
     constructor(
         model: String,

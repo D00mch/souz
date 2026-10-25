@@ -6,6 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import ru.souz.backend.config.BackendConfigSource
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.restJsonMapper
 
@@ -26,13 +27,18 @@ class BackendKnowledgeE2eTest {
         var searched = false
         backendE2eTest(
             schemaPrefix = "e2e_knowledge",
+            // Exercise Knowledge retention bounds with a server window large enough for this fixture.
+            settingsSource = object : BackendConfigSource {
+                override fun env(key: String): String? = if (key == "CONTEXT_SIZE") "524288" else null
+                override fun property(key: String): String? = null
+            },
             llm = E2eLlmApi { request ->
                 val result = request.messages.lastOrNull { it.role == LLMMessageRole.function }
                 when {
                     request.functions.map { it.name } == listOf("RunSkillCommand") ->
                         toolCallReply(request, "RunSkillCommand", mapOf("skillId" to "user.ask", "arguments" to mapOf("question" to "Report progress")))
 
-                    result?.name in listOf("RunSkillCommand", "SpawnSubagent") -> {
+                    result?.name.let { it == "RunSkillCommand" || it == "SpawnSubagent" } -> {
                         val body = restJsonMapper.readTree(result!!.content)
                         if (failWrites) {
                             assertFalse(body.has("knowledgeId"))

@@ -71,7 +71,7 @@ class BackendChatLifecycleE2eTest {
                 val response = client.post(BackendHttpRoutes.chatMessages(chatId)) {
                     trusted(userId)
                     jsonBody(
-                        """{"content":"message-${index + 1}","clientMessageId":"client-${index + 1}","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}"""
+                        """{"content":"message-${index + 1}","clientMessageId":"client-${index + 1}","options":{"model":"${E2E_MODEL.alias}"}}"""
                     )
                 }
                 assertEquals(HttpStatusCode.OK, response.status)
@@ -80,11 +80,7 @@ class BackendChatLifecycleE2eTest {
                         trusted(userId)
                     }.jsonBody()["items"].takeIf { items ->
                         items.count {
-                            it["type"].asText() in setOf(
-                                "execution.finished",
-                                "execution.failed",
-                                "execution.cancelled",
-                            )
+                            when (it["type"].asText()) { "execution.finished", "execution.failed", "execution.cancelled" -> true; else -> false }
                         } == index + 1
                     }
                 }
@@ -171,6 +167,6 @@ class BackendChatLifecycleE2eTest {
     private suspend fun BackendE2eScope.send(chatId: String, userId: String, content: String) =
         client.post(BackendHttpRoutes.chatMessages(chatId)) {
             trusted(userId)
-            jsonBody("""{"content":"$content","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+            jsonBody("""{"content":"$content","options":{"model":"${E2E_MODEL.alias}"}}""")
         }
 }

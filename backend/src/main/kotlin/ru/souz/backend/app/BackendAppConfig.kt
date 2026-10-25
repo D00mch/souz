@@ -2,6 +2,7 @@ package ru.souz.backend.app
 
 import java.nio.file.Path
 import java.net.URI
+import ru.souz.backend.attachments.AttachmentStorageConfig
 import ru.souz.backend.common.BackendConfigurationException
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.config.BackendFeatureFlags
@@ -155,6 +156,8 @@ data class BackendAppConfig(
     val scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     val pluginDirectory: Path? = null,
     val pluginCacheDirectory: Path? = null,
+    val attachments: AttachmentStorageConfig? = null,
+    val policyPrompt: String? = null,
 ) {
     fun validate(): BackendAppConfig {
         server.validate()
@@ -207,6 +210,7 @@ data class BackendAppConfig(
                     ?.takeIf(String::isNotBlank)?.let(Path::of),
                 pluginCacheDirectory = source.value("SOUZ_PLUGIN_CACHE_DIRECTORY", "souz.plugins.cacheDirectory")
                     ?.takeIf(String::isNotBlank)?.let(Path::of),
+                attachments = AttachmentStorageConfig.load(source),
                 hooks = HookConfig(
                     owners = source.value("SOUZ_HOOK_OWNERS", "souz.hooks.owners")
                         ?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)?.toSet().orEmpty(),
@@ -344,12 +348,16 @@ data class BackendAppConfig(
                         ),
                     )
                 },
+                policyPrompt = source.value(
+                    envKey = "SOUZ_BACKEND_POLICY_PROMPT",
+                    propertyKey = "souz.backend.policyPrompt",
+                )?.trim()?.takeIf { it.isNotEmpty() },
             )
     }
 }
 
 private fun String.isHindsightBaseUrl(): Boolean = runCatching { URI(this) }.getOrNull()?.let { uri ->
-    uri.scheme?.lowercase() in setOf("http", "https") &&
+    when (uri.scheme?.lowercase()) { "http", "https" -> true; else -> false } &&
         uri.host != null &&
         uri.port in -1..65_535 &&
         uri.rawUserInfo == null &&

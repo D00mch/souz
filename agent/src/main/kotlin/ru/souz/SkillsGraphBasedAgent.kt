@@ -22,7 +22,6 @@ import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
-import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
 import ru.souz.agent.nodes.SteerableChatNode
 import ru.souz.agent.nodes.NodesPlain
@@ -30,6 +29,7 @@ import ru.souz.agent.runtime.ActiveRunInputController
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.isToolUse
 
 /**
  * Agent graph whose model always sees only the core skill-discovery, Knowledge, and execution tools.
@@ -40,7 +40,6 @@ class SkillsGraphBasedAgent internal constructor(
     private val nodesLLM: NodesLLM,
     private val nodesCommon: NodesCommon,
     private val nodesErrorHandling: NodesErrorHandling,
-    private val nodesSummarization: NodesSummarization,
     private val nodesMemory: NodesMemory,
     private val nodesSkillInventory: NodesSkillInventory,
     private val nodesToolUseWithKnowledge: NodesToolUseWithKnowledge,
@@ -70,9 +69,7 @@ class SkillsGraphBasedAgent internal constructor(
         val toolUse = nodesToolUseWithKnowledge.node(
             alwaysInlineToolNames = alwaysInlineResultTools.mapTo(mutableSetOf()) { it.fn.name },
         )
-        val finalizeTurn = nodesMemory.finalizeTurn(
-            summarization = nodesSummarization.summarize(),
-        )
+        val finalizeTurn = nodesMemory.finalizeTurn()
         val chatErrorToFinish = nodesErrorHandling.chatErrorToFinish()
 
         nodeInput.edgeTo(inputToHistory)
@@ -86,7 +83,9 @@ class SkillsGraphBasedAgent internal constructor(
                 is LLMResponse.Chat.Ok -> chatOk
             }
         }
-        chatOk.edgeTo { ctx -> if (ctx.input.isToolUse) toolUse else finalizeTurn }
+        chatOk.edgeTo { ctx ->
+            if (ctx.input.isToolUse()) toolUse else finalizeTurn
+        }
         toolUse.edgeTo(chat)
         finalizeTurn.edgeTo(nodeFinish)
         chatErrorToFinish.edgeTo(nodeFinish)
@@ -120,7 +119,4 @@ class SkillsGraphBasedAgent internal constructor(
             }
         }
     }
-
-    private val LLMResponse.Chat.Ok.isToolUse: Boolean
-        get() = choices.any { it.message.functionCall != null }
 }

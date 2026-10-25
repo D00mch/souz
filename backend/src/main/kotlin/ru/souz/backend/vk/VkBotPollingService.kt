@@ -92,7 +92,7 @@ class VkBotPollingService(
             val code = (e as? VkBotApiException)?.code
             val error = when {
                 code == 5 || code == 15 -> "vk_unauthorized"
-                code in listOf(6, 9, 29) -> "vk_rate_limited"
+                code == 6 || code == 9 || code == 29 -> "vk_rate_limited"
                 code == 10 || e is IOException -> "vk_network_error"
                 else -> "vk_unknown_error"
             }

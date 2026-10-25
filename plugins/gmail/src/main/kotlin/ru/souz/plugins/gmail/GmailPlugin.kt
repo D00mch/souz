@@ -72,7 +72,7 @@ internal suspend fun PluginCallContext.gmail(
     ))
     response.authorizationUrl?.let { throw GmailResult(result("reconnect_required").put("authorizationUrl", it)) }
     val status = requireNotNull(response.statusCode)
-    if (status !in setOf(200, 404)) throw GmailResult(result("api_error").put("statusCode", status))
+    if (status != 200 && status != 404) throw GmailResult(result("api_error").put("statusCode", status))
     return status to if (status == 404) json.createObjectNode() else requireNotNull(json.readTree(requireNotNull(response.body)))
 }
 

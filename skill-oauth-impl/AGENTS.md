@@ -6,7 +6,7 @@ Before changing this module, read the relevant pain-point topics below.
 
 - `:skill-oauth-impl` owns provider discovery, authorization-code exchange, encrypted token persistence, PostgreSQL repositories, migrations, and the OAuth callback route.
 - It implements `:skill-oauth-api` and is composed only by `:backend`.
-- Keep agent behavior, UI, desktop integration, and provider-neutral contracts outside this module.
+- Keep agent behavior, application composition, and provider-neutral contracts outside this module.
 
 ## Pain points
 

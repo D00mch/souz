@@ -4,7 +4,6 @@ private const val REGION_EN = "en"
 
 class LlmBuildProfile(
     private val settingsProvider: LlmBuildProfileSettings,
-    private val localProviderAvailability: LocalModelAvailability = LocalModelsUnavailable,
 ) {
 
     private fun currentEdition(): BuildEdition =
@@ -14,9 +13,7 @@ class LlmBuildProfile(
         defaultsForEdition(currentEdition())
 
     val availableProviders: Set<LlmProvider>
-        get() = currentDefaults().keys.filterTo(linkedSetOf()) { provider ->
-            provider != LlmProvider.LOCAL || localProviderAvailability.isProviderAvailable()
-        }
+        get() = currentDefaults().keys
 
     val availableModels: List<LLMModel>
         get() = LLMModel.entries.filter(::isModelAvailable)
@@ -24,40 +21,23 @@ class LlmBuildProfile(
     val defaultModel: LLMModel
         get() = currentDefaults().values.first()
 
-    val supportsSaluteSpeechRecognition: Boolean
-        get() = currentEdition() == BuildEdition.RU
-
     fun normalizeModel(model: LLMModel): LLMModel = if (isModelAvailable(model)) model else defaultModel
 
     fun isModelAvailable(model: LLMModel): Boolean {
         if (model == LLMModel.OpenAICompatibleCustom) return false
-        return when (model.provider) {
-            LlmProvider.LOCAL -> model in localProviderAvailability.availableGigaModels()
-            else -> model.provider in availableProviders
-        }
+        return model.provider in availableProviders
     }
 
     fun findModelByAlias(alias: String): LLMModel? = findLLMModel(alias)?.takeIf(::isModelAvailable)
 
-    fun defaultModelForProvider(provider: LlmProvider): LLMModel? = when (provider) {
-        LlmProvider.LOCAL -> localProviderAvailability.defaultGigaModel()
-        else -> currentDefaults()[provider]
-    }
+    fun defaultModelForProvider(provider: LlmProvider): LLMModel? = currentDefaults()[provider]
 
     fun providerPriorities(): List<LlmProvider> = providerPrioritiesForEdition(currentEdition())
 
-    fun defaultConfiguredModel(hasKey: (LlmProvider) -> Boolean): LLMModel {
-        val availableLocalDefault = localProviderAvailability.defaultGigaModel()
-        return providerPriorities()
-            .firstNotNullOfOrNull { provider ->
-                when (provider) {
-                    LlmProvider.LOCAL -> availableLocalDefault
-                    else -> currentDefaults()[provider]?.takeIf { hasKey(it.provider) }
-                }
-            }
-            ?: availableLocalDefault
-            ?: defaultModel
-    }
+    fun defaultConfiguredModel(hasKey: (LlmProvider) -> Boolean): LLMModel =
+        providerPriorities().firstNotNullOfOrNull { provider ->
+            currentDefaults()[provider]?.takeIf { hasKey(it.provider) }
+        } ?: defaultModel
 
     fun normalizeConfiguredModel(
         model: LLMModel,
@@ -65,18 +45,7 @@ class LlmBuildProfile(
         fallback: () -> LLMModel,
     ): LLMModel = when {
         model == LLMModel.OpenAICompatibleCustom && customOpenAiModel.isNullOrBlank() -> fallback()
-        model.provider == LlmProvider.LOCAL && model !in localProviderAvailability.availableGigaModels() -> fallback()
         model.provider !in currentDefaults() -> fallback()
-        else -> model
-    }
-
-    fun defaultAmbientAnalysisModel(): LLMModel =
-        localProviderAvailability.defaultGigaModel()
-            ?: LLMModel.LocalQwen3_4B_Instruct_2507
-
-    fun normalizeAmbientAnalysisModel(model: LLMModel): LLMModel = when {
-        model.provider != LlmProvider.LOCAL -> defaultAmbientAnalysisModel()
-        model !in localProviderAvailability.availableGigaModels() -> defaultAmbientAnalysisModel()
         else -> model
     }
 
@@ -86,14 +55,12 @@ class LlmBuildProfile(
                 LlmProvider.GIGA to LLMModel.Max,
                 LlmProvider.QWEN to LLMModel.QwenMax,
                 LlmProvider.AI_TUNNEL to LLMModel.AiTunnelClaudeHaiku,
-                LlmProvider.LOCAL to LLMModel.LocalQwen3_4B_Instruct_2507,
             ),
             BuildEdition.EN to mapOf(
                 LlmProvider.CODEX to LLMModel.CodexGpt54,
                 LlmProvider.OPENAI to LLMModel.OpenAIGpt5Mini,
                 LlmProvider.QWEN to LLMModel.QwenMax,
                 LlmProvider.ANTHROPIC to LLMModel.AnthropicHaiku45,
-                LlmProvider.LOCAL to LLMModel.LocalQwen3_4B_Instruct_2507,
             ),
         )
 
@@ -104,8 +71,8 @@ class LlmBuildProfile(
             defaultsForEdition(if (language.equals(REGION_EN, ignoreCase = true)) BuildEdition.EN else BuildEdition.RU)
 
         fun providerPrioritiesForEdition(edition: BuildEdition): List<LlmProvider> = when (edition) {
-            BuildEdition.RU -> listOf(LlmProvider.AI_TUNNEL, LlmProvider.GIGA, LlmProvider.QWEN, LlmProvider.LOCAL)
-            BuildEdition.EN -> listOf(LlmProvider.CODEX, LlmProvider.OPENAI, LlmProvider.ANTHROPIC, LlmProvider.QWEN, LlmProvider.LOCAL)
+            BuildEdition.RU -> listOf(LlmProvider.AI_TUNNEL, LlmProvider.GIGA, LlmProvider.QWEN)
+            BuildEdition.EN -> listOf(LlmProvider.CODEX, LlmProvider.OPENAI, LlmProvider.ANTHROPIC, LlmProvider.QWEN)
         }
 
         fun providerPrioritiesForLanguage(language: String): List<LlmProvider> =
@@ -113,12 +80,4 @@ class LlmBuildProfile(
                 if (language.equals(REGION_EN, ignoreCase = true)) BuildEdition.EN else BuildEdition.RU
             )
     }
-}
-
-private object LocalModelsUnavailable : LocalModelAvailability {
-    override fun availableGigaModels(): List<LLMModel> = emptyList()
-
-    override fun defaultGigaModel(): LLMModel? = null
-
-    override fun isProviderAvailable(): Boolean = false
 }

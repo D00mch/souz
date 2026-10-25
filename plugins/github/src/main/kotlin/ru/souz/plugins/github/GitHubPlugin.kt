@@ -40,7 +40,7 @@ class GitHubPlugin : SouzPlugin {
                 properties.putObject("repository").put("type", "string").put("description", "GitHub owner/repo, not a URL.")
                 fields.forEach { field ->
                     val key = field.removeSuffix("?")
-                    val type = if (key in setOf("number", "runId", "page", "perPage")) "integer" else "string"
+                    val type = if (key in integerArguments) "integer" else "string"
                     val property = properties.putObject(key).put("type", type)
                     if (key == "state") property.putArray("enum").add("open").add("closed").add("all")
                     if (!field.endsWith('?')) required.add(key)
@@ -111,8 +111,8 @@ private fun validate(arguments: ObjectNode, schema: ObjectNode) {
     }
     val repository = arguments.path("repository").asText()
     if (!repository.matches(Regex("[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_.-]{1,100}")) ||
-        repository.substringAfter('/') in setOf(".", "..")) invalid("repository")
-    arguments.get("state")?.let { if (it.asText() !in setOf("open", "closed", "all")) invalid("state") }
+        repository.substringAfter('/') in invalidRepositoryNames) invalid("repository")
+    arguments.get("state")?.let { if (it.asText() !in issueStates) invalid("state") }
 }
 
 private suspend fun pullChecks(
@@ -177,3 +177,7 @@ private suspend fun get(context: PluginCallContext, path: String, query: Map<Str
 private fun requireResponse(valid: Boolean) {
     if (!valid) throw PluginException("github_invalid_response", "GitHub returned an unexpected response")
 }
+
+private val integerArguments = setOf("number", "runId", "page", "perPage")
+private val invalidRepositoryNames = setOf(".", "..")
+private val issueStates = setOf("open", "closed", "all")

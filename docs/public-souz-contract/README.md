@@ -2,6 +2,10 @@
 
 Draft contract for Souz Cloud. Exact fields are in [OpenAPI](openapi.yaml); [happy-path.jsonl](examples/happy-path.jsonl) shows two users' chats, a creation retry, history before and during execution, continued and new threads, client tools, a forwarded message, unsubscribe and resubscribe with replay per chat. Each line is a complete WebSocket frame: Souz sends `ack`, `status` and `event`; the client sends the other kinds. Local setup: [Postman](postman/) / [Bruno](bruno/).
 
+Orion handles server-driven [`prompt.personality.set`](../../backend/docs/personality-settings.md) snapshots
+on subscription/reconnection and after a user style change. These live commands use `seq:null` and the
+normal `tool.result` acknowledgement, independently of the tool catalogue.
+
 ## Connection
 
 Connect to `/v1/ws?clientType=backend`. One WebSocket can serve multiple users' chats; chat-scoped frames carry `chatId`. Each chat's `clientType` must match the connection.
@@ -30,11 +34,15 @@ With `HINDSIGHT_API_URL` configured and `SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL
 
 ## Client tool catalogue
 
-HTTP `POST /v1/chats` and WS `chat.create.payload` accept optional `tools`, an array of `{name, description, parameters}` definitions. Missing `tools` and `[]` both use the seven bundled client Skills: `user.ask`, `device.media.open`, `device.mcp.list_devices`, `device.mcp.list_tools`, `device.mcp.call_tool`, `web.search`, and `orion.call`. A nonempty catalogue replaces those defaults. Explicit `null` is invalid. There is no catalogue discovery call or REST catalogue fetch. Server tools keep their existing policy.
+HTTP `POST /v1/chats` and WS `chat.create.payload` accept optional `tools`, an array of `{name, description, parameters}` definitions. Bundled client Skills are always available: `user.ask`, `device.media.open`, `device.mcp.list_devices`, `device.mcp.list_tools`, `device.mcp.call_tool`, `web.search`, and `orion.tools.list`. Orion command tools come from declarations or discovery. Declarations override matching defaults. Missing `tools` and `[]` are equivalent; explicit `null` is invalid. Server tools keep their existing policy.
 
 Delegated client Skills also use `RunSkillCommand`; their exact names and full schemas are included in the child's instructions. Only explicitly selected Skills are callable. Local discovery preserves schemas in full; the selected model's context window must still fit them.
 
-The catalogue is validated and stored atomically with the chat. It is immutable across turns, threads, reconnects and backend restarts. Both creation paths share `(userId, requestId)` idempotency: definitions are sorted by name, schema property keys are sorted, and `required` and `enum` arrays are deduplicated and sorted. Names and descriptions are preserved exactly. A changed definition conflicts; use a new chat to change the catalogue. Pre-existing chats have an empty stored catalogue and use bundled defaults; their empty-catalogue creation retries remain valid.
+Creation declarations are validated and stored atomically with the chat and remain immutable. Both creation paths share `(userId, requestId)` idempotency: definitions are sorted by name, schema property keys are sorted, and `required` and `enum` arrays are deduplicated and sorted. Names and descriptions are preserved exactly. Changed creation declarations conflict; discovered tools do not change those declarations or receipts. Pre-existing empty-catalogue creation retries remain valid.
+
+Invoke `orion.tools.list` through `RunSkillCommand` with `{}`, adding routing `channelId` when targeting another connected device. Orion returns `{"tools":[...]}` using the same definitions and limits as creation, excluding `orion.tools.list`. Souz validates the whole response before saving and exposing the tools. Invalid catalogues return `invalid_client_tool_catalogue`; storage failures return `client_tool_failed`. Failures preserve the previous catalogue.
+
+Each source conversation remembers one discovered catalogue and its supplying channel across turns and backend restarts. Discovered definitions override matching declarations/defaults and are callable immediately. Successful discovery replaces the previous discovered catalogue, including when selecting another channel; `{"tools":[]}` restores the declared/default baseline. Refresh is explicit, with no expiry. A disconnected or archived target requires selecting a live channel and rediscovering. Discovered tools reject a different `channelId` with `client_context_mismatch`. The parent discovers before delegating selected tools; the discovery tool itself is not delegable. Separate webhook-created conversations do not share discoveries.
 
 Limits: 256 tools; 1 MiB of serialized definitions; unique names matching `[A-Za-z][A-Za-z0-9_.-]{0,63}`; nonblank descriptions of at most 16,384 characters; schema depth at most 16 below the root. Core Skill and server tool names are reserved. Validation rejects the entire creation with `invalid_request`.
 
@@ -42,7 +50,7 @@ Schema validation messages identify the first failing rule and its JSON Pointer 
 
 `parameters` uses an object root with `type`, optional `properties`, `required`, and boolean `additionalProperties`. Nested properties support `type`, `description`, nonempty string `enum`, object `properties`/`required`/`additionalProperties`, and array `items`. Types are `object`, `array`, `string`, `integer`, `number`, `boolean`, and `null`. Arrays require `items`; required names must be declared properties. Other schema keywords are rejected, not discarded. Arguments are checked against this schema before dispatch; invalid arguments return `mcp_invalid_arguments` through generic Skill execution.
 
-Client tools use `GetSkillByName` and `RunSkillCommand`. Explicit declarations retain their exact wire names and normalized schemas; known names also receive bundled usage instructions appended to the declared description. Defaults use open object schemas with argument instructions from their bundles. Parents and selected subagents receive that guidance; persisted declarations and creation hashes retain the original descriptions. `user.ask` uses `CHAT`, `web.search` uses `WEB_SEARCH`, and other client tools use `APPLICATIONS`. Successful results must be JSON objects; malformed success output becomes `invalid_tool_result` for the model. Custom tools have a one-minute deadline. Known Skill names use bundled deadlines whether selected by default or explicitly declared: five minutes for `user.ask`, 30 seconds for `device.mcp.list_devices` and `device.mcp.list_tools`, and one minute for the other four Skills. `channelId` remains a reserved routing argument for existing cross-channel calls and is removed before schema validation and device dispatch; it cannot be declared as a tool parameter. Orion owns device binding; creation adds no device fields or binding checks.
+Client tools use `GetSkillByName` and `RunSkillCommand`. Declared and discovered definitions retain their exact wire names and normalized schemas; known names also receive bundled usage instructions appended to their description. Defaults use open object schemas except `orion.tools.list`, which accepts an empty object. Parents and selected subagents receive that guidance; persisted declarations and creation hashes retain the original descriptions. `user.ask` uses `CHAT`, `web.search` uses `WEB_SEARCH`, and other client tools use `APPLICATIONS`. Successful results must be JSON objects; malformed success output becomes `invalid_tool_result` for the model. Custom tools have a one-minute deadline. Known Skill names use bundled deadlines: five minutes for `user.ask`, 30 seconds for `device.mcp.list_devices`, `device.mcp.list_tools`, and `orion.tools.list`, and one minute for the remaining Skills. `channelId` is reserved routing metadata, removed before schema validation and device dispatch; it cannot be declared as a tool parameter. Orion owns device binding; creation adds no device fields or binding checks.
 
 Every public `tool.call.started` requests client execution and omits `target`. Return `tool.result`, respecting `deadlineAt` when present. The example covers `user.ask`, `device.media.open` and `web.search`; argument/result shapes are documented in the schemas and trace.
 
@@ -58,11 +66,6 @@ receipt: the first result reserved before `deadlineAt` wins and waits for its AC
 deadline. Further results, including those after timeout or caller cancellation, are rejected as
 `tool_call_not_found`. A failed ACK write releases the caller with `client_tool_failed`. Disconnect
 does not replay the call; if no result arrives before `deadlineAt`, the caller receives `client_tool_timed_out`.
-
-`orion.call` accepts `{"utterance":"включи Pink Floyd"}` and returns `{"reply":"Включаю Pink Floyd"}`.
-It handles Orion music, playback, volume, timer and alarm commands, with a one-minute deadline.
-An unrecognized command can return an ordinary apology in `reply`; transport errors use
-`orion_call_failed` or `client_tool_timed_out`.
 
 Active-thread submit/tool/cancel operations must reach the runtime owner in multi-replica deployments. Durable replay and thread status can be read from any process.
 

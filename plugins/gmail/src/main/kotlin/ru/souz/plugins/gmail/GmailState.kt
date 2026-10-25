@@ -12,7 +12,7 @@ internal fun key(config: String): String {
 internal fun validateConnection(connection: ObjectNode) {
     require(connection.text("mailboxEmail").length <= 320 && '@' in connection.text("mailboxEmail"))
     require(connection.text("topicName").matches(Regex("projects/[^/\\s]{1,128}/topics/[^/\\s]{1,128}")))
-    require(connection.path("notificationMode").asText("signal") in setOf("signal", "subject", "summary", "assistant"))
+    require(connection.path("notificationMode").asText("signal") in notificationModes)
     val destination = connection["destination"] as? ObjectNode ?: error("Missing destination")
     require(destination.text("channelType").length <= 64 && destination.text("channelId").length <= 256)
 }
@@ -34,7 +34,7 @@ internal fun newState(mailbox: String): ObjectNode = json.createObjectNode().app
 
 internal fun validateState(state: ObjectNode, connection: ObjectNode) {
     require(state.path("schemaVersion").asInt() == 1 && state.text("mailboxEmail").equals(connection.text("mailboxEmail"), ignoreCase = true))
-    require(state.text("status") in setOf("needs_profile", "ready", "account_mismatch", "resync_required", "reconnect_required"))
+    require(state.text("status") in connectionStatuses)
     require(state.path("revision").isIntegralNumber && state.path("revision").asLong() >= 0)
     require(state.path("pending").isObject && state.path("pending").size() <= 500)
     require(state.path("done").isArray)
@@ -44,7 +44,7 @@ internal fun validateState(state: ObjectNode, connection: ObjectNode) {
     require(state.text("status") != "ready" || state.path("historyCursor").isTextual)
     state.path("pending").properties().forEach { (id, item) ->
         messageId(id)
-        require(item.isObject && item.path("status").asText() in setOf("pending", "claimed", "delivering", "uncertain"))
+        require(item.isObject && item.path("status").asText() in pendingStatuses)
         if (item.path("status").asText() != "pending") require(item.path("claim").isTextual && item.path("expiresAt").isNumber)
     }
     state.path("done").forEach { messageId(it.asText()) }
@@ -65,3 +65,7 @@ internal fun finish(state: ObjectNode, message: String) {
 
 internal fun messageQuery(full: Boolean): List<Pair<String, String>> = if (full) listOf("format" to "full")
     else listOf("format" to "metadata") + listOf("From", "Subject", "Date").map { "metadataHeaders" to it }
+
+private val notificationModes = setOf("signal", "subject", "summary", "assistant")
+private val connectionStatuses = setOf("needs_profile", "ready", "account_mismatch", "resync_required", "reconnect_required")
+private val pendingStatuses = setOf("pending", "claimed", "delivering", "uncertain")

@@ -16,7 +16,12 @@ internal class HistoryMemoryWorker(
     private val repository: PostgresHistoryMemoryRepository,
     private val memory: HindsightConversationMemoryRuntime,
     private val clock: Clock = Clock.systemUTC(),
+    private val pollIntervalMillis: Long = 5_000,
 ) {
+    init {
+        require(pollIntervalMillis > 0) { "History memory poll interval must be positive." }
+    }
+
     private val logger = LoggerFactory.getLogger(HistoryMemoryWorker::class.java)
 
     fun start(scope: CoroutineScope) = scope.launch {
@@ -28,7 +33,7 @@ internal class HistoryMemoryWorker(
             } catch (error: Exception) {
                 logger.warn("History memory poll failed category={}", error.javaClass.simpleName)
             }
-            delay(5_000)
+            delay(pollIntervalMillis)
         }
     }
 
@@ -56,7 +61,7 @@ internal class HistoryMemoryWorker(
             throw cancelled
         } catch (error: Exception) {
             val permanent = error is HindsightRetainRejected ||
-                (error is HindsightHttpFailure && error.statusCode in 400..499 && error.statusCode !in listOf(408, 429))
+                (error is HindsightHttpFailure && error.statusCode in 400..499 && when (error.statusCode) { 408, 429 -> false; else -> true })
             val exhausted = if (permanent) fragment.attempts >= 12
                 else !clock.instant().isBefore(fragment.createdAt.plus(Duration.ofHours(24)))
             val updated = if (exhausted) repository.complete(fragment, failed = true) else repository.retry(fragment)

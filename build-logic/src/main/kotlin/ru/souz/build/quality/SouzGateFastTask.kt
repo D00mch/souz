@@ -96,6 +96,15 @@ abstract class SouzGateFastTask : DefaultTask() {
             runCheck(SouzQualityChecks.coroutineMonitorUse) {
                 detektDiagnostics { it in MONITOR_RULES }
             },
+            runCheck(SouzQualityChecks.temporaryCollectionMembership) {
+                detektDiagnostics { it == "TemporaryCollectionForMembership" }
+            },
+            runCheck(SouzQualityChecks.repeatedGetterComputation) {
+                detektDiagnostics { it == "RepeatedComputationInGetter" }
+            },
+            runCheck(SouzQualityChecks.layeredMutability) {
+                detektDiagnostics { it == "LayeredMutability" }
+            },
         )
 
         val status = QualityReport.write(

@@ -9,6 +9,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.chat.model.ChatRole
+import ru.souz.agent.spi.RoutedModel
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.model.AgentExecutionUsage
@@ -103,6 +104,7 @@ class PostgresAgentExecutionRepository(
         usage: AgentExecutionUsage,
         output: String?,
         assistantMessageId: UUID?,
+        routedModel: RoutedModel?,
     ): CommittedAgentTurn? {
         require(state.userId == expected.userId && state.chatId == expected.chatId)
         val context = currentCoroutineContext()
@@ -134,7 +136,7 @@ class PostgresAgentExecutionRepository(
             val execution = checkNotNull(transition(
                 connection, current,
                 if (output == null) AgentExecutionStatus.WAITING_OPTION else AgentExecutionStatus.COMPLETED,
-                usage = usage, assistantMessageId = message?.id,
+                usage = usage, assistantMessageId = message?.id, routedModel = routedModel,
             ))
             // JDBC may have waited for a lock while the option handoff was cancelled.
             context.ensureActive()
@@ -150,11 +152,13 @@ class PostgresAgentExecutionRepository(
         errorMessage: String? = null,
         usage: AgentExecutionUsage? = null,
         assistantMessageId: UUID? = null,
+        routedModel: RoutedModel? = null,
     ): AgentExecution? = connection.prepareStatement(
         """
         update agent_executions
         set status = ?, finished_at = ?, cancel_requested = ?, error_code = ?, error_message = ?,
             usage_json = coalesce(?, usage_json), assistant_message_id = coalesce(?, assistant_message_id),
+            model = coalesce(?, model), provider = coalesce(?, provider),
             runtime_lease_until = case when ? = 'waiting_option' then null else runtime_lease_until end
         where user_id = ? and chat_id = ? and id = ?
           and status = ? and cancel_requested = ? and runtime_owner is not distinct from ?
@@ -168,13 +172,15 @@ class PostgresAgentExecutionRepository(
         statement.setString(5, errorMessage)
         statement.setJson(6, usage?.toUsageJson())
         statement.setObject(7, assistantMessageId)
-        statement.setString(8, status.value)
-        statement.setString(9, expected.userId)
-        statement.setObject(10, expected.chatId)
-        statement.setObject(11, expected.id)
-        statement.setString(12, expected.status.value)
-        statement.setBoolean(13, expected.cancelRequested)
-        statement.setString(14, expected.runtimeOwner)
+        statement.setString(8, routedModel?.model)
+        statement.setString(9, routedModel?.provider?.name)
+        statement.setString(10, status.value)
+        statement.setString(11, expected.userId)
+        statement.setObject(12, expected.chatId)
+        statement.setObject(13, expected.id)
+        statement.setString(14, expected.status.value)
+        statement.setBoolean(15, expected.cancelRequested)
+        statement.setString(16, expected.runtimeOwner)
         statement.executeQuery().use { resultSet ->
             if (resultSet.next()) resultSet.toExecution() else null
         }

@@ -1,15 +1,15 @@
 # Backend
 
-`:backend` is the headless JVM HTTP host. It exposes public health, generated API documentation, and the credential-free Client-Souz chat creation and WebSocket boundary. Other `/v1/**` operations stay behind the trusted proxy. Chat turns run through the shared `:agent` kernel without Compose or desktop-only services.
+`:backend` is the headless JVM HTTP host. It exposes public health, generated API documentation, and the credential-free Client-Souz chat creation and WebSocket boundary. Other `/v1/**` operations stay behind the trusted proxy. Chat turns run through the shared `:agent` kernel.
 
 Before changing this module, read the relevant pain-point topics below.
 
 ## Boundaries
 
 - Treat proxy-provided identity as the authority for proxy routes. The public Client-Souz boundary accepts trusted UUID user identity in `POST /v1/chats`, `chat.create.payload.userId`, and `message.submit.payload.device.userId` and must keep those values equal for chat ownership.
-- Expose only the tools `BackendToolCapabilityPolicy` allows; desktop integrations and UI dependencies must stay outside this module. Change that policy, not its callers, when backend tool exposure changes.
-- Build one immutable request-scoped catalog by applying each execution's enabled-tool snapshot to the policy-hostable compiled tools before adding Client-Souz tool-backed Skills. The backend excludes compiled web tools; its `WEB_SEARCH` category contains only client `web.search`. Executions without a current client can target a connected client channel with `channelId`.
-- Persist client tool declarations atomically with chat creation, load them by owner for each runtime, and exclude them from metadata reads. Empty declarations use all seven bundled client Skills, including for existing chats; nonempty declarations replace the defaults. Keep delegated client Skills behind `RunSkillCommand` with complete schemas and routing instructions.
+- Expose only the tools `BackendToolCapabilityPolicy` allows. Change that policy, not its callers, when backend tool exposure changes.
+- Build immutable catalog snapshots by applying each execution's enabled-tool snapshot to policy-hostable compiled tools before adding Client-Souz tool-backed Skills. The backend excludes compiled web tools; its `WEB_SEARCH` category contains only client `web.search`. Executions without a current client can target a connected client channel with `channelId`.
+- Persist creation declarations atomically with the chat and retain their original idempotency hash. Always include bundled client Skills; declarations override matching defaults. Store one discovered catalogue separately per owned conversation, with precedence over declarations/defaults and binding to its supplying channel. Validate and persist a complete replacement before exposing it to the running execution. Exclude both catalogues from metadata reads. Only the parent discovers; children receive selected immutable snapshots behind `RunSkillCommand`.
 - Enrich declared known client tools with bundled `skills/client` instructions, categories, and deadlines. Preserve their exact names, persisted descriptions, and input schemas. Custom client tools use a one-minute deadline.
 - Build every turn with the backend's single request-scoped steerable `AgentId.SKILLS_GRAPH`. Advertise only its fixed core Skill tools and discover catalog capabilities through Skill inventory.
 - Reuse the application-owned Jev HTTP/1.1 client across users and executions; provider resources close it after application work stops. See [provider HTTP lifecycle](../sharedLogic/docs/provider-http-lifecycle.md).
@@ -29,6 +29,8 @@ Before changing this module, read the relevant pain-point topics below.
 ## Pain points
 
 - [Plugins](docs/plugins.md) — live JAR generations, user storage, HTTP, and opt-outs.
+- [Personality settings](docs/personality-settings.md) — validated user style, conversational scope and Orion snapshots.
+- [User file storage](docs/s3-storage.md) — private S3 bucket, owner-scoped metadata, expiry and retryable cleanup.
 - [Named LLM connections](docs/named-llm-connections.md) — server model names, independent endpoints and keys, subagents and summarization.
 - [Metrics accounting](docs/metrics-accounting.md) — commit boundaries, bounded labels, waiting time and replica ownership; see the [metric reference](docs/metrics.md).
 - [Workspace hooks](docs/hooks.md) — trusted ownership, admission, persistent call budgets, sequential dispatch and single-process recovery.

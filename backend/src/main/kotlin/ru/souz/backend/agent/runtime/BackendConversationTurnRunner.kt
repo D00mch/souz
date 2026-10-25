@@ -8,6 +8,7 @@ import ru.souz.backend.plugins.BackendPlugins
 import kotlinx.coroutines.CancellationException
 import java.util.UUID
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.spi.RoutedModel
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
@@ -18,16 +19,19 @@ import ru.souz.llms.LLMResponse
 internal sealed interface BackendConversationTurnOutcome {
     val usage: LLMResponse.Usage
     val session: AgentConversationSession
+    val routedModel: RoutedModel?
 
     data class Completed(
         val output: String,
         override val usage: LLMResponse.Usage,
         override val session: AgentConversationSession,
+        override val routedModel: RoutedModel? = null,
     ) : BackendConversationTurnOutcome
 
     data class WaitingOption(
         override val usage: LLMResponse.Usage,
         override val session: AgentConversationSession,
+        override val routedModel: RoutedModel? = null,
     ) : BackendConversationTurnOutcome
 }
 
@@ -89,12 +93,14 @@ internal class BackendConversationRuntimeTurnRunner(
                 BackendConversationTurnOutcome.WaitingOption(
                     usage = execution.usage,
                     session = execution.session,
+                    routedModel = execution.routedModel,
                 )
             } else {
                 BackendConversationTurnOutcome.Completed(
                     output = execution.output,
                     usage = execution.usage,
                     session = execution.session,
+                    routedModel = execution.routedModel,
                 )
             }
         } catch (e: CancellationException) {

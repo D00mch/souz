@@ -1,9 +1,5 @@
 package ru.souz.llms
 
-import com.fasterxml.jackson.databind.ObjectMapper
-import kotlinx.coroutines.currentCoroutineContext
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 
@@ -15,61 +11,4 @@ interface TokenLogging {
 
     fun currentRequestTokenUsage(requestId: String): LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0)
     fun sessionTokenUsage(): LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0)
-}
-
-private class TokenLoggingRequestContext(
-    val requestId: String,
-) : CoroutineContext.Element {
-    override val key: CoroutineContext.Key<TokenLoggingRequestContext> = TokenLoggingRequestContext
-
-    companion object : CoroutineContext.Key<TokenLoggingRequestContext>
-}
-
-class SessionTokenLogging(
-    private val logObjectMapper: ObjectMapper,
-) : TokenLogging {
-    private val currentSessionTokensUsage = AtomicReference(ZERO_USAGE)
-    private val requestTokenUsage = ConcurrentHashMap<String, LLMResponse.Usage>()
-
-    override fun startRequest(requestId: String) {
-        requestTokenUsage[requestId] = ZERO_USAGE
-    }
-
-    override fun requestContextElement(requestId: String): CoroutineContext =
-        TokenLoggingRequestContext(requestId)
-
-    override suspend fun logTokenUsage(result: LLMResponse.Chat.Ok, body: LLMRequest.Chat) {
-        val requestId = currentCoroutineContext()[TokenLoggingRequestContext]?.requestId
-        val newCurrentTokensUsage = currentSessionTokensUsage.updateAndGet { it + result.usage }
-        requestId?.let { id ->
-            requestTokenUsage.compute(id) { _, currentUsage ->
-                (currentUsage ?: ZERO_USAGE) + result.usage
-            }
-        }
-
-        val (_, _, spent, cached) = result.usage
-        val (_, _, sessionSpent, sessionCached) = newCurrentTokensUsage
-        println(
-            """
-            |--  History.len: ${body.messages.size},  Functions.len: ${body.functions.size}
-            |--  Tokens spent: $spent, cached: $cached, per session spent: $sessionSpent, cached: $sessionCached
-            |--  Choice.len: ${result.choices.size}, Last choice:"
-            |${logObjectMapper.writeValueAsString(result.choices.lastOrNull())}
-            """.trimMargin()
-        )
-    }
-
-    override fun finishRequest(requestId: String) {
-        requestTokenUsage.remove(requestId)
-    }
-
-    override fun currentRequestTokenUsage(requestId: String): LLMResponse.Usage =
-        requestTokenUsage[requestId] ?: ZERO_USAGE
-
-    override fun sessionTokenUsage(): LLMResponse.Usage =
-        currentSessionTokensUsage.get()
-
-    private companion object {
-        val ZERO_USAGE = LLMResponse.Usage(0, 0, 0, 0)
-    }
 }
