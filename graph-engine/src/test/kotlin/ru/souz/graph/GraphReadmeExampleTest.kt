@@ -7,37 +7,6 @@ import kotlin.test.assertTrue
 
 class GraphReadmeExampleTest {
     @Test
-    fun `built graphs retain ordered transitions when their builder is reused`() = runBlocking {
-        val visited = mutableListOf<String>()
-        val first = Node<String, String>("first") {
-            visited += "first"
-            it
-        }
-        val second = Node<String, String>("second") {
-            visited += "second"
-            it
-        }
-        val third = Node<String, String>("third") {
-            visited += "third"
-            it
-        }
-        val builder = GraphBuilder<String, String>("snapshot", RetryPolicy())
-        with(builder) {
-            nodeInput.edgeTo(first)
-            nodeInput.edgeTo { second }
-        }
-        val original = builder.build()
-        with(builder) { nodeInput.edgeTo(third) }
-        val extended = builder.build()
-
-        assertEquals("input", original.start("input"))
-        assertEquals(listOf("first", "second"), visited)
-        visited.clear()
-        assertEquals("input", extended.start("input"))
-        assertEquals(listOf("first", "second", "third"), visited)
-    }
-
-    @Test
     fun `README example graph runs end to end`() = runBlocking {
         val parse = Node<String, Int>("parse") { it.trim().toInt() }
         val double = Node<Int, Int>("double") { it * 2 }

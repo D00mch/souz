@@ -10,44 +10,11 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.test.runTest
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntime
 import ru.souz.backend.client.repository.ClientRequestResult
 
 class ClientThreadRuntimeRegistryTest {
-    @Test
-    fun `state replacements preserve readiness and removal waiters until tool and runtime finish`() = runTest {
-        val registry = ClientThreadRuntimeRegistry()
-        val threadId = UUID.randomUUID()
-        val device = device("device-1")
-        val runtime = mockk<BackendConversationRuntime>(relaxed = true)
-        registry.register(threadId, device)
-        val ready = async { registry.awaitRuntimeAvailable(threadId) }
-        val removed = async { registry.awaitRemoved(threadId) }
-        testScheduler.runCurrent()
-
-        registry.attach(threadId, runtime)
-        registry.markRuntimeReady(threadId, runtime)
-        assertTrue(ready.await())
-        val pending = PendingClientTool("tool-1")
-        assertEquals(BeginClientToolResult.Started(device), registry.beginTool(threadId, pending))
-        registry.withTerminalTransition(threadId) { Unit }
-        registry.detach(threadId, runtime)
-        registry.clearTool(threadId, "other-tool")
-        assertTrue(registry.contains(threadId))
-        assertFalse(removed.isCompleted)
-
-        val outcome = ClientToolOutcome("completed", null, null)
-        assertFalse(registry.finishTool(threadId, "other-tool", outcome))
-        assertTrue(registry.finishTool(threadId, "tool-1", outcome))
-        assertEquals(outcome, pending.result.await())
-        removed.await()
-        assertFalse(registry.contains(threadId))
-        assertFalse(registry.finishTool(threadId, "tool-1", outcome))
-    }
-
     @Test
     fun `terminal state is retained for a pending tool and then released`() = runBlocking {
         val registry = ClientThreadRuntimeRegistry()

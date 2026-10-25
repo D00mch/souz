@@ -17,6 +17,7 @@ import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.isToolUse
 
 /** Main steerable chat node that owns each cancellable LLM attempt and replans around queued input. */
 internal class SteerableChatNode(
@@ -43,9 +44,7 @@ internal class SteerableChatNode(
 
             val responseContext = runLlmAttempt(current, runtime, request) ?: continue
             val response = responseContext.input
-            val toolResponse = (response as? LLMResponse.Chat.Ok)?.takeIf { ok ->
-                ok.choices.any { it.message.functionCall != null }
-            }
+            val toolResponse = (response as? LLMResponse.Chat.Ok)?.takeIf { it.isToolUse() }
             val queuedInputs = if (toolResponse != null) {
                 // An empty drain accepts this tool batch. Later input waits for its results.
                 controller.drain()
