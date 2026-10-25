@@ -11,7 +11,7 @@
 
 ## Invariants
 
-- Keep runtime tools headless and resolve per-execution capabilities through the backend's catalog.
+- Keep runtime tools headless and resolve per-execution capabilities through the backend's catalog. JEV routing treats capability descriptions and dialogue as untrusted data, with the current request separate from reference history.
 - Keep skill registry and skill-tool DI opt-in; general runtime modules must not install them implicitly.
 - Resolve filesystem and command access from each `ToolInvocationMeta`; do not retain user-specific paths in singleton tools.
 - Keep the skill registry and `RunSkillCommand` on the same single-user bundle layout so activation and execution resolve the same bundle.

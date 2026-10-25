@@ -11,5 +11,5 @@ data class ModelRouting(val simple: RoutedModel, val complex: RoutedModel)
 
 /** Says whether a turn needs the complex model; throws when it cannot decide. */
 fun interface TaskComplexityClassifier {
-    suspend fun isComplex(request: LLMRequest.Chat): Boolean
+    suspend fun isComplex(request: LLMRequest.Chat, capabilities: Map<String, String>): Boolean
 }

@@ -16,7 +16,11 @@ The request-scoped kernel exposes one steerable skills graph under `AgentId.SKIL
 
 ### Model routing
 
-`AgentSettings.routing` marks a skills-graph turn whose first LLM call may run on a simple or a complex model. With a `TaskComplexityClassifier`, `NodesLLM` starts the simple model at once and publishes none of its streamed output until the classifier decides; a complex decision cancels that call and calls the complex model, and a classifier failure keeps the turn's own model. Each target call uses the ordinary request preparation with that target's tools: conversation instructions, the turn's context budget, and compaction that keeps the active exchange. The chosen settings, without routing, serve the rest of the turn, and the core tools are rebound to them, so a `SpawnSubagent` child defaults to the chosen model.
+`AgentSettings.routing` marks a skills-graph turn whose first LLM call may run on a simple or a complex model. With a `TaskComplexityClassifier`, `NodesLLM` starts the simple model at once and publishes none of its streamed output until the classifier decides; a complex decision cancels that call and calls the complex model, and a classifier failure keeps the turn's own model. The simple target clears both advertised and executable tools; complex and fallback targets retain them. Each target call uses ordinary request preparation: conversation instructions, the turn's context budget, and compaction that keeps the active exchange. The chosen settings, without routing, serve the rest of the turn, and the core tools are rebound to them, so a `SpawnSubagent` child defaults to the chosen model.
+
+Inventory supplies execution-local capability names with descriptions capped at 240 characters, reusing metadata reads and retaining unselected descriptions or ID-only entries. Classification receives these hints separately from dialogue, without tool schemas or additional discovery.
+
+`NodesLLM` decides initial waiting once per execution: non-simple routing emits `InitialWait` after classification, and execution without routing emits before its first call. Simple routing suppresses it throughout the execution. Retries, tool loops and queued inputs do not repeat it; child sinks discard it.
 
 ## Why this is fragile
 

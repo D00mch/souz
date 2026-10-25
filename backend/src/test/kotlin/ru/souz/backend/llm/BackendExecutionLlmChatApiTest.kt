@@ -33,6 +33,7 @@ import kotlinx.coroutines.test.runTest
 import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.backend.settings.service.BackendSettingsProvider
 import ru.souz.backend.settings.service.MapBackendServerPreferenceStore
+import ru.souz.backend.config.NamedLlmConfig
 import ru.souz.backend.config.NamedLlmModel
 import ru.souz.backend.config.loadNamedModels
 import ru.souz.db.SettingsProvider
@@ -156,7 +157,7 @@ class BackendExecutionLlmChatApiTest {
         // Named connections with one endpoint and upstream ID still differ by key.
         val namedCalls = mutableListOf<String>()
         facadeFixture(
-            namedModels = listOf("bad", "good").associateWith { NamedLlmModel("shared", "https://same.test/v1", "$it-key") },
+            llmConfig = NamedLlmConfig(models = listOf("bad", "good").associateWith { NamedLlmModel("shared", "https://same.test/v1", "$it-key") }),
             fallbackModels = listOf("good"),
             providerApiOverride = { StubChatApi(message = { namedCalls += it.model; if (namedCalls.size == 1) LLMResponse.Chat.Error(500, "down") else ok(it.model) }) },
         ).use { assertEquals(ok("shared"), it.api.message(chat("bad"))) }
@@ -218,7 +219,12 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
-    fun `named routes isolate endpoints and keys with identical upstream IDs in both modes`() = withNamedLlmConfig { source ->
+    fun `named routes isolate connections and parameters in both modes and summaries`() = withNamedLlmConfig(
+        NAMED_LLM_CONFIG
+            .replace("\"connection\":\"experiment\"", """"connection":"experiment","parameters":{"thinking":{"type":"disabled"},"reasoning_effort":"low"}""")
+            .replace("\"connection\":\"router\"", """"connection":"router","parameters":{"thinking":{"type":"enabled"},"reasoning_effort":"low"}"""),
+        environment = mapOf("OPENAI_SUMMARIZATION_PARAMETERS" to """{"thinking":{"type":"disabled"},"top_p":0.9}"""),
+    ) { source ->
         runTest {
             val requests = mutableListOf<CapturedRequest>()
             val config = source.loadNamedModels()
@@ -226,13 +232,14 @@ class BackendExecutionLlmChatApiTest {
                 openaiModel = "shared-model"
                 openaiBaseUrl = "https://legacy.test/v1"
             }
-            facadeFixture(settingsProvider = settings, namedModels = config.models, providerApiOverride = null, client = recordingClient(requests)).use { fixture ->
+            facadeFixture(settingsProvider = settings, llmConfig = config, providerApiOverride = null, client = recordingClient(requests)).use { fixture ->
                 for ((request, expected) in listOf(
                     chat("test-chat").copy(provider = LlmProvider.OPENAI) to "experiment",
                     chat("tv-agent").copy(provider = LlmProvider.OPENAI) to "router",
                     chat("shared-model").copy(provider = LlmProvider.OPENAI) to "legacy",
                     chat(LLMModel.OpenAICompatibleCustom.alias) to "legacy",
                     chat("test-chat") to "experiment",
+                    chat("tv-agent").copy(reasoningEffort = "high") to "router",
                     chat("test-chat").copy(isSummarization = true) to "router",
                 )) {
                     val before = requests.size
@@ -244,6 +251,11 @@ class BackendExecutionLlmChatApiTest {
                         assertEquals("https://$expected.test/v1/chat/completions", it.url)
                         assertEquals("Bearer " + if (expected == "legacy") "test-key" else "$expected-secret", it.authorization)
                         assertEquals("shared-model", it.body["model"].asText())
+                        val thinking = when (expected) { "experiment" -> "disabled"; "router" -> "enabled"; else -> null }
+                        assertEquals(thinking, it.body.path("thinking").path("type").textValue())
+                        assertEquals(request.reasoningEffort ?: "low".takeIf { expected != "legacy" }, it.body.path("reasoning_effort").textValue())
+                        assertEquals(request.maxTokens, it.body["max_completion_tokens"].asInt())
+                        if (request.isSummarization) assertEquals(0.9, it.body["top_p"].asDouble())
                         assertTrue(!it.body.has("provider"))
                     }
                 }
@@ -297,20 +309,25 @@ class BackendExecutionLlmChatApiTest {
     @Test
     fun `routes every supported chat provider and caches each adapter`() = runTest {
         val providerCalls = mutableListOf<LlmProvider>()
+        val efforts = mutableListOf<String?>()
+        val defaults = mapOf(LLMModel.OpenAIGpt52.alias to "low", LLMModel.CodexGpt56Sol.alias to "minimal")
         val adapterCreations = mutableMapOf<LlmProvider, Int>()
         val providerApis = LlmProvider.entries.associateWith { provider ->
             StubChatApi(
                 message = { body ->
                     providerCalls += provider
+                    efforts += body.reasoningEffort
                     ok(model = body.model)
                 },
                 stream = { body ->
                     providerCalls += provider
+                    efforts += body.reasoningEffort
                     flowOf(ok(model = body.model))
                 },
             )
         }
         facadeFixture(
+            llmConfig = NamedLlmConfig(reasoningEfforts = defaults),
             providerApiOverride = { provider ->
                 adapterCreations[provider] = adapterCreations.getOrDefault(provider, 0) + 1
                 providerApis.getValue(provider)
@@ -332,6 +349,14 @@ class BackendExecutionLlmChatApiTest {
             }
 
             assertEquals(models.map { it.provider }.flatMap { listOf(it, it) }, providerCalls)
+            assertEquals(models.flatMap { listOf(defaults[it.alias], defaults[it.alias]) }, efforts)
+            for (model in defaults.keys) {
+                fixture.api.message(chat(model).copy(reasoningEffort = "high"))
+                fixture.api.messageStream(chat(model).copy(reasoningEffort = "high")).toList()
+                assertEquals(listOf("high", "high"), efforts.takeLast(2))
+            }
+            fixture.api.message(chat("raw-model").copy(provider = LlmProvider.OPENAI))
+            assertEquals(null, efforts.last())
             assertEquals(models.associate { it.provider to 1 }, adapterCreations)
             assertEquals(0, fixture.credentialResolver.calls.get())
         }
@@ -587,7 +612,7 @@ private fun recordingClient(requests: MutableList<CapturedRequest>): HttpClient 
 
 private fun facadeFixture(
     userId: String = "user-a",
-    namedModels: Map<String, NamedLlmModel> = emptyMap(),
+    llmConfig: NamedLlmConfig = NamedLlmConfig(),
     settingsProvider: SettingsProvider = LlmSettingsStub(),
     credentialResolver: CountingCredentialResolver = CountingCredentialResolver("test-key"),
     retryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(max429Retries = 0),
@@ -604,7 +629,7 @@ private fun facadeFixture(
     val clients = ProviderHttpClients(standard = client, openAi = client)
     val metrics = BackendMetrics()
     val api = BackendExecutionLlmChatApi(
-        namedModels = namedModels,
+        llmConfig = llmConfig,
         userId = userId,
         settingsProvider = settingsProvider,
         credentialResolver = credentialResolver,
