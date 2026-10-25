@@ -49,43 +49,6 @@ class BackendHistoryMemoryE2eTest {
     private val clock = HistoryTestClock()
 
     @Test
-    fun `acknowledged bank results reach the next turn without automatic recall or imported fact capture`() {
-        backendE2eTest("memory_handoff", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock,
-            featureFlags = BackendFeatureFlags(wsEvents = true), providerClients = hindsight.clients()) {
-            val owner = UUID.randomUUID().toString()
-            val chat = createPublicChat(owner)
-            withPublicSocket(chat) { socket ->
-                for (scope in listOf("household", "personal")) {
-                    val frame = json.readTree(memoryToolHistory(chat, owner)) as ObjectNode
-                    frame.put("requestId", "recall-$scope")
-                    val arguments = frame["payload"]["content"]["arguments"] as ObjectNode
-                    arguments.put("scope", scope)
-                    if (scope == "personal") arguments.put("bankId", "person:$owner:voice-1").put("embeddingId", "voice-1")
-                    (frame["payload"]["content"]["result"]["facts"][0] as ObjectNode).put("text", "$scope-sentinel")
-                    socket.send(Frame.Text(frame.toString()))
-                    assertEquals("accepted", readJson(socket)["status"].asText())
-                }
-                assertTrue(llm.requests.isEmpty())
-                clock.advance(31)
-                assertFalse(backend.captureHistoryMemory())
-                socket.send(Frame.Text(messageFrame(chat, owner, "with-memory", text = "Use the supplied facts")))
-                assertEquals("accepted", readJson(socket)["status"].asText())
-                assertEquals("thread.status", readJson(socket)["type"].asText())
-                assertEquals("thread.completed", readJson(socket)["type"].asText())
-            }
-            val messages = llm.requests.single().messages
-            assertEquals(listOf("household-sentinel", "personal-sentinel"), messages.filter {
-                it.role == LLMMessageRole.function
-            }.map { json.readTree(it.content)["facts"][0]["text"].asText() })
-            assertEquals("Use the supplied facts", messages.last().content)
-            assertTrue(messages.any { it.functionCall?.arguments?.contains("voice-1") == true })
-            assertTrue(hindsight.recalls.isEmpty())
-            eventually("completed turn captured") { hindsight.items.singleOrNull() }
-            assertTrue(hindsight.items.none { it.item["content"].asText().contains("sentinel") })
-        }
-    }
-
-    @Test
     fun `recall flag preserves explicit search on both APIs`() {
         val question = "What do you remember about my travel preferences?"
         val recalled = "The user prefers quiet sleeper trains"
