@@ -13,7 +13,6 @@ internal object SharedPostgresContainer {
     val instance: PostgreSQLContainer<Nothing> by lazy {
         requireDocker()
         PostgreSQLContainer<Nothing>("postgres:16-alpine").apply {
-            withTmpFs(mapOf("/var/lib/postgresql/data" to "rw"))
             withDatabaseName("souz")
             withUsername("souz")
             withPassword("souz")

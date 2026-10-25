@@ -27,10 +27,7 @@ private object JobTestPostgres {
             if (Files.exists(socket)) System.setProperty("docker.host", "unix://$socket")
         }
         check(DockerClientFactory.instance().isDockerAvailable) { "Docker is required for :job-impl:test." }
-        PostgreSQLContainer<Nothing>("postgres:16-alpine").apply {
-            withTmpFs(mapOf("/var/lib/postgresql/data" to "rw"))
-            start()
-        }
+        PostgreSQLContainer<Nothing>("postgres:16-alpine").apply { start() }
     }
 }
 

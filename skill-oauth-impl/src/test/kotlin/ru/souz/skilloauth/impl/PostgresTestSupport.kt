@@ -14,7 +14,6 @@ import org.testcontainers.containers.PostgreSQLContainer
 internal object SharedSkillOAuthPostgresContainer {
     val instance: PostgreSQLContainer<Nothing> by lazy {
         PostgreSQLContainer<Nothing>("postgres:16-alpine").apply {
-            withTmpFs(mapOf("/var/lib/postgresql/data" to "rw"))
             withDatabaseName("souz")
             withUsername("souz")
             withPassword("souz")
