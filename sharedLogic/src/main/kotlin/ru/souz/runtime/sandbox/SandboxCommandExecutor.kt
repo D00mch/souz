@@ -31,6 +31,7 @@ data class SandboxCommandResult(
     val timedOut: Boolean = false,
     val files: List<ru.souz.llms.FileContent> = emptyList(),
     val replyFiles: List<ru.souz.llms.FileContent> = emptyList(),
+    val detachedReplyFiles: List<ru.souz.llms.FileReference> = emptyList(),
     @get:com.fasterxml.jackson.annotation.JsonIgnore
     val attachments: List<String> = emptyList(),
 )

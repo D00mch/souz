@@ -29,7 +29,8 @@ internal suspend fun SkillCommandExecutor.executeComposite(
     var location = "composite '${arguments.composite}'"
     val attachments = mutableListOf<String>()
     val files = mutableListOf<ru.souz.llms.FileContent>()
-    val replyFiles = mutableListOf<ru.souz.llms.FileContent>()
+    val replyFiles = linkedMapOf<ru.souz.llms.FileReference, ru.souz.llms.FileContent>()
+    val detachedReplyFiles = linkedSetOf<ru.souz.llms.FileReference>()
     val result = try {
         val spec = bundle.manifest.commands[arguments.composite]
             ?: error("Command is unavailable.")
@@ -65,7 +66,8 @@ internal suspend fun SkillCommandExecutor.executeComposite(
                         attachments.clear()
                         attachments.addAll(message.attachments.orEmpty())
                         files.addAll(message.files)
-                        replyFiles.addAll(message.replyFiles)
+                        message.detachedReplyFiles.forEach { replyFiles.remove(it); detachedReplyFiles.add(it) }
+                        message.replyFiles.forEach { detachedReplyFiles.remove(it.file); replyFiles[it.file] = it }
                         jsonOrText(message.content)
                     }
                     step.script != null -> {
@@ -94,8 +96,11 @@ internal suspend fun SkillCommandExecutor.executeComposite(
     } catch (error: Exception) {
         SandboxCommandResult(1, "", "$location: ${error.message}")
     }
-    return result.copy(files = files.distinctBy { it.file }, replyFiles = replyFiles.distinctBy { it.file },
-        attachments = attachments.takeIf { result.exitCode == 0 && !result.timedOut }.orEmpty())
+    val successful = result.exitCode == 0 && !result.timedOut
+    return result.copy(files = files.distinctBy { it.file },
+        replyFiles = if (successful) replyFiles.values.toList() else emptyList(),
+        detachedReplyFiles = if (successful) detachedReplyFiles.toList() else emptyList(),
+        attachments = attachments.takeIf { successful }.orEmpty())
 }
 
 private val compositeJsonReader = restJsonMapper.reader()

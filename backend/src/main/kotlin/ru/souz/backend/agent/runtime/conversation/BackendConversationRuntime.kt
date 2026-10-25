@@ -44,6 +44,9 @@ internal class BackendConversationRuntime(
         eventSink: AgentRuntimeEventSink? = null,
         onRuntimeReady: suspend () -> Unit = {},
     ): BackendConversationExecution {
+        val previousSelection = persistedSession?.takeIf {
+            request.executionId != null && it.attachmentExecutionId == request.executionId
+        }?.replyAttachments.orEmpty()
         val seedContext = contextFactory.create(
             agentId = AgentId.SKILLS_GRAPH,
             history = persistedSession?.history.orEmpty() + initialMessages,
@@ -63,16 +66,14 @@ internal class BackendConversationRuntime(
             agentId = AgentId.SKILLS_GRAPH,
             context = seedContext.copy(
                 inputAttachments = request.attachments,
+                replyAttachments = previousSelection,
                 settings = seedContext.settings.copy(reasoningEffort = request.reasoningEffort, routing = request.routing),
             ),
             input = request.prompt,
             eventSink = eventSink,
             onActiveRunReady = onRuntimeReady,
         )
-        val previousSelection = persistedSession?.takeIf {
-            request.executionId != null && it.attachmentExecutionId == request.executionId
-        }?.replyAttachments.orEmpty()
-        val attachments = (previousSelection + result.attachments).distinctBy { it.file }
+        val attachments = result.attachments
         val nextSession = AgentConversationSession(
             attachmentExecutionId = request.executionId,
             replyAttachments = attachments,

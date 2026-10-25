@@ -13,8 +13,16 @@ class ChatRoutingMetadataTest {
         assertEquals(emptyList(), old.files)
         assertFalse(restJsonMapper.readTree(restJsonMapper.writeValueAsString(old)).has("files"))
         val file = FileContent(FileReference("file-id"), "report.md", "text/markdown", 12)
-        val message = old.copy(files = listOf(file), replyFiles = listOf(file), images = listOf(ImageContent(file.file)))
+        val message = old.copy(files = listOf(file), replyFiles = listOf(file), images = listOf(ImageContent(file.file)),
+            detachedReplyFiles = listOf(FileReference("obsolete")))
         assertEquals(message, restJsonMapper.readValue<LLMRequest.Message>(restJsonMapper.writeValueAsString(message)))
+        val replacement = file.copy(name = "corrected.md")
+        assertEquals(listOf(replacement), listOf(file).applyReplyFileSelection(listOf(
+            old.copy(detachedReplyFiles = listOf(file.file)), old.copy(replyFiles = listOf(replacement)),
+        )))
+        assertEquals(emptyList(), listOf(file).applyReplyFileSelection(listOf(
+            old.copy(replyFiles = listOf(replacement)), old.copy(detachedReplyFiles = listOf(file.file)),
+        )))
     }
 
     @Test

@@ -45,7 +45,7 @@ Advertising a small tool list without replacing executable lookup would let a fa
 - Keep completed-turn memory capture in the graph's finalization node so failed finalization does not schedule capture.
 - Keep large-result processing in `NodesToolUseWithKnowledge`; `NodesPlain.toolUse()` remains inline-only.
 - Preserve function-result role, name, attachments, and call ID when replacing only its content.
-- Preserve structured `files`, `images`, and `replyFiles` during Knowledge offloading. Compaction retains completed-prefix file references on the summary; selected reply files are execution state, independent of summary text.
+- Preserve structured `files`, `images`, `replyFiles`, and `detachedReplyFiles` during Knowledge offloading. Apply reply changes in tool-call order to the host-seeded selection. Compaction retains completed-prefix file references on the summary; selected reply files are execution state, independent of summary text.
 - Keep Knowledge cleanup tied to destructive conversation cleanup. Backend archive is non-destructive and does not clear Knowledge.
 
 ## Verification

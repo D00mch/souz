@@ -1,5 +1,7 @@
 package ru.souz.agent.nodes
 
+import ru.souz.llms.applyReplyFileSelection
+
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
 import ru.souz.agent.runtime.AgentToolExecutor
@@ -39,7 +41,7 @@ internal object NodesPlain {
     ): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
         val messages = executeFunctionCalls(ctx, executor).map { it.message }
         ctx.map(history = ctx.history + messages) { ctx.history.last().content }
-            .copy(replyAttachments = (ctx.replyAttachments + messages.flatMap { it.replyFiles }).distinctBy { it.file })
+            .copy(replyAttachments = ctx.replyAttachments.applyReplyFileSelection(messages))
     }
 
     suspend fun executeFunctionCalls(

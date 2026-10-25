@@ -20,6 +20,7 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
+import ru.souz.llms.applyReplyFileSelection
 import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.tool.RuntimePassThroughToolsFilter
@@ -68,12 +69,45 @@ class CompositeCommandExecutorTest {
         assertEquals(file.file.fileId, restJsonMapper.readTree(payload.stdout)["file"]["fileId"].asText())
         coVerify(exactly = 1) { access.register(meta, path, null, file.presentation) }
         coVerify(exactly = 1) { access.register(meta, null, file.file.fileId, file.presentation) }
-        val invalid = tools.last().invoke(LLMResponse.FunctionCall("AttachFileToReply", mapOf("path" to path, "fileId" to "file-id")), meta)
+        val invalid = tools.single { it.fn.name == "AttachFileToReply" }.invoke(LLMResponse.FunctionCall("AttachFileToReply", mapOf("path" to path, "fileId" to "file-id")), meta)
         assertTrue(restJsonMapper.readTree(invalid.content).has("error"))
         assertTrue(invalid.replyFiles.isEmpty())
         coEvery { access.prepare(any(), any()) } throws CancellationException("cancelled")
         assertFailsWith<CancellationException> {
             tools.first().invoke(LLMResponse.FunctionCall("PrepareAttachment", mapOf("fileId" to "file-id")), meta)
+        }
+    }
+
+    @Test
+    fun `reply replacement commits only on composite success while artifacts survive failure and timeout`() = runTest {
+        val first = ru.souz.llms.FileContent(ru.souz.llms.FileReference("v1"), "v1.md", "text/markdown", 12)
+        val corrected = first.copy(file = ru.souz.llms.FileReference("v2"), name = "v2.md")
+        val access = mockk<ru.souz.agent.spi.AgentAttachmentAccess> {
+            coEvery { register(meta, null, "v1", first.presentation) } returns first
+            coEvery { register(meta, null, "v2", corrected.presentation) } returns corrected
+        }
+        val tools = ru.souz.tool.files.AttachmentTools(access).tools
+        coEvery { scripts.execute(any(), any(), any(), meta) } returns SandboxCommandResult(2, "", "invalid")
+        for ((ending, success) in listOf(
+            "" to true,
+            "  - {id: validation, script: scripts/check.py, runtime: PYTHON}" to false,
+            "  - {id: wait, waitMs: 100}" to false,
+        )) {
+            val command = bundle("""
+                steps:
+                  - {id: old, tool: AttachFileToReply, arguments: {fileId: v1}}
+                  - {id: removed, tool: DetachFileFromReply, arguments: {fileId: v1}}
+                  - {id: corrected, tool: AttachFileToReply, arguments: {fileId: v2}}
+            """.trimIndent() + "\n" + ending + "\nreturns: '\${corrected}'")
+            val result = runner(command, tools).invoke(LLMResponse.FunctionCall(ToolInvokeSkill.NAME, mapOf(
+                "skillId" to "skill", "arguments" to mapOf("composite" to "run", "timeoutMillis" to 10),
+            )), meta)
+            val payload = restJsonMapper.readValue(result.content, SandboxCommandResult::class.java)
+            assertEquals(success, payload.exitCode == 0 && !payload.timedOut)
+            assertEquals(listOf(first, corrected), result.files)
+            assertEquals(if (success) listOf(corrected) else emptyList(), result.replyFiles)
+            assertEquals(if (success) listOf(first.file) else emptyList(), result.detachedReplyFiles)
+            assertEquals(if (success) listOf(corrected) else listOf(first), listOf(first).applyReplyFileSelection(listOf(result)))
         }
     }
 

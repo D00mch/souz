@@ -54,6 +54,7 @@ class NodesToolUseWithKnowledgeTest {
             name = "LargeTool",
             files = listOf(file),
             replyFiles = listOf(file),
+            detachedReplyFiles = listOf(ru.souz.llms.FileReference("obsolete")),
         )
 
         val result = executeToolResult(original.content, store, original)
@@ -63,6 +64,7 @@ class NodesToolUseWithKnowledgeTest {
         assertEquals(original.attachments, result.attachments)
         assertEquals(original.files, result.files)
         assertEquals(original.replyFiles, result.replyFiles)
+        assertEquals(original.detachedReplyFiles, result.detachedReplyFiles)
         assertEquals(original.name, result.name)
         assertTrue(result.content.length < original.content.length)
     }

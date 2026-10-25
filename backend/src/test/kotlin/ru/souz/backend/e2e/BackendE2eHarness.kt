@@ -479,6 +479,7 @@ internal class BackendE2eBackend(
     val messageRepository: ru.souz.backend.chat.repository.MessageRepository get() = di.direct.instance()
     val agentStateRepository: ru.souz.backend.agent.session.AgentStateRepository get() = di.direct.instance()
     val turnRunner: BackendConversationTurnRunner get() = di.direct.instance()
+    val conversationRuntimeFactory: ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory get() = di.direct.instance()
 
     suspend fun startScheduledTaskWorker() {
         di.direct.instance<PostgresJobService>().startWorker(applicationScope, di.direct.instance<ScheduledTaskRunner>()::run)

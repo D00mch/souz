@@ -258,6 +258,9 @@ object LLMRequest {
         /** Only trusted tool implementations set this field; model JSON cannot select reply files. */
         @field:JsonInclude(JsonInclude.Include.NON_EMPTY)
         val replyFiles: List<FileContent> = emptyList(),
+        /** Explicit removals from the current execution's reply; no storage side effects. */
+        @field:JsonInclude(JsonInclude.Include.NON_EMPTY)
+        val detachedReplyFiles: List<FileReference> = emptyList(),
     )
 
     data class FunctionCall(

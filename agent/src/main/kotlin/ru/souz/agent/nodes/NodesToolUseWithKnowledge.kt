@@ -1,5 +1,7 @@
 package ru.souz.agent.nodes
 
+import ru.souz.llms.applyReplyFileSelection
+
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
@@ -44,7 +46,7 @@ internal class NodesToolUseWithKnowledge(
             }
         }
         ctx.map(history = ctx.history + fnCallMessages) { ctx.history.last().content }
-            .copy(replyAttachments = (ctx.replyAttachments + fnCallMessages.flatMap { it.replyFiles }).distinctBy { it.file })
+            .copy(replyAttachments = ctx.replyAttachments.applyReplyFileSelection(fnCallMessages))
     }
 
     private suspend fun offloadToolResult(

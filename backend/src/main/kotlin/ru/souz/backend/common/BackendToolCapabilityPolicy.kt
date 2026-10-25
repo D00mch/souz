@@ -45,7 +45,7 @@ object BackendToolCapabilityPolicy {
     ): AgentToolCatalog {
         val isEnabled = { toolName: String ->
             (enabledToolNames == null || toolName in enabledToolNames) &&
-                (replyAttachmentsEnabled || toolName != "AttachFileToReply")
+                (replyAttachmentsEnabled || (toolName != "AttachFileToReply" && toolName != "DetachFileFromReply"))
         }
         return AgentToolCatalog.compose(
             hostableTools(processToolCatalog, isEnabled),
