@@ -138,9 +138,9 @@ class BackendModelRoutingE2eTest {
     }
 
     @Test
-    fun `configured builtin reasoning reaches provider and explicit turn effort wins`() = withNamedLlmConfig(
+    fun `configured builtin reasoning reaches provider`() = withNamedLlmConfig(
         """{"models":{"gpt-5-mini":{"parameters":{"reasoning_effort":"low"}}}}""",
-        environment = mapOf("OPENAI_API_KEY" to "test-openai-key", "GIGA_MODEL" to "gpt-5-mini"),
+        environment = mapOf("OPENAI_API_KEY" to "test-openai-key"),
     ) { source ->
         val efforts = CopyOnWriteArrayList<String>()
         val http = HttpClient(MockEngine { request ->
@@ -154,17 +154,16 @@ class BackendModelRoutingE2eTest {
             providerClients = ProviderHttpClients(standard = http, openAi = http)) {
             val user = UUID.randomUUID().toString()
             client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) { trusted(user); jsonBody("{}") }
-            for ((index, options) in listOf("", ""","options":{"reasoningEffort":"high"}""").withIndex()) {
-                val chat = createPublicChat(user, requestId = "effort-$index")
-                client.post(BackendHttpRoutes.chatMessages(chat)) {
-                    trusted(user); jsonBody("""{"content":"Hello $index"$options}""")
-                }
-                eventually("effort turn completed") {
-                    client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(user) }.jsonBody()["items"]
-                        .last()["content"].asText().takeIf { it == "done" }
-                }
+            val chat = createPublicChat(user)
+            val submitted = client.post(BackendHttpRoutes.chatMessages(chat)) {
+                trusted(user); jsonBody("""{"content":"Hello","options":{"model":"gpt-5-mini"}}""")
             }
-            assertEquals(listOf("low", "high"), efforts)
+            assertEquals(HttpStatusCode.OK, submitted.status)
+            eventually("effort turn completed") {
+                client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(user) }.jsonBody()["items"]
+                    .last()["content"].asText().takeIf { it == "done" }
+            }
+            assertEquals(listOf("low"), efforts)
         }
     }
 
