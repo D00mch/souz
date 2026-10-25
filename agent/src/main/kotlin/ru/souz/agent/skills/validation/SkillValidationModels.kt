@@ -78,8 +78,8 @@ data class SkillValidationInput(
     val previousFindings: List<SkillValidationFinding> = emptyList(),
 ) {
     val manifest: SkillManifest get() = bundle.manifest
-    val filePaths: List<String> get() = bundle.files.map { it.normalizedPath }
-    val skillMarkdown: String get() = bundle.skillMarkdownFile.contentAsText()
+    fun filePaths(): List<String> = bundle.files.map { it.normalizedPath }
+    val skillMarkdown: String get() = bundle.skillMarkdownFile().contentAsText()
     val supportingFileExcerpts: Map<String, String>
         get() = bundle.files
             .filterNot { it.normalizedPath == SKILL_MD_PATH }

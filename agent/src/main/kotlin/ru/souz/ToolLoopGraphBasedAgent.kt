@@ -19,6 +19,7 @@ import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.isToolUse
 import ru.souz.llms.restJsonMapper
 
 /** A bounded model/tool loop using the caller's history, tools, and event sink. */
@@ -81,7 +82,7 @@ class ToolLoopGraphBasedAgent(
         turnLimit.edgeTo(chat)
         chat.edgeTo(chatOk)
         chatOk.edgeTo { ctx ->
-            if (ctx.input.choices.any { it.message.functionCall != null }) toolUse else finalAnswer
+            if (ctx.input.isToolUse()) toolUse else finalAnswer
         }
         toolUse.edgeTo(turnLimit)
         finalAnswer.edgeTo(nodeFinish)
