@@ -20,7 +20,7 @@ The request-scoped kernel exposes one steerable skills graph under `AgentId.SKIL
 
 Before routing, inventory retains enabled capability names and descriptions bounded to 240 characters in execution-local state. File-backed descriptions are reused from the existing metadata read, including unselected descriptions; skipped or failed reads retain ID-only entries. The classifier receives these hints separately from the bounded dialogue, without tool schemas, additional metadata reads or an extra classifier call. The hints do not grant tool execution or enter persisted history.
 
-The parent execution emits one `InitialWait` live event after choosing a non-simple model, or before its first model call when routing is absent. Simple selection suppresses it for the entire execution. Provider retries, tool loops, queued inputs and child agents do not repeat waiting. The event is independent of memory and step narration.
+The parent execution emits one `InitialWait` live event after choosing a non-simple model, or before its first model call when routing is absent. Simple selection suppresses it for the entire execution. Provider retries, tool loops and queued inputs do not repeat waiting. Child events are discarded through `AgentRuntimeEventSink.NONE`. The event is independent of memory and step narration.
 
 ## Why this is fragile
 

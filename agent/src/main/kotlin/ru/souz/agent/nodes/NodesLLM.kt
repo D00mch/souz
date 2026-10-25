@@ -40,7 +40,6 @@ internal class NodesLLM(
     private val complexityClassifier: TaskComplexityClassifier? = null,
     /** Rebinds a routed turn's tools to the chosen model: a `SpawnSubagent` child defaults to its parent's model. */
     private val routedTools: ((AgentSettings) -> List<LLMToolSetup>)? = null,
-    private val initialWaiting: Boolean = false,
 ) {
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
     private var initialWaitDecided = false
@@ -148,7 +147,7 @@ internal class NodesLLM(
     private suspend fun decideInitialWait(ctx: AgentContext<*>, send: Boolean) {
         if (initialWaitDecided) return
         initialWaitDecided = true
-        if (initialWaiting && send) ctx.runtimeEventSink.emit(AgentRuntimeEvent.InitialWait)
+        if (send) ctx.runtimeEventSink.emit(AgentRuntimeEvent.InitialWait)
     }
 
     private fun AgentContext<String>.on(settings: AgentSettings): AgentContext<String> =

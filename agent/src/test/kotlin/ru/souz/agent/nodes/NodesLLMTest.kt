@@ -198,7 +198,7 @@ class NodesLLMTest {
             runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
         )
 
-        assertEquals<List<AgentRuntimeEvent>>(chunks.map { AgentRuntimeEvent.LlmMessageDelta(it) }, runtimeEvents)
+        assertEquals<List<AgentRuntimeEvent>>(listOf(AgentRuntimeEvent.InitialWait) + chunks.map { AgentRuntimeEvent.LlmMessageDelta(it) }, runtimeEvents)
         assertEquals(AgentStreamChunk("Hello streaming world", 7L), sideEffect.await())
         val response = result.input as LLMResponse.Chat.Ok
         assertEquals("Hello streaming world", response.choices.single().message.content)
@@ -226,6 +226,7 @@ class NodesLLMTest {
         }
         val result = graph.start(context(emptyList(), recordingSink(events)))
         assertEquals(2, attempts)
+        assertEquals(1, events.count { it is AgentRuntimeEvent.InitialWait })
         assertEquals(listOf("Let me check", "Second"), events.filterIsInstance<AgentRuntimeEvent.AssistantMessage>().map { it.content })
         assertEquals(listOf("Let me check", "Second", ""), result.history.map { it.content })
     }
@@ -279,7 +280,7 @@ class NodesLLMTest {
                 verdict()
             }
             val nodes = NodesLLM(api, mockk { every { useStreaming } returns true }, conversationInstructions = { "Be brief." },
-                complexityClassifier = classifier, routedTools = { listOf(testTool(it.model)) }, initialWaiting = true)
+                complexityClassifier = classifier, routedTools = { listOf(testTool(it.model)) })
             val context = context(listOf(SYSTEM, INJECTED, LLMRequest.Message(LLMMessageRole.user, "Prompt")), recordingSink(events))
             val result = nodes.chat().execute(context.copy(settings = context.settings.copy(routing = ROUTING),
                 routingCapabilities = mapOf("application.action" to "Perform a saved action")), runtime())
