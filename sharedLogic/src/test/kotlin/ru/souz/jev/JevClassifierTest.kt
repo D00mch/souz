@@ -119,6 +119,27 @@ class JevClassifierTest {
     }
 
     @Test
+    fun `oversized current requests bypass classification including actions beyond the limit`() = runTest {
+        val boundary = "x".repeat(4000)
+        val engine = MockEngine { httpRequest ->
+            val state = restJsonMapper.readTree(httpRequest.body.toByteArray())["state"]
+            assertEquals("user: $boundary", state["current_request"].asText())
+            respond("""{"answers":{"simple":{"type":"noul","noul":1.0}}}""")
+        }
+        HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
+            val classifier = JevClassifier(JevClient(http, "test-token"))
+            for (text in listOf(boundary + "x", boundary + "\nEmail this to my manager.")) {
+                val longRequest = request.copy(messages = listOf(LLMRequest.Message(LLMMessageRole.user, text)))
+                assertTrue(classifier.isComplex(longRequest, emptyMap()))
+                assertTrue(engine.requestHistory.isEmpty())
+            }
+            val exactRequest = request.copy(messages = listOf(LLMRequest.Message(LLMMessageRole.user, boundary)))
+            assertFalse(classifier.isComplex(exactRequest, emptyMap()))
+            assertEquals(1, engine.requestHistory.size)
+        }
+    }
+
+    @Test
     fun `missing malformed and failed responses reject classification`() = runTest {
         var body = ""
         var status = HttpStatusCode.OK
