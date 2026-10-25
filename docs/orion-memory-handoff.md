@@ -6,38 +6,26 @@ newly captured facts become available through later retrieval.
 
 ## Delivery and representation
 
-Send household and personal results as separate messages, with explicit scope and the personal
-`embeddingId`. Await each accepted ACK before `message.submit`, under the client's per-chat submission
-lock. Retry an append with the same request ID and frame. Failed delivery prevents submission; an
-accepted first append remains committed if another append fails. Appends are passive history and do
-not wake an active thread. Submission establishes the history boundary for processing.
+Append each memory result as an assistant tool call and await its accepted ACK before
+`message.submit`, under the client's per-chat submission lock. Retry an append with the same request
+ID and frame. Failed delivery prevents submission. Appends are passive history and do not wake an
+active thread; submission establishes the history boundary for processing.
 
 Example content inside `payload: {role: "assistant", content: ...}`:
 
 ```json
 {
   "type": "tool_call",
-  "name": "memory.recall",
-  "arguments": {
-    "scope": "personal",
-    "bankId": "person:<userId>:<embeddingId>",
-    "embeddingId": "<embeddingId>",
-    "query": "Current request: ..."
-  },
-  "result": {
-    "fetchedAt": "2026-10-25T12:00:00Z",
-    "status": "ok",
-    "facts": [{"id": "<memory ID>", "text": "A relevant fact", "type": "world", "score": 0.8}]
-  }
+  "name": "SearchMemory",
+  "arguments": {"semanticQuery": "The current request"},
+  "result": {"facts": [{"text": "A relevant fact"}]}
 }
 ```
 
-Household arguments omit `embeddingId`. A failed recall has `status: error`, empty facts and an
-`error` code; a successful empty recall has `status: ok` and empty facts. Scope, bank and speaker IDs
-are provenance supplied by Orion, not new routing or authorization fields interpreted by Souz.
-The tool name records historical provenance and does not register an executable tool. Imported tool
-results are excluded from memory capture. Old results remain in conversation history; timestamps and
-speaker IDs guide interpretation without deterministic conflict resolution.
+Tool names, arguments and results are ordinary history data. Souz does not interpret a separate
+memory-import schema or register an executable tool from the imported name. The client supplies the
+result shape; empty or failed retrieval must not be presented as established facts. Imported tool
+results are excluded from memory capture and remain in conversation history.
 
 ## Souz execution
 

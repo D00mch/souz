@@ -60,7 +60,7 @@ suspend fun needsCalendar(jev: JevClient, message: String): Double {
 
 `JevClient.choose(state, instructions, options)` asks one choice question and returns every option's probability.
 `JevClassifier.isComplex` asks a strict `simple` Noul question with the latest user message in `current_request`
-and up to nine other non-system messages in `previous_dialogue`, including supplied tool results and speaker names
+and up to nine other non-system messages in `previous_dialogue`, including supplied tool results
 (4,000 characters per message). Previous tasks supply references; they are not resumed unless the current request
 requires them. Logs record the probability, threshold and metadata counts without dialogue content. The same request carries
 `available_capabilities`: execution-scoped names and short descriptions from the already-prepared inventory,

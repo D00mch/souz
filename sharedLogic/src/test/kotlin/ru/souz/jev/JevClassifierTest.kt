@@ -107,10 +107,10 @@ class JevClassifierTest {
     }
 
     @Test
-    fun `current request stays separate from bounded action history and keeps speaker identity`() = runTest {
+    fun `current request stays separate from bounded action history`() = runTest {
         val engine = MockEngine { httpRequest ->
             val state = restJsonMapper.readTree(httpRequest.body.toByteArray())["state"]
-            assertEquals("user [souz_speaker_unknown]: Are you there?", state["current_request"].asText())
+            assertEquals("user: Are you there?", state["current_request"].asText())
             val previous = state["previous_dialogue"].asText()
             assertEquals(9, previous.lines().size)
             kotlin.test.assertFalse(previous.contains("old user"))
@@ -121,7 +121,7 @@ class JevClassifierTest {
         HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
             val messages = listOf(LLMRequest.Message(LLMMessageRole.user, "old user")) +
                 List(9) { LLMRequest.Message(LLMMessageRole.assistant, "I will check the device.") } +
-                LLMRequest.Message(LLMMessageRole.user, "Are you there?", name = "souz_speaker_unknown")
+                LLMRequest.Message(LLMMessageRole.user, "Are you there?")
             assertEquals(false, JevClassifier(JevClient(http, "test-token")).isComplex(request.copy(messages = messages), emptyMap()))
         }
     }

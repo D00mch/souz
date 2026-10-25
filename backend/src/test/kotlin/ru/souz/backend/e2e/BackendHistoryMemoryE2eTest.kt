@@ -237,7 +237,7 @@ class BackendHistoryMemoryE2eTest {
             val owner = UUID.randomUUID().toString()
             val chat = createPublicChat(owner)
             withPublicSocket(chat) { socket ->
-                socket.send(Frame.Text(memoryToolHistory(chat, owner)))
+                socket.send(Frame.Text(memoryToolHistory(chat)))
                 assertEquals("accepted", readJson(socket, includeProgress = true)["status"].asText())
                 clock.advance(31)
                 assertFalse(backend.captureHistoryMemory())
@@ -248,7 +248,7 @@ class BackendHistoryMemoryE2eTest {
                 assertEquals("idempotency_conflict", readJson(socket, includeProgress = true)["error"]["code"].asText())
                 socket.send(Frame.Text(historyFrame(chat, "bad", "system", "rejected history")))
                 assertEquals("rejected", readJson(socket, includeProgress = true)["status"].asText())
-                socket.send(Frame.Text(memoryToolHistory(chat, owner)))
+                socket.send(Frame.Text(memoryToolHistory(chat)))
                 val duplicateTool = readJson(socket, includeProgress = true)
                 assertEquals("accepted", duplicateTool["status"].asText())
                 assertTrue(duplicateTool["duplicate"].asBoolean())
@@ -529,8 +529,8 @@ private suspend fun BackendE2eScope.appendHistory(
     return withTimeout(5_000) { readJson(socket, includeProgress = true) }.also { assertEquals("accepted", it["status"].asText()) }
 }
 
-private fun memoryToolHistory(chat: String, owner: String): String =
-    """{"kind":"history.append","chatId":"$chat","requestId":"tool","payload":{"role":"assistant","content":{"type":"tool_call","name":"memory.recall","arguments":{"scope":"household","bankId":"$owner","query":"Current request: tool-sentinel"},"result":{"status":"ok","fetchedAt":"2026-10-25T08:00:00Z","facts":[{"text":"tool-sentinel","basis":"direct","source_ids":["10000000-0000-4000-8000-000000000001"]}]}}}}"""
+private fun memoryToolHistory(chat: String): String =
+    """{"kind":"history.append","chatId":"$chat","requestId":"tool","payload":{"role":"assistant","content":{"type":"tool_call","name":"SearchMemory","arguments":{"semanticQuery":"tool-sentinel"},"result":{"facts":[{"body":"tool-sentinel"}]}}}}"""
 
 private class HistoryTestClock : Clock() {
     @Volatile private var now = Instant.parse("2026-09-18T10:00:00Z")

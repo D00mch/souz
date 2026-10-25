@@ -158,4 +158,4 @@ JSON decoding rejection ACKs include `error.details` with a JSON Pointer `path` 
 
 Server-configured model names from bootstrap are accepted in `payload.meta.model`; see [named LLM connections](../../backend/docs/named-llm-connections.md).
 
-Orion appends query-based memory results as assistant tool calls through the existing history contract and awaits every ACK before submission. See [conditional startup memory](../orion-memory-profiles.md).
+Orion appends query-based memory results as assistant tool calls through the existing history contract and awaits every ACK before submission. See [memory handoff](../orion-memory-handoff.md).
