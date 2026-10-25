@@ -1,6 +1,7 @@
 package ru.souz.backend.app
 
 import java.net.URI
+import ru.souz.agent.DEFAULT_ATTACHMENT_HISTORY_LIMIT
 import ru.souz.backend.attachments.AttachmentStorageConfig
 import ru.souz.backend.common.BackendConfigurationException
 import ru.souz.backend.config.BackendConfigSource
@@ -154,11 +155,15 @@ data class BackendAppConfig(
     val hooks: HookConfig = HookConfig(),
     val scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     val attachments: AttachmentStorageConfig? = null,
+    val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
     val policyPrompt: String? = null,
 ) {
     fun validate(): BackendAppConfig {
         server.validate()
         postgres.validate()
+        if (attachmentHistoryLimit <= 0) {
+            throw BackendConfigurationException("SOUZ_ATTACHMENT_HISTORY_LIMIT / souz.attachments.historyLimit must be positive.")
+        }
         if (masterKey.isNullOrBlank()) {
             throw BackendConfigurationException("SOUZ_MASTER_KEY / souz.masterKey must not be blank.")
         }
@@ -204,6 +209,7 @@ data class BackendAppConfig(
             BackendAppConfig(
                 featureFlags = BackendFeatureFlags.load(source),
                 attachments = AttachmentStorageConfig.load(source),
+                attachmentHistoryLimit = source.intValue("SOUZ_ATTACHMENT_HISTORY_LIMIT", "souz.attachments.historyLimit", DEFAULT_ATTACHMENT_HISTORY_LIMIT),
                 hooks = HookConfig(
                     owners = source.value("SOUZ_HOOK_OWNERS", "souz.hooks.owners")
                         ?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)?.toSet().orEmpty(),

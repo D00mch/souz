@@ -40,6 +40,7 @@ internal class NodesLLM(
     private val complexityClassifier: TaskComplexityClassifier? = null,
     /** Rebinds a routed turn's tools to the chosen model: a `SpawnSubagent` child defaults to its parent's model. */
     private val routedTools: ((AgentSettings) -> List<LLMToolSetup>)? = null,
+    private val attachmentHistoryLimit: Int = ru.souz.agent.DEFAULT_ATTACHMENT_HISTORY_LIMIT,
 ) {
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
 
@@ -84,6 +85,7 @@ internal class NodesLLM(
             history = llmApi.compactHistory(
                 ctx.toChatRequest(history, maxOutputTokens = SUMMARIZATION_MAX_OUTPUT_TOKENS),
                 ctx.activeExchangeStartIndex,
+                attachmentHistoryLimit,
             )
             request = build(history)
         }

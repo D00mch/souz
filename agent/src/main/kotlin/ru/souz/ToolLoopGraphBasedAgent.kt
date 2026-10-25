@@ -28,12 +28,13 @@ class ToolLoopGraphBasedAgent(
     private val maxTurns: Int = 32,
     telemetry: AgentTelemetry = AgentTelemetry.NONE,
     logObjectMapper: ObjectMapper = restJsonMapper,
+    attachmentHistoryLimit: Int = ru.souz.agent.DEFAULT_ATTACHMENT_HISTORY_LIMIT,
 ) : Agent {
     init {
         require(maxTurns > 0) { "maxTurns must be positive." }
     }
 
-    private val nodesLLM = NodesLLM(llmApi, settingsProvider)
+    private val nodesLLM = NodesLLM(llmApi, settingsProvider, attachmentHistoryLimit = attachmentHistoryLimit)
     private val toolExecutor = AgentToolExecutor(telemetry)
     private val executionDelegate = GraphExecutionDelegate(logObjectMapper, ToolLoopGraphBasedAgent::class.java)
     override val sideEffects = nodesLLM.sideEffects

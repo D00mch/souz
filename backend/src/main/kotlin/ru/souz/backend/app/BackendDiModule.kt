@@ -339,6 +339,7 @@ fun backendDiModule(
             credentialResolver = instance(),
             effectiveSettingsResolver = instance(),
             retryPolicy = appConfig.providerRetryPolicy,
+            attachmentHistoryLimit = appConfig.attachmentHistoryLimit,
             providerHttpClients = instance(),
             providerApiOverride = instanceOrNull(),
             codexOAuthService = instance<CodexOAuthService>(),

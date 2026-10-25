@@ -42,6 +42,33 @@ import ru.souz.llms.LLMResponse
 
 class NodesLLMTest {
     @Test
+    fun `summary file references are bounded by last occurrence while active input remains intact`() = runTest {
+        val files = (0 until 23).map { index -> ru.souz.llms.FileContent(
+            ru.souz.llms.FileReference("file-$index"), "$index.md", "text/markdown", 12,
+        ) }
+        val latest = files.first().copy(name = "latest.md")
+        val active = LLMRequest.Message(LLMMessageRole.user, "active", files = files)
+        val prefix = listOf(
+            LLMRequest.Message(LLMMessageRole.system, "system"),
+            LLMRequest.Message(LLMMessageRole.assistant, "old files", files = files),
+            LLMRequest.Message(LLMMessageRole.assistant, "used again", replyFiles = listOf(latest)),
+        )
+        val request = LLMRequest.Chat(model = "test-model", messages = prefix + active, contextSize = 24_000)
+        val api = mockk<LLMChatAPI> { coEvery { message(any()) } returns block(0, "summary") }
+        for (limit in listOf(ru.souz.agent.DEFAULT_ATTACHMENT_HISTORY_LIMIT, 2)) {
+            val compacted = if (limit == ru.souz.agent.DEFAULT_ATTACHMENT_HISTORY_LIMIT)
+                api.compactHistory(request, prefix.size) else api.compactHistory(request, prefix.size, limit)
+            val expected = files.takeLast(limit - 1) + latest
+            assertEquals(expected, compacted[1].files)
+            assertEquals(active, compacted.last())
+            val nextPrefix = compacted.dropLast(1) + LLMRequest.Message(LLMMessageRole.assistant, "reused", files = listOf(files[1]))
+            val again = api.compactHistory(request.copy(messages = nextPrefix + active), nextPrefix.size, limit)
+            assertEquals(expected.takeLast(limit - 1) + files[1], again[1].files)
+            assertEquals(active, again.last())
+        }
+    }
+
+    @Test
     fun `compaction preserves the active exchange through steering and tool loops`() = runTest {
         val file = ru.souz.llms.FileContent(ru.souz.llms.FileReference("old-file"), "report.md", "text/markdown", 12)
         val incoming = file.copy(file = ru.souz.llms.FileReference("incoming-file"))
