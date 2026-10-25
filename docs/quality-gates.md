@@ -170,6 +170,11 @@ contain source fragments and are not uploaded as quality evidence.
 
 ## Coverage
 
+Gradle task-output caching is enabled. Test tasks in `:backend`, `:desktopApp`,
+`:sharedLogic`, `:job-impl` and `:skill-oauth-impl` mix unit tests with integration
+tests and are untracked: they execute whenever selected, without build-cache reuse
+or up-to-date skipping. Compilation and the remaining test tasks retain caching.
+
 Kover JVM coverage reports are generated in the same Gradle task graph as the
 required JVM test suite:
 
