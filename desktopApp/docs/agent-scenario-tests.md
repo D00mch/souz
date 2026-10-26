@@ -26,3 +26,5 @@ SOUZ_AGENT_INTEGRATION_TEST_REASONING_EFFORT=low \
 Other providers use `SOUZ_AGENT_INTEGRATION_TEST_MODEL` and their existing credential variables. For an OpenAI-compatible endpoint, select `openai-compatible-custom` and set `OPENAI_MODEL`, `OPENAI_BASE_URL`, and `OPENAI_API_KEY`. `SOUZ_AGENT_INTEGRATION_TEST_REASONING_EFFORT` applies to classification and execution requests. `SOUZ_AGENT_INTEGRATION_TEST_AGENT=skills` selects the skills graph; `graph` is the default.
 
 JUnit XML and HTML reports are under `desktopApp/build/test-results/test/` and `desktopApp/build/reports/tests/test/`. Preserve them before another test invocation overwrites them. Record the model, reasoning setting, scenario count, failures, and metrics with each live result; scores from different providers or fixtures are separate measurements.
+
+For DeepSeek connection settings, rerun commands, and the recorded evaluation, see [the DeepSeek scenario guide](../../docs/experiments/deepseek-skills-2026-10-26.md).
