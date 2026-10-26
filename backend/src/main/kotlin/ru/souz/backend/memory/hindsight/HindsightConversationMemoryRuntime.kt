@@ -59,9 +59,15 @@ class HindsightConversationMemoryRuntime(
     private val baseUrl = baseUrl.trimEnd('/')
     private val logger = LoggerFactory.getLogger(HindsightConversationMemoryRuntime::class.java)
     // Lookup cannot suspend: NodesMemory enters this queue before finalization returns.
-    private val completedTurnCaptures = ConcurrentHashMap<String, Mutex>()
+    private val completedTurnCaptures = ConcurrentHashMap<String, CaptureQueue>()
 
-    private fun captureMutex(userId: String): Mutex = completedTurnCaptures.computeIfAbsent(userId) { Mutex() }
+    private fun captureQueue(userId: String): CaptureQueue = completedTurnCaptures.computeIfAbsent(userId) { CaptureQueue() }
+
+    private class CaptureQueue {
+        val mutex = Mutex()
+        // Read before the first suspension, including when deletion owns the mutex.
+        @Volatile var generation = 0L
+    }
 
     override suspend fun retrieveMemory(request: MemoryRetrievalRequest): MemoryRetrievalResult {
         when (parseExplicitMemoryIntent(request.query)) {
@@ -129,8 +135,12 @@ class HindsightConversationMemoryRuntime(
         }
 
         val bankId = input.context.ownerId.value
+        val queue = captureQueue(bankId)
+        val generation = queue.generation
         try {
-            captureMutex(bankId).withLock {
+            queue.mutex.withLock {
+                // A successful deletion also covers turns registered while it held the barrier.
+                if (generation != queue.generation) return
                 // Register synchronously, but keep serialization and HTTP work asynchronous.
                 yield()
                 val content = (
@@ -185,10 +195,12 @@ class HindsightConversationMemoryRuntime(
 
     /** Drain earlier completed turns, including IO retries, before dropping history and the bank. */
     internal suspend fun forgetAll(userId: String, forgetHistory: suspend () -> Unit) {
+        val queue = captureQueue(userId)
         val deleted = withTimeoutOrNull(10_000) {
-            captureMutex(userId).withLock {
+            queue.mutex.withLock {
                 forgetHistory()
                 httpClient.delete(bankUrl(userId)) { authorize(apiToken) }.requireSuccess()
+                queue.generation++
             }
             true
         }
@@ -197,7 +209,7 @@ class HindsightConversationMemoryRuntime(
 
     internal suspend fun hasPendingRetain(userId: String): Boolean {
         // Check locally first: queued captures and IO retries may not have reached Hindsight yet.
-        if (completedTurnCaptures[userId]?.isLocked == true) return true
+        if (completedTurnCaptures[userId]?.mutex?.isLocked == true) return true
         return listOf("pending", "processing").any { status ->
             val response = httpClient.get("${bankUrl(userId)}/operations") {
                 authorize(apiToken)

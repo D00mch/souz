@@ -294,7 +294,7 @@ internal class BackendConversationRuntimeFactory(
                 searchMemory = searchMemoryTool,
                 runtimeCommand = runtimeCommandTool,
                 spawnSubagent = subagentTools::create,
-                forgetMemory = forgetMemoryTools,
+                forgetMemory = forgetMemoryTools.takeIf { request.memoryMutationAllowed }.orEmpty(),
             ),
             knowledgeStore = knowledgeStore,
             telemetry = toolTelemetry,

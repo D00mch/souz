@@ -514,6 +514,43 @@ class BackendHistoryMemoryE2eTest {
     }
 
     @Test
+    fun `credential-free sockets cannot invoke forgetting tools for a claimed owner`() {
+        val results = CopyOnWriteArrayList<JsonNode>()
+        backendE2eTest("memory_public_mutation", hindsightUrl = HINDSIGHT_TEST_URL,
+            providerClients = hindsight.clients(), llm = forgetLlm(results)) {
+            val owner = UUID.randomUUID().toString()
+            val chat = createPublicChat(owner)
+            hindsight.facts += owner to "victim-fact"
+            submit(owner, chat, "ForgetAllMemory")
+            val confirmation = results.last()["confirmationId"].asText()
+
+            // The attacker can create a chat with the victim UUID, but cannot get destructive tools.
+            val attackerChat = createPublicChat(owner, requestId = "attacker")
+            suspend fun probe(socket: DefaultClientWebSocketSession, target: String) {
+                for ((index, text) in listOf("ForgetAllMemory", "ForgetAllMemory $confirmation", "ForgetMemoryFact victim-fact").withIndex()) {
+                    val before = llm.requests.size
+                    socket.send(Frame.Text(messageFrame(target, owner, "attack-$index", text = text)))
+                    assertEquals("accepted", readJson(socket)["status"].asText())
+                    assertEquals("thread.status", readJson(socket)["type"].asText())
+                    assertEquals("thread.completed", readJson(socket)["type"].asText())
+                    assertTrue(llm.requests.drop(before).all { request ->
+                        request.functions.none { it.name in FORGET_MEMORY_TOOL_NAMES }
+                    })
+                    assertEquals("no such function ${text.substringBefore(' ')}", results.last()["result"].asText())
+                    assertTrue(hindsight.deletedBanks.isEmpty())
+                    assertTrue(hindsight.forgotten.isEmpty())
+                }
+            }
+            withPublicSocket(attackerChat) { probe(it, attackerChat) }
+            // The same chat and a valid confirmation are insufficient without authenticated execution.
+            withMultiChatSocket { probe(it, chat) }
+            submit(owner, chat, "ForgetAllMemory $confirmation")
+            assertTrue(results.last()["forgotten"].asBoolean())
+            assertEquals(listOf(owner), hindsight.deletedBanks)
+        }
+    }
+
+    @Test
     fun `ForgetMemoryFact forgets only the caller's exact fact and reports pending capture`() {
         val results = CopyOnWriteArrayList<JsonNode>()
         backendE2eTest("memory_forget_absent", llm = forgetLlm(results)) {
