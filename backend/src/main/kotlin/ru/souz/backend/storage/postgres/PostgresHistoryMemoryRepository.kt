@@ -127,7 +127,7 @@ internal class PostgresHistoryMemoryRepository(
 
     /**
      * Drops the user's fragments, waiting up to 10 seconds for the ones a worker is sending,
-     * so their retains reach Hindsight before the bank is deleted.
+     * so their retains reach Hindsight before the bank is deleted. Fails if capture is still active.
      */
     suspend fun forget(userId: String) {
         repeat(20) {
@@ -147,12 +147,7 @@ internal class PostgresHistoryMemoryRepository(
             if (!sending) return
             delay(500)
         }
-        dataSource.write { connection ->
-            connection.prepareStatement("delete from history_memory_fragments where user_id = ?").use { statement ->
-                statement.setString(1, userId)
-                statement.executeUpdate()
-            }
-        }
+        error("History memory capture is still active; bank deletion was not attempted")
     }
 
     suspend fun retry(fragment: HistoryMemoryFragment): Boolean =

@@ -634,6 +634,54 @@ class BackendHistoryMemoryE2eTest {
         }
     }
 
+    @Test
+    fun `ForgetAllMemory fails while a multi-document capture is still sending and succeeds after it drains`() {
+        val results = CopyOnWriteArrayList<JsonNode>()
+        val gate = CompletableDeferred<Unit>()
+        hindsight.gate = gate
+        backendE2eTest("memory_forget_busy", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock,
+            providerClients = hindsight.clients(), llm = forgetLlm(results)) {
+            val owner = UUID.randomUUID().toString()
+            val chat = createPublicChat(owner)
+            val historyChat = createPublicChat(owner, requestId = "history-chat")
+            withPublicSocket(historyChat) {
+                appendHistory(it, historyChat, "long", "user", "I prefer rail travel. ".repeat(2_000))
+            }
+            clock.advance(31)
+            suspend fun forgetAll(confirmationId: String? = null): JsonNode {
+                submit(owner, chat, listOfNotNull("ForgetAllMemory", confirmationId).joinToString(" "))
+                return results.last()
+            }
+            val confirmationId = forgetAll()["confirmationId"].asText()
+            withPeerBackend(providerClients = hindsight.clients()) { peer ->
+                coroutineScope {
+                    val capturing = async { peer.backend.captureHistoryMemory() }
+                    try {
+                        withTimeout(5_000) { hindsight.started.await() }
+                        assertEquals(1, hindsight.historyItems.size)
+                        val result = withTimeout(20_000) { forgetAll(confirmationId) }
+                        assertFalse(result["forgotten"].asBoolean())
+                        assertEquals("forget_failed", result["error"]["code"].asText())
+                        assertTrue(hindsight.deletedBanks.isEmpty())
+                        assertTrue(backend.historyMemoryRepository.hasPending(owner))
+                        assertFalse(capturing.isCompleted)
+                    } finally {
+                        gate.complete(Unit)
+                    }
+                    assertTrue(capturing.await())
+                }
+            }
+            assertTrue(hindsight.historyItems.size > 1)
+            assertFalse(backend.historyMemoryRepository.hasPending(owner))
+            // The failed attempt consumes its confirmation; a fresh one can delete the drained bank.
+            assertEquals("confirmation_invalid", forgetAll(confirmationId)["error"]["code"].asText())
+            assertTrue(forgetAll(forgetAll()["confirmationId"].asText())["forgotten"].asBoolean())
+            assertEquals(listOf(owner), hindsight.deletedBanks)
+            assertFalse(backend.captureHistoryMemory())
+            assertTrue(hindsight.paths.last() == "/v1/default/banks/$owner")
+        }
+    }
+
     /** A later ordinary turn is the barrier: forget turns before it must not have been retained. */
     private suspend fun BackendE2eScope.assertOnlyTurnRetained(
         owner: String, chat: String, prompt: String, answer: String = "assistant reply to $prompt",
