@@ -215,10 +215,12 @@ internal class BackendE2eScope(
 
     private val personalityCalls = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
-    // Emulate Orion's settings handler in unrelated workflows. Protocol tests read raw frames.
-    suspend fun readJson(session: DefaultClientWebSocketSession): JsonNode {
+    // Emulate Orion settings and ignore optional speech progress in unrelated workflows.
+    // Progress tests opt in; protocol tests can also read raw frames.
+    suspend fun readJson(session: DefaultClientWebSocketSession, includeProgress: Boolean = false): JsonNode {
         while (true) {
             val frame = readRawJson(session)
+            if (!includeProgress && frame.path("type").asText() == "assistant.message") continue
             if (frame.path("payload").path("name").asText() == ru.souz.backend.personality.PERSONALITY_SYNC_COMMAND) {
                 personalityCalls.add(frame["payload"]["toolCallId"].asText())
                 session.send(Frame.Text(toolResultFrame(frame, "succeeded", mapOf(
