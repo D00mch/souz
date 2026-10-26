@@ -32,7 +32,9 @@ class JevClassifierTest {
             LLMRequest.Message(LLMMessageRole.system, "LLM formatting instructions"),
             LLMRequest.Message(LLMMessageRole.user, "Prepare for today's meetings"),
             LLMRequest.Message(LLMMessageRole.user, "Summarize them"),
-            LLMRequest.Message(LLMMessageRole.assistant, "", functionCall = LLMRequest.FunctionCall("ListEvents", "{}")),
+            LLMRequest.Message(LLMMessageRole.assistant, "", functionCall = LLMRequest.FunctionCall(
+                "ListEvents", """{"calendarId":"private-calendar-id","query":{"token":"private-tool-token"}}""",
+            )),
             LLMRequest.Message(LLMMessageRole.function, "private tool result"),
             LLMRequest.Message(LLMMessageRole.assistant, " You have two meetings. " + "x".repeat(400)),
             LLMRequest.Message(LLMMessageRole.user, "Check my calendar and email the agenda"),
@@ -153,8 +155,10 @@ class JevClassifierTest {
             val previous = state["previous_dialogue"].asText()
             assertEquals(9, previous.lines().size)
             assertTrue(previous.contains("user: Prepare for today's meetings"))
-            assertTrue(previous.contains("ListEvents {}"))
-            assertFalse(payload.toString().contains("private tool result"))
+            assertTrue(previous.lines().contains("assistant: ListEvents "))
+            for (excluded in listOf("private tool result", "calendarId", "private-calendar-id", "private-tool-token")) {
+                assertFalse(payload.toString().contains(excluded))
+            }
             for (excluded in listOf("too old", "LLM formatting instructions", "email the agenda", "x".repeat(4001))) {
                 assertFalse(previous.contains(excluded))
             }

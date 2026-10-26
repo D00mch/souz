@@ -53,7 +53,7 @@ class JevClassifier(
 
     private fun LLMRequest.Message.classificationText(): String =
         "$role${name?.let { " [$it]" }.orEmpty()}: " +
-            (functionCall?.let { "${it.name} ${it.arguments} " }.orEmpty() + content).take(CLASSIFICATION_MESSAGE_LIMIT)
+            (functionCall?.let { "${it.name} " }.orEmpty() + content).take(CLASSIFICATION_MESSAGE_LIMIT)
 
     /** One Noul question per option; options scoring strictly above [threshold] are selected. */
     private suspend fun select(state: String, kind: String, options: Map<String, String>): Set<String> {

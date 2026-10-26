@@ -268,6 +268,42 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
+    fun `named summaries sharing a built in ID keep their own reasoning defaults`() {
+        val upstream = LLMModel.OpenAIGpt5Mini.alias
+        for (parameters in listOf("""{"reasoning_effort":"high"}""", "{}")) {
+            val json = NAMED_LLM_CONFIG
+                .replace("shared-model", upstream)
+                .replace("\"connection\":\"router\"", "\"connection\":\"router\",\"parameters\":$parameters")
+                .replace("\"subagentModels\":", "\"reasoningEfforts\":{\"$upstream\":\"low\"},\"subagentModels\":")
+            withNamedLlmConfig(json) { source ->
+                runTest {
+                    val requests = mutableListOf<CapturedRequest>()
+                    val config = source.loadNamedModels()
+                    val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source, config)
+                    facadeFixture(settingsProvider = settings, llmConfig = config, providerApiOverride = null,
+                        client = recordingClient(requests)).use { fixture ->
+                        for (explicitEffort in listOf(null, "medium")) {
+                            val request = chat("tv-agent").copy(reasoningEffort = explicitEffort)
+                            assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
+                            assertTrue(fixture.api.messageStream(request).toList().any { it is LLMResponse.Chat.Ok })
+                            assertIs<LLMResponse.Chat.Ok>(fixture.api.message(
+                                request.copy(model = LLMModel.OpenAIGpt52.alias, isSummarization = true),
+                            ))
+                            val expected = explicitEffort ?: restJsonMapper.readTree(parameters)["reasoning_effort"]?.textValue()
+                            requests.takeLast(3).forEach { outbound ->
+                                assertEquals("https://router.test/v1/chat/completions", outbound.url)
+                                assertEquals("Bearer router-secret", outbound.authorization)
+                                assertEquals(upstream, outbound.body["model"].asText())
+                                assertEquals(expected, outbound.body.path("reasoning_effort").textValue())
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     fun `custom selectors use host model resolution while raw IDs are never rewritten`() = runTest {
         val requests = mutableListOf<CapturedRequest>()
         val settings = LlmSettingsStub().apply { gigaModel = LLMModel.OpenAIGpt52 }
