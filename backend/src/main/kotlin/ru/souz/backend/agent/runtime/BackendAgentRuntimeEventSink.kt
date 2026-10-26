@@ -70,6 +70,9 @@ internal class BackendAgentRuntimeEventSink(
 
     override suspend fun emit(event: AgentRuntimeEvent) = emitMutex.withLock {
         when (event) {
+            AgentRuntimeEvent.InitialWait -> if (publicClientThread) publishLiveEvent(
+                AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload(INITIAL_WAIT_PHRASES.random()),
+            )
             is AgentRuntimeEvent.MemoryPromptAugmented -> Unit
             is AgentRuntimeEvent.LlmMessageDelta -> onLlmMessageDelta(event)
             is AgentRuntimeEvent.AssistantMessage -> if (narrateSteps) {
@@ -336,6 +339,11 @@ internal class BackendAgentRuntimeEventSink(
 
 private fun String.toPublicErrorCode(): String =
     if (this in publicErrorCodes) this else "internal_error"
+
+private val INITIAL_WAIT_PHRASES = listOf(
+    "Минуту...", "Одну минуту...", "Секунду...", "Одну секунду...",
+    "Секундочку...", "Один момент...", "Сейчас вернусь...",
+)
 
 private val publicErrorCodes = setOf(
     "invalid_request",

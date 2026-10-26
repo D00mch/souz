@@ -14,7 +14,7 @@ The measurement reference is [PR #852](https://github.com/D00mch/souz/pull/852).
 The classic `GraphBasedAgent` can select multiple tool categories with Jev independently of its conversational
 model. The skills graph, including backend conversations, selects relevant file-backed Skill descriptions with Jev and execution-LLM fallback; it does not classify tool categories. Inventory keeps every exact ID and adds only selected descriptions as bounded, escaped metadata. Full instructions and supporting files load on demand with approval where enabled.
 
-`JevClassifier` sends the conversation as plain text built by `jevState`: the new user message first, then earlier
+`JevClassifier.classify` and `selectSkills` send the conversation as plain text built by `jevState`: the new user message first, then earlier
 non-empty user and assistant messages newest first, each cut to its first 300 characters. Every category and Skill gets one
 yes/no question naming it with its description; the shared `true` and `false` sides say that a step of the request
 must need it and that a mentioned topic alone does not count. Categories use the classic graph's history window,
@@ -64,9 +64,9 @@ suspend fun needsCalendar(jev: JevClient, message: String): Double {
 ```
 
 `JevClient.choose(state, instructions, options)` asks one choice question and returns every option's probability.
-`JevClassifier.isComplex` asks it over the last two earlier messages whether a turn needs a light or a strong model
-and routes to the complex model when "complex" scores at least 0.5; when Jev fails, the turn keeps its own model
-without asking FRIDA. Optional `criteria` describe a question's `true` and `false` sides. Callers can pass
+`JevClassifier.isComplex` asks one Noul question: a `simple` probability of at least `0.9` admits a confident text-only answer requiring no tools. Attachments and current requests longer than 4,000 characters select complex without calling JEV. Requests of exactly 4,000 characters can still be classified in full; only reference history is truncated. Its structured state separates `current_request`, up to nine user and assistant messages in `previous_dialogue` (4,000 characters each), and `available_capabilities` from prepared inventory. Tool calls include only their names; system messages, tool arguments and tool results are excluded. Past tasks supply references, not pending work. Uncertainty and missing facts select complex. Logs contain probabilities and counts, not dialogue. When Jev fails, the turn keeps its own model without asking FRIDA.
+
+Optional `criteria` describe a question's `true` and `false` sides. Callers can pass
 credentials and a model to `JevClient(http, token, model)`. The client validates probabilities
 but leaves selection policy to callers and never closes the supplied transport.
 

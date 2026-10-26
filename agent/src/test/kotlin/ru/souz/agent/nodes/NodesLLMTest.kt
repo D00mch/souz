@@ -198,7 +198,7 @@ class NodesLLMTest {
             runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
         )
 
-        assertEquals<List<AgentRuntimeEvent>>(chunks.map { AgentRuntimeEvent.LlmMessageDelta(it) }, runtimeEvents)
+        assertEquals<List<AgentRuntimeEvent>>(listOf(AgentRuntimeEvent.InitialWait) + chunks.map { AgentRuntimeEvent.LlmMessageDelta(it) }, runtimeEvents)
         assertEquals(AgentStreamChunk("Hello streaming world", 7L), sideEffect.await())
         val response = result.input as LLMResponse.Chat.Ok
         assertEquals("Hello streaming world", response.choices.single().message.content)
@@ -226,6 +226,7 @@ class NodesLLMTest {
         }
         val result = graph.start(context(emptyList(), recordingSink(events)))
         assertEquals(2, attempts)
+        assertEquals(1, events.count { it is AgentRuntimeEvent.InitialWait })
         assertEquals(listOf("Let me check", "Second"), events.filterIsInstance<AgentRuntimeEvent.AssistantMessage>().map { it.content })
         assertEquals(listOf("Let me check", "Second", ""), result.history.map { it.content })
     }
@@ -270,8 +271,10 @@ class NodesLLMTest {
                     }
                 }
             }
-            val classifier = TaskComplexityClassifier { request ->
+            val classifier = TaskComplexityClassifier { request, capabilities ->
                 assertEquals(listOf("system", "Prompt"), request.messages.map { it.content })
+                assertEquals(mapOf("application.action" to "Perform a saved action"), capabilities)
+                assertEquals(emptyList(), request.functions)
                 simpleStreamed.await()
                 assertEquals(emptyList(), events)
                 verdict()
@@ -279,16 +282,22 @@ class NodesLLMTest {
             val nodes = NodesLLM(api, mockk { every { useStreaming } returns true }, conversationInstructions = { "Be brief." },
                 complexityClassifier = classifier, routedTools = { listOf(testTool(it.model)) })
             val context = context(listOf(SYSTEM, INJECTED, LLMRequest.Message(LLMMessageRole.user, "Prompt")), recordingSink(events))
-            val result = nodes.chat().execute(context.copy(settings = context.settings.copy(routing = ROUTING)), runtime())
+            val result = nodes.chat().execute(context.copy(settings = context.settings.copy(routing = ROUTING),
+                routingCapabilities = mapOf("application.action" to "Perform a saved action")), runtime())
 
             assertEquals("$chosen answer", (result.input as LLMResponse.Chat.Ok).choices.single().message.content)
-            assertEquals<List<AgentRuntimeEvent>>(listOf(AgentRuntimeEvent.LlmMessageDelta("$chosen answer")), events)
+            assertEquals<List<AgentRuntimeEvent>>(listOfNotNull(AgentRuntimeEvent.InitialWait.takeIf { chosen != "simple" },
+                AgentRuntimeEvent.LlmMessageDelta("$chosen answer")), events)
             assertEquals(listOf("simple", chosen).distinct(), requests.map { it.model })
-            // Each routed call is prepared like any other, with the tools rebound to its model.
+            // The simple model retains context but has no tool capabilities.
             assertTrue(requests.all { it.messages.first().content == "system\n\nBe brief." && it.maxTokens == CHAT_MAX_OUTPUT_TOKENS })
-            assertEquals(requests.map { listOf(it.model) }, requests.map { request -> request.functions.map { it.name } })
+            assertEquals(requests.map { if (it.model == "simple") emptyList() else listOf(it.model) }, requests.map { request -> request.functions.map { it.name } })
             assertEquals(chosen, result.settings.model)
+            assertEquals(if (chosen == "simple") emptySet() else setOf(chosen), result.settings.tools.byName.keys)
+            assertTrue(requests.all { request -> request.messages.any { it.content == INJECTED.content } })
             assertEquals(null, result.settings.routing)
+            nodes.chat().execute(result.map { "follow-up" }, runtime())
+            assertEquals(if (chosen == "simple") 0 else 1, events.count { it is AgentRuntimeEvent.InitialWait })
         }
     }
 
@@ -299,7 +308,7 @@ class NodesLLMTest {
             val api = mockk<LLMChatAPI> {
                 coEvery { message(capture(calls)) } returnsMany listOf(block(0, "short summary"), block(0, "answer"))
             }
-            val nodes = NodesLLM(api, mockk { every { useStreaming } returns false }, complexityClassifier = { complex })
+            val nodes = NodesLLM(api, mockk { every { useStreaming } returns false }, complexityClassifier = { _, _ -> complex })
             val completed = exchange("old ".repeat(18000))
             val ctx = context(completed + activeTurn("result ".repeat(1000)), activeExchangeStartIndex = 2)
             val result = nodes.chat().execute(ctx.copy(settings = ctx.settings.copy(routing = ROUTING)), runtime())
