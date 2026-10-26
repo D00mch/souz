@@ -9,6 +9,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.direct
@@ -310,6 +312,37 @@ class NodesMemoryTest {
         assertEquals(boundedTools + setOf("ForgetMemoryFact", "ForgetAllMemory"), captured.toolNames)
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = ["ForgetMemoryFact", "ForgetAllMemory"])
+    fun `capture keeps forgetting tools before mid-run input within the active exchange`(forgetTool: String) = runTest {
+        val memoryRuntime = RecordingMemoryRuntime()
+        val context = completedContext(
+            userMessage = "forget that memory",
+            output = "done",
+            previousHistory = listOf(
+                "system".toSystemPromptMessage(),
+                LLMRequest.Message(LLMMessageRole.user, "previous question"),
+                LLMRequest.Message(LLMMessageRole.function, "old result", name = "OldTool"),
+                LLMRequest.Message(LLMMessageRole.assistant, "previous answer"),
+            ),
+            beforeFinal = listOf(
+                LLMRequest.Message(LLMMessageRole.function, "forgotten", name = forgetTool),
+                LLMRequest.Message(LLMMessageRole.user, "and check my remaining memory"),
+                LLMRequest.Message(LLMMessageRole.function, "remaining facts", name = "SearchMemory"),
+            ),
+        )
+
+        NodesMemory(memoryRuntime, backgroundScope).finalizeTurn().execute(context, graphRuntime())
+        runCurrent()
+        val captured = withTimeout(1_000) { memoryRuntime.captureStarted.await() }
+
+        assertEquals(setOf(forgetTool, "SearchMemory"), captured.toolNames)
+        assertEquals("and check my remaining memory", captured.userMessage)
+        assertEquals("done", captured.assistantMessage)
+        assertEquals(listOf("SearchMemory"), captured.evidence.map { it.sourceName })
+        assertEquals(listOf("remaining facts"), captured.evidence.map { it.text })
+    }
+
     @Test
     fun `capture failure is isolated and noop runtime does not dispatch`() = runTest {
         val failingRuntime = RecordingMemoryRuntime(captureFailure = IllegalStateException("capture failed"))
@@ -363,6 +396,7 @@ class NodesMemoryTest {
         activeTools = emptyList(),
         systemPrompt = "system",
         toolInvocationMeta = meta,
+        activeExchangeStartIndex = previousHistory.size,
     )
 
     private fun okResponse(content: String): LLMResponse.Chat.Ok = LLMResponse.Chat.Ok(

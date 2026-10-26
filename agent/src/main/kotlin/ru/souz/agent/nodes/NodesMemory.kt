@@ -139,7 +139,7 @@ internal class NodesMemory(
             assistantMessage = "",
             evidence = evidenceFrom(evidenceMessages),
             timeZone = meta.timeZone,
-            toolNames = evidenceMessages.mapNotNullTo(HashSet()) { message ->
+            toolNames = ctx.history.drop(ctx.activeExchangeStartIndex).mapNotNullTo(HashSet()) { message ->
                 message.name?.takeIf { message.role == LLMMessageRole.function }
             },
         )

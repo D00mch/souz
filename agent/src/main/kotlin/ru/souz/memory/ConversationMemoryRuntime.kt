@@ -66,7 +66,7 @@ data class CompletedTurnMemoryInput(
     val assistantMessage: String,
     val evidence: List<CompletedTurnEvidence> = emptyList(),
     val timeZone: String? = null,
-    /** Every tool called in the turn, including those cut from the bounded [evidence]. */
+    /** Every tool in the active exchange, including before mid-run input or outside bounded [evidence]. */
     val toolNames: Set<String> = emptySet(),
 )
 
