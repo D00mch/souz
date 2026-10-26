@@ -180,7 +180,10 @@ fun backendDiModule(
         val metrics = instance<BackendMetrics>()
         (dataSourceFactory?.invoke(appConfig.postgres)
             ?: PostgresDataSourceFactory.create(appConfig.postgres, metrics.registry))
-            .also { metrics.executions.bindDatabase(it) }
+            .also {
+                metrics.executions.bindDatabase(it)
+                metrics.historyMemory.bindDatabase(it)
+            }
     }
     bindSingleton { PostgresJobService(instance<HikariDataSource>()) }
     bindSingleton<JobService> { instance<PostgresJobService>() }

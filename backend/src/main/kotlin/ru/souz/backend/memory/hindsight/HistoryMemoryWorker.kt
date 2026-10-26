@@ -72,7 +72,7 @@ internal class HistoryMemoryWorker(
                 when {
                     !updated -> logger.warn("History memory lease lost attempt={} category={}", fragment.attempts, category)
                     exhausted -> {
-                        metrics.historyMemoryFailed()
+                        metrics.historyMemory.failed()
                         logger.error("History memory failed attempts={} reason={} category={}",
                             fragment.attempts, if (permanent) "attempts" else "time budget", category)
                     }
