@@ -109,7 +109,7 @@ class HindsightConversationMemoryRuntime(
 
     override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) {
         // A forget turn would store again what it asked to forget.
-        if (input.evidence.any { it.sourceName in FORGET_MEMORY_TOOL_NAMES }) return
+        if (input.toolNames.any { it in FORGET_MEMORY_TOOL_NAMES }) return
         val tags = when (parseExplicitMemoryIntent(input.userMessage)) {
             ExplicitMemoryIntent.NONE -> input.context.chatTags()
             ExplicitMemoryIntent.REMEMBER_SIGNAL -> emptyList()

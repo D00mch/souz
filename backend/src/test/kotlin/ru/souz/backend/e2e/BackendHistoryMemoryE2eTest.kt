@@ -620,6 +620,7 @@ class BackendHistoryMemoryE2eTest {
             clock.shift = Duration.ofSeconds(62)
             assertTrue(backend.captureHistoryMemory())
             assertEquals(listOf(other), hindsight.historyItems.map { it.bank })
+            forgetAll("late")
             assertOnlyTurnRetained(owner, chat, "SearchMemory", answer = "done")
             assertEquals(json.readTree("""{"facts":[],"error":null}"""), results.last())
 
@@ -647,6 +648,7 @@ class BackendHistoryMemoryE2eTest {
 /** Calls the memory tool named by the prompt's first word with its optional value, then records the last result. */
 private fun forgetLlm(results: MutableList<JsonNode>): E2eLlmApi {
     val mapper = jacksonObjectMapper()
+    val search = mapOf("semanticQuery" to "everything about the user", "lexicalHints" to listOf("user"))
     return E2eLlmApi { request ->
         val prompt = request.conversationPrompt()
         val tool = prompt.substringBefore(' ')
@@ -654,8 +656,11 @@ private fun forgetLlm(results: MutableList<JsonNode>): E2eLlmApi {
         val turn = request.messages.takeLastWhile { it.role != LLMMessageRole.user }.filter { it.role == LLMMessageRole.function }
         when {
             tool != "SearchMemory" && tool !in FORGET_MEMORY_TOOL_NAMES -> reply(request, "assistant reply to $prompt")
+            // "late" calls the tool only after 16 other tool results, beyond the bounded capture evidence.
+            value == "late" && turn.size < 16 -> toolCallReply(request, "SearchMemory", search)
+            value == "late" && turn.size == 16 -> toolCallReply(request, tool, emptyMap())
             turn.isEmpty() -> toolCallReply(request, tool, when {
-                tool == "SearchMemory" -> mapOf("semanticQuery" to "everything about the user", "lexicalHints" to listOf("user"))
+                tool == "SearchMemory" -> search
                 value == null || value == "self" -> emptyMap()
                 tool == ToolForgetMemoryFact.NAME -> mapOf("factId" to value)
                 else -> mapOf("confirmationId" to value)
