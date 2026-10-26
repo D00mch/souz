@@ -39,7 +39,7 @@ To investigate one memory, start from the user, chat and time:
 
 1. Missing: find the turn's `memory.retain_turn` or the chat's `memory.retain_history` records. No record means capture was skipped (opt-out or forget turn, Hindsight disabled) or the fragment is still pending; a failed outcome names its `category`; `queued` needs the operation status. After a completed extraction, look for a later `memory.forget_fact` or `memory.forget_all`.
 2. Unexpectedly retained: the fact's `document_id` in Hindsight leads to its retain record and the source turn or fragment; fact wording belongs to the memory service's `retain_mission`.
-3. Unavailable: no `memory.recall` means automatic recall is disabled or the input was blank; `facts=0` means Hindsight returned nothing in the global-plus-chat scope; a fact missing from `memory.injected` did not reach the model. For `SearchMemory`, check `memory.search`.
+3. Unavailable: no `memory.recall` means automatic recall is disabled, the input was blank, or the message asked to forget, whose notice then appears as `memory.injected` with `facts=0`; a `memory.recall` with `facts=0` means Hindsight returned nothing in the global-plus-chat scope; a fact missing from `memory.injected` did not reach the model. For `SearchMemory`, check `memory.search`.
 
 Hindsight's own `/metrics` reports failed extraction LLM calls as `hindsight_llm_calls_total{success="false"}`.
 
