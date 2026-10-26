@@ -22,6 +22,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.test.assertFalse
 
 class JevClassifierTest {
     private val request = LLMRequest.Chat(
@@ -136,19 +138,55 @@ class JevClassifierTest {
     }
 
     @Test
-    fun `complexity is one choice over the last two messages`() = runTest {
-        var complex = 0.0
+    fun `complexity requires confident tool free answers with bounded reference history`() = runTest {
+        var simple = 0.0
+        val capabilities = mapOf("application.action" to "Read or change application state")
+        val bounded = request.copy(messages = listOf(LLMRequest.Message(LLMMessageRole.user, "too old")) +
+            List(4) { LLMRequest.Message(LLMMessageRole.assistant, "x".repeat(5000)) } + request.messages)
         val engine = MockEngine { httpRequest ->
             val payload = restJsonMapper.readTree(httpRequest.body.toByteArray())
-            assertEquals(jevState(request.messages, historyLimit = 2), payload["state"].asText())
-            val question = payload["questions"]["choice"]
-            assertEquals("choice", question["type"].asText())
-            assertEquals(listOf("simple", "complex"), question["criteria"].fieldNames().asSequence().toList())
-            respond("""{"answers":{"choice":{"type":"choice","probabilities":{"simple":${1 - complex},"complex":$complex}}}}""")
+            val state = payload["state"]
+            assertEquals("user: Check my calendar and email the agenda", state["current_request"].asText())
+            assertEquals(restJsonMapper.valueToTree<JsonNode>(capabilities), state["available_capabilities"])
+            val previous = state["previous_dialogue"].asText()
+            assertEquals(9, previous.lines().size)
+            assertTrue(previous.contains("ListEvents {}"))
+            assertTrue(previous.contains("private tool result"))
+            for (excluded in listOf("too old", "LLM formatting instructions", "email the agenda", "x".repeat(4001))) {
+                assertFalse(previous.contains(excluded))
+            }
+            assertEquals("noul", payload["questions"]["simple"]["type"].asText())
+            respond("""{"answers":{"simple":{"type":"noul","noul":$simple}}}""")
         }
         HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
             val classifier = JevClassifier(JevClient(http, "test-token"))
-            assertEquals(listOf(false, true, true), listOf(0.49, 0.5, 0.9).map { complex = it; classifier.isComplex(request) })
+            assertEquals(listOf(true, false, false), listOf(0.89, 0.9, 1.0).map {
+                simple = it; classifier.isComplex(bounded, capabilities)
+            })
+            val attached = request.copy(messages = listOf(request.messages.last().copy(attachments = listOf("file-id"))))
+            assertTrue(classifier.isComplex(attached, capabilities))
+            assertEquals(3, engine.requestHistory.size)
+        }
+    }
+
+    @Test
+    fun `oversized current requests bypass classification including actions beyond the limit`() = runTest {
+        val boundary = "x".repeat(4000)
+        val engine = MockEngine { httpRequest ->
+            val state = restJsonMapper.readTree(httpRequest.body.toByteArray())["state"]
+            assertEquals("user: $boundary", state["current_request"].asText())
+            respond("""{"answers":{"simple":{"type":"noul","noul":1.0}}}""")
+        }
+        HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
+            val classifier = JevClassifier(JevClient(http, "test-token"))
+            for (text in listOf(boundary + "x", boundary + "\nEmail this to my manager.")) {
+                val longRequest = request.copy(messages = listOf(LLMRequest.Message(LLMMessageRole.user, text)))
+                assertTrue(classifier.isComplex(longRequest, emptyMap()))
+                assertTrue(engine.requestHistory.isEmpty())
+            }
+            val exactRequest = request.copy(messages = listOf(LLMRequest.Message(LLMMessageRole.user, boundary)))
+            assertFalse(classifier.isComplex(exactRequest, emptyMap()))
+            assertEquals(1, engine.requestHistory.size)
         }
     }
 

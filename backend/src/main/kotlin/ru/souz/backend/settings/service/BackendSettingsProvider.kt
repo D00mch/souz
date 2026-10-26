@@ -1,5 +1,6 @@
 package ru.souz.backend.settings.service
 
+import com.fasterxml.jackson.module.kotlin.readValue
 import ru.souz.agent.AgentId
 import ru.souz.backend.config.NamedLlmConfig
 import ru.souz.backend.config.loadNamedModels
@@ -21,6 +22,7 @@ import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.findLLMModel
+import ru.souz.llms.restJsonMapper
 import ru.souz.llms.local.LocalEmbeddingProfiles
 
 class BackendSettingsProvider(
@@ -49,7 +51,12 @@ class BackendSettingsProvider(
     override val openaiSummarizationApiKey: String? = namedModels.summarization?.apiKey ?: configured("OPENAI_SUMMARIZATION_API_KEY")
     override val openaiSummarizationBaseUrl: String? = namedModels.summarization?.baseUrl ?: configured("OPENAI_SUMMARIZATION_BASE_URL")
     override val openaiSummarizationModel: String? = namedModels.summarization?.modelId ?: configured("OPENAI_SUMMARIZATION_MODEL")
-    override val openaiSummarizationParameters: String? = configured("OPENAI_SUMMARIZATION_PARAMETERS")
+    override val openaiSummarizationParameters: String? = namedModels.summarization?.parameters?.let { parameters ->
+        val defaults = configured("OPENAI_SUMMARIZATION_PARAMETERS")?.let {
+            restJsonMapper.readValue<Map<String, Any?>>(it)
+        }.orEmpty()
+        restJsonMapper.writeValueAsString(defaults + restJsonMapper.readValue<Map<String, Any?>>(parameters))
+    } ?: configured("OPENAI_SUMMARIZATION_PARAMETERS")
     override var saluteSpeechKey: String? = configured("VOICE_KEY")
     override var supportEmail: String? = configured(SUPPORT_EMAIL)
     override var defaultCalendar: String? = configured(DEFAULT_CALENDAR)

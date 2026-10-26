@@ -9,9 +9,10 @@ Set `SOUZ_LLM_CONFIG_FILE` to a JSON file readable by the backend, and supply th
     "test": {"baseUrl": "https://llm.example.com/v1", "apiKeyEnv": "TEST_API_KEY"}
   },
   "models": {
-    "test-chat": {"connection": "test", "modelId": "custom-model"},
+    "test-chat": {"connection": "test", "modelId": "custom-model", "parameters": {"thinking": {"type": "disabled"}}},
     "tv-agent": {"connection": "router", "modelId": "provider/model"}
   },
+  "reasoningEfforts": {"gpt-5-mini": "low"},
   "subagentModels": ["tv-agent"],
   "summarization": {"model": "tv-agent"},
   "routing": {
@@ -25,7 +26,11 @@ All configured model names are advertised in `/v1/bootstrap`; no per-user allowl
 
 `GET /health` reports the server default using the same selection policy, without user settings or user-managed keys.
 
-`subagentModels` and `summarization` are optional. A child without an explicit model inherits the parent's named selection. Dedicated summarization uses its own connection and preserves `OPENAI_SUMMARIZATION_PARAMETERS`. Existing `OPENAI_*`, summarization model/connection/parameter settings and `SUBAGENT_MODELS_JSON` remain usable when no named override is configured.
+`subagentModels` and `summarization` are optional. A child without an explicit model inherits the parent's named selection. Dedicated summarization uses its own connection and shallow-merges `OPENAI_SUMMARIZATION_PARAMETERS` with the selected model's `parameters`, with model values winning. Existing `OPENAI_*`, summarization model/connection/parameter settings and `SUBAGENT_MODELS_JSON` remain usable when no named override is configured.
+
+Named model `parameters` are optional OpenAI-compatible body defaults scoped to that connection/model, including DeepSeek `thinking`. They must be JSON objects and cannot contain `model`, `messages`, `stream`, `tools`, `tool_choice`, `max_tokens`, `max_completion_tokens`, or `context_size`.
+
+The optional `reasoningEfforts` map supplies nonblank effort strings for built-in OpenAI and Codex models. Keys accept built-in selectors, normalize to aliases, and reject duplicates after normalization; custom selectors and other providers are rejected. `models` contains only named connections. Explicit request effort overrides configured effort; omitted defaults stay unset. Both streaming and ordinary calls use these defaults, including child calls. Providers validate supported effort values.
 
 `CONTEXT_SIZE` is the single server context window for conversation, subagents and summaries (default `125000`). Startup rejects values that are not integers of at least `24000` tokens. All configured models must support that window; no model-specific effective window is calculated. Users and HTTP request options cannot override it, and continuations use the running server value.
 

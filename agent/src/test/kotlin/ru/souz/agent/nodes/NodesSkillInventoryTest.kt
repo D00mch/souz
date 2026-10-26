@@ -97,9 +97,14 @@ class NodesSkillInventoryTest {
         )
         val context = contextWithCatalog(filesTool)
 
-        val filesPrompt = inventory.node(emptyList()).execute(context, runtime()).history.first().content
+        val files = inventory.node(emptyList()).execute(context, runtime())
+        val filesPrompt = files.history.first().content
         filter.allowedCategory = ToolCategory.BROWSER
-        val browserPrompt = inventory.node(emptyList()).execute(context, runtime()).history.first().content
+        val browser = inventory.node(emptyList()).execute(files, runtime())
+        val browserPrompt = browser.history.first().content
+        assertEquals(mapOf("FilesTool" to "FilesTool"), files.routingCapabilities)
+        assertEquals(mapOf("BrowserTool" to "BrowserTool"), browser.routingCapabilities)
+        assertEquals(browser.routingCapabilities, browser.map { "next" }.routingCapabilities)
 
         assertEquals(
             "$PROVIDED_SYSTEM_PROMPT\n\n<skill_inventory>\n" +
@@ -226,10 +231,14 @@ class NodesSkillInventoryTest {
         assertFalse(prompt.contains("Shadowed bundle."))
         assertFalse(prompt.contains("x".repeat(241)))
         assertEquals(PROVIDED_SYSTEM_PROMPT, first.systemPrompt)
+        assertEquals(setOf("compiled", "Paper.S17", "other"), first.routingCapabilities.keys)
+        assertEquals(240, first.routingCapabilities.getValue("Paper.S17").length)
+        assertEquals("Compose music.", first.routingCapabilities["other"])
         selected = emptySet()
         val next = node.execute(first, runtime()).history.first().content
         assertFalse(next.contains("; description:"))
         assertContains(next, "- skillId: \"Paper.S17\"")
+        coVerify(exactly = 2) { repository.listSkillDescriptions(any()) }
         coVerify(exactly = 0) { repository.loadSkillBundle(any(), any()) }
     }
 
@@ -290,13 +299,15 @@ class NodesSkillInventoryTest {
     @Test
     fun `thanks and greetings skip Skill selection`() = runTest {
         val api = mockk<LLMChatAPI>()
-        val node = node(catalog(), repository = repository("paper" to "Summarize papers."), llmApi = api,
+        val repository = repository("paper" to "Summarize papers.")
+        val node = node(catalog(), repository = repository, llmApi = api,
             classifier = SkillClassifier { _, _ -> error("Skill selection must be skipped") })
             .node(emptyList(), classifySkills = true)
         val prompt = node.execute(contextWithCatalog().copy(input = "Спасибо большое!"), runtime()).history.first().content
         assertContains(prompt, "- skillId: \"paper\"\n")
         assertFalse(prompt.contains("; description:"))
         coVerify(exactly = 0) { api.message(any()) }
+        coVerify(exactly = 0) { repository.listSkillDescriptions(any()) }
     }
 
     private fun node(

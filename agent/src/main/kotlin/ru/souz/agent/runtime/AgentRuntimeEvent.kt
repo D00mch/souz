@@ -18,6 +18,8 @@ interface AgentRuntimeEventSink {
 }
 
 sealed interface AgentRuntimeEvent {
+    data object InitialWait : AgentRuntimeEvent
+
     data class MemoryPromptAugmented(
         val addedBlock: String,
         val facts: List<ru.souz.memory.MemoryPromptFact> = emptyList(),

@@ -36,15 +36,19 @@ class BackendSettingsProviderTest {
 
     @Test
     fun `named models load independent connections and reject broken configuration`() {
-        withNamedLlmConfig { source ->
+        val valid = NAMED_LLM_CONFIG.replace("\"modelId\":\"shared-model\"", """"modelId":"shared-model","parameters":{"top_p":0.8}"""
+        ).replace("\"models\":", """"reasoningEfforts":{"${LLMModel.CodexGpt56Sol.name}":"low"},"models":""")
+        withNamedLlmConfig(valid) { source ->
             val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source)
             assertEquals(setOf("test-chat", "tv-agent"), source.loadNamedModels().models.keys)
             assertEquals(mapOf("tv-agent" to LlmProvider.OPENAI), settings.subagentModels)
             assertEquals("https://router.test/v1", settings.openaiSummarizationBaseUrl)
             assertEquals("router-secret", settings.openaiSummarizationApiKey)
             assertEquals("shared-model", settings.openaiSummarizationModel)
+            assertEquals("""{"top_p":0.8}""", settings.openaiSummarizationParameters)
+            assertEquals(mapOf(LLMModel.CodexGpt56Sol.alias to "low"), source.loadNamedModels().reasoningEfforts)
         }
-        val valid = NAMED_LLM_CONFIG
+        withNamedLlmConfig { source -> assertNull(source.loadNamedModels().models.getValue("test-chat").parameters) }
         for (port in listOf(1, 65535)) {
             withNamedLlmConfig(valid.replace("router.test/v1", "router.test:$port/v1")) { source ->
                 val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source)
@@ -65,6 +69,15 @@ class BackendSettingsProviderTest {
             valid.replace("https://router.test/v1", "https://router.test:0/v1"),
             valid.replace("https://router.test/v1", "https://user:secret@router.test/v1"),
             valid.replace("\"models\":", "\"models\":{},\"models\":"),
+            valid.replace("\"top_p\":0.8", "\"tools\":[]"),
+            valid.replace("{\"top_p\":0.8}", "null"),
+            valid.replace("\"top_p\":0.8", "\"top_p\":0.8,\"top_p\":0.9"),
+            valid.replace(LLMModel.CodexGpt56Sol.name, "missing"),
+            valid.replace(LLMModel.CodexGpt56Sol.name, LLMModel.OpenAICompatibleCustom.alias),
+            valid.replace(LLMModel.CodexGpt56Sol.name, LLMModel.AnthropicSonnet45.alias),
+            valid.replace("\"low\"", "false"),
+            valid.replace("\"low\"", "\" \""),
+            valid.replace("\"low\"", "\"low\",\"${LLMModel.CodexGpt56Sol.alias}\":\"high\""),
         ).forEach { json ->
             withNamedLlmConfig(json) { source ->
                 assertFailsWith<Exception> { BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, source) }
