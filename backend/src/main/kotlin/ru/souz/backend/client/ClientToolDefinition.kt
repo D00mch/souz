@@ -52,7 +52,8 @@ internal fun List<ClientToolDefinition>.normalizeClientTools(
 // Include optional server capabilities even when their integrations are not configured.
 private val reservedSkillNames = setOf(
     "GetSkillByName", "GetSkillsByCategory", "GetSkillsNamesByCategory", "RunSkillCommand",
-    "SpawnSubagent", "GetKnowledge", "SearchKnowledge", "SearchMemory", "ConnectOAuthProvider", "SafeApiCall",
+    "SpawnSubagent", "GetKnowledge", "SearchKnowledge", "SearchMemory", "ForgetMemoryFact", "ForgetAllMemory",
+    "ConnectOAuthProvider", "SafeApiCall",
 )
 
 private fun requireCatalogue(valid: Boolean, message: String) {
