@@ -37,7 +37,7 @@ class JevClassifier(
         val current = request.messages.getOrNull(currentIndex) ?: return true
         if (current.content.length > CLASSIFICATION_MESSAGE_LIMIT || current.attachments.orEmpty().isNotEmpty()) return true
         val previous = request.messages.filterIndexed { index, message ->
-            index != currentIndex && message.role != LLMMessageRole.system &&
+            index != currentIndex && (message.role == LLMMessageRole.user || message.role == LLMMessageRole.assistant) &&
                 (message.content.isNotBlank() || message.functionCall != null)
         }.takeLast(9)
         val state = restJsonMapper.valueToTree<JsonNode>(mapOf(

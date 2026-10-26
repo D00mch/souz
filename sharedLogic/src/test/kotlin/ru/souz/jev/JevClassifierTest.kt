@@ -138,11 +138,13 @@ class JevClassifierTest {
     }
 
     @Test
-    fun `complexity requires confident tool free answers with bounded reference history`() = runTest {
+    fun `complexity requires confident tool free answers with bounded user and assistant history`() = runTest {
         var simple = 0.0
         val capabilities = mapOf("application.action" to "Read or change application state")
         val bounded = request.copy(messages = listOf(LLMRequest.Message(LLMMessageRole.user, "too old")) +
-            List(4) { LLMRequest.Message(LLMMessageRole.assistant, "x".repeat(5000)) } + request.messages)
+            List(5) { LLMRequest.Message(LLMMessageRole.assistant, "x".repeat(5000)) } + request.messages.dropLast(1) +
+            List(10) { LLMRequest.Message(LLMMessageRole.function, "private tool result $it", name = "ReadFile") } +
+            request.messages.last())
         val engine = MockEngine { httpRequest ->
             val payload = restJsonMapper.readTree(httpRequest.body.toByteArray())
             val state = payload["state"]
@@ -150,8 +152,9 @@ class JevClassifierTest {
             assertEquals(restJsonMapper.valueToTree<JsonNode>(capabilities), state["available_capabilities"])
             val previous = state["previous_dialogue"].asText()
             assertEquals(9, previous.lines().size)
+            assertTrue(previous.contains("user: Prepare for today's meetings"))
             assertTrue(previous.contains("ListEvents {}"))
-            assertTrue(previous.contains("private tool result"))
+            assertFalse(payload.toString().contains("private tool result"))
             for (excluded in listOf("too old", "LLM formatting instructions", "email the agenda", "x".repeat(4001))) {
                 assertFalse(previous.contains(excluded))
             }
