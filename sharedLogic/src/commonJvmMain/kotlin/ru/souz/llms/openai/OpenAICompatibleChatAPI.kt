@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.retry
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -13,6 +14,7 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.Flow
@@ -79,7 +81,7 @@ class OpenAICompatibleChatAPI(
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
         val response = client.post(chatCompletionsUrl) {
-            applyRequestDefaults()
+            applyChatRequestDefaults()
             setBody(buildChatRequest(body, stream = false))
         }
         val text = response.bodyAsText()
@@ -105,7 +107,7 @@ class OpenAICompatibleChatAPI(
             val accumulator = OpenAiStreamAccumulator()
 
             client.preparePost(chatCompletionsUrl) {
-                applyRequestDefaults()
+                applyChatRequestDefaults()
                 setBody(buildChatRequest(body, stream = true))
             }.execute { response ->
                 if (!response.status.isSuccess()) {
@@ -181,6 +183,16 @@ class OpenAICompatibleChatAPI(
 
     override suspend fun balance(): LLMResponse.Balance =
         LLMResponse.Balance.Error(-1, "Balance check not implemented for $provider")
+
+    private fun io.ktor.client.request.HttpRequestBuilder.applyChatRequestDefaults() {
+        applyRequestDefaults()
+        retry {
+            noRetry()
+            retryIf(maxRetries = 2) { _, response -> response.status == HttpStatusCode.ServiceUnavailable }
+            exponentialDelay()
+            modifyRequest { l.warn("Retrying $provider chat request after HTTP 503 (retry $retryCount/2)") }
+        }
+    }
 
     private fun io.ktor.client.request.HttpRequestBuilder.applyRequestDefaults() {
         header(HttpHeaders.ContentType, ContentType.Application.Json)

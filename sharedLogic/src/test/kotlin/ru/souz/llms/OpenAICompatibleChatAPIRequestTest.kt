@@ -637,6 +637,103 @@ class OpenAICompatibleChatAPIRequestTest {
         }
     }
 
+
+    @Test
+    fun chatRetries503WithSamePayloadAndRetryAfter() = runTest {
+        for (streaming in listOf(false, true)) {
+            var attempts = 0
+            val delays = mutableListOf<Long>()
+            val engine = MockEngine {
+                if (++attempts < 3) {
+                    respond(
+                        content = """{"error":{"code":"SERVICE_UNAVAILABLE","metadata":{"reason":"limitsCheckUnavailable"}}}""",
+                        status = io.ktor.http.HttpStatusCode.ServiceUnavailable,
+                        headers = headersOf(HttpHeaders.RetryAfter, if (attempts == 1) "3" else "0"),
+                    )
+                } else {
+                    respond(
+                        content = if (streaming) "data: $CHAT_REPLY\n\ndata: [DONE]\n\n" else CHAT_REPLY,
+                        headers = headersOf(HttpHeaders.ContentType,
+                            (if (streaming) ContentType.Text.EventStream else ContentType.Application.Json).toString()),
+                    )
+                }
+            }
+            retryTestClient(engine) { delays += it }.use { client ->
+                val api = createApi(client)
+                val body = LLMRequest.Chat(
+                    "deepseek/deepseek-v4.1-flash-1017",
+                    listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+                    reasoningEffort = "high",
+                )
+                val response = if (streaming) api.messageStream(body).toList().single() else api.message(body)
+                assertIs<LLMResponse.Chat.Ok>(response)
+            }
+            assertEquals(3, attempts)
+            assertEquals(2, delays.size)
+            assertTrue(delays[0] >= 3_000)
+            assertTrue(delays[1] >= 2_000)
+            assertEquals(1, engine.requestHistory.map { it.body.toByteArray().decodeToString() }.distinct().size)
+            assertTrue(engine.requestHistory.all { it.headers[HttpHeaders.Authorization] == "Bearer test-key" })
+        }
+    }
+
+    @Test
+    fun chatReturnsFinal503AfterThreeAttempts() = runTest {
+        for (streaming in listOf(false, true)) {
+            val engine = MockEngine { respond("limits unavailable", io.ktor.http.HttpStatusCode.ServiceUnavailable) }
+            retryTestClient(engine).use { client ->
+                val api = createApi(client)
+                val body = LLMRequest.Chat("test-model", emptyList())
+                val response = if (streaming) api.messageStream(body).toList().single() else api.message(body)
+                assertEquals(LLMResponse.Chat.Error(503, "limits unavailable"), response)
+            }
+            assertEquals(3, engine.requestHistory.size)
+        }
+    }
+
+    @Test
+    fun otherChatErrorsAndUnavailableEmbeddingsAreNotRetried() = runTest {
+        for (code in listOf(400, 401, 402, 403, 413, 429, 500, 502, 504)) {
+            val engine = MockEngine { respond("rejected", io.ktor.http.HttpStatusCode.fromValue(code)) }
+            retryTestClient(engine).use { client ->
+                val api = createApi(client)
+                assertEquals(LLMResponse.Chat.Error(code, "rejected"), api.message(LLMRequest.Chat("test", emptyList())))
+                assertEquals(listOf(LLMResponse.Chat.Error(code, "rejected")),
+                    api.messageStream(LLMRequest.Chat("test", emptyList())).toList())
+            }
+            assertEquals(2, engine.requestHistory.size)
+        }
+        val engine = MockEngine { respond("unavailable", io.ktor.http.HttpStatusCode.ServiceUnavailable) }
+        retryTestClient(engine).use { client ->
+            assertEquals(LLMResponse.Embeddings.Error(503, "unavailable"),
+                createApi(client).embeddings(LLMRequest.Embeddings("test", listOf("hello"))))
+        }
+        assertEquals(1, engine.requestHistory.size)
+    }
+
+    @Test
+    fun cancellationDuring503BackoffPreventsAnotherRequest() = runTest {
+        val engine = MockEngine { respond("unavailable", io.ktor.http.HttpStatusCode.ServiceUnavailable) }
+        retryTestClient(engine) { throw kotlinx.coroutines.CancellationException("cancelled during backoff") }.use { client ->
+            assertFailsWith<kotlinx.coroutines.CancellationException> {
+                createApi(client).message(LLMRequest.Chat("test", emptyList()))
+            }
+        }
+        assertEquals(1, engine.requestHistory.size)
+    }
+
+    private fun retryTestClient(
+        engine: MockEngine,
+        onDelay: suspend (Long) -> Unit = {},
+    ): HttpClient = HttpClient(engine) {
+        providerHttpClientDefaults()
+        install(io.ktor.client.plugins.HttpRequestRetry) {
+            noRetry()
+            delay(onDelay)
+        }
+    }
+
+
     private fun createApi(
         client: HttpClient,
         provider: LlmProvider = LlmProvider.OPENAI,

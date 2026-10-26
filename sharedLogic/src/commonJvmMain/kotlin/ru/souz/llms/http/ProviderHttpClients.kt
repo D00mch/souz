@@ -6,6 +6,7 @@ import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngineConfig
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.HttpRequestRetry
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
@@ -94,6 +95,7 @@ fun createOpenAiProviderHttpClient(): HttpClient =
 
 /** Shared plugin contract for production clients and MockEngine-based tests. */
 fun <T : HttpClientEngineConfig> HttpClientConfig<T>.providerHttpClientDefaults() {
+    install(HttpRequestRetry) { noRetry() }
     install(HttpTimeout)
     install(ContentNegotiation) {
         jackson {
