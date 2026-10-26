@@ -309,6 +309,7 @@ fun backendDiModule(
             HindsightConversationMemoryRuntime(
                 httpClient = instance<ProviderHttpClients>().standard,
                 baseUrl = hindsightUrl,
+                metrics = instance(),
                 apiToken = appConfig.hindsightApiToken,
                 clock = instance(),
                 retainAsync = appConfig.hindsightRetainAsync,
@@ -320,7 +321,7 @@ fun backendDiModule(
     if (appConfig.hindsightApiUrl != null) {
         bindSingleton { PostgresHistoryMemoryRepository(instance(), instance()) }
         bindSingleton {
-            HistoryMemoryWorker(instance(), instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance())
+            HistoryMemoryWorker(instance(), instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance(), instance())
         }
         bindSingleton { ToolForgetMemoryFact(instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance()) }
         bindSingleton {

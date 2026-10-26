@@ -2,6 +2,7 @@ package ru.souz.backend.app
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotEquals
@@ -51,6 +52,9 @@ import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntime
 import ru.souz.backend.memory.hindsight.HistoryMemoryDocument
+import ru.souz.backend.e2e.fields
+import ru.souz.backend.e2e.withMemoryLogs
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.settings.repository.BackendServerPreferenceStore
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.BackendSettingsProvider
@@ -146,8 +150,9 @@ class BackendDiModuleTest {
     }
 
     @Test
-    fun `both capture paths send the retain setting and accept optional operation metadata`() = runTest {
+    fun `both capture paths send the retain setting and accept optional operation metadata`() = withMemoryLogs { logs -> runTest {
         for (retainAsync in listOf(true, false)) {
+            val logged = logs.size
             val config = testAppConfig().copy(hindsightApiUrl = "http://hindsight.test", hindsightRetainAsync = retainAsync)
             var response = ""
             var loseResponse = false
@@ -195,9 +200,27 @@ class BackendDiModuleTest {
                         assertNull(history["operation_id"])
                     }
                 }
+                // Operation IDs and the response's async flag of each metadata variant above.
+                val accepted = listOf(null to null, null to false, "op-1" to true, "op-2,op-3" to null, "op-4" to null, null to null)
+                assertEquals(accepted.flatMap { response ->
+                    val result = listOfNotNull(response.first?.let { "operation_id" to it }).toMap() +
+                        ("extraction" to if (response.second ?: retainAsync) "queued" else "completed")
+                    listOf(
+                        mapOf("event" to "memory.retain_turn", "outcome" to "error", "document_id" to "souz-turn-message-1",
+                            "attempt" to "1", "category" to "IOException"),
+                        mapOf("event" to "memory.retain_turn", "outcome" to "success", "document_id" to "souz-turn-message-1",
+                            "attempt" to "2") + result,
+                        mapOf("event" to "memory.retain_history", "outcome" to "success", "document_id" to "history-1",
+                            "attempt" to "1") + result,
+                    )
+                }, logs.drop(logged).map { it.fields() })
+                assertFalse(logs.any { record -> listOf("I like tea", "Noted", "dialogue").any { it in "${record.formattedMessage} ${record.keyValuePairs}" } })
+                val metrics = di.direct.instance<BackendMetrics>().registry.scrape()
+                listOf("retain_turn\",outcome=\"error\"} 6.0", "retain_turn\",outcome=\"success\"} 6.0", "retain_history\",outcome=\"success\"} 6.0")
+                    .forEach { assertTrue(metrics.contains("souz_memory_requests_total{operation=\"$it"), it) }
             }
         }
-    }
+    } }
 
     @Test
     fun `backend binds only postgres repositories`() {

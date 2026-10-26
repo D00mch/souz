@@ -1,5 +1,8 @@
 package ru.souz.backend.e2e
 
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.AppenderBase
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -10,6 +13,7 @@ import io.ktor.client.engine.mock.toByteArray
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.request.get
 import io.ktor.client.request.post
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -37,10 +41,14 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
+import org.slf4j.LoggerFactory
+import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.memory.hindsight.FORGET_MEMORY_TOOL_NAMES
 import ru.souz.backend.memory.hindsight.HISTORY_MEMORY_MAX_CHARS
+import ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntime
+import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
 import ru.souz.backend.memory.hindsight.MEMORY_MUTATION_NOTICE
 import ru.souz.backend.memory.hindsight.ToolForgetMemoryFact
 import ru.souz.backend.options.model.Option
@@ -58,7 +66,7 @@ class BackendHistoryMemoryE2eTest {
     private val clock = HistoryTestClock()
 
     @Test
-    fun `recall flag preserves explicit search on both APIs`() {
+    fun `recall flag preserves explicit search on both APIs`() = withMemoryLogs { logs ->
         val question = "What do you remember about my travel preferences?"
         val recalled = "The user prefers quiet sleeper trains"
         for (automaticRecall in listOf(false, true)) {
@@ -99,8 +107,44 @@ class BackendHistoryMemoryE2eTest {
                     assertTrue(messages.any {
                         it.role == LLMMessageRole.function && it.name == "SearchMemory" && it.content.contains(recalled)
                     })
+                    val records = logs.filter { it.mdcPropertyMap["chatId"] == chat && it.fields()["event"] != "memory.retain_turn" }
+                    assertEquals(listOfNotNull(
+                        mapOf("event" to "memory.recall", "outcome" to "success", "facts" to "1", "fact_ids" to "stored-fact")
+                            .takeIf { automaticRecall },
+                        mapOf("event" to "memory.injected", "facts" to "1", "fact_ids" to "stored-fact").takeIf { automaticRecall },
+                        mapOf("event" to "memory.search", "outcome" to "success", "facts" to "1", "fact_ids" to "stored-fact"),
+                    ), records.map { it.fields() })
+                    assertEquals(owner, records.map { it.mdcPropertyMap["userId"] }.toSet().single())
+                    assertNotNull(records.map { it.mdcPropertyMap["threadId"] }.toSet().single())
+                    val metrics = client.get("/metrics").bodyAsText()
+                    assertTrue(metrics.contains("souz_memory_requests_total{operation=\"search\",outcome=\"success\"} 1.0"))
+                    assertEquals(automaticRecall,
+                        metrics.contains("souz_memory_requests_total{operation=\"recall\",outcome=\"success\"} 1.0"))
                 }
             }
+        }
+        assertFalse(logs.any { record -> listOf(question, recalled).any { it in "${record.formattedMessage} ${record.keyValuePairs}" } })
+    }
+
+    @Test
+    fun `failed recall and search are counted and logged by category`() = withMemoryLogs { logs ->
+        val memory = HistoryHindsightStub().apply {
+            recalledText = "The user prefers quiet sleeper trains"
+            recallFailures += listOf(HttpStatusCode.GatewayTimeout, HttpStatusCode.ServiceUnavailable)
+        }
+        backendE2eTest("memory_failures", hindsightUrl = HINDSIGHT_TEST_URL,
+            featureFlags = BackendFeatureFlags(wsAutomaticMemoryRecall = true),
+            providerClients = memory.clients(), llm = forgetLlm(CopyOnWriteArrayList())) {
+            val owner = UUID.randomUUID().toString()
+            val chat = createPublicChat(owner)
+            submit(owner, chat, "SearchMemory")
+            assertEquals(listOf(
+                mapOf("event" to "memory.recall", "outcome" to "timeout", "category" to "http_504"),
+                mapOf("event" to "memory.search", "outcome" to "error", "category" to "http_503"),
+            ), logs.filter { it.mdcPropertyMap["chatId"] == chat && it.fields()["event"] != "memory.retain_turn" }.map { it.fields() })
+            val metrics = client.get("/metrics").bodyAsText()
+            assertTrue(metrics.contains("souz_memory_requests_total{operation=\"recall\",outcome=\"timeout\"} 1.0"))
+            assertTrue(metrics.contains("souz_memory_requests_total{operation=\"search\",outcome=\"error\"} 1.0"))
         }
     }
 
@@ -345,8 +389,16 @@ class BackendHistoryMemoryE2eTest {
     }
 
     @Test
-    fun `failed fragments stop at the retry boundary and release later history`() {
+    fun `failed fragments stop at the retry boundary and release later history`() = withMemoryLogs { logs ->
         backendE2eTest("history_memory_retries", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
+            var failures = 0
+            suspend fun assertBacklog(waiting: Int, retrying: Int) {
+                val metrics = client.get("/metrics").bodyAsText()
+                listOf("waiting" to waiting, "processing" to 0, "retrying" to retrying).forEach {
+                    assertTrue(metrics.contains("souz_history_memory_fragments{state=\"${it.first}\"} ${it.second}.0"), it.first)
+                }
+                assertTrue(metrics.contains("souz_history_memory_failures_total $failures.0"))
+            }
             for ((status, permanent) in listOf(
                 HttpStatusCode.BadRequest to true, HttpStatusCode.OK to true,
                 HttpStatusCode.ServiceUnavailable to false, HttpStatusCode.RequestTimeout to false,
@@ -354,7 +406,8 @@ class BackendHistoryMemoryE2eTest {
             )) {
                 hindsight.rejection = status
                 hindsight.failAfterRetain = status == null
-                val chat = createPublicChat(UUID.randomUUID().toString())
+                val owner = UUID.randomUUID().toString()
+                val chat = createPublicChat(owner)
                 val createdAt = clock.instant()
                 withPublicSocket(chat) { appendHistory(it, chat, "first", "user", "I prefer quiet trains") }
                 clock.advance(31)
@@ -381,6 +434,7 @@ class BackendHistoryMemoryE2eTest {
                         }
                     }
                 }
+                assertBacklog(waiting = 1, retrying = 1)
                 assertTrue(backend.captureHistoryMemory())
                 assertState(11, failed = false)
                 assertFalse(backend.captureHistoryMemory())
@@ -395,6 +449,8 @@ class BackendHistoryMemoryE2eTest {
                     assertTrue(backend.captureHistoryMemory())
                     assertState(14, failed = true)
                 }
+                failures++
+                assertBacklog(waiting = 1, retrying = 0)
                 hindsight.rejection = null
                 hindsight.failAfterRetain = false
                 assertTrue(backend.captureHistoryMemory())
@@ -403,8 +459,27 @@ class BackendHistoryMemoryE2eTest {
                 assertFalse(content.substringAfter("NEW dialogue records").contains("I prefer quiet trains"))
                 assertTrue(content.substringAfter("NEW dialogue records").contains("I also like ferries"))
                 assertFalse(backend.captureHistoryMemory())
+                assertBacklog(waiting = 0, retrying = 0)
+
+                val category = when (status) {
+                    null -> "IOException"
+                    HttpStatusCode.OK -> "HindsightRetainRejected"
+                    else -> "http_${status.value}"
+                }
+                val chatLogs = logs.filter { it.mdcPropertyMap["chatId"] == chat }
+                assertEquals(setOf(owner), chatLogs.map { it.mdcPropertyMap["userId"] }.toSet())
+                assertEquals(List(if (permanent) 2 else 4) {
+                    (if (status == HttpStatusCode.RequestTimeout) "timeout" else "error") to category
+                } + ("success" to null), chatLogs.map { it.fields() }.filter { it["event"] == "memory.retain_history" }
+                    .map { it["outcome"] to it["category"] })
+                val retries = (11 until if (permanent) 12 else 14).map { "WARN History memory retry attempt=$it category=$category" }
+                val failure = if (permanent) "attempts=12 reason=attempts" else "attempts=14 reason=time budget"
+                assertEquals(retries + "ERROR History memory failed $failure category=$category" +
+                    "INFO History memory captured attempt=1 documents=1",
+                    chatLogs.filter { it.loggerName == HistoryMemoryWorker::class.java.name }.map { "${it.level} ${it.formattedMessage}" })
             }
         }
+        assertFalse(logs.any { record -> listOf("quiet trains", "ferries").any { it in "${record.formattedMessage} ${record.keyValuePairs}" } })
     }
 
     @Test
@@ -416,6 +491,7 @@ class BackendHistoryMemoryE2eTest {
             val repository = backend.historyMemoryRepository
             val first = assertNotNull(repository.claim())
             val documents = repository.documents(first)
+            assertTrue(client.get("/metrics").bodyAsText().contains("souz_history_memory_fragments{state=\"processing\"} 1.0"))
             withPeerBackend(providerClients = hindsight.clients()) { peer ->
                 assertFalse(peer.backend.captureHistoryMemory())
                 clock.advance(181)
@@ -432,6 +508,7 @@ class BackendHistoryMemoryE2eTest {
             }
             assertFalse(backend.captureHistoryMemory())
             assertEquals(1, hindsight.items.size)
+            assertTrue(client.get("/metrics").bodyAsText().contains("souz_history_memory_fragments{state=\"processing\"} 0.0"))
             sql { connection ->
                 connection.prepareStatement("select payload, completed_at, failed_at, source_ids from history_memory_fragments where id = ?").use { statement ->
                     statement.setObject(1, first.id)
@@ -514,7 +591,7 @@ class BackendHistoryMemoryE2eTest {
     }
 
     @Test
-    fun `ForgetMemoryFact forgets only the caller's exact fact and reports pending capture`() {
+    fun `ForgetMemoryFact forgets only the caller's exact fact and reports pending capture`() = withMemoryLogs { logs ->
         val results = CopyOnWriteArrayList<JsonNode>()
         backendE2eTest("memory_forget_absent", llm = forgetLlm(results)) {
             val owner = UUID.randomUUID().toString()
@@ -549,12 +626,27 @@ class BackendHistoryMemoryE2eTest {
             assertEquals("memory_unavailable", forget("fact-owner")["error"]["code"].asText())
             hindsight.forgetUnreachable = false
 
+            fun pendingCheck(status: String, pending: Boolean) =
+                mapOf("event" to "memory.pending_check", "outcome" to "success", "status" to status, "pending" to "$pending")
+            val noPending = listOf(pendingCheck("pending", false), pendingCheck("processing", false))
+            val forgotten = mapOf("event" to "memory.forget_fact", "outcome" to "success", "found" to "true", "fact_id" to "fact-owner")
+            fun failed(category: String) = mapOf("event" to "memory.forget_fact", "outcome" to "error", "category" to category)
+            assertEquals(noPending + forgotten +
+                noPending + mapOf("event" to "memory.forget_fact", "outcome" to "success", "found" to "false") +
+                pendingCheck("pending", true) + forgotten + forgotten + failed("http_500") + failed("IOException"),
+                logs.filter { it.mdcPropertyMap["chatId"] == chat }.map { it.fields() }
+                    .filter { it["event"] == "memory.forget_fact" || it["event"] == "memory.pending_check" })
+            assertFalse(logs.any { "fact-other" in "${it.formattedMessage} ${it.keyValuePairs}" })
+            val metrics = client.get("/metrics").bodyAsText()
+            assertTrue(metrics.contains("souz_memory_requests_total{operation=\"forget_fact\",outcome=\"success\"} 4.0"))
+            assertTrue(metrics.contains("souz_memory_requests_total{operation=\"forget_fact\",outcome=\"error\"} 2.0"))
+
             assertOnlyTurnRetained(owner, chat, "hello")
         }
     }
 
     @Test
-    fun `ForgetAllMemory deletes only after a later one-time confirmation in the same chat`() {
+    fun `ForgetAllMemory deletes only after a later one-time confirmation in the same chat`() = withMemoryLogs { logs ->
         val results = CopyOnWriteArrayList<JsonNode>()
         val clock = ShiftedClock()
         backendE2eTest("memory_forget_all", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock,
@@ -631,6 +723,9 @@ class BackendHistoryMemoryE2eTest {
             submit(owner, chat, "What exactly will be deleted?")
             assertEquals(json.readTree("""{"forgotten":true}"""), forgetAll(again))
             assertEquals("confirmation_invalid", forgetAll(unused, inChat = secondChat)["error"]["code"].asText())
+            val deleted = mapOf("event" to "memory.forget_all", "outcome" to "success")
+            assertEquals(listOf(mapOf("event" to "memory.forget_all", "outcome" to "error", "category" to "http_500"), deleted, deleted),
+                logs.filter { it.mdcPropertyMap["chatId"] == chat }.map { it.fields() }.filter { it["event"] == "memory.forget_all" })
         }
     }
 
@@ -723,6 +818,30 @@ private class HistoryTestClock : Clock() {
     fun advance(seconds: Long) { now = now.plusSeconds(seconds) }
 }
 
+/** Collects the records of the Hindsight runtime, history worker and execution event sink. */
+internal fun <T> withMemoryLogs(block: (List<ILoggingEvent>) -> T): T {
+    val logs = CopyOnWriteArrayList<ILoggingEvent>()
+    val appender = object : AppenderBase<ILoggingEvent>() {
+        override fun append(event: ILoggingEvent) {
+            event.prepareForDeferredProcessing()
+            logs += event
+        }
+    }.apply { start() }
+    val loggers = listOf(HindsightConversationMemoryRuntime::class, HistoryMemoryWorker::class, BackendAgentRuntimeEventSink::class)
+        .map { LoggerFactory.getLogger(it.java) as Logger }
+    loggers.forEach { it.addAppender(appender) }
+    try {
+        return block(logs)
+    } finally {
+        loggers.forEach { it.detachAppender(appender) }
+        appender.stop()
+    }
+}
+
+/** Key-value fields of a memory record without its varying duration. */
+internal fun ILoggingEvent.fields(): Map<String, String> =
+    keyValuePairs.orEmpty().associate { it.key to it.value.toString() } - "duration_ms"
+
 private class HistoryHindsightStub {
     data class Item(val bank: String, val item: JsonNode, val operationId: String?)
     val items = CopyOnWriteArrayList<Item>()
@@ -732,6 +851,7 @@ private class HistoryHindsightStub {
     var failAfterRetain = false
     var rejection: HttpStatusCode? = null
     var recalledText: String? = null
+    val recallFailures = CopyOnWriteArrayList<HttpStatusCode>()
     var gate: CompletableDeferred<Unit>? = null
     val started = CompletableDeferred<Unit>()
     val facts = CopyOnWriteArrayList<Pair<String, String>>()
@@ -772,6 +892,7 @@ private class HistoryHindsightStub {
                 path.endsWith("/recall") -> {
                     recalls += mapper.readTree(request.body.toByteArray())["query"].asText()
                     if (bank in deletedBanks) status = HttpStatusCode.NotFound
+                    recallFailures.removeFirstOrNull()?.let { status = it }
                     mapper.writeValueAsString(mapOf(
                         "results" to listOfNotNull(recalledText?.let { mapOf("id" to "stored-fact", "text" to it) }),
                     ))

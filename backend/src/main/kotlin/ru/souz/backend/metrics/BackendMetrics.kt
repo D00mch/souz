@@ -48,6 +48,7 @@ class BackendMetrics(nanoTime: () -> Long = System::nanoTime) : AutoCloseable {
         Gauge.builder("souz.pending.tool.calls", tools) { it.get().toDouble() }.register(registry)
         listOf("completed", "failed", "cancelled").forEach { registry.counter("souz.executions", "outcome", it) }
         listOf("queue_full", "undelivered", "disconnect", "send_failure", "overtaken").forEach { dropped(it, 0.0) }
+        registry.counter("souz.history.memory.failures")
     }
 
     internal val executions = ExecutionMetrics(this, nanoTime)
@@ -67,6 +68,11 @@ class BackendMetrics(nanoTime: () -> Long = System::nanoTime) : AutoCloseable {
         registry.counter("souz.llm.tokens", *tags, "direction", "output")
             .increment(usage.completionTokens.coerceAtLeast(0).toDouble())
     }
+
+    internal fun memoryRequest(operation: String, outcome: String, elapsedNanos: Long) =
+        recordCall("souz.memory.requests", "souz.memory.request.duration", outcome, elapsedNanos, "operation", operation)
+
+    internal fun historyMemoryFailed() = registry.counter("souz.history.memory.failures").increment()
 
     internal fun toolStarted() { tools.incrementAndGet() }
     internal fun toolFinished() { tools.decrementAndGet() }

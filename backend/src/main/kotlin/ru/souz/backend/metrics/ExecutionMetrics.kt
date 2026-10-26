@@ -27,6 +27,7 @@ internal class ExecutionMetrics(private val meters: BackendMetrics, private val 
     private val samples = ConcurrentHashMap<UUID, Sample>()
     private var dataSource: DataSource? = null
     @Volatile private var activeCounts: Map<String, Long> = emptyMap()
+    @Volatile private var historyMemoryCounts: Map<String, Long> = emptyMap()
     private val processing = meters.registry.timer("souz.execution.duration")
     private val clientWaiting = meters.registry.timer("souz.execution.wait.duration", "reason", "client_tool")
     private val optionWaiting = meters.registry.timer("souz.execution.wait.duration", "reason", "user_option")
@@ -36,6 +37,10 @@ internal class ExecutionMetrics(private val meters: BackendMetrics, private val 
             Gauge.builder("souz.executions.active", this) { (it.activeCounts[status.value] ?: 0L).toDouble() }
                 .tag("state", status.value).register(meters.registry)
         }
+        listOf("waiting", "processing", "retrying").forEach { state ->
+            Gauge.builder("souz.history.memory.fragments", this) { (it.historyMemoryCounts[state] ?: 0L).toDouble() }
+                .tag("state", state).register(meters.registry)
+        }
     }
 
     fun bindDatabase(source: DataSource) { dataSource = source }
@@ -43,13 +48,19 @@ internal class ExecutionMetrics(private val meters: BackendMetrics, private val 
     fun prepareScrape() {
         val source = dataSource ?: return
         source.connection.use { connection ->
-            activeCounts = connection.prepareStatement(
-                "select status, count(*) from agent_executions where status in ('queued', 'running', 'waiting_option', 'cancelling') group by status"
-            ).use { statement ->
+            fun counts(sql: String): Map<String, Long> = connection.prepareStatement(sql).use { statement ->
                 statement.executeQuery().use { rows ->
                     buildMap { while (rows.next()) put(rows.getString(1), rows.getLong(2)) }
                 }
             }
+            activeCounts = counts(
+                "select status, count(*) from agent_executions where status in ('queued', 'running', 'waiting_option', 'cancelling') group by status"
+            )
+            // A crashed worker's claim stays processing until another worker reclaims it.
+            historyMemoryCounts = counts(
+                "select case when lease_token is not null then 'processing' when attempts > 0 then 'retrying' else 'waiting' end, " +
+                    "count(*) from history_memory_fragments where completed_at is null group by 1"
+            )
             if (samples.isEmpty()) return
             val ids = connection.createArrayOf("uuid", samples.keys.toTypedArray())
             try {
