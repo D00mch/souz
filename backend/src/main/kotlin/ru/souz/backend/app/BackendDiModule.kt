@@ -77,6 +77,8 @@ import ru.souz.backend.llm.StoredProviderCredentialResolver
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntime
 import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
+import ru.souz.backend.memory.hindsight.ToolForgetAllMemory
+import ru.souz.backend.memory.hindsight.ToolForgetMemoryFact
 import ru.souz.backend.storage.postgres.PostgresHistoryMemoryRepository
 import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.settings.repository.BackendServerPreferenceStore
@@ -331,6 +333,10 @@ fun backendDiModule(
         bindSingleton {
             HistoryMemoryWorker(instance(), instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance())
         }
+        bindSingleton { ToolForgetMemoryFact(instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance()) }
+        bindSingleton {
+            ToolForgetAllMemory(instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance(), instance(), instance())
+        }
     }
     bindSingleton<TaskComplexityClassifier> { JevClassifier(instance()) }
     bindSingleton {
@@ -364,6 +370,7 @@ fun backendDiModule(
             getKnowledgeTool = instance<ToolGetKnowledge>(),
             searchKnowledgeTool = instance<ToolSearchKnowledge>(),
             searchMemoryTool = instance<ToolSearchMemory>(),
+            forgetMemoryTools = listOfNotNull(instanceOrNull<ToolForgetMemoryFact>(), instanceOrNull<ToolForgetAllMemory>()),
             knowledgeStore = instance<ConversationKnowledgeStore>(),
             agentBackgroundScope = instance<BackendApplicationScope>(),
             memoryRuntime = instance<ConversationMemoryRuntime>(),

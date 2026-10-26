@@ -285,6 +285,32 @@ class NodesMemoryTest {
     }
 
     @Test
+    fun `capture keeps every tool name even beyond bounded evidence`() = runTest {
+        val memoryRuntime = RecordingMemoryRuntime()
+        val messages = List(16) { index ->
+            LLMRequest.Message(LLMMessageRole.function, "result", name = "Tool$index")
+        } + listOf(
+            LLMRequest.Message(LLMMessageRole.function, "forgotten", name = "ForgetMemoryFact"),
+            LLMRequest.Message(LLMMessageRole.function, "", name = "ForgetAllMemory"),
+            LLMRequest.Message(LLMMessageRole.assistant, "synthesis", name = "NotATool"),
+        )
+        val context = completedContext(
+            userMessage = "forget it",
+            output = "done",
+            previousHistory = listOf(LLMRequest.Message(LLMMessageRole.function, "old", name = "OldTool")),
+            beforeFinal = messages,
+        )
+
+        NodesMemory(memoryRuntime, backgroundScope).finalizeTurn().execute(context, graphRuntime())
+        runCurrent()
+        val captured = withTimeout(1_000) { memoryRuntime.captureStarted.await() }
+
+        val boundedTools = (0 until 16).map { "Tool$it" }.toSet()
+        assertEquals(boundedTools, captured.evidence.map { it.sourceName }.toSet())
+        assertEquals(boundedTools + setOf("ForgetMemoryFact", "ForgetAllMemory"), captured.toolNames)
+    }
+
+    @Test
     fun `capture failure is isolated and noop runtime does not dispatch`() = runTest {
         val failingRuntime = RecordingMemoryRuntime(captureFailure = IllegalStateException("capture failed"))
         val context = completedContext("hello", "answer")

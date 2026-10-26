@@ -11,11 +11,13 @@ import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.websocket.Frame
 import java.io.IOException
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneId
@@ -33,10 +35,17 @@ import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
+import ru.souz.backend.memory.hindsight.FORGET_MEMORY_TOOL_NAMES
 import ru.souz.backend.memory.hindsight.HISTORY_MEMORY_MAX_CHARS
+import ru.souz.backend.memory.hindsight.MEMORY_MUTATION_NOTICE
+import ru.souz.backend.memory.hindsight.ToolForgetMemoryFact
+import ru.souz.backend.options.model.Option
+import ru.souz.backend.options.model.OptionKind
+import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.http.ProviderHttpClients
@@ -294,7 +303,7 @@ class BackendHistoryMemoryE2eTest {
             eventually("completed-turn memory") { hindsight.items.firstOrNull { it.item["document_id"].asText().startsWith("souz-turn-") } }
             assertCompletedDialogue(hindsight.items.last().item, "A new Souz request", "assistant reply to A new Souz request")
             assertTrue(llm.requests.last().messages.any {
-                it.role == LLMMessageRole.system && it.content.contains("exact-ID memory deletion is unavailable")
+                it.role == LLMMessageRole.system && it.content.contains(MEMORY_MUTATION_NOTICE)
             })
             assertTrue(llm.requests.last().messages.any {
                 it.role == LLMMessageRole.function && it.content.contains("tool-sentinel")
@@ -503,6 +512,184 @@ class BackendHistoryMemoryE2eTest {
             assertEquals(2, hindsight.items.size)
         }
     }
+
+    @Test
+    fun `ForgetMemoryFact forgets only the caller's exact fact and reports pending capture`() {
+        val results = CopyOnWriteArrayList<JsonNode>()
+        backendE2eTest("memory_forget_absent", llm = forgetLlm(results)) {
+            val owner = UUID.randomUUID().toString()
+            submit(owner, createPublicChat(owner), "hello")
+            assertTrue(llm.requests.first().functions.none { it.name in FORGET_MEMORY_TOOL_NAMES })
+        }
+        backendE2eTest("memory_forget_fact", hindsightUrl = HINDSIGHT_TEST_URL,
+            providerClients = hindsight.clients(), llm = forgetLlm(results)) {
+            val owner = UUID.randomUUID().toString()
+            val other = UUID.randomUUID().toString()
+            hindsight.facts += listOf(owner to "fact-owner", other to "fact-other")
+            val chat = createPublicChat(owner)
+            suspend fun forget(factId: String?): JsonNode {
+                submit(owner, chat, listOfNotNull(ToolForgetMemoryFact.NAME, factId).joinToString(" "))
+                return results.last()
+            }
+
+            assertEquals(json.readTree("""{"forgotten":true,"pendingCapture":false}"""), forget("fact-owner"))
+            assertEquals("not_found", forget("fact-other")["error"]["code"].asText())
+            assertEquals(listOf(owner to "fact-owner"), hindsight.forgotten)
+
+            hindsight.pendingRetainBanks += owner
+            assertTrue(forget("fact-owner")["pendingCapture"].asBoolean())
+            hindsight.pendingRetainBanks.clear()
+            withPublicSocket(chat) { appendHistory(it, chat, "recent", "user", "I live in Moscow") }
+            assertEquals(json.readTree("""{"forgotten":true,"pendingCapture":true}"""), forget("fact-owner"))
+
+            hindsight.forgetStatus = HttpStatusCode.InternalServerError
+            assertEquals("forget_failed", forget("fact-owner")["error"]["code"].asText())
+            hindsight.forgetStatus = HttpStatusCode.OK
+            hindsight.forgetUnreachable = true
+            assertEquals("memory_unavailable", forget("fact-owner")["error"]["code"].asText())
+            hindsight.forgetUnreachable = false
+
+            assertOnlyTurnRetained(owner, chat, "hello")
+        }
+    }
+
+    @Test
+    fun `ForgetAllMemory deletes only after a later one-time confirmation in the same chat`() {
+        val results = CopyOnWriteArrayList<JsonNode>()
+        val clock = ShiftedClock()
+        backendE2eTest("memory_forget_all", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock,
+            providerClients = hindsight.clients(), llm = forgetLlm(results)) {
+            val owner = UUID.randomUUID().toString()
+            val other = UUID.randomUUID().toString()
+            val chat = createPublicChat(owner)
+            val secondChat = createPublicChat(owner, requestId = "create-2")
+            val otherChat = createPublicChat(other)
+            withPublicSocket(chat) { appendHistory(it, chat, "owner-recent", "user", "I live in Moscow") }
+            suspend fun forgetAll(confirmationId: String?, inChat: String = chat): JsonNode {
+                submit(owner, inChat, listOfNotNull("ForgetAllMemory", confirmationId).joinToString(" "))
+                return results.last()
+            }
+            val requestExecution = submit(owner, chat, "ForgetAllMemory")
+            suspend fun otherOption(kind: OptionKind, purpose: String): String {
+                val now = clock.instant()
+                return backend.optionRepository.save(Option(
+                    id = UUID.randomUUID(), userId = owner, chatId = UUID.fromString(chat),
+                    executionId = UUID.fromString(requestExecution), kind = kind, title = null, selectionMode = "single",
+                    options = emptyList(), payload = mapOf("purpose" to purpose), status = OptionStatus.PENDING,
+                    answer = null, createdAt = now, expiresAt = now.plusSeconds(600), answeredAt = null,
+                )).id.toString()
+            }
+
+            val requested = results.last()["confirmationId"].asText()
+            assertEquals(json.readTree("""{"forgotten":false,"confirmationId":"$requested",""" +
+                """"message":"Nothing was deleted. Ask the user to confirm in a new message."}"""), results.last())
+            assertEquals("confirmation_invalid", forgetAll("self")["error"]["code"].asText())
+            assertEquals("confirmation_invalid", forgetAll(requested, inChat = secondChat)["error"]["code"].asText())
+            assertEquals("confirmation_invalid", forgetAll(requestExecution)["error"]["code"].asText())
+            assertEquals("confirmation_invalid",
+                forgetAll(otherOption(OptionKind.GENERIC_SELECTION, "forget_all_memory"))["error"]["code"].asText())
+            assertEquals("confirmation_invalid",
+                forgetAll(otherOption(OptionKind.TOOL_CONFIRMATION, "another_tool"))["error"]["code"].asText())
+            clock.shift = Duration.ofMinutes(11)
+            assertEquals("confirmation_invalid", forgetAll(requested)["error"]["code"].asText())
+            clock.shift = Duration.ZERO
+            assertTrue(hindsight.deletedBanks.isEmpty())
+
+            hindsight.forgetStatus = HttpStatusCode.InternalServerError
+            assertEquals("forget_failed", forgetAll(forgetAll(null)["confirmationId"].asText())["error"]["code"].asText())
+            hindsight.forgetStatus = HttpStatusCode.OK
+
+            // A fragment being sent finishes before the bank is deleted; queued ones are dropped.
+            withPublicSocket(chat) { appendHistory(it, chat, "owner-sending", "user", "I work at Sber") }
+            clock.shift = Duration.ofSeconds(31)
+            val sending = assertNotNull(backend.historyMemoryRepository.claim())
+            withPublicSocket(chat) { appendHistory(it, chat, "owner-queued", "user", "I play chess") }
+            withPublicSocket(otherChat) { appendHistory(it, otherChat, "other-queued", "user", "I live in Kazan") }
+            val confirmationId = forgetAll(null)["confirmationId"].asText()
+            coroutineScope {
+                val sent = async {
+                    delay(1_000)
+                    hindsight.deletedBanks.toList() to backend.historyMemoryRepository.complete(sending)
+                }
+                assertEquals(json.readTree("""{"forgotten":true}"""), forgetAll(confirmationId))
+                assertEquals(emptyList<String>() to true, sent.await())
+            }
+            assertEquals(listOf(owner), hindsight.deletedBanks)
+
+            // The owner's queued fragment came first, so capturing the other user's one proves it was dropped.
+            clock.shift = Duration.ofSeconds(62)
+            assertTrue(backend.captureHistoryMemory())
+            assertEquals(listOf(other), hindsight.historyItems.map { it.bank })
+            forgetAll("late")
+            assertOnlyTurnRetained(owner, chat, "SearchMemory", answer = "done")
+            assertEquals(json.readTree("""{"facts":[],"error":null}"""), results.last())
+
+            // A used confirmation cannot delete memory saved since; deletion cancels other pending confirmations.
+            assertEquals("confirmation_invalid", forgetAll(confirmationId)["error"]["code"].asText())
+            val unused = forgetAll(null, inChat = secondChat)["confirmationId"].asText()
+            val again = forgetAll(null)["confirmationId"].asText()
+            submit(owner, chat, "What exactly will be deleted?")
+            assertEquals(json.readTree("""{"forgotten":true}"""), forgetAll(again))
+            assertEquals("confirmation_invalid", forgetAll(unused, inChat = secondChat)["error"]["code"].asText())
+        }
+    }
+
+    /** A later ordinary turn is the barrier: forget turns before it must not have been retained. */
+    private suspend fun BackendE2eScope.assertOnlyTurnRetained(
+        owner: String, chat: String, prompt: String, answer: String = "assistant reply to $prompt",
+    ) {
+        submit(owner, chat, prompt)
+        val turns = { hindsight.items.filter { it.item["document_id"].asText().startsWith("souz-turn-") } }
+        eventually("completed turn after forget turns") { turns().takeIf(List<*>::isNotEmpty) }
+        assertCompletedDialogue(turns().single().item, prompt, answer)
+    }
+}
+
+/** Calls the memory tool named by the prompt's first word with its optional value, then records the last result. */
+private fun forgetLlm(results: MutableList<JsonNode>): E2eLlmApi {
+    val mapper = jacksonObjectMapper()
+    val search = mapOf("semanticQuery" to "everything about the user", "lexicalHints" to listOf("user"))
+    return E2eLlmApi { request ->
+        val prompt = request.conversationPrompt()
+        val tool = prompt.substringBefore(' ')
+        val value = prompt.substringAfter(' ', "").takeIf(String::isNotEmpty)
+        val turn = request.messages.takeLastWhile { it.role != LLMMessageRole.user }.filter { it.role == LLMMessageRole.function }
+        when {
+            tool != "SearchMemory" && tool !in FORGET_MEMORY_TOOL_NAMES -> reply(request, "assistant reply to $prompt")
+            // "late" calls the tool only after 16 other tool results, beyond the bounded capture evidence.
+            value == "late" && turn.size < 16 -> toolCallReply(request, "SearchMemory", search)
+            value == "late" && turn.size == 16 -> toolCallReply(request, tool, emptyMap())
+            turn.isEmpty() -> toolCallReply(request, tool, when {
+                tool == "SearchMemory" -> search
+                value == null || value == "self" -> emptyMap()
+                tool == ToolForgetMemoryFact.NAME -> mapOf("factId" to value)
+                else -> mapOf("confirmationId" to value)
+            })
+            // "self" makes the model try to confirm its own request in the same turn.
+            value == "self" && turn.size == 1 ->
+                toolCallReply(request, tool, mapOf("confirmationId" to mapper.readTree(turn.single().content)["confirmationId"].asText()))
+            else -> {
+                results.add(mapper.readTree(turn.last().content))
+                reply(request, "done")
+            }
+        }
+    }
+}
+
+private suspend fun BackendE2eScope.submit(owner: String, chat: String, text: String): String {
+    val sent = client.post(BackendHttpRoutes.chatMessages(chat)) {
+        trusted(owner)
+        jsonBody(json.writeValueAsString(mapOf("content" to text, "options" to mapOf("model" to E2E_LOCAL_MODEL.alias))))
+    }
+    assertEquals(HttpStatusCode.OK, sent.status)
+    return sent.jsonBody()["execution"]["id"].asText().also { backend.awaitExecution(UUID.fromString(it)) }
+}
+
+private class ShiftedClock : Clock() {
+    @Volatile var shift: Duration = Duration.ZERO
+    override fun instant(): Instant = Instant.now().plus(shift)
+    override fun getZone(): ZoneId = ZoneOffset.UTC
+    override fun withZone(zone: ZoneId): Clock = this
 }
 
 private val COMPLETED_TURN_FIELDS = setOf("content", "timestamp", "tags", "document_id")
@@ -547,6 +734,12 @@ private class HistoryHindsightStub {
     var recalledText: String? = null
     var gate: CompletableDeferred<Unit>? = null
     val started = CompletableDeferred<Unit>()
+    val facts = CopyOnWriteArrayList<Pair<String, String>>()
+    val forgotten = CopyOnWriteArrayList<Pair<String, String>>()
+    val deletedBanks = CopyOnWriteArrayList<String>()
+    val pendingRetainBanks = CopyOnWriteArrayList<String>()
+    var forgetStatus = HttpStatusCode.OK
+    var forgetUnreachable = false
 
     fun clients(): ProviderHttpClients {
         val mapper = jacksonObjectMapper()
@@ -555,9 +748,30 @@ private class HistoryHindsightStub {
             paths += path
             val bank = path.substringAfter("/banks/").substringBefore('/')
             var status = HttpStatusCode.OK
+            if (request.method == HttpMethod.Patch || request.method == HttpMethod.Delete) {
+                if (forgetUnreachable) throw IOException("simulated unreachable memory")
+                status = forgetStatus
+            }
             val body = when {
+                status != HttpStatusCode.OK -> "{}"
+                request.method == HttpMethod.Patch -> {
+                    assertEquals("invalidated", mapper.readTree(request.body.toByteArray())["state"].asText())
+                    val fact = bank to path.substringAfterLast('/')
+                    if (fact in facts) forgotten += fact else status = HttpStatusCode.NotFound
+                    "{}"
+                }
+                request.method == HttpMethod.Delete -> {
+                    deletedBanks += bank
+                    """{"success":true}"""
+                }
+                path.endsWith("/operations") -> {
+                    assertEquals("retain", request.url.parameters["type"])
+                    val operations = listOfNotNull(mapOf("status" to request.url.parameters["status"]).takeIf { bank in pendingRetainBanks })
+                    mapper.writeValueAsString(mapOf("operations" to operations))
+                }
                 path.endsWith("/recall") -> {
                     recalls += mapper.readTree(request.body.toByteArray())["query"].asText()
+                    if (bank in deletedBanks) status = HttpStatusCode.NotFound
                     mapper.writeValueAsString(mapOf(
                         "results" to listOfNotNull(recalledText?.let { mapOf("id" to "stored-fact", "text" to it) }),
                     ))
