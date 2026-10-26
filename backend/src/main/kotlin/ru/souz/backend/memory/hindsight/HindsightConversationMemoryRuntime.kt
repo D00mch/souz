@@ -195,15 +195,19 @@ class HindsightConversationMemoryRuntime(
         check(deleted == true) { "Memory capture is still active; bank deletion did not complete" }
     }
 
-    internal suspend fun hasPendingRetain(userId: String): Boolean = listOf("pending", "processing").any { status ->
-        val response = httpClient.get("${bankUrl(userId)}/operations") {
-            authorize(apiToken)
-            parameter("status", status)
-            parameter("type", "retain")
-            parameter("limit", 1)
+    internal suspend fun hasPendingRetain(userId: String): Boolean {
+        // Check locally first: queued captures and IO retries may not have reached Hindsight yet.
+        if (completedTurnCaptures[userId]?.isLocked == true) return true
+        return listOf("pending", "processing").any { status ->
+            val response = httpClient.get("${bankUrl(userId)}/operations") {
+                authorize(apiToken)
+                parameter("status", status)
+                parameter("type", "retain")
+                parameter("limit", 1)
+            }
+            if (response.status == HttpStatusCode.NotFound) return false
+            response.requireSuccess().body<JsonNode>().path("operations").size() > 0
         }
-        if (response.status == HttpStatusCode.NotFound) return false
-        response.requireSuccess().body<JsonNode>().path("operations").size() > 0
     }
 
     private fun bankUrl(bankId: String) = "$baseUrl/v1/default/banks/${bankId.encodeURLPathPart()}"

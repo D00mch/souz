@@ -683,7 +683,7 @@ class BackendHistoryMemoryE2eTest {
     }
 
     @Test
-    fun `ForgetAllMemory drains completed turns and their IO retries before deleting the bank`() {
+    fun `forgetting reports queued completed turns and drains their IO retries before bank deletion`() {
         val results = CopyOnWriteArrayList<JsonNode>()
         val retryStarted = CompletableDeferred<Unit>()
         val retryGate = CompletableDeferred<Unit>()
@@ -699,15 +699,26 @@ class BackendHistoryMemoryE2eTest {
             providerClients = hindsight.clients(), llm = forgetLlm(results)) {
             val owner = UUID.randomUUID().toString()
             val chat = createPublicChat(owner)
+            val other = UUID.randomUUID().toString()
+            val otherChat = createPublicChat(other)
+            hindsight.facts += listOf(owner to "fact-owner", other to "fact-other")
             suspend fun forgetAll(confirmationId: String? = null): JsonNode {
                 submit(owner, chat, listOfNotNull("ForgetAllMemory", confirmationId).joinToString(" "))
                 return results.last()
             }
+            suspend fun forgetFact(user: String, inChat: String, factId: String, pending: Boolean) {
+                submit(user, inChat, "ForgetMemoryFact $factId")
+                assertEquals(json.readTree("""{"forgotten":true,"pendingCapture":$pending}"""), results.last())
+            }
             try {
                 submit(owner, chat, "I prefer trains")
                 withTimeout(5_000) { retryStarted.await() }
+                // No history fragment or remote retain operation records this stalled completed turn.
+                forgetFact(owner, chat, "fact-owner", pending = true)
                 // This accepted turn is queued behind the earlier turn's stalled retry.
                 submit(owner, chat, "I play chess")
+                forgetFact(owner, chat, "fact-owner", pending = true)
+                forgetFact(other, otherChat, "fact-other", pending = false)
                 val confirmation = forgetAll()["confirmationId"].asText()
                 val busy = withTimeout(20_000) { forgetAll(confirmation) }
                 assertFalse(busy["forgotten"].asBoolean())
@@ -716,8 +727,7 @@ class BackendHistoryMemoryE2eTest {
                 assertEquals(2, hindsight.items.size)
 
                 // An unrelated owner can still capture while this owner's queue is blocked.
-                val other = UUID.randomUUID().toString()
-                submit(other, createPublicChat(other), "I like swimming")
+                submit(other, otherChat, "I like swimming")
                 eventually("other owner's capture") { hindsight.items.find { it.bank == other } }
 
                 assertEquals("confirmation_invalid", forgetAll(confirmation)["error"]["code"].asText())
@@ -729,6 +739,8 @@ class BackendHistoryMemoryE2eTest {
                 assertEquals(drained[0], drained[1]) // Retried using the same document and operation IDs.
                 assertCompletedDialogue(drained[2].item, "I play chess", "assistant reply to I play chess")
                 assertEquals(listOf(owner), hindsight.deletedBanks)
+                hindsight.facts += owner to "fact-new"
+                forgetFact(owner, chat, "fact-new", pending = false)
 
                 submit(owner, chat, "I prefer buses")
                 eventually("new memory after deletion") { hindsight.items.filter { it.bank == owner }.takeIf { it.size == 4 } }
