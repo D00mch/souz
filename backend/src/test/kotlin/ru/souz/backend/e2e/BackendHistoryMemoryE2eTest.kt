@@ -46,12 +46,14 @@ import ru.souz.backend.memory.hindsight.ToolForgetMemoryFact
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.model.OptionKind
 import ru.souz.backend.options.model.OptionStatus
+import ru.souz.backend.scheduler.occurrenceId
 import ru.souz.backend.storage.postgres.newPostgresSchema
+import ru.souz.jobs.JobRun
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.http.providerHttpClientDefaults
 
-private const val HINDSIGHT_TEST_URL = "http://hindsight.test"
+internal const val HINDSIGHT_TEST_URL = "http://hindsight.test"
 
 class BackendHistoryMemoryE2eTest {
     private val hindsight = HistoryHindsightStub()
@@ -514,6 +516,31 @@ class BackendHistoryMemoryE2eTest {
     }
 
     @Test
+    fun `scheduled turns can search memory but cannot invoke forgetting tools`() {
+        val results = CopyOnWriteArrayList<JsonNode>()
+        hindsight.recalledText = "The user's saved preference"
+        backendE2eTest("memory_scheduled_mutation", hindsightUrl = HINDSIGHT_TEST_URL,
+            providerClients = hindsight.clients(), llm = memoryMutationProbeLlm(results)) {
+            val owner = UUID.randomUUID().toString()
+            scheduledTaskSetup(owner)
+            hindsight.facts += owner to "stored-fact"
+            val job = JobRun(UUID.randomUUID(), owner, "Check memory",
+                json.createObjectNode().put("prompt", "Check saved preferences").put("requiresDelivery", false),
+                Instant.parse("2026-10-27T12:00:00Z"), attempt = 1)
+            backend.runScheduledTask(job)
+            backend.awaitExecution(job.occurrenceId("execution"))
+
+            assertTrue(results.first().toString().contains("stored-fact"), "SearchMemory remains available")
+            FORGET_MEMORY_TOOL_NAMES.forEachIndexed { index, name ->
+                assertEquals("no such function $name", results[index + 1]["result"].asText())
+            }
+            assertTrue(llm.requests.all { request -> request.functions.none { it.name in FORGET_MEMORY_TOOL_NAMES } })
+            assertTrue(hindsight.forgotten.isEmpty())
+            assertTrue(hindsight.deletedBanks.isEmpty())
+        }
+    }
+
+    @Test
     fun `credential-free sockets cannot invoke forgetting tools for a claimed owner`() {
         val results = CopyOnWriteArrayList<JsonNode>()
         backendE2eTest("memory_public_mutation", hindsightUrl = HINDSIGHT_TEST_URL,
@@ -798,6 +825,20 @@ class BackendHistoryMemoryE2eTest {
     }
 }
 
+/** Attempts destructive calls even when the model has not been offered those tools. */
+internal fun memoryMutationProbeLlm(results: MutableList<JsonNode>): E2eLlmApi = E2eLlmApi { request ->
+    val turn = request.messages.takeLastWhile { it.role != LLMMessageRole.user }.filter { it.role == LLMMessageRole.function }
+    when (turn.size) {
+        0 -> toolCallReply(request, "SearchMemory", mapOf("semanticQuery" to "saved preferences", "lexicalHints" to listOf("preferences")))
+        1 -> toolCallReply(request, "ForgetMemoryFact", mapOf("factId" to "stored-fact"))
+        2 -> toolCallReply(request, "ForgetAllMemory", emptyMap())
+        else -> {
+            results.addAll(turn.map { jacksonObjectMapper().readTree(it.content) })
+            reply(request, "done")
+        }
+    }
+}
+
 /** Calls the memory tool named by the prompt's first word with its optional value, then records the last result. */
 private fun forgetLlm(results: MutableList<JsonNode>): E2eLlmApi {
     val mapper = jacksonObjectMapper()
@@ -876,7 +917,7 @@ private class HistoryTestClock : Clock() {
     fun advance(seconds: Long) { now = now.plusSeconds(seconds) }
 }
 
-private class HistoryHindsightStub {
+internal class HistoryHindsightStub {
     data class Item(val bank: String, val item: JsonNode, val operationId: String?)
     val items = CopyOnWriteArrayList<Item>()
     val recalls = CopyOnWriteArrayList<String>()

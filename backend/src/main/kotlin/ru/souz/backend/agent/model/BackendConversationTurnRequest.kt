@@ -18,7 +18,7 @@ internal data class BackendConversationTurnRequest(
     val useFewShotExamples: Boolean? = null,
     val enabledTools: Set<String>? = null,
     val clientToolsEnabled: Boolean = false,
-    /** Destructive owner-wide memory tools require an authenticated backend entry point. */
+    /** Destructive owner-wide memory tools require an authenticated interactive owner message. */
     val memoryMutationAllowed: Boolean = false,
     val narrateSteps: Boolean = false,
     /** Set only for a new turn that may be routed by complexity. */

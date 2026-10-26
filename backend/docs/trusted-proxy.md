@@ -4,7 +4,7 @@
 
 Every `/v1/**` request except `POST /v1/chats`, `GET /v1/chats/{chatId}/ws`, `GET /v1/ws`, and `GET /v1/chats/{chatId}/threads/{threadId}` derives identity only from the proxy-managed `X-Souz-Proxy-Auth` and `X-User-Id` headers. The proxy secret must match configured server state, and the opaque user ID must pass shape validation. Request identity middleware provisions the user before settings, provider keys, legacy chat reads, or other proxy services run.
 
-The Client-Souz routes are credential-free inside a trusted network. HTTP and WebSocket chat creation accept a trusted UUID `userId`; each submitted device must repeat the same UUID. WebSocket and thread-status reads are scoped by the stored chat and matching `clientType`. Public root, health, and documentation routes also require no headers. Credential-free WebSocket executions cannot expose destructive memory tools; those require an authenticated backend entry point.
+The Client-Souz routes are credential-free inside a trusted network. HTTP and WebSocket chat creation accept a trusted UUID `userId`; each submitted device must repeat the same UUID. WebSocket and thread-status reads are scoped by the stored chat and matching `clientType`. Public root, health, and documentation routes also require no headers. Credential-free WebSocket executions cannot expose destructive memory tools; those require an authenticated interactive owner message. Hooks and scheduled executions also lack deletion authority.
 
 ## Why it is fragile
 

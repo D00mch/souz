@@ -51,6 +51,7 @@ internal class AgentExecutionRequestFactory(
         latestDeviceContextJson: String = "{}",
         userMessageMetadataExtras: Map<String, String> = emptyMap(),
         clientToolsEnabled: Boolean = false,
+        trustedInteractive: Boolean = false,
     ): PreparedChatTurn {
         val effectiveSettings = effectiveSettingsResolver.resolve(userId, requestOverrides)
         val provider = findLLMModel(effectiveSettings.defaultModel)?.provider ?: LlmProvider.OPENAI
@@ -64,6 +65,7 @@ internal class AgentExecutionRequestFactory(
                 effectiveSettings.defaultModel == effectiveSettingsResolver.defaultModel() &&
                 listOf(routing.simple, routing.complex).all { effectiveSettingsResolver.isSelectableDefaultModel(userId, it.model) }
         }
+        val memoryMutationAllowed = trustedInteractive && !clientToolsEnabled
         val execution = AgentExecution(
             id = executionId,
             userId = userId,
@@ -93,7 +95,7 @@ internal class AgentExecutionRequestFactory(
                 requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
                 enabledTools = effectiveSettings.enabledTools,
-            ) + (METADATA_MEMORY_MUTATION_ALLOWED to (!clientToolsEnabled).toString()),
+            ) + (METADATA_MEMORY_MUTATION_ALLOWED to memoryMutationAllowed.toString()),
             latestDeviceContextJson = latestDeviceContextJson,
             runtimeOwner = clientThreadRegistry?.runtimeOwner?.takeIf { clientToolsEnabled },
             runtimeLeaseUntil = ClientThreadRuntimeRegistry.leaseUntil().takeIf { clientToolsEnabled },
@@ -119,8 +121,7 @@ internal class AgentExecutionRequestFactory(
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
                 enabledTools = effectiveSettings.enabledTools.toSet(),
                 clientToolsEnabled = clientToolsEnabled,
-                // Client-Souz WebSocket identity comes from the caller, not the trusted proxy.
-                memoryMutationAllowed = !clientToolsEnabled,
+                memoryMutationAllowed = memoryMutationAllowed,
                 routing = routing,
             ),
             userMessageMetadata = userMessageMetadata(normalizedClientMessageId) + userMessageMetadataExtras,
