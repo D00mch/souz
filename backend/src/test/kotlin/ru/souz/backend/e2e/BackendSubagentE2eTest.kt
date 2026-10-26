@@ -173,7 +173,7 @@ class BackendSubagentE2eTest {
             val system = llm.requests.first().messages.first().content
             assertTrue("custom base" in system)
             assertTrue("Перед каждым вызовом инструментов" in system)
-            assertTrue(ru.souz.backend.memory.hindsight.UNSUPPORTED_MEMORY_MUTATION_NOTICE in system)
+            assertTrue(ru.souz.backend.memory.hindsight.MEMORY_MUTATION_NOTICE in system)
             val childRequests = llm.requests.filter { it.functions.map { tool -> tool.name } == listOf("RunSkillCommand") }
             assertEquals(2, childRequests.size)
             assertTrue("# Ask the user" in childRequests.first().messages.first().content)

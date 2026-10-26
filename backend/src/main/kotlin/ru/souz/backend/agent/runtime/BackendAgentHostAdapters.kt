@@ -6,7 +6,7 @@ import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
-import ru.souz.backend.memory.hindsight.UNSUPPORTED_MEMORY_MUTATION_NOTICE
+import ru.souz.backend.memory.hindsight.MEMORY_MUTATION_NOTICE
 import ru.souz.db.REGION_EN
 import ru.souz.db.REGION_RU
 import ru.souz.db.SettingsProvider
@@ -60,7 +60,7 @@ class BackendConversationSettingsProvider(
             request.systemPrompt ?: defaultSystemPrompt,
             policyPrompt,
             ru.souz.backend.client.CLIENT_TOOL_ROUTING_INSTRUCTIONS,
-            UNSUPPORTED_MEMORY_MUTATION_NOTICE.takeIf { request.clientToolsEnabled },
+            MEMORY_MUTATION_NOTICE.takeIf { request.clientToolsEnabled },
             when {
                 !request.narrateSteps -> null
                 regionProfile == REGION_EN ->
