@@ -30,7 +30,7 @@ scrape_configs:
 | `souz_tool_calls_total` | Counter | `category`, `outcome` | Compiled tools and client transports, including Skill helper calls. |
 | `souz_tool_duration_seconds` | Histogram | `category`, `outcome` | Tool latency, including client-result waits. |
 | `souz_pending_tool_calls` | Gauge | — | Outstanding compiled tools and client transports on this instance. |
-| `souz_memory_requests_total` | Counter | `operation`, `outcome` | Hindsight calls, including retain retries: `recall`, `search`, `retain_turn`, `retain_history`, `forget_fact`, `forget_all`, `pending_check`. A successful retain means accepted; see [external memory](external-memory.md#diagnostics). |
+| `souz_memory_requests_total` | Counter | `operation`, `outcome` | Hindsight calls, including retain retries; [external memory diagnostics](external-memory.md#diagnostics) list the operations. |
 | `souz_memory_request_duration_seconds` | Histogram | `operation`, `outcome` | Hindsight call latency. |
 | `souz_history_memory_fragments` | Gauge | `state` | PostgreSQL counts of unfinished imported-history fragments: `waiting`, `processing` (claimed, including a crashed worker's claim until reclaimed), `retrying`. |
 | `souz_history_memory_failures_total` | Counter | — | Imported-history fragments that exhausted their retries. |

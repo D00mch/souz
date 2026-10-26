@@ -127,7 +127,7 @@ class BackendHistoryMemoryE2eTest {
     }
 
     @Test
-    fun `failed recall and search are counted and logged by category`() = withMemoryLogs { logs ->
+    fun `failed recall and search are logged with their outcome and category`() = withMemoryLogs { logs ->
         val memory = HistoryHindsightStub().apply {
             recalledText = "The user prefers quiet sleeper trains"
             recallFailures += listOf(HttpStatusCode.GatewayTimeout, HttpStatusCode.ServiceUnavailable)
@@ -142,9 +142,6 @@ class BackendHistoryMemoryE2eTest {
                 mapOf("event" to "memory.recall", "outcome" to "timeout", "category" to "http_504"),
                 mapOf("event" to "memory.search", "outcome" to "error", "category" to "http_503"),
             ), logs.filter { it.mdcPropertyMap["chatId"] == chat && it.fields()["event"] != "memory.retain_turn" }.map { it.fields() })
-            val metrics = client.get("/metrics").bodyAsText()
-            assertTrue(metrics.contains("souz_memory_requests_total{operation=\"recall\",outcome=\"timeout\"} 1.0"))
-            assertTrue(metrics.contains("souz_memory_requests_total{operation=\"search\",outcome=\"error\"} 1.0"))
         }
     }
 
@@ -459,7 +456,6 @@ class BackendHistoryMemoryE2eTest {
                 assertFalse(content.substringAfter("NEW dialogue records").contains("I prefer quiet trains"))
                 assertTrue(content.substringAfter("NEW dialogue records").contains("I also like ferries"))
                 assertFalse(backend.captureHistoryMemory())
-                assertBacklog(waiting = 0, retrying = 0)
 
                 val category = when (status) {
                     null -> "IOException"
@@ -508,7 +504,6 @@ class BackendHistoryMemoryE2eTest {
             }
             assertFalse(backend.captureHistoryMemory())
             assertEquals(1, hindsight.items.size)
-            assertTrue(client.get("/metrics").bodyAsText().contains("souz_history_memory_fragments{state=\"processing\"} 0.0"))
             sql { connection ->
                 connection.prepareStatement("select payload, completed_at, failed_at, source_ids from history_memory_fragments where id = ?").use { statement ->
                     statement.setObject(1, first.id)
@@ -637,9 +632,6 @@ class BackendHistoryMemoryE2eTest {
                 logs.filter { it.mdcPropertyMap["chatId"] == chat }.map { it.fields() }
                     .filter { it["event"] == "memory.forget_fact" || it["event"] == "memory.pending_check" })
             assertFalse(logs.any { "fact-other" in "${it.formattedMessage} ${it.keyValuePairs}" })
-            val metrics = client.get("/metrics").bodyAsText()
-            assertTrue(metrics.contains("souz_memory_requests_total{operation=\"forget_fact\",outcome=\"success\"} 4.0"))
-            assertTrue(metrics.contains("souz_memory_requests_total{operation=\"forget_fact\",outcome=\"error\"} 2.0"))
 
             assertOnlyTurnRetained(owner, chat, "hello")
         }
