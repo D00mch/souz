@@ -128,6 +128,10 @@ interface ConversationMemoryRuntime {
         maxFacts: Int,
     ): List<SearchFact> = emptyList()
 
+    /**
+     * Entered undispatched after finalization. Register any deletion barrier before suspending,
+     * then yield before serialization or IO so finalization does not wait for capture work.
+     */
     suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput)
 }
 

@@ -682,6 +682,62 @@ class BackendHistoryMemoryE2eTest {
         }
     }
 
+    @Test
+    fun `ForgetAllMemory drains completed turns and their IO retries before deleting the bank`() {
+        val results = CopyOnWriteArrayList<JsonNode>()
+        val retryStarted = CompletableDeferred<Unit>()
+        val retryGate = CompletableDeferred<Unit>()
+        var attempts = 0
+        hindsight.afterRetain = { item ->
+            if (item.item["content"].asText().contains("I prefer trains")) {
+                if (++attempts == 1) throw IOException("simulated lost response")
+                retryStarted.complete(Unit)
+                retryGate.await()
+            }
+        }
+        backendE2eTest("memory_forget_turn_retry", hindsightUrl = HINDSIGHT_TEST_URL,
+            providerClients = hindsight.clients(), llm = forgetLlm(results)) {
+            val owner = UUID.randomUUID().toString()
+            val chat = createPublicChat(owner)
+            suspend fun forgetAll(confirmationId: String? = null): JsonNode {
+                submit(owner, chat, listOfNotNull("ForgetAllMemory", confirmationId).joinToString(" "))
+                return results.last()
+            }
+            try {
+                submit(owner, chat, "I prefer trains")
+                withTimeout(5_000) { retryStarted.await() }
+                // This accepted turn is queued behind the earlier turn's stalled retry.
+                submit(owner, chat, "I play chess")
+                val confirmation = forgetAll()["confirmationId"].asText()
+                val busy = withTimeout(20_000) { forgetAll(confirmation) }
+                assertFalse(busy["forgotten"].asBoolean())
+                assertEquals("forget_failed", busy["error"]["code"].asText())
+                assertTrue(hindsight.deletedBanks.isEmpty())
+                assertEquals(2, hindsight.items.size)
+
+                // An unrelated owner can still capture while this owner's queue is blocked.
+                val other = UUID.randomUUID().toString()
+                submit(other, createPublicChat(other), "I like swimming")
+                eventually("other owner's capture") { hindsight.items.find { it.bank == other } }
+
+                assertEquals("confirmation_invalid", forgetAll(confirmation)["error"]["code"].asText())
+                val fresh = forgetAll()["confirmationId"].asText()
+                retryGate.complete(Unit)
+                assertTrue(forgetAll(fresh)["forgotten"].asBoolean())
+                val drained = hindsight.itemsAtDeletion.single().filter { it.bank == owner }
+                assertEquals(3, drained.size)
+                assertEquals(drained[0], drained[1]) // Retried using the same document and operation IDs.
+                assertCompletedDialogue(drained[2].item, "I play chess", "assistant reply to I play chess")
+                assertEquals(listOf(owner), hindsight.deletedBanks)
+
+                submit(owner, chat, "I prefer buses")
+                eventually("new memory after deletion") { hindsight.items.filter { it.bank == owner }.takeIf { it.size == 4 } }
+            } finally {
+                retryGate.complete(Unit)
+            }
+        }
+    }
+
     /** A later ordinary turn is the barrier: forget turns before it must not have been retained. */
     private suspend fun BackendE2eScope.assertOnlyTurnRetained(
         owner: String, chat: String, prompt: String, answer: String = "assistant reply to $prompt",
@@ -785,6 +841,8 @@ private class HistoryHindsightStub {
     val facts = CopyOnWriteArrayList<Pair<String, String>>()
     val forgotten = CopyOnWriteArrayList<Pair<String, String>>()
     val deletedBanks = CopyOnWriteArrayList<String>()
+    val itemsAtDeletion = CopyOnWriteArrayList<List<Item>>()
+    var afterRetain: suspend (Item) -> Unit = {}
     val pendingRetainBanks = CopyOnWriteArrayList<String>()
     var forgetStatus = HttpStatusCode.OK
     var forgetUnreachable = false
@@ -809,6 +867,7 @@ private class HistoryHindsightStub {
                     "{}"
                 }
                 request.method == HttpMethod.Delete -> {
+                    itemsAtDeletion += items.toList()
                     deletedBanks += bank
                     """{"success":true}"""
                 }
@@ -827,9 +886,11 @@ private class HistoryHindsightStub {
                 path.endsWith("/memories") -> {
                     val payload = mapper.readTree(request.body.toByteArray())
                     assertTrue(payload["async"].asBoolean())
-                    items += Item(bank, payload["items"].single(), payload["operation_id"]?.asText())
+                    val item = Item(bank, payload["items"].single(), payload["operation_id"]?.asText())
+                    items += item
                     started.complete(Unit)
                     gate?.await()
+                    afterRetain(item)
                     if (failAfterRetain) throw IOException("simulated lost response")
                     status = rejection ?: HttpStatusCode.OK
                     if (rejection != null) """{"success":false}"""

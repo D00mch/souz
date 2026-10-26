@@ -22,7 +22,12 @@ import io.ktor.http.isSuccess
 import java.io.IOException
 import java.time.Clock
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
 import org.slf4j.LoggerFactory
 import ru.souz.memory.CompletedTurnMemoryInput
 import ru.souz.memory.ConversationMemoryRuntime
@@ -53,6 +58,10 @@ class HindsightConversationMemoryRuntime(
 ) : ConversationMemoryRuntime {
     private val baseUrl = baseUrl.trimEnd('/')
     private val logger = LoggerFactory.getLogger(HindsightConversationMemoryRuntime::class.java)
+    // Lookup cannot suspend: NodesMemory enters this queue before finalization returns.
+    private val completedTurnCaptures = ConcurrentHashMap<String, Mutex>()
+
+    private fun captureMutex(userId: String): Mutex = completedTurnCaptures.computeIfAbsent(userId) { Mutex() }
 
     override suspend fun retrieveMemory(request: MemoryRetrievalRequest): MemoryRetrievalResult {
         when (parseExplicitMemoryIntent(request.query)) {
@@ -121,17 +130,21 @@ class HindsightConversationMemoryRuntime(
 
         val bankId = input.context.ownerId.value
         try {
-            val content = (
-                dialogueMemoryRecords(MemorySanitizer.redact(input.userMessage.trim()), mapOf("role" to "user")) +
-                    dialogueMemoryRecords(cleanDialogueText(input.assistantMessage), mapOf("role" to "assistant"))
-                ).joinToString("\n").takeIf(String::isNotBlank) ?: return
-            val item = buildMap<String, Any> {
-                put("content", content)
-                put("timestamp", memoryTimestamp(clock.instant(), input.timeZone))
-                put("tags", tags)
-                input.userMessageId?.let { put("document_id", "souz-turn-$it") }
+            captureMutex(bankId).withLock {
+                // Register synchronously, but keep serialization and HTTP work asynchronous.
+                yield()
+                val content = (
+                    dialogueMemoryRecords(MemorySanitizer.redact(input.userMessage.trim()), mapOf("role" to "user")) +
+                        dialogueMemoryRecords(cleanDialogueText(input.assistantMessage), mapOf("role" to "assistant"))
+                    ).joinToString("\n").takeIf(String::isNotBlank) ?: return
+                val item = buildMap<String, Any> {
+                    put("content", content)
+                    put("timestamp", memoryTimestamp(clock.instant(), input.timeZone))
+                    put("tags", tags)
+                    input.userMessageId?.let { put("document_id", "souz-turn-$it") }
+                }
+                retain(bankId, item, retryOnIoFailure = input.userMessageId != null)
             }
-            retain(bankId, item, retryOnIoFailure = input.userMessageId != null)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -170,9 +183,16 @@ class HindsightConversationMemoryRuntime(
         return true
     }
 
-    /** Deleting the bank also drops its queued and running extraction. */
-    internal suspend fun forgetAll(userId: String) {
-        httpClient.delete(bankUrl(userId)) { authorize(apiToken) }.requireSuccess()
+    /** Drain earlier completed turns, including IO retries, before dropping history and the bank. */
+    internal suspend fun forgetAll(userId: String, forgetHistory: suspend () -> Unit) {
+        val deleted = withTimeoutOrNull(10_000) {
+            captureMutex(userId).withLock {
+                forgetHistory()
+                httpClient.delete(bankUrl(userId)) { authorize(apiToken) }.requireSuccess()
+            }
+            true
+        }
+        check(deleted == true) { "Memory capture is still active; bank deletion did not complete" }
     }
 
     internal suspend fun hasPendingRetain(userId: String): Boolean = listOf("pending", "processing").any { status ->

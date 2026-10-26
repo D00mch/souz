@@ -2,6 +2,8 @@ package ru.souz.agent.nodes
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.GraphRuntime
@@ -162,8 +164,10 @@ internal class NodesMemory(
     }
 
     private fun scheduleCapture(input: CompletedTurnMemoryInput) {
-        captureScope.launch {
+        // Enter host capture coordination before another turn can request deletion.
+        captureScope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
+                ensureActive()
                 memoryRuntime.captureCompletedTurn(input)
             } catch (error: CancellationException) {
                 throw error

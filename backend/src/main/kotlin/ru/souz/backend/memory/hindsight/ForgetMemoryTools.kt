@@ -109,8 +109,7 @@ internal class ToolForgetAllMemory(
                 requested != null && options.consumeToolConfirmation(
                     meta.userId, chatId, requested, CONFIRMATION_PURPOSE, executionId, clock.instant(),
                 ) -> {
-                    fragments.forget(meta.userId)
-                    memory.forgetAll(meta.userId)
+                    memory.forgetAll(meta.userId) { fragments.forget(meta.userId) }
                     // An older unused confirmation must not delete memory saved after this.
                     options.cancelToolConfirmations(meta.userId, CONFIRMATION_PURPOSE)
                     response(NAME, mapOf("forgotten" to true))

@@ -194,7 +194,8 @@ class NodesMemoryTest {
                 graphRuntime(),
             )
         }
-        runCurrent()
+        // No dispatcher progress: the host must already have registered this capture.
+        assertTrue(memoryRuntime.captureStarted.isCompleted)
         val captured = withTimeout(1_000) { memoryRuntime.captureStarted.await() }
 
         assertEquals("assistant response", result.input)
