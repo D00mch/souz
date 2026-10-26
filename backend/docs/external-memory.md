@@ -32,6 +32,7 @@ Omitting recall tags exposes one conversation's transient memory in another. Fin
 
 ## Safe-change guidance
 
+- Keep completed-turn owner queues only while capture or deletion holds or awaits them. Register and release atomically per owner, including cancellation and failures, so idle owners consume no coordinator state and active waiters share one deletion barrier.
 - Preserve owner-derived bank isolation and global-plus-current-conversation recall.
 - Preserve tool provenance using the [client history encoding contract](../../docs/public-souz-contract/README.md#commands).
 - Supply deterministic document identity for completed turns.

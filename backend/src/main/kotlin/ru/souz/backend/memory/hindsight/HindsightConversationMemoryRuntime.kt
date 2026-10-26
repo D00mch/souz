@@ -58,13 +58,24 @@ class HindsightConversationMemoryRuntime(
 ) : ConversationMemoryRuntime {
     private val baseUrl = baseUrl.trimEnd('/')
     private val logger = LoggerFactory.getLogger(HindsightConversationMemoryRuntime::class.java)
-    // Lookup cannot suspend: NodesMemory enters this queue before finalization returns.
+    // Registration cannot suspend: NodesMemory enters this queue before finalization returns.
+    // Keep only active owners; per-key compute pins holders AND waiters to the same barrier.
     private val completedTurnCaptures = ConcurrentHashMap<String, CaptureQueue>()
 
-    private fun captureQueue(userId: String): CaptureQueue = completedTurnCaptures.computeIfAbsent(userId) { CaptureQueue() }
+    private fun acquireCaptureQueue(userId: String): CaptureQueue = completedTurnCaptures.compute(userId) { _, current ->
+        (current ?: CaptureQueue()).also { it.users++ }
+    }!!
+
+    private fun releaseCaptureQueue(userId: String) {
+        completedTurnCaptures.computeIfPresent(userId) { _, queue ->
+            if (--queue.users == 0) null else queue
+        }
+    }
 
     private class CaptureQueue {
         val mutex = Mutex()
+        // Accessed only inside the map's non-suspending per-key compute boundary.
+        var users = 0
         // Read before the first suspension, including when deletion owns the mutex.
         @Volatile var generation = 0L
     }
@@ -135,7 +146,7 @@ class HindsightConversationMemoryRuntime(
         }
 
         val bankId = input.context.ownerId.value
-        val queue = captureQueue(bankId)
+        val queue = acquireCaptureQueue(bankId)
         val generation = queue.generation
         try {
             queue.mutex.withLock {
@@ -159,6 +170,8 @@ class HindsightConversationMemoryRuntime(
             throw cancelled
         } catch (error: Exception) {
             logger.warn("Hindsight retain failed for bank {}: {}", bankId, error.message)
+        } finally {
+            releaseCaptureQueue(bankId)
         }
     }
 
@@ -195,16 +208,20 @@ class HindsightConversationMemoryRuntime(
 
     /** Drain earlier completed turns, including IO retries, before dropping history and the bank. */
     internal suspend fun forgetAll(userId: String, forgetHistory: suspend () -> Unit) {
-        val queue = captureQueue(userId)
-        val deleted = withTimeoutOrNull(10_000) {
-            queue.mutex.withLock {
-                forgetHistory()
-                httpClient.delete(bankUrl(userId)) { authorize(apiToken) }.requireSuccess()
-                queue.generation++
+        val queue = acquireCaptureQueue(userId)
+        try {
+            val deleted = withTimeoutOrNull(10_000) {
+                queue.mutex.withLock {
+                    forgetHistory()
+                    httpClient.delete(bankUrl(userId)) { authorize(apiToken) }.requireSuccess()
+                    queue.generation++
+                }
+                true
             }
-            true
+            check(deleted == true) { "Memory capture is still active; bank deletion did not complete" }
+        } finally {
+            releaseCaptureQueue(userId)
         }
-        check(deleted == true) { "Memory capture is still active; bank deletion did not complete" }
     }
 
     internal suspend fun hasPendingRetain(userId: String): Boolean {
