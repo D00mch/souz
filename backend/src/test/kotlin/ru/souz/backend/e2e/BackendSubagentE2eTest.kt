@@ -21,6 +21,7 @@ import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.llm.withNamedLlmConfig
+import ru.souz.backend.memory.hindsight.MEMORY_MUTATION_NOTICE
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.http.ProviderHttpClients
@@ -173,7 +174,7 @@ class BackendSubagentE2eTest {
             val system = llm.requests.first().messages.first().content
             assertTrue("custom base" in system)
             assertTrue("Перед каждым вызовом инструментов" in system)
-            assertTrue(ru.souz.backend.memory.hindsight.MEMORY_MUTATION_NOTICE in system)
+            assertTrue(MEMORY_MUTATION_NOTICE in system)
             val childRequests = llm.requests.filter { it.functions.map { tool -> tool.name } == listOf("RunSkillCommand") }
             assertEquals(2, childRequests.size)
             assertTrue("# Ask the user" in childRequests.first().messages.first().content)

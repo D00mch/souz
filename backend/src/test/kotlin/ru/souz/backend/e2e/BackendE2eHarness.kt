@@ -49,6 +49,7 @@ import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
 import ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntime
+import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.scheduler.ScheduledTaskConfig
 import ru.souz.backend.scheduler.ScheduledTaskRunner
 import ru.souz.jobs.JobService
@@ -501,6 +502,8 @@ internal class BackendE2eBackend(
     val executionRepository: ru.souz.backend.execution.repository.AgentExecutionRepository get() = di.direct.instance()
 
     val chatRepository: ru.souz.backend.chat.repository.ChatRepository get() = di.direct.instance()
+
+    val optionRepository: OptionRepository get() = di.direct.instance()
 
     suspend fun recoverClientThreads() = di.direct.instance<ClientThreadRecoveryService>().recover()
 

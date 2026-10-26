@@ -6,7 +6,10 @@ import java.time.Duration
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
-import ru.souz.backend.execution.repository.AgentExecutionRepository
+import ru.souz.backend.options.model.Option
+import ru.souz.backend.options.model.OptionKind
+import ru.souz.backend.options.model.OptionStatus
+import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.storage.postgres.PostgresHistoryMemoryRepository
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -20,6 +23,7 @@ internal val FORGET_MEMORY_TOOL_NAMES = setOf(ToolForgetMemoryFact.NAME, ToolFor
 private const val CAPTURE_NOTE = "Remembering needs no tool: every turn is saved to memory automatically after your " +
     "reply, so confirm requests to remember. Only a turn that calls this tool is not saved; if it also shares something " +
     "new to remember, ask the user to repeat it separately. Never restate forgotten information in later replies."
+private const val CONFIRMATION_PURPOSE = "forget_all_memory"
 private val CONFIRMATION_TTL = Duration.ofMinutes(10)
 private val logger = LoggerFactory.getLogger(ToolForgetMemoryFact::class.java)
 
@@ -63,15 +67,15 @@ internal class ToolForgetMemoryFact(
 internal class ToolForgetAllMemory(
     private val memory: HindsightConversationMemoryRuntime,
     private val fragments: PostgresHistoryMemoryRepository,
-    private val executions: AgentExecutionRepository,
+    private val options: OptionRepository,
     private val clock: Clock,
 ) : LLMToolSetup {
     override val fn = LLMRequest.Function(
         name = NAME,
         description = "Forget all persistent memory of the user in every conversation. Use only when the user explicitly " +
             "asks to forget everything. Without confirmationId nothing is deleted and the result returns one: ask the user " +
-            "to confirm and end your turn. Call again with it only after the user explicitly confirms in their next message " +
-            "within 10 minutes. forgotten=true confirms deletion. $CAPTURE_NOTE",
+            "to confirm and end your turn. Call again with it only after the user explicitly confirms in a later message " +
+            "within 10 minutes; each confirmationId works once. forgotten=true confirms deletion. $CAPTURE_NOTE",
         parameters = LLMRequest.Parameters("object", mapOf(
             "confirmationId" to LLMRequest.Property("string", "confirmationId from the previous ForgetAllMemory result."),
         ), additionalProperties = false),
@@ -83,22 +87,37 @@ internal class ToolForgetAllMemory(
         val chatId = meta.conversationId.toUuid()
         val executionId = meta.requestId.toUuid()
         if (chatId == null || executionId == null) return failure(NAME, "memory_context_missing")
-        val confirmationId = functionCall.arguments["confirmationId"] ?: return response(NAME, mapOf(
-            "forgotten" to false,
-            "confirmationId" to executionId.toString(),
-            "message" to "Nothing was deleted. Ask the user to confirm in their next message.",
-        ))
+        val confirmationId = functionCall.arguments["confirmationId"]
+        val requested = (confirmationId as? String).toUuid()
         return forgetting(NAME) {
-            // Only a later execution of the same chat, that is a new user message, can confirm.
-            val requested = (confirmationId as? String).toUuid()?.takeIf { it != executionId }
-                ?.let { executions.getByChat(meta.userId, chatId, it) }
-            if (requested == null || requested.startedAt.isBefore(clock.instant().minus(CONFIRMATION_TTL))) {
-                return@forgetting failure(NAME, "confirmation_invalid",
-                    "Nothing was deleted. Ask the user to confirm in a new message and pass the latest confirmationId.")
+            when {
+                confirmationId == null -> {
+                    val now = clock.instant()
+                    // Without items, the generic option-answer route cannot answer this confirmation.
+                    val confirmation = options.save(Option(
+                        id = UUID.randomUUID(), userId = meta.userId, chatId = chatId, executionId = executionId,
+                        kind = OptionKind.TOOL_CONFIRMATION, title = null, selectionMode = "single", options = emptyList(),
+                        payload = mapOf("purpose" to CONFIRMATION_PURPOSE), status = OptionStatus.PENDING, answer = null,
+                        createdAt = now, expiresAt = now.plus(CONFIRMATION_TTL), answeredAt = null,
+                    ))
+                    response(NAME, mapOf(
+                        "forgotten" to false,
+                        "confirmationId" to confirmation.id.toString(),
+                        "message" to "Nothing was deleted. Ask the user to confirm in a new message.",
+                    ))
+                }
+                requested != null && options.consumeToolConfirmation(
+                    meta.userId, chatId, requested, CONFIRMATION_PURPOSE, executionId, clock.instant(),
+                ) -> {
+                    fragments.forget(meta.userId)
+                    memory.forgetAll(meta.userId)
+                    // An older unused confirmation must not delete memory saved after this.
+                    options.cancelToolConfirmations(meta.userId, CONFIRMATION_PURPOSE)
+                    response(NAME, mapOf("forgotten" to true))
+                }
+                else -> failure(NAME, "confirmation_invalid",
+                    "Nothing was deleted. Request a new confirmationId and ask the user to confirm in a new message.")
             }
-            fragments.forget(meta.userId)
-            memory.forgetAll(meta.userId)
-            response(NAME, mapOf("forgotten" to true))
         }
     }
 

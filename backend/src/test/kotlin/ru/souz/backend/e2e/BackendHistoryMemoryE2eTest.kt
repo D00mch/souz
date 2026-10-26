@@ -43,6 +43,9 @@ import ru.souz.backend.memory.hindsight.FORGET_MEMORY_TOOL_NAMES
 import ru.souz.backend.memory.hindsight.HISTORY_MEMORY_MAX_CHARS
 import ru.souz.backend.memory.hindsight.MEMORY_MUTATION_NOTICE
 import ru.souz.backend.memory.hindsight.ToolForgetMemoryFact
+import ru.souz.backend.options.model.Option
+import ru.souz.backend.options.model.OptionKind
+import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.http.ProviderHttpClients
@@ -551,7 +554,7 @@ class BackendHistoryMemoryE2eTest {
     }
 
     @Test
-    fun `ForgetAllMemory deletes only after a later confirmation in the same chat`() {
+    fun `ForgetAllMemory deletes only after a later one-time confirmation in the same chat`() {
         val results = CopyOnWriteArrayList<JsonNode>()
         val clock = ShiftedClock()
         backendE2eTest("memory_forget_all", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock,
@@ -566,12 +569,27 @@ class BackendHistoryMemoryE2eTest {
                 submit(owner, inChat, listOfNotNull("ForgetAllMemory", confirmationId).joinToString(" "))
                 return results.last()
             }
+            val requestExecution = submit(owner, chat, "ForgetAllMemory")
+            suspend fun otherOption(kind: OptionKind, purpose: String): String {
+                val now = clock.instant()
+                return backend.optionRepository.save(Option(
+                    id = UUID.randomUUID(), userId = owner, chatId = UUID.fromString(chat),
+                    executionId = UUID.fromString(requestExecution), kind = kind, title = null, selectionMode = "single",
+                    options = emptyList(), payload = mapOf("purpose" to purpose), status = OptionStatus.PENDING,
+                    answer = null, createdAt = now, expiresAt = now.plusSeconds(600), answeredAt = null,
+                )).id.toString()
+            }
 
-            val requested = submit(owner, chat, "ForgetAllMemory")
+            val requested = results.last()["confirmationId"].asText()
             assertEquals(json.readTree("""{"forgotten":false,"confirmationId":"$requested",""" +
-                """"message":"Nothing was deleted. Ask the user to confirm in their next message."}"""), results.last())
+                """"message":"Nothing was deleted. Ask the user to confirm in a new message."}"""), results.last())
             assertEquals("confirmation_invalid", forgetAll("self")["error"]["code"].asText())
             assertEquals("confirmation_invalid", forgetAll(requested, inChat = secondChat)["error"]["code"].asText())
+            assertEquals("confirmation_invalid", forgetAll(requestExecution)["error"]["code"].asText())
+            assertEquals("confirmation_invalid",
+                forgetAll(otherOption(OptionKind.GENERIC_SELECTION, "forget_all_memory"))["error"]["code"].asText())
+            assertEquals("confirmation_invalid",
+                forgetAll(otherOption(OptionKind.TOOL_CONFIRMATION, "another_tool"))["error"]["code"].asText())
             clock.shift = Duration.ofMinutes(11)
             assertEquals("confirmation_invalid", forgetAll(requested)["error"]["code"].asText())
             clock.shift = Duration.ZERO
@@ -604,6 +622,14 @@ class BackendHistoryMemoryE2eTest {
             assertEquals(listOf(other), hindsight.historyItems.map { it.bank })
             assertOnlyTurnRetained(owner, chat, "SearchMemory", answer = "done")
             assertEquals(json.readTree("""{"facts":[],"error":null}"""), results.last())
+
+            // A used confirmation cannot delete memory saved since; deletion cancels other pending confirmations.
+            assertEquals("confirmation_invalid", forgetAll(confirmationId)["error"]["code"].asText())
+            val unused = forgetAll(null, inChat = secondChat)["confirmationId"].asText()
+            val again = forgetAll(null)["confirmationId"].asText()
+            submit(owner, chat, "What exactly will be deleted?")
+            assertEquals(json.readTree("""{"forgotten":true}"""), forgetAll(again))
+            assertEquals("confirmation_invalid", forgetAll(unused, inChat = secondChat)["error"]["code"].asText())
         }
     }
 
@@ -619,26 +645,28 @@ class BackendHistoryMemoryE2eTest {
 }
 
 /** Calls the memory tool named by the prompt's first word with its optional value, then records the last result. */
-private fun forgetLlm(results: MutableList<JsonNode>) = E2eLlmApi { request ->
-    val prompt = request.conversationPrompt()
-    val tool = prompt.substringBefore(' ')
-    val value = prompt.substringAfter(' ', "").takeIf(String::isNotEmpty)
-    val turn = request.messages.takeLastWhile { it.role != LLMMessageRole.user }.filter { it.role == LLMMessageRole.function }
+private fun forgetLlm(results: MutableList<JsonNode>): E2eLlmApi {
     val mapper = jacksonObjectMapper()
-    when {
-        tool !in FORGET_MEMORY_TOOL_NAMES + "SearchMemory" -> reply(request, "assistant reply to $prompt")
-        turn.isEmpty() -> toolCallReply(request, tool, when {
-            tool == "SearchMemory" -> mapOf("semanticQuery" to "everything about the user", "lexicalHints" to listOf("user"))
-            value == null || value == "self" -> emptyMap()
-            tool == ToolForgetMemoryFact.NAME -> mapOf("factId" to value)
-            else -> mapOf("confirmationId" to value)
-        })
-        // "self" makes the model try to confirm its own request in the same turn.
-        value == "self" && turn.size == 1 ->
-            toolCallReply(request, tool, mapOf("confirmationId" to mapper.readTree(turn.single().content)["confirmationId"].asText()))
-        else -> {
-            results.add(mapper.readTree(turn.last().content))
-            reply(request, "done")
+    return E2eLlmApi { request ->
+        val prompt = request.conversationPrompt()
+        val tool = prompt.substringBefore(' ')
+        val value = prompt.substringAfter(' ', "").takeIf(String::isNotEmpty)
+        val turn = request.messages.takeLastWhile { it.role != LLMMessageRole.user }.filter { it.role == LLMMessageRole.function }
+        when {
+            tool != "SearchMemory" && tool !in FORGET_MEMORY_TOOL_NAMES -> reply(request, "assistant reply to $prompt")
+            turn.isEmpty() -> toolCallReply(request, tool, when {
+                tool == "SearchMemory" -> mapOf("semanticQuery" to "everything about the user", "lexicalHints" to listOf("user"))
+                value == null || value == "self" -> emptyMap()
+                tool == ToolForgetMemoryFact.NAME -> mapOf("factId" to value)
+                else -> mapOf("confirmationId" to value)
+            })
+            // "self" makes the model try to confirm its own request in the same turn.
+            value == "self" && turn.size == 1 ->
+                toolCallReply(request, tool, mapOf("confirmationId" to mapper.readTree(turn.single().content)["confirmationId"].asText()))
+            else -> {
+                results.add(mapper.readTree(turn.last().content))
+                reply(request, "done")
+            }
         }
     }
 }
@@ -715,7 +743,7 @@ private class HistoryHindsightStub {
             paths += path
             val bank = path.substringAfter("/banks/").substringBefore('/')
             var status = HttpStatusCode.OK
-            if (request.method in listOf(HttpMethod.Patch, HttpMethod.Delete)) {
+            if (request.method == HttpMethod.Patch || request.method == HttpMethod.Delete) {
                 if (forgetUnreachable) throw IOException("simulated unreachable memory")
                 status = forgetStatus
             }
