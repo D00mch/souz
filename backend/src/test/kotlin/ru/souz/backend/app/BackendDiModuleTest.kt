@@ -200,18 +200,20 @@ class BackendDiModuleTest {
                         assertNull(history["operation_id"])
                     }
                 }
-                // Operation IDs and the response's async flag of each metadata variant above.
+                // Operation IDs and the response's async flag of each metadata variant above; without a returned ID,
+                // and for the lost response, records carry the submitted one.
+                val submitted = bodies.take(3).map { it["operation_id"]?.asText() }
                 val accepted = listOf(null to null, null to false, "op-1" to true, "op-2,op-3" to null, "op-4" to null, null to null)
                 assertEquals(accepted.flatMap { response ->
-                    val result = listOfNotNull(response.first?.let { "operation_id" to it }).toMap() +
+                    fun result(submittedId: String?) = listOfNotNull((response.first ?: submittedId)?.let { "operation_id" to it }).toMap() +
                         ("extraction" to if (response.second ?: retainAsync) "queued" else "completed")
                     listOf(
                         mapOf("event" to "memory.retain_turn", "outcome" to "error", "document_id" to "souz-turn-message-1",
-                            "attempt" to "1", "category" to "IOException"),
+                            "attempt" to "1", "category" to "IOException") + listOfNotNull(submitted[0]?.let { "operation_id" to it }),
                         mapOf("event" to "memory.retain_turn", "outcome" to "success", "document_id" to "souz-turn-message-1",
-                            "attempt" to "2") + result,
+                            "attempt" to "2") + result(submitted[1]),
                         mapOf("event" to "memory.retain_history", "outcome" to "success", "document_id" to "history-1",
-                            "attempt" to "1") + result,
+                            "attempt" to "1") + result(submitted[2]),
                     )
                 }, logs.drop(logged).map { it.fields() })
                 assertFalse(logs.any { record -> listOf("I like tea", "Noted", "dialogue").any { it in "${record.formattedMessage} ${record.keyValuePairs}" } })

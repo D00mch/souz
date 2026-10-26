@@ -232,12 +232,18 @@ class HindsightConversationMemoryRuntime(
     }
 
     private suspend fun retain(operation: String, bankId: String, item: Map<String, Any>, retryOnIoFailure: Boolean) {
+        // Known before the call, so a lost acknowledgement is still logged with the operation to look up.
+        val operationId = if (retainAsync) item["document_id"]?.let { documentId ->
+            UUID.nameUUIDFromBytes("souz-retain:$bankId:$documentId".toByteArray()).toString()
+        } else null
         repeat(if (retryOnIoFailure) 2 else 1) { attempt ->
             try {
-                measured(operation, mapOf("document_id" to item["document_id"], "attempt" to attempt + 1), describe = { response: JsonNode ->
+                val fields = mapOf("document_id" to item["document_id"], "attempt" to attempt + 1, "operation_id" to operationId)
+                measured(operation, fields, describe = { response: JsonNode ->
                     mapOf(
                         "operation_id" to (response.path("operation_id").asText("").takeIf(String::isNotBlank)
-                            ?: response.path("operation_ids").takeIf(JsonNode::isArray)?.joinToString(",") { it.asText("") }),
+                            ?: response.path("operation_ids").takeIf(JsonNode::isArray)?.joinToString(",") { it.asText("") }
+                            ?: operationId),
                         // Hindsight finishes a synchronous retain's extraction before responding.
                         "extraction" to if (response.path("async").asBoolean(retainAsync)) "queued" else "completed",
                     )
@@ -248,9 +254,7 @@ class HindsightConversationMemoryRuntime(
                         setBody(buildMap {
                             put("items", listOf(item))
                             put("async", retainAsync)
-                            if (retainAsync) item["document_id"]?.let { documentId ->
-                                put("operation_id", UUID.nameUUIDFromBytes("souz-retain:$bankId:$documentId".toByteArray()).toString())
-                            }
+                            operationId?.let { put("operation_id", it) }
                         })
                     }.requireSuccess().body<JsonNode>()
                     if (!response.path("success").asBoolean()) throw HindsightRetainRejected()
