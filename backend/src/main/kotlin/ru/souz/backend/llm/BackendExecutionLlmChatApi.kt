@@ -71,7 +71,7 @@ internal class BackendExecutionLlmChatApi(
                 baseUrl = settingsProvider.openaiSummarizationBaseUrl,
                 requestParameters = settingsProvider.openaiSummarizationParameters,
             )
-            val request = body.copy(model = summarizationModel, provider = LlmProvider.OPENAI)
+            val request = body.copy(model = summarizationModel, provider = LlmProvider.OPENAI).withDefaultReasoningEffort()
             return retryChat { callProvider(LlmProvider.OPENAI, request, api) }
         }
         val primary = when (val route = chatRoute(body)) {
@@ -174,9 +174,7 @@ internal class BackendExecutionLlmChatApi(
             }
         }
         body.provider?.let { provider ->
-            val effort = body.reasoningEffort ?: findLLMModel(body.model)?.takeIf { it.provider == provider }
-                ?.let { llmConfig.reasoningEfforts[it.alias] }
-            return if (provider in BackendLlmSupport.chatProviders) ChatRoute.Ready(provider, body.copy(reasoningEffort = effort))
+            return if (provider in BackendLlmSupport.chatProviders) ChatRoute.Ready(provider, body.withDefaultReasoningEffort())
             else rejectChatRoute(ModelResolution.UnsupportedProvider(body, provider))
         }
         return when (val resolution = resolveChatModel(
@@ -190,6 +188,11 @@ internal class BackendExecutionLlmChatApi(
             else -> rejectChatRoute(resolution)
         }
     }
+
+    private fun LLMRequest.Chat.withDefaultReasoningEffort(): LLMRequest.Chat = copy(
+        reasoningEffort = reasoningEffort ?: findLLMModel(model)?.takeIf { it.provider == provider }
+            ?.let { llmConfig.reasoningEfforts[it.alias] },
+    )
 
     private suspend fun apiFor(provider: LlmProvider, namedModel: NamedLlmModel? = null): LLMChatAPI {
         if (provider == LlmProvider.GIGA) error(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)

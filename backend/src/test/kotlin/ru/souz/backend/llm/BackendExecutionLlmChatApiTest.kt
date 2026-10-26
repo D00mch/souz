@@ -310,6 +310,35 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
+    fun `dedicated summaries apply the selected model effort default and preserve explicit effort`() = runTest {
+        val requests = mutableListOf<CapturedRequest>()
+        val settings = LlmSettingsStub().apply {
+            openaiSummarizationBaseUrl = "https://summary.test/v1"
+            openaiSummarizationApiKey = "summary-key"
+        }
+        val config = NamedLlmConfig(reasoningEfforts = mapOf(
+            LLMModel.OpenAIGpt52.alias to "minimal",
+            LLMModel.OpenAIGpt5Mini.alias to "low",
+        ))
+        facadeFixture(settingsProvider = settings, llmConfig = config, providerApiOverride = null, client = recordingClient(requests)).use { fixture ->
+            for ((model, explicitEffort, expectedEffort) in listOf(
+                Triple(LLMModel.OpenAIGpt5Mini.alias, null, "low"),
+                Triple(LLMModel.OpenAIGpt5Mini.alias, "high", "high"),
+                Triple(LLMModel.OpenAIGpt52.alias, null, "minimal"),
+                Triple("Summary/Deployment", null, null),
+                Triple("Summary/Deployment", "high", "high"),
+            )) {
+                settings.openaiSummarizationModel = model
+                val request = chat(LLMModel.OpenAIGpt52.alias).copy(isSummarization = true, reasoningEffort = explicitEffort)
+                assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
+                val outbound = requests.last()
+                assertEquals(model, outbound.body["model"].asText())
+                assertEquals(expectedEffort, outbound.body.path("reasoning_effort").textValue(), "$model explicit=$explicitEffort")
+            }
+        }
+    }
+
+    @Test
     fun `routes every supported chat provider and caches each adapter`() = runTest {
         val providerCalls = mutableListOf<LlmProvider>()
         val efforts = mutableListOf<String?>()
