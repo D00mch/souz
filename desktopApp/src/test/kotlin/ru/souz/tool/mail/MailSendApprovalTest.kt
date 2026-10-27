@@ -33,6 +33,31 @@ class MailSendApprovalTest {
     private suspend fun command(text: String) = approval.handleOwnerCommand(text) { shown += it }
 
     @ParameterizedTest
+    @ValueSource(strings = [" ", "   ", "\t", "\r\n", " \t\r\n "])
+    fun `whitespace separated owner commands preview send and cancel emails`(separator: String) = runTest {
+        val token = request()
+        assertTrue(command("  /mail_send${separator}$token\t"))
+        assertTrue(shown.last().contains("Review the email first"))
+        verify(exactly = 1) { bash.sh(any(), *anyVararg()) }
+
+        assertTrue(command("  /mail_preview${separator}$token\t"))
+        assertTrue(shown[shown.lastIndex - 1].contains("TO: reply-to@example.com"))
+        val sendScript = MailAppleScriptCommands.approvalCommand(reply = true, send = true)
+        every { bash.sh(sendScript, *args.toTypedArray(), mailSnapshot) } returns "Email sent."
+        assertTrue(command("  /mail_send${separator}$token\t"))
+        assertEquals("Email sent.", shown.last())
+        verify(exactly = 1) { bash.sh(sendScript, *args.toTypedArray(), mailSnapshot) }
+
+        val cancelled = request()
+        assertTrue(command("  /mail_cancel${separator}$cancelled\t"))
+        assertEquals("Email cancelled. Nothing was sent.", shown.last())
+        assertTrue(command("/mail_send${separator}$cancelled"))
+        assertTrue(shown.last().contains("No matching pending email"))
+        verify(exactly = 3) { bash.sh(any(), *anyVararg()) }
+        assertFalse(command("ordinary${separator}owner text"))
+    }
+
+    @ParameterizedTest
     @ValueSource(booleans = [false, true])
     fun `owner must see all resolved fields before a single exact send`(reply: Boolean) = runTest {
         val values = if (reply) args else listOf("Ivan", "ivan@example.com", "Report", "Hello")
