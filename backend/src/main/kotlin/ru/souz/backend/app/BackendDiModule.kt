@@ -322,9 +322,9 @@ fun backendDiModule(
         }
     }
     if (appConfig.hindsightApiUrl != null) {
-        bindSingleton { PostgresHistoryMemoryRepository(instance(), instance()) }
+        bindSingleton { PostgresHistoryMemoryRepository(instance(), instance(), instance()) }
         bindSingleton {
-            HistoryMemoryWorker(instance(), instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance(), instance())
+            HistoryMemoryWorker(instance(), instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance())
         }
         bindSingleton { ToolForgetMemoryFact(instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance()) }
         bindSingleton {

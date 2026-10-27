@@ -499,6 +499,7 @@ class BackendHistoryMemoryE2eTest {
                 assertFalse(repository.complete(first, failed = true))
                 assertFalse(repository.renew(first))
                 assertFalse(repository.retry(first))
+                assertTrue(client.get("/metrics").bodyAsText().contains("souz_history_memory_failures_total 0.0"))
                 clock.advance(181)
                 assertTrue(peer.backend.captureHistoryMemory())
             }

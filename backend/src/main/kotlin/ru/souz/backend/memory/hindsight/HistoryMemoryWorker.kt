@@ -11,13 +11,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.souz.backend.common.withBackendLogContext
-import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.storage.postgres.PostgresHistoryMemoryRepository
 
 internal class HistoryMemoryWorker(
     private val repository: PostgresHistoryMemoryRepository,
     private val memory: HindsightConversationMemoryRuntime,
-    private val metrics: BackendMetrics,
     private val clock: Clock = Clock.systemUTC(),
     private val pollIntervalMillis: Long = 5_000,
 ) {
@@ -71,11 +69,8 @@ internal class HistoryMemoryWorker(
                 val category = error.memoryErrorCategory()
                 when {
                     !updated -> logger.warn("History memory lease lost attempt={} category={}", fragment.attempts, category)
-                    exhausted -> {
-                        metrics.historyMemory.failed()
-                        logger.error("History memory failed attempts={} reason={} category={}",
-                            fragment.attempts, if (permanent) "attempts" else "time budget", category)
-                    }
+                    exhausted -> logger.error("History memory failed attempts={} reason={} category={}",
+                        fragment.attempts, if (permanent) "attempts" else "time budget", category)
                     else -> logger.warn("History memory retry attempt={} category={}", fragment.attempts, category)
                 }
             }

@@ -277,21 +277,19 @@ class HindsightConversationMemoryRuntime(
     ): T {
         val startedAt = System.nanoTime()
         var outcome = "success"
-        var logged = fields
+        val logged = fields.toMutableMap()
         try {
-            return request().also { logged = logged + describe(it) }
+            return request().also { logged.putAll(describe(it)) }
         } catch (failure: Throwable) {
             outcome = if (failure is HindsightHttpFailure) responseMetricOutcome(failure.statusCode) else failure.metricOutcome()
-            logged = logged + ("category" to failure.memoryErrorCategory())
+            logged["category"] = failure.memoryErrorCategory()
             throw failure
         } finally {
             val elapsedNanos = System.nanoTime() - startedAt
             metrics.memoryRequest(operation, outcome, elapsedNanos)
-            logged.entries.filter { it.value != null }
-                .fold(if (outcome == "success") logger.atInfo() else logger.atWarn()) { event, field ->
-                    event.addKeyValue(field.key, field.value)
-                }
-                .addKeyValue("event", "memory.$operation")
+            val event = if (outcome == "success") logger.atInfo() else logger.atWarn()
+            logged.forEach { (key, value) -> if (value != null) event.addKeyValue(key, value) }
+            event.addKeyValue("event", "memory.$operation")
                 .addKeyValue("outcome", outcome)
                 .addKeyValue("duration_ms", elapsedNanos / 1_000_000)
                 .log("Hindsight {} {}", operation, outcome)

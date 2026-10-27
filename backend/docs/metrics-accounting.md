@@ -1,6 +1,6 @@
 # Metrics accounting
 
-Repository commits own execution outcomes. Observe successful active-to-terminal writes inside the JDBC dispatcher after commit; observing service responses can double-count idempotent retries or lose cancellation finalization. Runtime state and durable replay remain independent of meters.
+Repository commits own execution outcomes and history-fragment failures. Observe successful active-to-terminal writes and failed fragment completions inside the JDBC dispatcher after commit; observing service responses can double-count idempotent retries or lose cancellation finalization. Runtime state and durable replay remain independent of meters.
 
 One backend registry owns process counters, JVM binders and pool instrumentation. Configure Hikari's tracker before constructing its datasource, and close meters after application work and storage. Active execution and history-fragment gauges read shared PostgreSQL state; aggregate replicas with `max`. Other counters and work gauges belong to one instance.
 

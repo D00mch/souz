@@ -407,7 +407,6 @@ internal class BackendE2eBackend(
                 HistoryMemoryWorker(
                     repository = instance(),
                     memory = instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime,
-                    metrics = instance(),
                     clock = instance(),
                     pollIntervalMillis = 50,
                 )
