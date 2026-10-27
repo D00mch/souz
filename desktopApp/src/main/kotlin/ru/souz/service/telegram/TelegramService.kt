@@ -53,6 +53,7 @@ private const val TELEGRAM_CHAT_AMBIGUITY_GAP = 80
 class TelegramService(
     telegramPlatformSupport: TelegramPlatformSupport = TelegramPlatformSupport,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    private val controlBotConfigProvider: TelegramBotConfigProvider = PreferencesTelegramBotConfigProvider,
 ) : TelegramUiService {
 
     private val l = LoggerFactory.getLogger(TelegramService::class.java)
@@ -378,6 +379,7 @@ class TelegramService(
             throw IllegalArgumentException("Message text is empty")
         }
 
+        requireNonControlBotRecipient(userId)
         val tdClient = requireClient()
         val privateChat = tdClient.send(TdApi.CreatePrivateChat(userId, false)).awaitResult()
         cacheChat(privateChat)
@@ -439,8 +441,9 @@ class TelegramService(
     }
 
     suspend fun forwardMessageByChatIds(fromChatId: Long, toChatId: Long, messageId: String): TelegramMessageView {
-        val sourceChat = refreshChat(fromChatId)
         val targetChat = refreshChat(toChatId)
+        requireNonControlBotRecipient(targetChat.linkedUserId)
+        val sourceChat = refreshChat(fromChatId)
         val sourceMessageId = if (messageId.equals("last", ignoreCase = true)) {
             getHistoryByChatId(sourceChat.chatId, 1, forceRefresh = true).firstOrNull()?.messageId
                 ?: throw IllegalStateException("No messages found in source chat")
@@ -465,6 +468,18 @@ class TelegramService(
 
         updateChatFromMessage(forwarded)
         return messageToView(forwarded)
+    }
+
+    private fun requireNonControlBotRecipient(userId: Long?) {
+        val token = controlBotConfigProvider.token()?.takeIf { it.isNotBlank() } ?: return
+        // Telegram bot tokens begin with the bot's stable user ID, independent of cached names.
+        val botId = token.substringBefore(':', "").toLongOrNull()
+        check(botId != null && botId > 0) {
+            "Control bot identity is unavailable. Telegram tool writes are blocked until it is configured correctly."
+        }
+        require(userId != botId) {
+            "Tools cannot send or forward messages to the Telegram control bot. Owner approval must be sent manually."
+        }
     }
 
     suspend fun searchMessages(query: String, chatId: Long?, limit: Int): List<TelegramMessageView> {
