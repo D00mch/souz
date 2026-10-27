@@ -83,6 +83,7 @@ class BackendHistoryMemoryE2eTest {
                     }) {
                     val owner = UUID.randomUUID().toString()
                     val chat = createPublicChat(owner)
+                    val logged = logs.size
                     if (webSocket) {
                         withPublicSocket(chat) { socket ->
                             socket.send(Frame.Text(messageFrame(chat, owner, "search", text = question)))
@@ -115,7 +116,12 @@ class BackendHistoryMemoryE2eTest {
                         mapOf("event" to "memory.search", "outcome" to "success", "facts" to "1", "fact_ids" to "stored-fact"),
                     ), records.map { it.fields() })
                     assertEquals(owner, records.map { it.mdcPropertyMap["userId"] }.toSet().single())
-                    assertNotNull(records.map { it.mdcPropertyMap["threadId"] }.toSet().single())
+                    val threadId = assertNotNull(records.map { it.mdcPropertyMap["threadId"] }.toSet().single())
+                    // The turn retain runs after the reply, on the background capture scope.
+                    val retain = eventually("memory.retain_turn record") {
+                        logs.drop(logged).firstOrNull { it.fields()["event"] == "memory.retain_turn" }
+                    }
+                    assertEquals(listOf(owner, chat, threadId), listOf("userId", "chatId", "threadId").map { retain.mdcPropertyMap[it] })
                     val metrics = client.get("/metrics").bodyAsText()
                     assertTrue(metrics.contains("souz_memory_requests_total{operation=\"search\",outcome=\"success\"} 1.0"))
                     assertEquals(automaticRecall,
