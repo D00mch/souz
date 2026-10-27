@@ -51,6 +51,7 @@ class BackendMetrics(nanoTime: () -> Long = System::nanoTime) : AutoCloseable {
     }
 
     internal val executions = ExecutionMetrics(this, nanoTime)
+    internal val historyMemory = HistoryMemoryMetrics(registry)
 
     internal fun terminal(status: AgentExecutionStatus) =
         registry.counter("souz.executions", "outcome", status.value).increment()
@@ -67,6 +68,9 @@ class BackendMetrics(nanoTime: () -> Long = System::nanoTime) : AutoCloseable {
         registry.counter("souz.llm.tokens", *tags, "direction", "output")
             .increment(usage.completionTokens.coerceAtLeast(0).toDouble())
     }
+
+    internal fun memoryRequest(operation: String, outcome: String, elapsedNanos: Long) =
+        recordCall("souz.memory.requests", "souz.memory.request.duration", outcome, elapsedNanos, "operation", operation)
 
     internal fun toolStarted() { tools.incrementAndGet() }
     internal fun toolFinished() { tools.decrementAndGet() }
@@ -129,6 +133,7 @@ class BackendMetrics(nanoTime: () -> Long = System::nanoTime) : AutoCloseable {
 
     internal fun scrape(): String {
         executions.prepareScrape()
+        historyMemory.prepareScrape()
         return registry.scrape()
     }
 

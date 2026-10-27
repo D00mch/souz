@@ -4,6 +4,7 @@ import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.LoggerFactory
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.chat.model.ChatMessage
@@ -39,6 +40,8 @@ import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 
+private val logger = LoggerFactory.getLogger(BackendAgentRuntimeEventSink::class.java)
+
 /**
  * Not logically concurrent.
  *
@@ -73,7 +76,11 @@ internal class BackendAgentRuntimeEventSink(
             AgentRuntimeEvent.InitialWait -> if (publicClientThread) publishLiveEvent(
                 AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload(INITIAL_WAIT_PHRASES.random()),
             )
-            is AgentRuntimeEvent.MemoryPromptAugmented -> Unit
+            is AgentRuntimeEvent.MemoryPromptAugmented -> logger.atInfo()
+                .addKeyValue("event", "memory.injected")
+                .addKeyValue("facts", event.facts.size)
+                .addKeyValue("fact_ids", event.facts.joinToString(",") { it.factId })
+                .log("Memory facts added to the model context")
             is AgentRuntimeEvent.LlmMessageDelta -> onLlmMessageDelta(event)
             is AgentRuntimeEvent.AssistantMessage -> if (narrateSteps) {
                 publishLiveEvent(AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload(event.content))

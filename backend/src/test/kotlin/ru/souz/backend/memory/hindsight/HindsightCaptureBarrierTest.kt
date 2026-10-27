@@ -10,6 +10,7 @@ import io.ktor.http.headersOf
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
+import kotlin.test.AfterTest
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -19,6 +20,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.memory.CompletedTurnMemoryInput
 import ru.souz.memory.ConversationId
@@ -26,6 +28,11 @@ import ru.souz.memory.MemoryContext
 import ru.souz.memory.MemoryOwnerId
 
 class HindsightCaptureBarrierTest {
+    private val metrics = BackendMetrics()
+
+    @AfterTest
+    fun closeMetrics() { metrics.close() }
+
     @Test
     fun `completed owners leave no capture queues after successful or failed IO`() = runBlocking {
         for (status in listOf(HttpStatusCode.OK, HttpStatusCode.InternalServerError, null)) {
@@ -33,7 +40,7 @@ class HindsightCaptureBarrierTest {
                 if (status == null) throw IOException("simulated transport failure")
                 respond("""{"success":true}""", status, headersOf(HttpHeaders.ContentType, "application/json"))
             }) { providerHttpClientDefaults() }.use { client ->
-                val memory = HindsightConversationMemoryRuntime(client, "http://hindsight.test")
+                val memory = HindsightConversationMemoryRuntime(client, "http://hindsight.test", metrics)
                 repeat(200) { index ->
                     val owner = "owner-$index"
                     memory.captureCompletedTurn(turn(owner))
@@ -64,7 +71,7 @@ class HindsightCaptureBarrierTest {
                     else HttpStatusCode.OK,
                     headersOf(HttpHeaders.ContentType, "application/json"))
             }) { providerHttpClientDefaults() }.use { client ->
-                val memory = HindsightConversationMemoryRuntime(client, "http://hindsight.test")
+                val memory = HindsightConversationMemoryRuntime(client, "http://hindsight.test", metrics)
                 val deletingHistory = CompletableDeferred<Unit>()
                 val releaseHistory = CompletableDeferred<Unit>()
                 val deletion = async(start = CoroutineStart.UNDISPATCHED) {
@@ -108,7 +115,7 @@ class HindsightCaptureBarrierTest {
     @Test
     fun `cancelling a deletion releases its idle owner queue`() = runBlocking {
         HttpClient(MockEngine { error("No HTTP request expected") }).use { client ->
-            val memory = HindsightConversationMemoryRuntime(client, "http://hindsight.test")
+            val memory = HindsightConversationMemoryRuntime(client, "http://hindsight.test", metrics)
             val deletion = async(start = CoroutineStart.UNDISPATCHED) {
                 memory.forgetAll("owner") { CompletableDeferred<Unit>().await() }
             }
