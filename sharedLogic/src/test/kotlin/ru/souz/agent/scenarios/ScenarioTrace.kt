@@ -1,0 +1,97 @@
+package ru.souz.agent.scenarios
+
+import ru.souz.agent.AgentExecutionResult
+import ru.souz.agent.runtime.AgentRuntimeEvent
+import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.plus
+import ru.souz.llms.restJsonMapper
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.time.Duration
+
+data class ScenarioResult(
+    val execution: AgentExecutionResult,
+    val requests: List<LLMRequest.Chat>,
+    val events: List<AgentRuntimeEvent>,
+    val metrics: ScenarioMetrics,
+) {
+    val output: String get() = execution.output
+    val history: List<LLMRequest.Message> get() = execution.context.history
+}
+
+data class ScenarioMetrics(
+    val model: String,
+    val reasoningEffort: String?,
+    val modelCalls: Int,
+    val usage: LLMResponse.Usage,
+    val duration: Duration,
+    val toolCalls: List<AgentRuntimeEvent.ToolCallStarted>,
+) {
+    override fun toString(): String =
+        "model=$model; reasoningEffort=${reasoningEffort ?: "provider-default"}; " +
+            "modelCalls=$modelCalls; durationMs=${duration.inWholeMilliseconds}; tokens=$usage; " +
+            "tools=${restJsonMapper.writeValueAsString(toolCalls.map { mapOf("name" to it.name, "arguments" to it.arguments) })}"
+}
+
+/** The kernel makes model calls and emits events sequentially within one execution. */
+internal class ScenarioTrace(
+    private val modelId: String,
+    private val reasoningEffort: String?,
+    private val maxModelCalls: Int,
+) : AgentRuntimeEventSink {
+    val requests = mutableListOf<LLMRequest.Chat>()
+    val events = mutableListOf<AgentRuntimeEvent>()
+    private var usage = LLMResponse.Usage(0, 0, 0, 0)
+    private var lastResponse: LLMResponse.Chat? = null
+
+    fun instrument(api: LLMChatAPI): LLMChatAPI = object : LLMChatAPI by api {
+        override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
+            check(requests.size < maxModelCalls) { "Scenario exceeded $maxModelCalls model calls without completing." }
+            // The host clock has no injection port. Normalize only its context timestamp at the test boundary.
+            val request = body.copy(
+                reasoningEffort = reasoningEffort,
+                messages = body.messages.map { it.withScenarioDate() },
+            )
+            requests += request
+            return api.message(request).also { response ->
+                lastResponse = response
+                if (response is LLMResponse.Chat.Ok) usage += response.usage
+            }
+        }
+    }
+
+    override suspend fun emit(event: AgentRuntimeEvent) {
+        events += event
+    }
+
+    fun assertCompleted(result: AgentExecutionResult) {
+        val response = lastResponse
+        assertTrue(response is LLMResponse.Chat.Ok, "No successful final model response: $response")
+        assertTrue(response.choices.isNotEmpty() && response.choices.all {
+            it.message.functionCall == null && it.finishReason == LLMResponse.FinishReason.stop
+        }, "Scenario ended without a completed assistant response: ${response.choices}")
+        assertTrue(result.output.isNotBlank(), "Scenario returned no final answer.")
+        val finalMessage = result.context.history.lastOrNull()
+        assertEquals(LLMMessageRole.assistant, finalMessage?.role, "Final history message must be from the assistant.")
+        assertEquals(result.output.trim(), finalMessage?.content?.trim(), "Output must match the final assistant message.")
+        assertTrue(response.choices.any { it.message.content.trim() == result.output.trim() },
+            "Output must come from the final model response.")
+    }
+
+    fun metrics(duration: Duration): ScenarioMetrics = ScenarioMetrics(
+        modelId, reasoningEffort, requests.size, usage, duration,
+        events.filterIsInstance<AgentRuntimeEvent.ToolCallStarted>(),
+    )
+}
+
+private val HOST_DATE_LINE = Regex("(?m)^- \\[General fact]: Текущие дата и время: .*${'$'}")
+internal const val SCENARIO_DATE_LINE = "- [General fact]: Текущие дата и время: понедельник, 2026-06-01 10:00:00"
+
+private fun LLMRequest.Message.withScenarioDate(): LLMRequest.Message =
+    if (role == LLMMessageRole.user && content.startsWith("<context>\nBackground information.") && content.endsWith("</context>")) {
+        copy(content = HOST_DATE_LINE.replace(content, SCENARIO_DATE_LINE))
+    } else this

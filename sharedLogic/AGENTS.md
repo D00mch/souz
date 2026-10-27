@@ -25,6 +25,7 @@
 - [Provider responses](docs/provider-responses.md) — assistant text, tool-call serialization, and array schemas.
 - [Provider HTTP lifecycle](docs/provider-http-lifecycle.md) — client ownership, request-local credentials, and host shutdown.
 - [Tool catalog composition](docs/tool-catalog-composition.md) — catalog value ownership, LLM-backed construction, duplicate rejection, and immutable execution snapshots.
+- [Model scenario tests](docs/agent-scenario-tests.md) — opt-in model evaluation with resource-backed Skills, isolated mocked tools, and execution metrics.
 
 Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.
 
