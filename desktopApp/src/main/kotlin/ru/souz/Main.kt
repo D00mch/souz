@@ -31,6 +31,7 @@ import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.http.GigaHttpClientResource
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.service.mcp.McpClientManager
+import ru.souz.service.maintenance.DesktopStateCleanup
 import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.ui.host.DesktopSettingsHostPreferences
 import ru.souz.ui.host.SettingsHostPreferences
@@ -65,6 +66,7 @@ fun main() {
             val providerHttpClients: ProviderHttpClients by di.instance()
             val gigaHttpClientResource: GigaHttpClientResource by di.instance()
             val memoryMaintenanceBackgroundRunner: ru.souz.memory.DesktopMemoryMaintenanceBackgroundRunner by di.instance()
+            val stateCleanup: DesktopStateCleanup by di.instance()
             val log: DesktopStructuredLogger by di.instance()
             val appScope: kotlinx.coroutines.CoroutineScope by di.instance()
             val processResources = remember(
@@ -91,12 +93,14 @@ fun main() {
             DisposableEffect(Unit) {
                 telegramBotController.start()
                 val memoryMaintenanceJob = memoryMaintenanceBackgroundRunner.start()
+                val stateCleanupJob = stateCleanup.start()
                 log.appOpened()
                 val shutdownHook = Thread(Runnable { closeServices() }, "souz-shutdown-hook")
                 Runtime.getRuntime().addShutdownHook(shutdownHook)
 
                 onDispose {
                     memoryMaintenanceJob.cancel()
+                    stateCleanupJob.cancel()
                     runCatching { Runtime.getRuntime().removeShutdownHook(shutdownHook) }
                         .onFailure { error ->
                             if (error !is IllegalStateException) {
