@@ -63,6 +63,7 @@ import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.service.mcp.McpClientManager
 import ru.souz.service.mcp.McpConfigProvider
+import ru.souz.service.maintenance.DesktopStateCleanup
 import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.service.observability.StructuredLoggingAgentTelemetry
 import ru.souz.service.permissions.MacDesktopPermissionService
@@ -173,6 +174,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<CoroutineScope> {
         CoroutineScope(SupervisorJob() + Dispatchers.Default)
     }
+    bindSingleton { DesktopStateCleanup(instance<SouzPaths>().stateRoot, instance()) }
     bindSingleton { Keys() }
 
     // DB
