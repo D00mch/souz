@@ -39,6 +39,7 @@ import ru.souz.db.ConfigStore
 import ru.souz.llms.restJsonMapper
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.service.speech.SpeechRecognitionProvider
+import ru.souz.tool.mail.MailSendApproval
 import ru.souz.ui.host.TelegramControlBot
 import ru.souz.ui.host.TelegramControlIncomingMessage
 import java.nio.file.Files
@@ -108,9 +109,12 @@ private class KtorTelegramBotApi : TelegramBotApi {
     }
 
     override suspend fun sendMessage(token: String, chatId: Long, text: String) {
-        client.post("https://api.telegram.org/bot$token/sendMessage") {
+        val response = client.post("https://api.telegram.org/bot$token/sendMessage") {
             parameter("chat_id", chatId)
             parameter("text", text)
+        }
+        check(response.status.value in 200..299 && restJsonMapper.readTree(response.bodyAsText()).path("ok").asBoolean()) {
+            "Telegram rejected sendMessage"
         }
     }
 
@@ -147,6 +151,7 @@ class TelegramBotController(
     private val voiceToPcmDecoder: suspend (ByteArray, String?) -> ByteArray =
         { audio, fileName -> decodeTelegramVoiceToPcm(audio, fileName) },
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    private val mailSendApproval: MailSendApproval? = null,
 ) : TelegramControlBot {
     private val logger = LoggerFactory.getLogger(TelegramBotController::class.java)
 
@@ -246,6 +251,10 @@ class TelegramBotController(
                 continue
             }
 
+            if (mailSendApproval?.handleOwnerCommand(message.text.orEmpty()) {
+                    botApi.sendMessage(token, message.chat.id, it)
+                } == true) continue
+
             val prepared = prepareIncomingCommand(token, message) ?: continue
             handleCommand(
                 token = token,
@@ -275,6 +284,7 @@ class TelegramBotController(
     internal suspend fun handleCommand(token: String, chatId: Long, text: String, isVoice: Boolean = false) {
         try {
             if (text.equals("/clean", ignoreCase = true)) {
+                mailSendApproval?.clear()
                 logger.info("Received /clean command (chatId={})", chatId)
                 _cleanCommands.emit(Unit)
                 botApi.sendMessage(token, chatId, "Context cleared")

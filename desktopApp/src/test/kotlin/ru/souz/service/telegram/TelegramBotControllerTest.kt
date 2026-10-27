@@ -10,6 +10,9 @@ import io.mockk.slot
 import io.mockk.unmockkAll
 import io.mockk.verify
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -23,6 +26,7 @@ import ru.souz.llms.restJsonMapper
 import ru.souz.service.speech.SpeechRecognitionProvider
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.mail.ToolMailSendNewMessage
+import ru.souz.tool.mail.MailSendApproval
 import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -32,43 +36,68 @@ import kotlin.test.assertTrue
 
 class TelegramBotControllerTest {
 
-    @Test
-    fun `mail confirmation returns to Telegram before a separate owner approval sends`() = runTest {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `mail sends only after authenticated owner reviews and approves outside the agent`(subscribed: Boolean) = runTest {
         val bash = mockk<ToolRunBashCommand>()
-        every { bash.sh(any(), *anyVararg()) } returns "Email sent."
-        val mail = ToolMailSendNewMessage(bash).toGiga()
-        val arguments = mapOf("recipientAddress" to "ivan@example.com", "content" to "Отчёт готов", "send" to true)
+        val snapshot = """{"sender":"owner@example.com","subject":"Report","content":"Отчёт готов","to":["ivan@example.com"],"cc":[],"bcc":[]}"""
+        every { bash.sh(any(), *anyVararg()) } answers {
+            if (firstArg<String>().contains("send newMessage")) "Email sent." else snapshot
+        }
+        val approval = MailSendApproval(bash)
+        val mail = ToolMailSendNewMessage(bash, approval).toGiga()
+        // Even a model asserting confirmation on its first call cannot send.
+        val arguments = mapOf("recipientAddress" to "ivan@example.com", "content" to "Отчёт готов",
+            "send" to true, "confirmed" to true)
         val agentFacade = mockk<AgentFacade>()
-        // Deterministic tool choices replace the LLM; the adapter, tool and bot command path are real.
         coEvery { agentFacade.execute("Отправь отчёт") } coAnswers {
             mail.invoke(LLMResponse.FunctionCall(mail.fn.name, arguments)).content
-        }
-        coEvery { agentFacade.execute("Да, отправляй") } coAnswers {
-            mail.invoke(LLMResponse.FunctionCall(mail.fn.name, arguments + ("confirmed" to true))).content
         }
         val botApi = FakeBotApi()
         val controller = TelegramBotController(
             telegramService = mockk(relaxed = true), agentFacade = agentFacade, botApi = botApi,
+            mailSendApproval = approval,
         )
-        fun update(id: Long, text: String) = TelegramUpdate(
+        val subscriber = if (subscribed) launch {
+            controller.incomingMessages.collect { incoming ->
+                incoming.responseDeferred.complete(agentFacade.execute(incoming.text))
+            }
+        } else null
+        runCurrent()
+        fun update(id: Long, text: String, user: Long = 42, chatType: String = "private") = TelegramUpdate(
             updateId = id,
             message = TelegramMessage(
-                messageId = id, from = TelegramUser(id = 42, isBot = false),
-                chat = TelegramChat(id = 42, type = "private"), text = text,
+                messageId = id, from = TelegramUser(id = user, isBot = false),
+                chat = TelegramChat(id = user, type = chatType), text = text,
             ),
         )
 
         try {
-            val offset = controller.processUpdates("token", 42, listOf(update(1, "Отправь отчёт")))
+            controller.processUpdates("token", 42, listOf(update(1, "Отправь отчёт")))
+            val token = botApi.sentTexts.last().substringAfter("/mail_preview ").substringBefore('.')
+            verify(exactly = 0) { bash.sh(match { it.contains("send newMessage") }, *anyVararg()) }
 
-            assertTrue(botApi.sentTexts.last().contains("ask the user to confirm sending"))
-            verify(exactly = 0) { bash.sh(any(), *anyVararg()) }
-
-            controller.processUpdates("token", 42, listOf(update(2, "Да, отправляй")), offset)
-
-            assertTrue(botApi.sentTexts.last().contains("Email sent."))
-            verify(exactly = 1) { bash.sh(any(), "ivan@example.com", "ivan@example.com", "No Subject", "Отчёт готов") }
+            // Neither another user nor a group message can present or approve the pending email.
+            controller.processUpdates("token", 42, listOf(
+                update(2, "/mail_preview $token", user = 7),
+                update(3, "/mail_preview $token", chatType = "group"),
+                update(4, "/mail_send $token"),
+            ))
+            assertTrue(botApi.sentTexts.last().contains("Review the email first"))
+            controller.processUpdates("token", 42, listOf(update(5, "/mail_preview $token")))
+            assertTrue(botApi.sentTexts.any { it.contains("TO: ivan@example.com") && it.contains("Отчёт готов") })
+            controller.processUpdates("token", 42, listOf(update(6, "/mail_send $token", user = 7)))
+            verify(exactly = 0) { bash.sh(match { it.contains("send newMessage") }, *anyVararg()) }
+            controller.processUpdates("token", 42, listOf(update(7, "/mail_send $token")))
+            assertEquals("Email sent.", botApi.sentTexts.last())
+            // Replayed approval cannot send twice, and approval never passes through model execution.
+            controller.processUpdates("token", 42, listOf(update(7, "/mail_send $token")))
+            verify(exactly = 1) { bash.sh(match { it.contains("send newMessage") },
+                "ivan@example.com", "ivan@example.com", "No Subject", "Отчёт готов", snapshot) }
+            coVerify(exactly = 1) { agentFacade.execute(any<String>()) }
         } finally {
+            subscriber?.cancel()
             controller.close()
         }
     }

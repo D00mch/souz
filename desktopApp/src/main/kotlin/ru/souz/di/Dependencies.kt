@@ -314,8 +314,9 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolMailUnreadMessagesCount(instance()) }
     bindSingleton { ToolMailListMessages(instance()) }
     bindSingleton { ToolMailReadMessage(instance()) }
-    bindSingleton { ToolMailReplyMessage(instance()) }
-    bindSingleton { ToolMailSendNewMessage(instance()) }
+    bindSingleton { MailSendApproval(instance()) }
+    bindSingleton { ToolMailReplyMessage(instance(), instance()) }
+    bindSingleton { ToolMailSendNewMessage(instance(), instance()) }
     bindSingleton { ToolMailSearch(instance()) }
     bindSingleton { ToolTextReplace(instance()) }
     bindSingleton { ToolTextUnderSelection(instance(), instance()) }
@@ -511,7 +512,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             fallbackClassifierTag = FRIDA_FALLBACK_TAG,
         )
     )
-    bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance()) }
+    bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance(), mailSendApproval = instance()) }
     bindSingleton<TelegramControlBot> { instance<TelegramBotController>() }
     bindSingleton { McpConfigProvider(instance()) }
     bindSingleton { McpClientManager(instance()) }
