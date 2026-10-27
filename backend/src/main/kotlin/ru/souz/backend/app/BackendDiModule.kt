@@ -138,7 +138,7 @@ import ru.souz.tool.memory.ToolSearchMemory
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.web.internal.WebResearchClient
 
-private object BackendDiTags {
+internal object BackendDiTags {
     const val LOG_OBJECT_MAPPER = "backendLogObjectMapper"
     const val MERGED_TOOL_CATALOG = "backendMergedToolCatalog"
 }

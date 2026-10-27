@@ -19,11 +19,11 @@ import kotlin.time.Duration.Companion.minutes
 
 class GraphAgentSkillScenariosIntegrationTest {
     @Test
-    fun `model follows the resource Skill and records CASE-42`() = runTest(timeout = 5.minutes) {
+    fun `model discovers the request procedure and records CASE-42`() = runTest(timeout = 5.minutes) {
         ScenarioLiveModel.fromEnvironment().use { model ->
             val tool = scenarioResultTool()
             val result = model.testSupport().runScenario(
-                userPrompt = "Выполни тестовую процедуру регистрации результата для CASE-42.",
+                userPrompt = "Запиши результат проверки заявки CASE-42 в журнал.",
                 skillResources = mapOf("scenario-smoke" to "/skills/scenario-smoke/SKILL.md"),
                 mockedTools = listOf(tool),
             )
@@ -34,6 +34,7 @@ class GraphAgentSkillScenariosIntegrationTest {
             coVerify(exactly = 1) { tool.invoke(any(), any()) }
             val loaded = result.events.indexOfFirst {
                 it is AgentRuntimeEvent.ToolCallFinished && it.name == ToolGetSkillByName.NAME &&
+                    it.result.toString().contains("\"skillId\":\"scenario-smoke\"") &&
                     it.result.toString().contains("skill-framework-ok")
             }
             val called = result.events.indexOfFirst {
@@ -41,6 +42,10 @@ class GraphAgentSkillScenariosIntegrationTest {
                     it.arguments["skillId"] == "RecordScenarioResult"
             }
             assertTrue(loaded >= 0 && called > loaded, "Read SKILL.md successfully before invoking the target tool.")
+            assertEquals(
+                mapOf("skillId" to "RecordScenarioResult", "arguments" to mapOf("requestId" to "CASE-42", "value" to "skill-framework-ok")),
+                (result.events[called] as AgentRuntimeEvent.ToolCallStarted).arguments,
+            )
             assertFalse(result.requests.first().messages.any { "skill-framework-ok" in it.content })
             assertEquals(model.modelId, result.metrics.model)
         }
