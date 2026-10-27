@@ -13,11 +13,14 @@ import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
+import ru.souz.llms.FileContent
+import ru.souz.llms.FileReference
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.MAX_MESSAGE_FILES
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import kotlin.test.Test
@@ -45,7 +48,7 @@ class NodesToolUseWithKnowledgeTest {
     @Test
     fun `offloading preserves all message metadata`() = runTest {
         val store = RecordingKnowledgeStore()
-        val file = ru.souz.llms.FileContent(ru.souz.llms.FileReference("file-id"), "report.md", "text/markdown", 12)
+        val file = FileContent(FileReference("file-id"), "report.md", "text/markdown", 12)
         val original = LLMRequest.Message(
             role = LLMMessageRole.function,
             content = "x".repeat(8_193),
@@ -54,7 +57,7 @@ class NodesToolUseWithKnowledgeTest {
             name = "LargeTool",
             files = listOf(file),
             replyFiles = listOf(file),
-            detachedReplyFiles = listOf(ru.souz.llms.FileReference("obsolete")),
+            detachedReplyFiles = listOf(FileReference("obsolete")),
         )
 
         val result = executeToolResult(original.content, store, original)
@@ -174,6 +177,23 @@ class NodesToolUseWithKnowledgeTest {
         assertFailsWith<CancellationException> {
             executeToolResult("x".repeat(8_193), store)
         }
+    }
+
+    @Test
+    fun `a selection beyond the reply limit returns a tool error and keeps the previous selection`() = runTest {
+        val selected = (0 until MAX_MESSAGE_FILES).map { FileContent(FileReference("file-$it"), "$it.md", "text/markdown", 12) }
+        val extra = selected.first().copy(file = FileReference("extra"), name = "extra.md")
+        val tool = FixedResultTool("AttachFileToReply", LLMRequest.Message(
+            LLMMessageRole.function, "saved", name = "AttachFileToReply", files = listOf(extra), replyFiles = listOf(extra),
+        ))
+        val result = nodes(RecordingKnowledgeStore()).node(emptySet())
+            .execute(toolContext(tool).copy(replyAttachments = selected), runtime())
+
+        assertEquals(selected, result.replyAttachments)
+        val message = result.history.last()
+        assertEquals("attachment_reply_limit_exceeded", restJsonMapper.readTree(message.content)["error"].asText())
+        assertEquals(listOf(extra), message.files)
+        assertTrue(message.replyFiles.isEmpty())
     }
 
     private suspend fun executeToolResult(

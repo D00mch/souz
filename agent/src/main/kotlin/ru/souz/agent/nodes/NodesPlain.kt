@@ -1,7 +1,5 @@
 package ru.souz.agent.nodes
 
-import ru.souz.llms.applyReplyFileSelection
-
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
 import ru.souz.agent.runtime.AgentToolExecutor
@@ -9,6 +7,7 @@ import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.applyReplyFileSelection
 import ru.souz.llms.toSystemPromptMessage
 
 internal object NodesPlain {
@@ -39,9 +38,9 @@ internal object NodesPlain {
         executor: AgentToolExecutor,
         name: String = "toolUse",
     ): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
-        val messages = executeFunctionCalls(ctx, executor).map { it.message }
-        ctx.map(history = ctx.history + messages) { ctx.history.last().content }
-            .copy(replyAttachments = ctx.replyAttachments.applyReplyFileSelection(messages))
+        val selection = ctx.replyAttachments.applyReplyFileSelection(executeFunctionCalls(ctx, executor).map { it.message })
+        ctx.map(history = ctx.history + selection.messages) { ctx.history.last().content }
+            .copy(replyAttachments = selection.files)
     }
 
     suspend fun executeFunctionCalls(

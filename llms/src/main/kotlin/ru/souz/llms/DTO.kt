@@ -253,8 +253,6 @@ object LLMRequest {
         @field:JsonProperty("function_call") val functionCall: FunctionCall? = null,
         @field:JsonInclude(JsonInclude.Include.NON_EMPTY)
         val files: List<FileContent> = emptyList(),
-        @field:JsonInclude(JsonInclude.Include.NON_EMPTY)
-        val images: List<ImageContent> = emptyList(),
         /** Only trusted tool implementations set this field; model JSON cannot select reply files. */
         @field:JsonInclude(JsonInclude.Include.NON_EMPTY)
         val replyFiles: List<FileContent> = emptyList(),

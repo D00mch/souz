@@ -13,16 +13,37 @@ class ChatRoutingMetadataTest {
         assertEquals(emptyList(), old.files)
         assertFalse(restJsonMapper.readTree(restJsonMapper.writeValueAsString(old)).has("files"))
         val file = FileContent(FileReference("file-id"), "report.md", "text/markdown", 12)
-        val message = old.copy(files = listOf(file), replyFiles = listOf(file), images = listOf(ImageContent(file.file)),
+        val message = old.copy(files = listOf(file), replyFiles = listOf(file),
             detachedReplyFiles = listOf(FileReference("obsolete")))
         assertEquals(message, restJsonMapper.readValue<LLMRequest.Message>(restJsonMapper.writeValueAsString(message)))
         val replacement = file.copy(name = "corrected.md")
         assertEquals(listOf(replacement), listOf(file).applyReplyFileSelection(listOf(
             old.copy(detachedReplyFiles = listOf(file.file)), old.copy(replyFiles = listOf(replacement)),
-        )))
+        )).files)
         assertEquals(emptyList(), listOf(file).applyReplyFileSelection(listOf(
             old.copy(replyFiles = listOf(replacement)), old.copy(detachedReplyFiles = listOf(file.file)),
-        )))
+        )).files)
+    }
+
+    @Test
+    fun `selections beyond message limits become tool errors and leave the selection unchanged`() {
+        val files = (0..MAX_MESSAGE_FILES).map { FileContent(FileReference("file-$it"), "$it.md", "text/markdown", 12) }
+        val calls = files.map { LLMRequest.Message(LLMMessageRole.function, "saved ${it.name}", name = "AttachFileToReply", replyFiles = listOf(it)) }
+        val selection = emptyList<FileContent>().applyReplyFileSelection(calls)
+        assertEquals(files.take(MAX_MESSAGE_FILES), selection.files)
+        assertEquals(calls.take(MAX_MESSAGE_FILES), selection.messages.take(MAX_MESSAGE_FILES))
+        val rejected = selection.messages.last()
+        assertEquals("attachment_reply_limit_exceeded", restJsonMapper.readTree(rejected.content)["error"].asText())
+        assertEquals("saved ${files.last().name}", restJsonMapper.readTree(rejected.content)["result"].asText())
+        assertEquals(emptyList(), rejected.replyFiles)
+        // A combined replacement is accepted when its result fits; oversized bytes are rejected as a whole.
+        val replace = LLMRequest.Message(LLMMessageRole.function, "replaced", detachedReplyFiles = listOf(files.first().file),
+            replyFiles = listOf(files.last()))
+        assertEquals(files.drop(1), selection.files.applyReplyFileSelection(listOf(replace)).files)
+        val large = files.last().copy(sizeBytes = MAX_MESSAGE_FILE_BYTES)
+        assertEquals(listOf(files.first()), listOf(files.first()).applyReplyFileSelection(listOf(
+            replace.copy(replyFiles = listOf(large), detachedReplyFiles = emptyList()),
+        )).files)
     }
 
     @Test

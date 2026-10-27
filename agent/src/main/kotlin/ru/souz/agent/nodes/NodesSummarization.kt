@@ -20,7 +20,7 @@ internal suspend fun LLMChatAPI.compactHistory(
     if (previous.none { it.role != LLMMessageRole.system }) return request.messages
 
     val body = request.copy(
-        messages = previous + LLMRequest.Message(LLMMessageRole.user, SUMMARIZATION_PROMPT),
+        messages = previous.map { it.withFileReferences() } + LLMRequest.Message(LLMMessageRole.user, SUMMARIZATION_PROMPT),
         functions = emptyList(),
         maxTokens = SUMMARIZATION_MAX_OUTPUT_TOKENS,
         isSummarization = true,

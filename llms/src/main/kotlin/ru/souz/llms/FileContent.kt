@@ -13,7 +13,3 @@ data class FileContent(
     val sizeBytes: Long,
     val presentation: FilePresentation = FilePresentation.document,
 )
-
-data class ImageContent(val file: FileReference, val detail: String = "auto") {
-    init { require(detail in setOf("auto", "low", "high")) }
-}

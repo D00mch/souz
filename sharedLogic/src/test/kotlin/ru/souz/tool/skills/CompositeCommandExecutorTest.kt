@@ -14,6 +14,8 @@ import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
+import ru.souz.llms.FileContent
+import ru.souz.llms.FileReference
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -37,12 +39,17 @@ class CompositeCommandExecutorTest {
 
     @Test
     fun `file references and prepared paths pass between composite tools and remain structured results`() = runTest {
-        val file = ru.souz.llms.FileContent(ru.souz.llms.FileReference("file-id"), "report.md", "text/markdown", 12)
+        val file = FileContent(FileReference("file-id"), "report.md", "text/markdown", 12)
         val path = "/workspace/report.md"
-        val access = mockk<ru.souz.agent.spi.AgentAttachmentAccess> {
-            coEvery { prepare(meta, file.file.fileId) } returns ru.souz.agent.spi.PreparedAttachment(file, path)
-            coEvery { register(meta, path, null, file.presentation) } returns file
-            coEvery { register(meta, null, file.file.fileId, file.presentation) } returns file
+        val prepare = fileTool("PrepareAttachment") { args ->
+            assertEquals(file.file.fileId, args["fileId"])
+            LLMRequest.Message(LLMMessageRole.function, restJsonMapper.writeValueAsString(mapOf("attachment" to file, "path" to path)),
+                files = listOf(file))
+        }
+        val sources = mutableListOf<Map<String, Any>>()
+        val attach = fileTool("AttachFileToReply") { args ->
+            sources += args
+            LLMRequest.Message(LLMMessageRole.function, restJsonMapper.writeValueAsString(file), files = listOf(file), replyFiles = listOf(file))
         }
         val command = bundle("""
             inputs: [fileId]
@@ -58,8 +65,7 @@ class CompositeCommandExecutorTest {
                 arguments: {fileId: '${'$'}{saved.file.fileId}'}
             returns: '${'$'}{attached}'
         """)
-        val tools = ru.souz.tool.files.AttachmentTools(access).tools
-        val result = runner(command, tools).invoke(LLMResponse.FunctionCall(ToolInvokeSkill.NAME, mapOf(
+        val result = runner(command, listOf(prepare, attach)).invoke(LLMResponse.FunctionCall(ToolInvokeSkill.NAME, mapOf(
             "skillId" to "skill", "arguments" to mapOf("composite" to "run", "inputs" to mapOf("fileId" to "file-id")),
         )), meta)
         assertEquals(listOf(file), result.files)
@@ -67,26 +73,23 @@ class CompositeCommandExecutorTest {
         val payload = restJsonMapper.readValue(result.content, SandboxCommandResult::class.java)
         assertEquals(0, payload.exitCode)
         assertEquals(file.file.fileId, restJsonMapper.readTree(payload.stdout)["file"]["fileId"].asText())
-        coVerify(exactly = 1) { access.register(meta, path, null, file.presentation) }
-        coVerify(exactly = 1) { access.register(meta, null, file.file.fileId, file.presentation) }
-        val invalid = tools.single { it.fn.name == "AttachFileToReply" }.invoke(LLMResponse.FunctionCall("AttachFileToReply", mapOf("path" to path, "fileId" to "file-id")), meta)
-        assertTrue(restJsonMapper.readTree(invalid.content).has("error"))
-        assertTrue(invalid.replyFiles.isEmpty())
-        coEvery { access.prepare(any(), any()) } throws CancellationException("cancelled")
-        assertFailsWith<CancellationException> {
-            tools.first().invoke(LLMResponse.FunctionCall("PrepareAttachment", mapOf("fileId" to "file-id")), meta)
-        }
+        assertEquals(listOf<Map<String, Any>>(mapOf("path" to path), mapOf("fileId" to file.file.fileId)), sources)
     }
 
     @Test
     fun `reply replacement commits only on composite success while artifacts survive failure and timeout`() = runTest {
-        val first = ru.souz.llms.FileContent(ru.souz.llms.FileReference("v1"), "v1.md", "text/markdown", 12)
-        val corrected = first.copy(file = ru.souz.llms.FileReference("v2"), name = "v2.md")
-        val access = mockk<ru.souz.agent.spi.AgentAttachmentAccess> {
-            coEvery { register(meta, null, "v1", first.presentation) } returns first
-            coEvery { register(meta, null, "v2", corrected.presentation) } returns corrected
-        }
-        val tools = ru.souz.tool.files.AttachmentTools(access).tools
+        val first = FileContent(FileReference("v1"), "v1.md", "text/markdown", 12)
+        val corrected = first.copy(file = FileReference("v2"), name = "v2.md")
+        val files = listOf(first, corrected).associateBy { it.file.fileId }
+        val tools = listOf(
+            fileTool("AttachFileToReply") { args ->
+                val file = files.getValue(args["fileId"] as String)
+                LLMRequest.Message(LLMMessageRole.function, file.name, files = listOf(file), replyFiles = listOf(file))
+            },
+            fileTool("DetachFileFromReply") { args ->
+                LLMRequest.Message(LLMMessageRole.function, "detached", detachedReplyFiles = listOf(FileReference(args["fileId"] as String)))
+            },
+        )
         coEvery { scripts.execute(any(), any(), any(), meta) } returns SandboxCommandResult(2, "", "invalid")
         for ((ending, success) in listOf(
             "" to true,
@@ -110,7 +113,7 @@ class CompositeCommandExecutorTest {
             assertEquals(listOf(first, corrected), result.files)
             assertEquals(if (success) listOf(corrected) else emptyList(), result.replyFiles)
             assertEquals(if (success) listOf(first.file) else emptyList(), result.detachedReplyFiles)
-            assertEquals(if (success) listOf(corrected) else listOf(first), listOf(first).applyReplyFileSelection(listOf(result)))
+            assertEquals(if (success) listOf(corrected) else listOf(first), listOf(first).applyReplyFileSelection(listOf(result)).files)
         }
     }
 
@@ -247,6 +250,11 @@ class CompositeCommandExecutorTest {
         restJsonMapper.readValue(invoke(LLMResponse.FunctionCall(ToolInvokeSkill.NAME, mapOf(
             "skillId" to "skill", "arguments" to mapOf("composite" to command, "inputs" to inputs, "timeoutMillis" to timeout),
         )), meta).content, SandboxCommandResult::class.java)
+
+    private fun fileTool(name: String, result: (Map<String, Any>) -> LLMRequest.Message): LLMToolSetup = mockk<LLMToolSetup> {
+        every { fn } returns LLMRequest.Function(name, name, LLMRequest.Parameters("object"))
+        coEvery { this@mockk.invoke(any(), meta) } answers { result(firstArg<LLMResponse.FunctionCall>().arguments).copy(name = name) }
+    }
 
     private fun tool(name: String, action: suspend (LLMResponse.FunctionCall, ToolInvocationMeta) -> String): LLMToolSetup = mockk<LLMToolSetup> {
         every { fn } returns LLMRequest.Function(name, name, LLMRequest.Parameters("object"))
