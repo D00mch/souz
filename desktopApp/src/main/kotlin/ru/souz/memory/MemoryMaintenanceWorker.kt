@@ -255,7 +255,7 @@ class MemoryMaintenanceWorker(
             }
         }
         val repository = SqliteMemoryRepository(dbPath)
-        return factIds.mapNotNull { factId -> repository.getFactDetails(factId) }
+        return repository.getFactDetails(factIds)
     }
 
     private suspend fun loadDreamerNeighborhood(
@@ -280,7 +280,7 @@ class MemoryMaintenanceWorker(
             .distinct()
             .filterNot { it == anchorFactId }
             .take(NEIGHBORHOOD_FACT_LIMIT - 1)
-        return listOf(anchor) + neighborIds.mapNotNull { repository.getFactDetails(it) }
+        return listOf(anchor) + repository.getFactDetails(neighborIds)
     }
 
     private suspend fun loadNearestFactIds(

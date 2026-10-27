@@ -150,69 +150,88 @@ class SqliteMemoryRepository(
         }
     }
 
-    override suspend fun getFactDetails(factId: String): MemoryFactDetails? = withConnection { connection ->
-        val fact = connection.prepareStatement(
-            """
-            select * from memory_facts
-            where id = ?
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, factId)
-            statement.executeQuery().use { rs -> rs.toFactOrNull() }
-        } ?: return@withConnection null
+    override suspend fun getFactDetails(factId: String): MemoryFactDetails? =
+        getFactDetails(listOf(factId)).singleOrNull()
 
-        val evidence = connection.prepareStatement(
-            """
-            select
-                e.fact_id,
-                e.source_event_id,
-                e.evidence_text,
-                se.id as source_id,
-                se.owner_id as source_owner_id,
-                se.scope_type as source_scope_type,
-                se.scope_id as source_scope_id,
-                se.source_type as source_type,
-                se.source_ref as source_ref,
-                se.text as source_text,
-                se.metadata_json as source_metadata_json,
-                se.created_at as source_created_at
-            from memory_fact_evidence e
-            join memory_source_events se on se.id = e.source_event_id
-            where e.fact_id = ?
-            order by se.created_at desc
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, factId)
-            statement.executeQuery().use { rs ->
-                buildList {
-                    while (rs.next()) {
-                        add(
-                            MemoryEvidenceDetail(
-                                evidence = MemoryEvidence(
-                                    factId = rs.getString("fact_id"),
-                                    sourceEventId = rs.getString("source_event_id"),
-                                    evidenceText = rs.getString("evidence_text"),
-                                ),
-                                sourceEvent = MemorySourceEvent(
-                                    id = rs.getString("source_id"),
-                                    ownerId = MemoryOwnerId(rs.getString("source_owner_id") ?: LEGACY_OWNER_ID),
-                                    scope = MemoryScope(
-                                        type = rs.getString("source_scope_type"),
-                                        id = rs.getString("source_scope_id"),
-                                    ),
-                                    sourceType = rs.getString("source_type"),
-                                    sourceRef = rs.getString("source_ref"),
-                                    text = rs.getString("source_text"),
-                                    metadataJson = rs.getString("source_metadata_json"),
-                                    createdAt = Instant.parse(rs.getString("source_created_at")),
-                                ),
-                            )
-                        )
+    // Dreamer supplies at most 24 IDs. Preserve selection order and omit facts deleted since selection.
+    internal suspend fun getFactDetails(factIds: List<String>): List<MemoryFactDetails> {
+        if (factIds.isEmpty()) return emptyList()
+        return withConnection { connection ->
+            val ids = factIds.distinct()
+            val facts = connection.prepareStatement(
+                """
+                select * from memory_facts
+                where id in (${placeholders(ids.size)})
+                """.trimIndent()
+            ).use { statement ->
+                bindParams(statement, ids)
+                statement.executeQuery().use { rs ->
+                    buildMap {
+                        while (rs.next()) {
+                            val fact = rs.toFact()
+                            put(fact.id, fact)
+                        }
                     }
                 }
             }
+            if (facts.isEmpty()) return@withConnection emptyList()
+
+            val evidence = connection.prepareStatement(
+                """
+                select
+                    e.fact_id,
+                    e.source_event_id,
+                    e.evidence_text,
+                    se.id as source_id,
+                    se.owner_id as source_owner_id,
+                    se.scope_type as source_scope_type,
+                    se.scope_id as source_scope_id,
+                    se.source_type as source_type,
+                    se.source_ref as source_ref,
+                    se.text as source_text,
+                    se.metadata_json as source_metadata_json,
+                    se.created_at as source_created_at
+                from memory_fact_evidence e
+                join memory_source_events se on se.id = e.source_event_id
+                where e.fact_id in (${placeholders(facts.size)})
+                order by se.created_at desc
+                """.trimIndent()
+            ).use { statement ->
+                bindParams(statement, facts.keys.toList())
+                statement.executeQuery().use { rs ->
+                    buildList {
+                        while (rs.next()) {
+                            add(
+                                MemoryEvidenceDetail(
+                                    evidence = MemoryEvidence(
+                                        factId = rs.getString("fact_id"),
+                                        sourceEventId = rs.getString("source_event_id"),
+                                        evidenceText = rs.getString("evidence_text"),
+                                    ),
+                                    sourceEvent = MemorySourceEvent(
+                                        id = rs.getString("source_id"),
+                                        ownerId = MemoryOwnerId(rs.getString("source_owner_id") ?: LEGACY_OWNER_ID),
+                                        scope = MemoryScope(
+                                            type = rs.getString("source_scope_type"),
+                                            id = rs.getString("source_scope_id"),
+                                        ),
+                                        sourceType = rs.getString("source_type"),
+                                        sourceRef = rs.getString("source_ref"),
+                                        text = rs.getString("source_text"),
+                                        metadataJson = rs.getString("source_metadata_json"),
+                                        createdAt = Instant.parse(rs.getString("source_created_at")),
+                                    ),
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+            val evidenceByFactId = evidence.groupBy { it.evidence.factId }
+            factIds.mapNotNull { id ->
+                facts[id]?.let { fact -> MemoryFactDetails(fact, evidenceByFactId[id].orEmpty()) }
+            }
         }
-        MemoryFactDetails(fact = fact, evidence = evidence)
     }
 
     override suspend fun listFacts(filter: MemoryFactFilter): List<MemoryFact> = withConnection { connection ->
