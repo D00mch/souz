@@ -5,6 +5,7 @@ import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.model.OptionAnswer
+import ru.souz.backend.options.model.OptionKind
 import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.options.repository.OptionAnswerUpdateResult
 import ru.souz.backend.options.repository.OptionRepository
@@ -148,6 +149,50 @@ class PostgresOptionRepository(
                         add(resultSet.toOption())
                     }
                 }
+            }
+        }
+    }
+
+    override suspend fun consumeToolConfirmation(
+        userId: String,
+        chatId: UUID,
+        optionId: UUID,
+        purpose: String,
+        executionId: UUID,
+        now: Instant,
+    ): Boolean = dataSource.write { connection ->
+        connection.prepareStatement(
+            """
+            update options set status = ?, answered_at = ?
+            where id = ? and user_id = ? and chat_id = ? and kind = ? and payload_json ->> 'purpose' = ?
+              and status = ? and expires_at > ? and execution_id <> ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, OptionStatus.ANSWERED.value)
+            statement.setInstant(2, now)
+            statement.setObject(3, optionId)
+            statement.setString(4, userId)
+            statement.setObject(5, chatId)
+            statement.setString(6, OptionKind.TOOL_CONFIRMATION.value)
+            statement.setString(7, purpose)
+            statement.setString(8, OptionStatus.PENDING.value)
+            statement.setInstant(9, now)
+            statement.setObject(10, executionId)
+            statement.executeUpdate() == 1
+        }
+    }
+
+    override suspend fun cancelToolConfirmations(userId: String, purpose: String) {
+        dataSource.write { connection ->
+            connection.prepareStatement(
+                "update options set status = ? where user_id = ? and kind = ? and payload_json ->> 'purpose' = ? and status = ?"
+            ).use { statement ->
+                statement.setString(1, OptionStatus.CANCELLED.value)
+                statement.setString(2, userId)
+                statement.setString(3, OptionKind.TOOL_CONFIRMATION.value)
+                statement.setString(4, purpose)
+                statement.setString(5, OptionStatus.PENDING.value)
+                statement.executeUpdate()
             }
         }
     }

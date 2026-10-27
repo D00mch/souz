@@ -48,6 +48,7 @@ class GraphBasedAgentTest {
         val getKnowledgeTool = testTool("GetKnowledge")
         val searchKnowledgeTool = testTool("SearchKnowledge")
         val searchMemoryTool = testTool("SearchMemory")
+        val forgetMemoryTools = listOf(testTool("ForgetMemoryFact"), testTool("ForgetAllMemory"))
         val runtimeCommandTool = testTool("RunSkillCommand")
         val coreTools = AgentCoreTools(
             getSkillByName = getSkillByNameTool,
@@ -57,14 +58,14 @@ class GraphBasedAgentTest {
             searchKnowledge = searchKnowledgeTool,
             searchMemory = searchMemoryTool,
             runtimeCommand = runtimeCommandTool,
+            forgetMemory = forgetMemoryTools,
         )
         val expectedCoreTools = listOf(
             getSkillByNameTool,
             getKnowledgeTool,
             searchKnowledgeTool,
             searchMemoryTool,
-            runtimeCommandTool,
-        )
+        ) + forgetMemoryTools + runtimeCommandTool
         val nodesMemory = NodesMemory(
             memoryRuntime = object : ConversationMemoryRuntime {
                 override suspend fun retrieveMemory(

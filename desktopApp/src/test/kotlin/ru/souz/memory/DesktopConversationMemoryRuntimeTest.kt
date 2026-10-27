@@ -6,9 +6,13 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 class DesktopConversationMemoryRuntimeTest {
     @Test
@@ -67,8 +71,8 @@ class DesktopConversationMemoryRuntimeTest {
             DesktopMemoryContextProvider(NoopDesktopMemoryProjectContextProvider),
         )
 
-        runtime.captureCompletedTurn(
-            CompletedTurnMemoryInput(
+        val capturing = launch(start = CoroutineStart.UNDISPATCHED) {
+            runtime.captureCompletedTurn(CompletedTurnMemoryInput(
                 conversationId = "chat-42",
                 userMessageId = "user-1",
                 assistantMessageId = "assistant-1",
@@ -81,8 +85,11 @@ class DesktopConversationMemoryRuntimeTest {
                         text = "Tool output with next steps.",
                     )
                 ),
-            )
-        )
+            ))
+        }
+        assertFalse(inputSlot.isCaptured)
+        runCurrent()
+        capturing.join()
 
         assertEquals("chat-42", inputSlot.captured.context.conversationId?.value)
         assertEquals("chat-42", inputSlot.captured.context.sessionId?.value)

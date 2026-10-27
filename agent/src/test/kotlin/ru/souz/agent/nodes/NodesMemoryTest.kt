@@ -9,6 +9,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.direct
@@ -192,7 +194,8 @@ class NodesMemoryTest {
                 graphRuntime(),
             )
         }
-        runCurrent()
+        // No dispatcher progress: the host must already have registered this capture.
+        assertTrue(memoryRuntime.captureStarted.isCompleted)
         val captured = withTimeout(1_000) { memoryRuntime.captureStarted.await() }
 
         assertEquals("assistant response", result.input)
@@ -285,6 +288,63 @@ class NodesMemoryTest {
     }
 
     @Test
+    fun `capture keeps every tool name even beyond bounded evidence`() = runTest {
+        val memoryRuntime = RecordingMemoryRuntime()
+        val messages = List(16) { index ->
+            LLMRequest.Message(LLMMessageRole.function, "result", name = "Tool$index")
+        } + listOf(
+            LLMRequest.Message(LLMMessageRole.function, "forgotten", name = "ForgetMemoryFact"),
+            LLMRequest.Message(LLMMessageRole.function, "", name = "ForgetAllMemory"),
+            LLMRequest.Message(LLMMessageRole.assistant, "synthesis", name = "NotATool"),
+        )
+        val context = completedContext(
+            userMessage = "forget it",
+            output = "done",
+            previousHistory = listOf(LLMRequest.Message(LLMMessageRole.function, "old", name = "OldTool")),
+            beforeFinal = messages,
+        )
+
+        NodesMemory(memoryRuntime, backgroundScope).finalizeTurn().execute(context, graphRuntime())
+        runCurrent()
+        val captured = withTimeout(1_000) { memoryRuntime.captureStarted.await() }
+
+        val boundedTools = (0 until 16).map { "Tool$it" }.toSet()
+        assertEquals(boundedTools, captured.evidence.map { it.sourceName }.toSet())
+        assertEquals(boundedTools + setOf("ForgetMemoryFact", "ForgetAllMemory"), captured.toolNames)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["ForgetMemoryFact", "ForgetAllMemory"])
+    fun `capture keeps forgetting tools before mid-run input within the active exchange`(forgetTool: String) = runTest {
+        val memoryRuntime = RecordingMemoryRuntime()
+        val context = completedContext(
+            userMessage = "forget that memory",
+            output = "done",
+            previousHistory = listOf(
+                "system".toSystemPromptMessage(),
+                LLMRequest.Message(LLMMessageRole.user, "previous question"),
+                LLMRequest.Message(LLMMessageRole.function, "old result", name = "OldTool"),
+                LLMRequest.Message(LLMMessageRole.assistant, "previous answer"),
+            ),
+            beforeFinal = listOf(
+                LLMRequest.Message(LLMMessageRole.function, "forgotten", name = forgetTool),
+                LLMRequest.Message(LLMMessageRole.user, "and check my remaining memory"),
+                LLMRequest.Message(LLMMessageRole.function, "remaining facts", name = "SearchMemory"),
+            ),
+        )
+
+        NodesMemory(memoryRuntime, backgroundScope).finalizeTurn().execute(context, graphRuntime())
+        runCurrent()
+        val captured = withTimeout(1_000) { memoryRuntime.captureStarted.await() }
+
+        assertEquals(setOf(forgetTool, "SearchMemory"), captured.toolNames)
+        assertEquals("and check my remaining memory", captured.userMessage)
+        assertEquals("done", captured.assistantMessage)
+        assertEquals(listOf("SearchMemory"), captured.evidence.map { it.sourceName })
+        assertEquals(listOf("remaining facts"), captured.evidence.map { it.text })
+    }
+
+    @Test
     fun `capture failure is isolated and noop runtime does not dispatch`() = runTest {
         val failingRuntime = RecordingMemoryRuntime(captureFailure = IllegalStateException("capture failed"))
         val context = completedContext("hello", "answer")
@@ -337,6 +397,7 @@ class NodesMemoryTest {
         activeTools = emptyList(),
         systemPrompt = "system",
         toolInvocationMeta = meta,
+        activeExchangeStartIndex = previousHistory.size,
     )
 
     private fun okResponse(content: String): LLMResponse.Chat.Ok = LLMResponse.Chat.Ok(

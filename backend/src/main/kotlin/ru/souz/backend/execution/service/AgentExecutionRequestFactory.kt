@@ -51,6 +51,7 @@ internal class AgentExecutionRequestFactory(
         latestDeviceContextJson: String = "{}",
         userMessageMetadataExtras: Map<String, String> = emptyMap(),
         clientToolsEnabled: Boolean = false,
+        trustedInteractive: Boolean = false,
     ): PreparedChatTurn {
         val effectiveSettings = effectiveSettingsResolver.resolve(userId, requestOverrides)
         val provider = findLLMModel(effectiveSettings.defaultModel)?.provider ?: LlmProvider.OPENAI
@@ -64,6 +65,7 @@ internal class AgentExecutionRequestFactory(
                 effectiveSettings.defaultModel == effectiveSettingsResolver.defaultModel() &&
                 listOf(routing.simple, routing.complex).all { effectiveSettingsResolver.isSelectableDefaultModel(userId, it.model) }
         }
+        val memoryMutationAllowed = trustedInteractive && !clientToolsEnabled
         val execution = AgentExecution(
             id = executionId,
             userId = userId,
@@ -93,7 +95,7 @@ internal class AgentExecutionRequestFactory(
                 requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
                 enabledTools = effectiveSettings.enabledTools,
-            ),
+            ) + (METADATA_MEMORY_MUTATION_ALLOWED to memoryMutationAllowed.toString()),
             latestDeviceContextJson = latestDeviceContextJson,
             runtimeOwner = clientThreadRegistry?.runtimeOwner?.takeIf { clientToolsEnabled },
             runtimeLeaseUntil = ClientThreadRuntimeRegistry.leaseUntil().takeIf { clientToolsEnabled },
@@ -119,6 +121,7 @@ internal class AgentExecutionRequestFactory(
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
                 enabledTools = effectiveSettings.enabledTools.toSet(),
                 clientToolsEnabled = clientToolsEnabled,
+                memoryMutationAllowed = memoryMutationAllowed,
                 routing = routing,
             ),
             userMessageMetadata = userMessageMetadata(normalizedClientMessageId) + userMessageMetadataExtras,
@@ -166,6 +169,7 @@ internal class AgentExecutionRequestFactory(
             requestTimeoutMillis = executionMetadataLong(execution, METADATA_REQUEST_TIMEOUT_MILLIS),
             useFewShotExamples = executionMetadataBoolean(execution, METADATA_USE_FEW_SHOT_EXAMPLES),
             enabledTools = executionMetadataStringSet(execution, METADATA_ENABLED_TOOLS),
+            memoryMutationAllowed = executionMetadataBoolean(execution, METADATA_MEMORY_MUTATION_ALLOWED) == true,
         )
     }
 
@@ -269,4 +273,5 @@ private const val METADATA_SHOW_TOOL_EVENTS = "showToolEvents"
 private const val METADATA_REQUEST_TIMEOUT_MILLIS = "requestTimeoutMillis"
 private const val METADATA_USE_FEW_SHOT_EXAMPLES = "useFewShotExamples"
 private const val METADATA_ENABLED_TOOLS = "enabledTools"
+private const val METADATA_MEMORY_MUTATION_ALLOWED = "memoryMutationAllowed"
 private const val OPTION_CONTINUATION_PREFIX = "__option_answer__"

@@ -49,6 +49,7 @@ class MessageService(
             content = content,
             clientMessageId = clientMessageId,
             requestOverrides = requestOverrides,
+            trustedInteractive = true,
         )
 
     private suspend fun requireOwnedChat(userId: String, chatId: UUID): Chat =

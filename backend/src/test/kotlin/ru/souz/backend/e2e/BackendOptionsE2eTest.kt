@@ -78,8 +78,8 @@ class BackendOptionsE2eTest {
 
                 // Changes to the user default must not alter the pending execution's snapshot.
                 if (!narrate) sql { connection ->
-                    // Executions stored before narration existed have no preference key.
-                    connection.prepareStatement("update agent_executions set metadata = metadata - 'narrateSteps' where id = ?").use {
+                    // Older executions have neither a narration preference nor memory deletion authority.
+                    connection.prepareStatement("update agent_executions set metadata = metadata - 'narrateSteps' - 'memoryMutationAllowed' where id = ?").use {
                         it.setObject(1, UUID.fromString(executionId))
                         assertEquals(1, it.executeUpdate())
                     }
@@ -110,6 +110,7 @@ class BackendOptionsE2eTest {
                     .tag("reason", "user_option").timer().count())
                 assertEquals(listOf(effort, effort), runner.reasoningEfforts.toList())
                 assertEquals(listOf(narrate, narrate), runner.narrationPreferences.toList())
+                assertEquals(listOf(true, narrate), runner.memoryMutationPermissions.toList())
                 val events = client.get(BackendHttpRoutes.chatEvents(chatId)) {
                     trusted(userId)
                 }.jsonBody()["items"]
@@ -164,6 +165,7 @@ internal class ScriptedOptionTurnRunner(
 ) : BackendConversationTurnRunner {
     val reasoningEfforts = CopyOnWriteArrayList<String?>()
     val narrationPreferences = CopyOnWriteArrayList<Boolean>()
+    val memoryMutationPermissions = CopyOnWriteArrayList<Boolean>()
     private val waitingConversations = LinkedHashSet<AgentConversationKey>()
 
     override suspend fun run(
@@ -174,6 +176,7 @@ internal class ScriptedOptionTurnRunner(
     ): BackendConversationTurnOutcome {
         reasoningEfforts += request.reasoningEffort
         narrationPreferences += request.narrateSteps
+        memoryMutationPermissions += request.memoryMutationAllowed
         return if (waitingConversations.add(conversationKey)) {
             beforeChoice()
             eventSink.emit(

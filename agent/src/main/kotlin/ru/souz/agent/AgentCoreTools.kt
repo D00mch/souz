@@ -12,13 +12,14 @@ class AgentCoreTools(
     searchMemory: LLMToolSetup,
     runtimeCommand: LLMToolSetup,
     private val spawnSubagent: ((AgentSettings) -> LLMToolSetup)? = null,
+    forgetMemory: List<LLMToolSetup> = emptyList(),
 ) {
     val graphAlwaysInlineResultTools: List<LLMToolSetup> = listOf(
         getSkillByName,
         getKnowledge,
         searchKnowledge,
     )
-    val graphCoreTools: List<LLMToolSetup> = graphAlwaysInlineResultTools + searchMemory + runtimeCommand
+    val graphCoreTools: List<LLMToolSetup> = graphAlwaysInlineResultTools + searchMemory + forgetMemory + runtimeCommand
 
     val skillsAlwaysInlineResultTools: List<LLMToolSetup> = listOf(
         getSkillByName,
@@ -27,7 +28,7 @@ class AgentCoreTools(
         getKnowledge,
         searchKnowledge,
     )
-    val skillsCoreTools: List<LLMToolSetup> = skillsAlwaysInlineResultTools + searchMemory + runtimeCommand
+    val skillsCoreTools: List<LLMToolSetup> = skillsAlwaysInlineResultTools + searchMemory + forgetMemory + runtimeCommand
 
     fun graphTools(settings: AgentSettings): List<LLMToolSetup> =
         graphCoreTools + listOfNotNull(spawnSubagent?.invoke(settings))

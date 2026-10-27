@@ -70,6 +70,8 @@ class AgentExecutionService internal constructor(
         latestDeviceContextJson: String = "{}",
         userMessageMetadata: Map<String, String> = emptyMap(),
         clientToolsEnabled: Boolean = false,
+        // Only authenticated owner messages may opt in; hooks and autonomous work must not.
+        trustedInteractive: Boolean = false,
     ): SendMessageResult {
         val prepared = prepareChatTurn(
             userId = userId,
@@ -81,6 +83,7 @@ class AgentExecutionService internal constructor(
             latestDeviceContextJson = latestDeviceContextJson,
             userMessageMetadata = userMessageMetadata,
             clientToolsEnabled = clientToolsEnabled,
+            trustedInteractive = trustedInteractive,
         )
         prepared.normalizedClientMessageId?.let { normalizedClientMessageId ->
             executionRepository.findByClientMessageId(userId, chatId, normalizedClientMessageId)
@@ -173,6 +176,7 @@ class AgentExecutionService internal constructor(
         latestDeviceContextJson: String = "{}",
         userMessageMetadata: Map<String, String> = emptyMap(),
         clientToolsEnabled: Boolean = false,
+        trustedInteractive: Boolean = false,
     ): PreparedChatTurn {
         requireOwnedChat(userId, chatId)
         return requestFactory.prepareChatTurn(
@@ -185,6 +189,7 @@ class AgentExecutionService internal constructor(
             latestDeviceContextJson = latestDeviceContextJson,
             userMessageMetadataExtras = userMessageMetadata,
             clientToolsEnabled = clientToolsEnabled,
+            trustedInteractive = trustedInteractive,
         )
     }
 
@@ -224,6 +229,7 @@ class AgentExecutionService internal constructor(
         )
     }
 
+    /** Executes an authenticated owner message from a linked Telegram or VK conversation. */
     suspend fun executeChatTurnAndAwaitCompletion(
         userId: String,
         chatId: UUID,
@@ -236,7 +242,7 @@ class AgentExecutionService internal constructor(
         val subscription = eventService.observeLive(userId, chatId)
         var sender: Job? = null
         try {
-            val started = executeChatTurn(userId, chatId, content, clientMessageId, requestOverrides)
+            val started = executeChatTurn(userId, chatId, content, clientMessageId, requestOverrides, trustedInteractive = true)
             sender = launch {
                 for (event in subscription.events) {
                     if (event.executionId != started.execution.id) continue
@@ -283,7 +289,9 @@ class AgentExecutionService internal constructor(
         ) {
             try {
                 val run = suspend {
-                    finalizer.runExecution(execution, conversationKey, turnRequest, eventSink)
+                    // Also fence hook continuations whose metadata predates explicit authorization.
+                    val authorized = turnRequest.copy(memoryMutationAllowed = turnRequest.memoryMutationAllowed && !isHook)
+                    finalizer.runExecution(execution, conversationKey, authorized, eventSink)
                 }
                 // Both initial turns and option continuations acquire capacity for actual agent work.
                 if (isHook) hookSlots.withPermit { withTimeout(hookConfig.executionTimeoutMillis) { run() } } else run()

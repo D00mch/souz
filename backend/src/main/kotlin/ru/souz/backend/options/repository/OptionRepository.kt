@@ -22,6 +22,21 @@ interface OptionRepository {
         limit: Int = DEFAULT_LIMIT,
     ): List<Option>
 
+    /**
+     * Answers a pending unexpired tool confirmation of [purpose] once; false unless another execution
+     * of the same chat created it.
+     */
+    suspend fun consumeToolConfirmation(
+        userId: String,
+        chatId: UUID,
+        optionId: UUID,
+        purpose: String,
+        executionId: UUID,
+        now: Instant,
+    ): Boolean
+
+    suspend fun cancelToolConfirmations(userId: String, purpose: String)
+
     companion object {
         const val DEFAULT_LIMIT: Int = 50
     }

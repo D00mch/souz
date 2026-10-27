@@ -7,6 +7,7 @@ import java.time.Clock
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
+import kotlinx.coroutines.delay
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.memory.hindsight.HistoryMemoryDocument
 import ru.souz.backend.memory.hindsight.HistoryMemoryFragment
@@ -113,6 +114,40 @@ internal class PostgresHistoryMemoryRepository(
         val now = clock.instant()
         return update(fragment, "completed_at = ?, failed_at = ?, payload = null, lease_token = null, lease_until = null",
             now, now.takeIf { failed })
+    }
+
+    suspend fun hasPending(userId: String): Boolean = dataSource.read { connection ->
+        connection.prepareStatement(
+            "select exists(select 1 from history_memory_fragments where user_id = ? and completed_at is null)",
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.executeQuery().use { it.next() && it.getBoolean(1) }
+        }
+    }
+
+    /**
+     * Drops the user's fragments, waiting up to 10 seconds for the ones a worker is sending,
+     * so their retains reach Hindsight before the bank is deleted. Fails if capture is still active.
+     */
+    suspend fun forget(userId: String) {
+        repeat(20) {
+            val sending = dataSource.write { connection ->
+                connection.prepareStatement(
+                    "delete from history_memory_fragments where user_id = ? and (lease_until is null or lease_until <= ?)",
+                ).use { statement ->
+                    statement.setString(1, userId)
+                    statement.setInstant(2, clock.instant())
+                    statement.executeUpdate()
+                }
+                connection.prepareStatement("select exists(select 1 from history_memory_fragments where user_id = ?)").use { statement ->
+                    statement.setString(1, userId)
+                    statement.executeQuery().use { it.next() && it.getBoolean(1) }
+                }
+            }
+            if (!sending) return
+            delay(500)
+        }
+        error("History memory capture is still active; bank deletion was not attempted")
     }
 
     suspend fun retry(fragment: HistoryMemoryFragment): Boolean =

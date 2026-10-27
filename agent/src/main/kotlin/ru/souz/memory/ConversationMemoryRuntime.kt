@@ -66,6 +66,8 @@ data class CompletedTurnMemoryInput(
     val assistantMessage: String,
     val evidence: List<CompletedTurnEvidence> = emptyList(),
     val timeZone: String? = null,
+    /** Every tool in the active exchange, including before mid-run input or outside bounded [evidence]. */
+    val toolNames: Set<String> = emptySet(),
 )
 
 /**
@@ -126,6 +128,10 @@ interface ConversationMemoryRuntime {
         maxFacts: Int,
     ): List<SearchFact> = emptyList()
 
+    /**
+     * Entered undispatched after finalization. Register any deletion barrier before suspending,
+     * then yield before serialization or IO so finalization does not wait for capture work.
+     */
     suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput)
 }
 

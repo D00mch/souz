@@ -1,5 +1,6 @@
 package ru.souz.memory
 
+import kotlinx.coroutines.yield
 import ru.souz.db.ConfigStore
 import java.util.UUID
 
@@ -70,6 +71,8 @@ class DesktopConversationMemoryRuntime(
     }
 
     override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) {
+        // Graph finalization enters capture undispatched so hosts can register deletion barriers.
+        yield()
         val context = contextProvider.current(input.conversationId)
         captureService.captureAfterTurn(
             MemoryCaptureInput(
