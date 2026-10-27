@@ -38,6 +38,7 @@ import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.backend.toolcall.repository.ToolCallRepository
+import ru.souz.llms.FileContent
 
 data class CancelExecutionResult(
     val execution: AgentExecution,
@@ -70,7 +71,7 @@ class AgentExecutionService internal constructor(
         latestDeviceContextJson: String = "{}",
         userMessageMetadata: Map<String, String> = emptyMap(),
         clientToolsEnabled: Boolean = false,
-        attachments: List<ru.souz.llms.FileContent> = emptyList(),
+        attachments: List<FileContent> = emptyList(),
     ): SendMessageResult {
         val prepared = prepareChatTurn(
             userId = userId,
@@ -175,7 +176,7 @@ class AgentExecutionService internal constructor(
         latestDeviceContextJson: String = "{}",
         userMessageMetadata: Map<String, String> = emptyMap(),
         clientToolsEnabled: Boolean = false,
-        attachments: List<ru.souz.llms.FileContent> = emptyList(),
+        attachments: List<FileContent> = emptyList(),
     ): PreparedChatTurn {
         requireOwnedChat(userId, chatId)
         return requestFactory.prepareChatTurn(
@@ -236,7 +237,7 @@ class AgentExecutionService internal constructor(
         clientMessageId: String? = null,
         requestOverrides: UserSettingsOverrides = UserSettingsOverrides(),
         onProgress: suspend (String) -> Unit,
-        attachments: List<ru.souz.llms.FileContent> = emptyList(),
+        attachments: List<FileContent> = emptyList(),
     ): SendMessageResult = coroutineScope {
         // Subscribe before execution can publish its first block; no replay or device commands.
         val subscription = eventService.observeLive(userId, chatId)

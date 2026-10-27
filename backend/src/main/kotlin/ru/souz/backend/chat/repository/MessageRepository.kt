@@ -5,6 +5,7 @@ import java.time.temporal.ChronoUnit
 import java.util.UUID
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
+import ru.souz.llms.FileContent
 
 interface MessageRepository {
     suspend fun append(
@@ -15,7 +16,7 @@ interface MessageRepository {
         metadata: Map<String, String> = emptyMap(),
         id: UUID = UUID.randomUUID(),
         createdAt: Instant = Instant.now().truncatedTo(ChronoUnit.MICROS),
-        attachments: List<ru.souz.llms.FileContent> = emptyList(),
+        attachments: List<FileContent> = emptyList(),
     ): ChatMessage
 
     suspend fun get(userId: String, chatId: UUID, seq: Long): ChatMessage?

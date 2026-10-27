@@ -83,7 +83,7 @@ class BackendAppConfigTest {
                 env = mapOf(
                     "SOUZ_BACKEND_HOST" to " 0.0.0.0 ",
                     "SOUZ_BACKEND_PORT" to "9090",
-                    "SOUZ_ATTACHMENT_HISTORY_LIMIT" to "7",
+                    "SOUZ_ATTACHMENTS_HISTORY_LIMIT" to "7",
                     "SOUZ_BACKEND_PROXY_TOKEN" to " proxy-secret ",
                     "SOUZ_MASTER_KEY" to "test-master-key",
                 ),
@@ -128,7 +128,7 @@ class BackendAppConfigTest {
         for (invalid in listOf("0", "-1", "invalid")) {
             assertFailsWith<BackendConfigurationException> {
                 BackendAppConfig.load(MapBackendConfigSource(env = mapOf(
-                    "SOUZ_MASTER_KEY" to "test-master-key", "SOUZ_ATTACHMENT_HISTORY_LIMIT" to invalid,
+                    "SOUZ_MASTER_KEY" to "test-master-key", "SOUZ_ATTACHMENTS_HISTORY_LIMIT" to invalid,
                 ))).validate()
             }
         }

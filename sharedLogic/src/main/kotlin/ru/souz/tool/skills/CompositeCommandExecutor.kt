@@ -10,6 +10,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.agent.skills.bundle.CompositeTemplate
 import ru.souz.agent.skills.bundle.SkillBundle
+import ru.souz.llms.FileContent
+import ru.souz.llms.FileReference
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
@@ -28,9 +30,9 @@ internal suspend fun SkillCommandExecutor.executeComposite(
 ): SandboxCommandResult {
     var location = "composite '${arguments.composite}'"
     val attachments = mutableListOf<String>()
-    val files = mutableListOf<ru.souz.llms.FileContent>()
-    val replyFiles = linkedMapOf<ru.souz.llms.FileReference, ru.souz.llms.FileContent>()
-    val detachedReplyFiles = linkedSetOf<ru.souz.llms.FileReference>()
+    val files = mutableListOf<FileContent>()
+    val replyFiles = linkedMapOf<FileReference, FileContent>()
+    val detachedReplyFiles = linkedSetOf<FileReference>()
     val result = try {
         val spec = bundle.manifest.commands[arguments.composite]
             ?: error("Command is unavailable.")

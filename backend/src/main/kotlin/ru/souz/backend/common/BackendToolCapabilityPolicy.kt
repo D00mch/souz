@@ -1,6 +1,8 @@
 package ru.souz.backend.common
 
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.backend.attachments.ToolAttachFileToReply
+import ru.souz.backend.attachments.ToolDetachFileFromReply
 import ru.souz.backend.personality.PersonalityTool
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.files.ToolGenerateImage
@@ -45,7 +47,7 @@ object BackendToolCapabilityPolicy {
     ): AgentToolCatalog {
         val isEnabled = { toolName: String ->
             (enabledToolNames == null || toolName in enabledToolNames) &&
-                (replyAttachmentsEnabled || (toolName != "AttachFileToReply" && toolName != "DetachFileFromReply"))
+                (replyAttachmentsEnabled || (toolName != ToolAttachFileToReply.NAME && toolName != ToolDetachFileFromReply.NAME))
         }
         return AgentToolCatalog.compose(
             hostableTools(processToolCatalog, isEnabled),

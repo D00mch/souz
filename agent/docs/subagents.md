@@ -6,7 +6,7 @@ The parent receives `SubagentTool` as an ordinary `LLMToolSetup` and awaits each
 
 The host supplies the same LLM API and complete invocation metadata. The tool leaves child `sideEffects` uncollected and sets `AgentRuntimeEventSink.NONE`; required interactions emitted by host tools retain their existing owners. The parent records the enclosing spawn tool call and its result.
 
-Completed child output carries its selected files as structured `files`, also included in the result JSON for subsequent tool arguments. It does not set the parent's `replyFiles`: the parent explicitly selects any file it wants to include in its reply. Child and parent file access share invocation ownership through the host's `AgentAttachmentAccess`.
+Completed child output carries its selected files as structured `files`, also included in the result JSON for subsequent tool arguments. It does not set the parent's `replyFiles`: the parent explicitly selects any file it wants to include in its reply. Child and parent file tools share the invocation's ownership.
 
 ## Why this is fragile
 

@@ -19,6 +19,8 @@ import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
+import ru.souz.llms.FileContent
+import ru.souz.llms.FileReference
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMException
 import ru.souz.llms.LLMMessageRole
@@ -40,7 +42,7 @@ import kotlin.test.assertTrue
 class SubagentToolTest {
     @Test
     fun `child files return to the parent without selecting the parent reply`() = runTest {
-        val file = ru.souz.llms.FileContent(ru.souz.llms.FileReference("child-file"), "report.md", "text/markdown", 12)
+        val file = FileContent(FileReference("child-file"), "report.md", "text/markdown", 12)
         val selected = mockk<LLMToolSetup> {
             every { fn } returns LLMRequest.Function("Selected", "Selected", LLMRequest.Parameters("object"))
         }

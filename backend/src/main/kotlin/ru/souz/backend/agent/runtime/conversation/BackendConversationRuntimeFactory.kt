@@ -9,6 +9,7 @@ import kotlinx.coroutines.plus
 import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
+import ru.souz.agent.DEFAULT_ATTACHMENT_HISTORY_LIMIT
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.SkillClassifier
@@ -112,7 +113,7 @@ internal class BackendConversationRuntimeFactory(
     private val metrics: BackendMetrics? = null,
     private val namedModels: Map<String, NamedLlmModel> = emptyMap(),
     private val providerApiOverride: ((LlmProvider) -> LLMChatAPI?)? = null,
-    private val attachmentHistoryLimit: Int = ru.souz.agent.DEFAULT_ATTACHMENT_HISTORY_LIMIT,
+    private val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
 ) {
     private val modelFailures = ModelFailureMemory()
 

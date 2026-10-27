@@ -7,6 +7,7 @@ import javax.sql.DataSource
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.MessageRepository
+import ru.souz.llms.FileContent
 
 class PostgresMessageRepository(
     private val dataSource: DataSource,
@@ -19,9 +20,10 @@ class PostgresMessageRepository(
         metadata: Map<String, String>,
         id: UUID,
         createdAt: Instant,
-        attachments: List<ru.souz.llms.FileContent>,
+        attachments: List<FileContent>,
     ): ChatMessage = dataSource.write { connection ->
         connection.lockChat(userId, chatId)
+        connection.validateAttachments(userId, attachments)
         append(connection, userId, chatId, role, content, metadata, id, createdAt, attachments)
     }
 
@@ -34,9 +36,8 @@ class PostgresMessageRepository(
         metadata: Map<String, String>,
         id: UUID,
         createdAt: Instant,
-        attachments: List<ru.souz.llms.FileContent> = emptyList(),
+        attachments: List<FileContent> = emptyList(),
     ): ChatMessage {
-        connection.validateAttachments(userId, attachments)
         val nextSeq = connection.prepareStatement(
             "select coalesce(max(seq), 0) + 1 from messages where user_id = ? and chat_id = ?"
         ).use { statement ->

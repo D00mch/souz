@@ -7,6 +7,7 @@ import java.util.UUID
 import javax.sql.DataSource
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import org.slf4j.LoggerFactory
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.agent.spi.RoutedModel
@@ -18,6 +19,7 @@ import ru.souz.backend.execution.repository.ActiveAgentExecutionConflictExceptio
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.repository.CommittedAgentTurn
 import ru.souz.backend.metrics.BackendMetrics
+import ru.souz.llms.FileContent
 
 class PostgresAgentExecutionRepository(
     private val dataSource: DataSource,
@@ -104,7 +106,7 @@ class PostgresAgentExecutionRepository(
         usage: AgentExecutionUsage,
         output: String?,
         assistantMessageId: UUID?,
-        attachments: List<ru.souz.llms.FileContent>,
+        attachments: List<FileContent>,
         routedModel: RoutedModel?,
     ): CommittedAgentTurn? {
         require(state.userId == expected.userId && state.chatId == expected.chatId)
@@ -120,21 +122,25 @@ class PostgresAgentExecutionRepository(
 
             val message = output?.let { content ->
                 val writer = PostgresMessageRepository(dataSource)
+                // A selected file may expire or be cleaned up before the commit; keep the answer without it.
+                val available = connection.availableAttachments(current.userId, attachments)
+                if (available.size != attachments.size) {
+                    logger.warn("Dropped {} unavailable reply attachments from execution {}", attachments.size - available.size, current.id)
+                }
                 current.assistantMessageId?.let { id ->
                     checkNotNull(writer.updateContent(connection, current.userId, current.chatId, id, content)).let {
-                        connection.validateAttachments(current.userId, attachments)
                         connection.prepareStatement("update messages set attachments = ? where user_id = ? and id = ?").use { statement ->
-                            statement.setJson(1, postgresStorageMapper.writeValueAsString(attachments))
+                            statement.setJson(1, postgresStorageMapper.writeValueAsString(available))
                             statement.setString(2, current.userId)
                             statement.setObject(3, id)
                             statement.executeUpdate()
                         }
-                        it.copy(attachments = attachments)
+                        it.copy(attachments = available)
                     }
                 } ?: writer.append(
                     connection, current.userId, current.chatId, ChatRole.ASSISTANT, content,
                     emptyMap(), requireNotNull(assistantMessageId), Instant.now(),
-                    attachments,
+                    available,
                 )
             }
             val savedState = if (message?.seq == state.basedOnMessageSeq + 1L) {
@@ -411,4 +417,7 @@ class PostgresAgentExecutionRepository(
         statement.setInstant(20, execution.runtimeLeaseUntil)
     }
 
+    private companion object {
+        val logger = LoggerFactory.getLogger(PostgresAgentExecutionRepository::class.java)
+    }
 }

@@ -5,6 +5,7 @@ import java.time.ZoneId
 import java.util.Locale
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.chatId
+import ru.souz.llms.FileContent
 import ru.souz.llms.LLMRequest
 
 /** Persisted backend conversation snapshot used to resume the next agent turn. */
@@ -16,7 +17,7 @@ data class AgentConversationSession(
     val basedOnMessageSeq: Long = 0L,
     val rowVersion: Long = 0L,
     val attachmentExecutionId: String? = null,
-    val replyAttachments: List<ru.souz.llms.FileContent> = emptyList(),
+    val replyAttachments: List<FileContent> = emptyList(),
 )
 
 internal fun AgentConversationSession.toState(key: AgentConversationKey): AgentConversationState =

@@ -9,6 +9,7 @@ import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.AgentConversationSession
+import ru.souz.llms.FileContent
 import ru.souz.llms.LLMResponse
 
 internal sealed interface BackendConversationTurnOutcome {
@@ -20,7 +21,7 @@ internal sealed interface BackendConversationTurnOutcome {
         val output: String,
         override val usage: LLMResponse.Usage,
         override val session: AgentConversationSession,
-        val attachments: List<ru.souz.llms.FileContent> = emptyList(),
+        val attachments: List<FileContent> = emptyList(),
         override val routedModel: RoutedModel? = null,
     ) : BackendConversationTurnOutcome
 

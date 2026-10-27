@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.Flow
 import ru.souz.agent.state.AgentContext
 import ru.souz.graph.Node
 import ru.souz.graph.StepInfo
+import ru.souz.llms.FileContent
 import ru.souz.llms.LLMRequest
 
 /** Text produced by the LLM branch identified by [streamRevision]. */
@@ -12,17 +13,20 @@ data class AgentStreamChunk(
     val streamRevision: Long,
 )
 
+/** Default number of recent unique file references a compacted summary keeps for the model. */
+const val DEFAULT_ATTACHMENT_HISTORY_LIMIT: Int = 20
+
 /** Durable messages observed before one user input submitted to an active execution. */
 data class ActiveRunInput(
     val history: List<LLMRequest.Message> = emptyList(),
     val input: String,
-    val attachments: List<MessageAttachment> = emptyList(),
+    val attachments: List<FileContent> = emptyList(),
 )
 
 data class AgentExecutionResult(
     val output: String,
     val context: AgentContext<String>,
-    val attachments: List<MessageAttachment> = emptyList(),
+    val attachments: List<FileContent> = emptyList(),
 )
 
 typealias GraphStepCallback =

@@ -8,6 +8,7 @@ import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.model.AgentExecutionUsage
+import ru.souz.llms.FileContent
 
 class ActiveAgentExecutionConflictException(
     val userId: String,
@@ -37,7 +38,7 @@ interface AgentExecutionRepository {
         usage: AgentExecutionUsage,
         output: String? = null,
         assistantMessageId: UUID? = null,
-        attachments: List<ru.souz.llms.FileContent> = emptyList(),
+        attachments: List<FileContent> = emptyList(),
         /** Replaces the execution's model and provider, so an option continuation resumes on it. */
         routedModel: RoutedModel? = null,
     ): CommittedAgentTurn?

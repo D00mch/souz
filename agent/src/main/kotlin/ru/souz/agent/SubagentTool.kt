@@ -6,6 +6,7 @@ import kotlinx.coroutines.ensureActive
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
+import ru.souz.llms.FileContent
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -62,7 +63,7 @@ class SubagentTool(
 
     override suspend fun invoke(functionCall: LLMResponse.FunctionCall, meta: ToolInvocationMeta): LLMRequest.Message {
         // Return failures as tool results so parent graph retries cannot replay child side effects.
-        var files: List<MessageAttachment> = emptyList()
+        var files: List<FileContent> = emptyList()
         val result = try {
             val input = try {
                 restJsonMapper.convertValue(functionCall.arguments, Input::class.java)
