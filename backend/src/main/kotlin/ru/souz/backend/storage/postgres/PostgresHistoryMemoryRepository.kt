@@ -14,10 +14,12 @@ import ru.souz.backend.memory.hindsight.HistoryMemoryFragment
 import ru.souz.backend.memory.hindsight.HistoryMemorySource
 import ru.souz.backend.memory.hindsight.historyMemoryDocuments
 import ru.souz.backend.memory.hindsight.memoryTimestamp
+import ru.souz.backend.metrics.BackendMetrics
 
 internal class PostgresHistoryMemoryRepository(
     private val dataSource: DataSource,
     private val clock: Clock = Clock.systemUTC(),
+    private val metrics: BackendMetrics? = null,
 ) {
     /** Caller holds the chat lock and commits this with the message and request receipt. */
     fun enqueue(connection: Connection, message: ChatMessage) {
@@ -113,7 +115,7 @@ internal class PostgresHistoryMemoryRepository(
     suspend fun complete(fragment: HistoryMemoryFragment, failed: Boolean = false): Boolean {
         val now = clock.instant()
         return update(fragment, "completed_at = ?, failed_at = ?, payload = null, lease_token = null, lease_until = null",
-            now, now.takeIf { failed })
+            now, now.takeIf { failed }, afterCommit = { updated -> if (updated && failed) metrics?.historyMemory?.failed() })
     }
 
     suspend fun hasPending(userId: String): Boolean = dataSource.read { connection ->
@@ -163,7 +165,8 @@ internal class PostgresHistoryMemoryRepository(
         fragment: HistoryMemoryFragment,
         assignment: String,
         vararg values: Any?,
-    ): Boolean = dataSource.write { connection ->
+        afterCommit: (Boolean) -> Unit = {},
+    ): Boolean = dataSource.write(afterCommit) { connection ->
         connection.prepareStatement(
             "update history_memory_fragments set $assignment where id = ? and lease_token = ? and lease_until > ?",
         ).use { statement ->

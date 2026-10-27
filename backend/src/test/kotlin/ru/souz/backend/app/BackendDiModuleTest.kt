@@ -2,6 +2,7 @@ package ru.souz.backend.app
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotEquals
@@ -51,6 +52,9 @@ import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntime
 import ru.souz.backend.memory.hindsight.HistoryMemoryDocument
+import ru.souz.backend.e2e.fields
+import ru.souz.backend.e2e.withMemoryLogs
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.settings.repository.BackendServerPreferenceStore
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.BackendSettingsProvider
@@ -146,7 +150,7 @@ class BackendDiModuleTest {
     }
 
     @Test
-    fun `both capture paths send the retain setting and accept optional operation metadata`() = runTest {
+    fun `both capture paths send the retain setting and accept optional operation metadata`() = withMemoryLogs { logs -> runTest {
         for (retainAsync in listOf(true, false)) {
             val config = testAppConfig().copy(hindsightApiUrl = "http://hindsight.test", hindsightRetainAsync = retainAsync)
             var response = ""
@@ -168,23 +172,28 @@ class BackendDiModuleTest {
                 val memory = di.direct.instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime
                 val chatId = UUID.randomUUID()
                 val context = MemoryContext(MemoryOwnerId("owner"), ConversationId(chatId.toString()), null, null)
-                for (metadata in listOf(
-                    "", ""","async":false""", ""","async":true,"operation_id":"op-1"""",
-                    ""","operation_ids":["op-2","op-3"]""",
-                    ""","operation_id":null,"operation_ids":["op-4"]""",
-                    ""","operation_id":{},"operation_ids":{}""",
+                // Response metadata with the operation IDs and async flag it reports; without a reported ID,
+                // and for the lost response, records carry the submitted one.
+                for ((metadata, reportedId, reportedAsync) in listOf(
+                    Triple("", null, null),
+                    Triple(""","async":false""", null, false),
+                    Triple(""","async":true,"operation_id":"op-1"""", "op-1", true),
+                    Triple(""","operation_ids":["op-2","op-3"]""", "op-2,op-3", null),
+                    Triple(""","operation_id":null,"operation_ids":["op-4"]""", "op-4", null),
+                    Triple(""","operation_id":{},"operation_ids":{}""", null, null),
                 )) {
                     response = """{"success":true$metadata}"""
                     loseResponse = true
+                    bodies.clear()
+                    val logged = logs.size
                     memory.captureCompletedTurn(CompletedTurnMemoryInput(
                         context, chatId.toString(), "message-1", "reply-1", userMessage = "I like tea", assistantMessage = "Noted",
                     ))
                     memory.captureHistory("owner", chatId, listOf(
                         HistoryMemoryDocument("history-1", "dialogue", "2026-09-27T22:30:00Z", listOf("m-1"), emptyList()),
                     ))
-                }
-                assertEquals(18, bodies.size)
-                bodies.chunked(3).forEach { (first, retry, history) ->
+                    assertEquals(3, bodies.size)
+                    val (first, retry, history) = bodies
                     assertEquals(first, retry)
                     if (retainAsync) {
                         UUID.fromString(assertNotNull(first["operation_id"]).asText())
@@ -194,10 +203,26 @@ class BackendDiModuleTest {
                         assertNull(first["operation_id"])
                         assertNull(history["operation_id"])
                     }
+                    fun accepted(body: JsonNode) =
+                        listOfNotNull((reportedId ?: body["operation_id"]?.asText())?.let { "operation_id" to it }).toMap() +
+                            ("extraction" to if (reportedAsync ?: retainAsync) "queued" else "completed")
+                    assertEquals(listOf(
+                        mapOf("event" to "memory.retain_turn", "outcome" to "error", "document_id" to "souz-turn-message-1",
+                            "attempt" to "1", "category" to "IOException") +
+                            listOfNotNull(first["operation_id"]?.let { "operation_id" to it.asText() }),
+                        mapOf("event" to "memory.retain_turn", "outcome" to "success", "document_id" to "souz-turn-message-1",
+                            "attempt" to "2") + accepted(retry),
+                        mapOf("event" to "memory.retain_history", "outcome" to "success", "document_id" to "history-1",
+                            "attempt" to "1") + accepted(history),
+                    ), logs.drop(logged).map { it.fields() })
                 }
+                assertFalse(logs.any { record -> listOf("I like tea", "Noted", "dialogue").any { it in "${record.formattedMessage} ${record.keyValuePairs}" } })
+                val metrics = di.direct.instance<BackendMetrics>().registry.scrape()
+                listOf("retain_turn\",outcome=\"error\"} 6.0", "retain_turn\",outcome=\"success\"} 6.0", "retain_history\",outcome=\"success\"} 6.0")
+                    .forEach { assertTrue(metrics.contains("souz_memory_requests_total{operation=\"$it"), it) }
             }
         }
-    }
+    } }
 
     @Test
     fun `backend binds only postgres repositories`() {

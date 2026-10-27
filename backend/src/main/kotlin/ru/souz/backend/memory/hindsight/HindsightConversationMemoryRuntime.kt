@@ -24,6 +24,9 @@ import java.time.Clock
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
+import ru.souz.backend.metrics.BackendMetrics
+import ru.souz.backend.metrics.metricOutcome
+import ru.souz.backend.metrics.responseMetricOutcome
 import ru.souz.memory.CompletedTurnMemoryInput
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.ExplicitMemoryIntent
@@ -47,6 +50,7 @@ internal const val MEMORY_MUTATION_NOTICE =
 class HindsightConversationMemoryRuntime(
     private val httpClient: HttpClient,
     baseUrl: String,
+    private val metrics: BackendMetrics,
     private val apiToken: String? = null,
     private val clock: Clock = Clock.systemUTC(),
     private val retainAsync: Boolean = true,
@@ -62,10 +66,10 @@ class HindsightConversationMemoryRuntime(
             else -> Unit
         }
 
-        val bankId = request.context.ownerId.value
         val maxFacts = request.maxFacts ?: MemorySearchPolicy.DEFAULT_MAX_FACTS
         return try {
             val items = recall(
+                operation = "recall",
                 context = request.context,
                 query = request.query,
                 maxFacts = maxFacts,
@@ -80,8 +84,8 @@ class HindsightConversationMemoryRuntime(
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (error: Exception) {
-            logger.warn("Hindsight recall failed for bank {}: {}", bankId, error.message)
+        } catch (_: Exception) {
+            // measured() has logged the failed call.
             MemoryRetrievalResult(renderedPromptBlock = null)
         }
     }
@@ -92,6 +96,7 @@ class HindsightConversationMemoryRuntime(
         lexicalHints: List<String>,
         maxFacts: Int,
     ): List<ConversationMemoryRuntime.SearchFact> = recall(
+        operation = "search",
         context = context,
         query = (listOf(semanticQuery) + lexicalHints).joinToString(" "),
         maxFacts = maxFacts,
@@ -119,7 +124,6 @@ class HindsightConversationMemoryRuntime(
             -> return
         }
 
-        val bankId = input.context.ownerId.value
         try {
             val content = (
                 dialogueMemoryRecords(MemorySanitizer.redact(input.userMessage.trim()), mapOf("role" to "user")) +
@@ -131,18 +135,18 @@ class HindsightConversationMemoryRuntime(
                 put("tags", tags)
                 input.userMessageId?.let { put("document_id", "souz-turn-$it") }
             }
-            retain(bankId, item, retryOnIoFailure = input.userMessageId != null)
+            retain("retain_turn", input.context.ownerId.value, item, retryOnIoFailure = input.userMessageId != null)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (error: Exception) {
-            logger.warn("Hindsight retain failed for bank {}: {}", bankId, error.message)
+        } catch (_: Exception) {
+            // measured() has logged the failed call.
         }
     }
 
     /** Failures propagate to the durable worker; a failed retain must never acknowledge a job. */
     internal suspend fun captureHistory(userId: String, chatId: UUID, documents: List<HistoryMemoryDocument>) {
         for (document in documents) {
-            retain(userId, mapOf(
+            retain("retain_history", userId, mapOf(
                 "content" to document.content,
                 "timestamp" to document.timestamp,
                 "document_id" to document.id,
@@ -159,41 +163,54 @@ class HindsightConversationMemoryRuntime(
     }
 
     /** Hides one fact from recall; false when the user's bank has no such fact. */
-    internal suspend fun forgetFact(userId: String, factId: String): Boolean {
+    internal suspend fun forgetFact(userId: String, factId: String): Boolean = measured(
+        "forget_fact",
+        // The model supplies the ID, so only an ID Hindsight found is known to carry no dialogue text.
+        describe = { found: Boolean -> mapOf("found" to found, "fact_id" to factId.takeIf { found }) },
+    ) {
         val response = httpClient.patch("${bankUrl(userId)}/memories/${factId.encodeURLPathPart()}") {
             jsonRequest(apiToken)
             setBody(mapOf("state" to "invalidated", "reason" to "Forgotten at the user's request"))
         }
         // 404 covers unknown IDs and other banks' facts, 400 a malformed ID.
-        if (response.status == HttpStatusCode.NotFound || response.status == HttpStatusCode.BadRequest) return false
-        response.requireSuccess()
-        return true
+        if (response.status == HttpStatusCode.NotFound || response.status == HttpStatusCode.BadRequest) {
+            false
+        } else {
+            response.requireSuccess()
+            true
+        }
     }
 
     /** Deleting the bank also drops its queued and running extraction. */
     internal suspend fun forgetAll(userId: String) {
-        httpClient.delete(bankUrl(userId)) { authorize(apiToken) }.requireSuccess()
+        measured("forget_all") { httpClient.delete(bankUrl(userId)) { authorize(apiToken) }.requireSuccess() }
     }
 
     internal suspend fun hasPendingRetain(userId: String): Boolean = listOf("pending", "processing").any { status ->
-        val response = httpClient.get("${bankUrl(userId)}/operations") {
-            authorize(apiToken)
-            parameter("status", status)
-            parameter("type", "retain")
-            parameter("limit", 1)
+        measured("pending_check", mapOf("status" to status), describe = { pending: Boolean -> mapOf("pending" to pending) }) {
+            val response = httpClient.get("${bankUrl(userId)}/operations") {
+                authorize(apiToken)
+                parameter("status", status)
+                parameter("type", "retain")
+                parameter("limit", 1)
+            }
+            // A missing bank has no operations.
+            response.status != HttpStatusCode.NotFound &&
+                response.requireSuccess().body<JsonNode>().path("operations").size() > 0
         }
-        if (response.status == HttpStatusCode.NotFound) return false
-        response.requireSuccess().body<JsonNode>().path("operations").size() > 0
     }
 
     private fun bankUrl(bankId: String) = "$baseUrl/v1/default/banks/${bankId.encodeURLPathPart()}"
 
     private suspend fun recall(
+        operation: String,
         context: MemoryContext,
         query: String,
         maxFacts: Int,
         maxTokens: Int,
-    ): List<RecalledMemory> {
+    ): List<RecalledMemory> = measured(operation, describe = { items: List<RecalledMemory> ->
+        mapOf("facts" to items.size, "fact_ids" to items.joinToString(",") { it.id })
+    }) {
         require(maxFacts in 1..MemorySearchPolicy.MAX_FACTS)
         require(maxTokens > 0)
         val response = httpClient.post("${bankUrl(context.ownerId.value)}/memories/recall") {
@@ -210,29 +227,38 @@ class HindsightConversationMemoryRuntime(
             )
         }
         // A user has no bank before the first retain and after ForgetAllMemory.
-        if (response.status == HttpStatusCode.NotFound) return emptyList()
-        return response.requireSuccess().body<RecallResponse>().results.take(maxFacts)
+        if (response.status == HttpStatusCode.NotFound) emptyList()
+        else response.requireSuccess().body<RecallResponse>().results.take(maxFacts)
     }
 
-    private suspend fun retain(bankId: String, item: Map<String, Any>, retryOnIoFailure: Boolean) {
+    private suspend fun retain(operation: String, bankId: String, item: Map<String, Any>, retryOnIoFailure: Boolean) {
+        // Known before the call, so a lost acknowledgement is still logged with the operation to look up.
+        val operationId = if (retainAsync) item["document_id"]?.let { documentId ->
+            UUID.nameUUIDFromBytes("souz-retain:$bankId:$documentId".toByteArray()).toString()
+        } else null
         repeat(if (retryOnIoFailure) 2 else 1) { attempt ->
             try {
-                val response = httpClient.post("${bankUrl(bankId)}/memories") {
-                    jsonRequest(apiToken)
-                    timeout { requestTimeoutMillis = RETAIN_TIMEOUT_MILLIS }
-                    setBody(buildMap {
-                        put("items", listOf(item))
-                        put("async", retainAsync)
-                        if (retainAsync) item["document_id"]?.let { documentId ->
-                            put("operation_id", UUID.nameUUIDFromBytes("souz-retain:$bankId:$documentId".toByteArray()).toString())
-                        }
-                    })
-                }.requireSuccess().body<JsonNode>()
-                if (!response.path("success").asBoolean()) throw HindsightRetainRejected()
-                val operationId = response.path("operation_id").asText("").takeIf(String::isNotBlank)
-                    ?: response.path("operation_ids").takeIf(JsonNode::isArray)?.joinToString(",") { it.asText("") }
-                if (!operationId.isNullOrBlank()) {
-                    logger.info("Hindsight retain accepted documentId={} operationId={}", item["document_id"], operationId)
+                val fields = mapOf("document_id" to item["document_id"], "attempt" to attempt + 1, "operation_id" to operationId)
+                measured(operation, fields, describe = { response: JsonNode ->
+                    mapOf(
+                        "operation_id" to (response.path("operation_id").asText("").takeIf(String::isNotBlank)
+                            ?: response.path("operation_ids").takeIf(JsonNode::isArray)?.joinToString(",") { it.asText("") }
+                            ?: operationId),
+                        // Hindsight finishes a synchronous retain's extraction before responding.
+                        "extraction" to if (response.path("async").asBoolean(retainAsync)) "queued" else "completed",
+                    )
+                }) {
+                    val response = httpClient.post("${bankUrl(bankId)}/memories") {
+                        jsonRequest(apiToken)
+                        timeout { requestTimeoutMillis = RETAIN_TIMEOUT_MILLIS }
+                        setBody(buildMap {
+                            put("items", listOf(item))
+                            put("async", retainAsync)
+                            operationId?.let { put("operation_id", it) }
+                        })
+                    }.requireSuccess().body<JsonNode>()
+                    if (!response.path("success").asBoolean()) throw HindsightRetainRejected()
+                    response
                 }
                 return
             } catch (error: IOException) {
@@ -240,7 +266,39 @@ class HindsightConversationMemoryRuntime(
             }
         }
     }
+
+    /** Records one Hindsight call as a metric sample and a log line of identifiers, never content. */
+    @Suppress("SuspendFunSwallowedCancellation") // Every failure, cancellation included, is rethrown after recording.
+    private suspend fun <T> measured(
+        operation: String,
+        fields: Map<String, Any?> = emptyMap(),
+        describe: (T) -> Map<String, Any?> = { emptyMap() },
+        request: suspend () -> T,
+    ): T {
+        val startedAt = System.nanoTime()
+        var outcome = "success"
+        val logged = fields.toMutableMap()
+        try {
+            return request().also { logged.putAll(describe(it)) }
+        } catch (failure: Throwable) {
+            outcome = if (failure is HindsightHttpFailure) responseMetricOutcome(failure.statusCode) else failure.metricOutcome()
+            logged["category"] = failure.memoryErrorCategory()
+            throw failure
+        } finally {
+            val elapsedNanos = System.nanoTime() - startedAt
+            metrics.memoryRequest(operation, outcome, elapsedNanos)
+            val event = if (outcome == "success") logger.atInfo() else logger.atWarn()
+            logged.forEach { (key, value) -> if (value != null) event.addKeyValue(key, value) }
+            event.addKeyValue("event", "memory.$operation")
+                .addKeyValue("outcome", outcome)
+                .addKeyValue("duration_ms", elapsedNanos / 1_000_000)
+                .log("Hindsight {} {}", operation, outcome)
+        }
+    }
 }
+
+internal fun Throwable.memoryErrorCategory(): String =
+    if (this is HindsightHttpFailure) "http_$statusCode" else javaClass.simpleName
 
 private fun MemoryContext.chatTags(): List<String> =
     listOfNotNull(conversationId?.value?.let { "chat:$it" })
