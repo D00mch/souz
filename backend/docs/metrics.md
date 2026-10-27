@@ -30,12 +30,16 @@ scrape_configs:
 | `souz_tool_calls_total` | Counter | `category`, `outcome` | Compiled tools and client transports, including Skill helper calls. |
 | `souz_tool_duration_seconds` | Histogram | `category`, `outcome` | Tool latency, including client-result waits. |
 | `souz_pending_tool_calls` | Gauge | — | Outstanding compiled tools and client transports on this instance. |
+| `souz_memory_requests_total` | Counter | `operation`, `outcome` | Hindsight calls, including retain retries; [external memory diagnostics](external-memory.md#diagnostics) list the operations. |
+| `souz_memory_request_duration_seconds` | Histogram | `operation`, `outcome` | Hindsight call latency. |
+| `souz_history_memory_fragments` | Gauge | `state` | PostgreSQL counts of unfinished imported-history fragments: `waiting`, `processing` (claimed, including a crashed worker's claim until reclaimed), `retrying`. |
+| `souz_history_memory_failures_total` | Counter | — | Imported-history fragments that exhausted their retries. |
 | `souz_ws_connections_active` | Gauge | — | Open public Client-Souz sockets on this instance. |
 | `souz_ws_events_dropped_total` | Counter | `reason` | Lost public live events per subscriber: `queue_full`, `undelivered`, `disconnect`, `send_failure`, `overtaken`. |
 
 Call outcomes are `success`, `error`, `timeout`, `cancelled`. `timeout` covers returned HTTP 408/504 responses and propagated timeout exceptions; provider adapters that convert transport failures to status `-1` are counted as `error`. Providers and tool categories come from their enums; unknown tool categories and custom model IDs become `other`. Models use the provider's known chat/embedding aliases. No user, chat, execution or tool-call IDs, arguments, raw URLs or exception messages become labels.
 
-Execution outcomes count only successful database commits. Request retries, repeated terminal writes and event replay do not add outcomes. Counters are process-local and cannot guarantee observations across a crash between a database commit and its metrics callback. Active execution gauges represent shared database state: use `max`, not `sum`, across replicas using the same database. Other gauges and counters represent instance-owned work.
+Execution outcomes count only successful database commits. Request retries, repeated terminal writes and event replay do not add outcomes. Counters are process-local and cannot guarantee observations across a crash between a database commit and its metrics callback. Active execution and history-fragment gauges represent shared database state: use `max`, not `sum`, across replicas using the same database. Other gauges and counters represent instance-owned work.
 
 Elapsed time uses monotonic clocks. Processing and wait samples are process-local; restart or continuation on another replica cannot reconstruct earlier segments. A terminal commit records the observed processing duration. Client waiting covers the actual wait for a result; command preparation/persistence remains processing. Overlapping client waits exclude their union from processing, and option timing remains independent of client waits.
 
@@ -64,4 +68,8 @@ sum by (provider, direction) (rate(souz_llm_tokens_total[5m]))
 
 # Shared execution load (one database)
 max by (state) (souz_executions_active)
+
+# Hindsight failure ratio by operation and imported-history backlog
+sum by (operation) (rate(souz_memory_requests_total{outcome!="success"}[5m])) / sum by (operation) (rate(souz_memory_requests_total[5m]))
+max by (state) (souz_history_memory_fragments)
 ```

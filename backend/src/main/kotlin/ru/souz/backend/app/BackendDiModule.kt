@@ -188,7 +188,10 @@ fun backendDiModule(
         val metrics = instance<BackendMetrics>()
         (dataSourceFactory?.invoke(appConfig.postgres)
             ?: PostgresDataSourceFactory.create(appConfig.postgres, metrics.registry))
-            .also { metrics.executions.bindDatabase(it) }
+            .also {
+                metrics.executions.bindDatabase(it)
+                metrics.historyMemory.bindDatabase(it)
+            }
     }
     bindSingleton { PostgresJobService(instance<HikariDataSource>()) }
     bindSingleton<JobService> { instance<PostgresJobService>() }
@@ -320,6 +323,7 @@ fun backendDiModule(
             HindsightConversationMemoryRuntime(
                 httpClient = instance<ProviderHttpClients>().standard,
                 baseUrl = hindsightUrl,
+                metrics = instance(),
                 apiToken = appConfig.hindsightApiToken,
                 clock = instance(),
                 retainAsync = appConfig.hindsightRetainAsync,
@@ -329,7 +333,7 @@ fun backendDiModule(
         }
     }
     if (appConfig.hindsightApiUrl != null) {
-        bindSingleton { PostgresHistoryMemoryRepository(instance(), instance()) }
+        bindSingleton { PostgresHistoryMemoryRepository(instance(), instance(), instance()) }
         bindSingleton {
             HistoryMemoryWorker(instance(), instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance())
         }
