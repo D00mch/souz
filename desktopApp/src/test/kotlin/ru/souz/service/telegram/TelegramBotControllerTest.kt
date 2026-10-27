@@ -9,6 +9,8 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.unmockkAll
 import io.mockk.verify
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import org.junit.jupiter.params.ParameterizedTest
@@ -31,10 +33,112 @@ import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class TelegramBotControllerTest {
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `failed mail preview advances polling without replaying completed commands or approving mail`() = runTest {
+        val bash = mockk<ToolRunBashCommand>()
+        val body = "x".repeat(8_000)
+        val snapshot = restJsonMapper.writeValueAsString(mapOf(
+            "sender" to "owner@example.com", "subject" to "Report", "content" to body,
+            "to" to listOf("ivan@example.com"), "cc" to emptyList<String>(), "bcc" to emptyList<String>(),
+        ))
+        every { bash.sh(any(), *anyVararg()) } answers {
+            if (firstArg<String>().contains("send newMessage")) "Email sent." else snapshot
+        }
+        val approval = MailSendApproval(bash)
+        val token = approval.request(false, listOf("Ivan", "ivan@example.com", "Report", body))
+            .substringAfter("/mail_preview ").substringBefore('.')
+        val updates = listOf(
+            ownerUpdate(1, "before preview"), ownerUpdate(2, "/mail_preview $token"),
+            ownerUpdate(3, "/mail_send $token"), ownerUpdate(4, "after preview"),
+        )
+        val agentFacade = mockk<AgentFacade>()
+        coEvery { agentFacade.execute(any<String>()) } returns "Done"
+        val botApi = mockk<TelegramBotApi>(relaxed = true)
+        val offsets = mutableListOf<Long>()
+        coEvery { botApi.getUpdates("token", any(), any()) } coAnswers {
+            val offset = secondArg<Long>()
+            offsets += offset
+            if (offset >= 5) awaitCancellation()
+            TelegramUpdatesResponse(ok = true, result = updates.filter { it.updateId >= offset })
+        }
+        val delivered = mutableListOf<String>()
+        var failPreview = true
+        coEvery { botApi.sendMessage("token", 42, any()) } coAnswers {
+            val text = thirdArg<String>()
+            // The first chunk has headers; fail once while delivering the middle of the body.
+            if (text == "x".repeat(3_500) && failPreview) {
+                failPreview = false
+                error("Telegram unavailable")
+            }
+            delivered += text
+        }
+        val config = object : TelegramBotConfigProvider {
+            override fun token() = "token"
+            override fun ownerId() = 42L
+        }
+        val controller = TelegramBotController(
+            telegramService = mockk(relaxed = true), agentFacade = agentFacade, botApi = botApi,
+            configProvider = config, mailSendApproval = approval, scope = backgroundScope,
+        )
+        try {
+            controller.restartPolling()
+            runCurrent()
+            advanceTimeBy(5_001)
+            runCurrent()
+
+            assertEquals(listOf(0L, 5L), offsets)
+            coVerify(exactly = 1) { agentFacade.execute("before preview") }
+            coVerify(exactly = 1) { agentFacade.execute("after preview") }
+            coVerify(exactly = 2) { agentFacade.execute(any<String>()) }
+            assertTrue(delivered.any { it.contains("Review the email first") })
+            verify(exactly = 0) { bash.sh(match { it.contains("send newMessage") }, *anyVararg()) }
+
+            // A fresh, complete preview still lets the owner explicitly approve the pending email.
+            controller.processUpdates("token", 42, listOf(
+                ownerUpdate(5, "/mail_preview $token"), ownerUpdate(6, "/mail_send $token"),
+            ), currentOffset = 5)
+            assertEquals("Email sent.", delivered.last())
+            verify(exactly = 1) { bash.sh(match { it.contains("send newMessage") }, *anyVararg()) }
+        } finally {
+            controller.close()
+        }
+    }
+
+    @Test
+    fun `mail command cancellation propagates without processing later updates`() = runTest {
+        val approval = mockk<MailSendApproval>()
+        coEvery { approval.handleOwnerCommand(any(), any()) } throws CancellationException("Polling stopped")
+        val agentFacade = mockk<AgentFacade>(relaxed = true)
+        val controller = TelegramBotController(
+            telegramService = mockk(relaxed = true), agentFacade = agentFacade,
+            botApi = FakeBotApi(), mailSendApproval = approval,
+        )
+        try {
+            assertFailsWith<CancellationException> {
+                controller.processUpdates("token", 42, listOf(
+                    ownerUpdate(1, "/mail_preview pending"), ownerUpdate(2, "later command"),
+                ))
+            }
+            coVerify(exactly = 0) { agentFacade.execute(any<String>()) }
+        } finally {
+            controller.close()
+        }
+    }
+
+    private fun ownerUpdate(id: Long, text: String) = TelegramUpdate(
+        updateId = id,
+        message = TelegramMessage(
+            messageId = id, from = TelegramUser(id = 42, isBot = false),
+            chat = TelegramChat(id = 42, type = "private"), text = text,
+        ),
+    )
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @ParameterizedTest

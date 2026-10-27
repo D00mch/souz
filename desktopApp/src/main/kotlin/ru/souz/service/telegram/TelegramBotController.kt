@@ -251,17 +251,24 @@ class TelegramBotController(
                 continue
             }
 
-            if (mailSendApproval?.handleOwnerCommand(message.text.orEmpty()) {
-                    botApi.sendMessage(token, message.chat.id, it)
-                } == true) continue
+            try {
+                if (mailSendApproval?.handleOwnerCommand(message.text.orEmpty()) {
+                        botApi.sendMessage(token, message.chat.id, it)
+                    } == true) continue
 
-            val prepared = prepareIncomingCommand(token, message) ?: continue
-            handleCommand(
-                token = token,
-                chatId = message.chat.id,
-                text = prepared.text,
-                isVoice = prepared.isVoice,
-            )
+                val prepared = prepareIncomingCommand(token, message) ?: continue
+                handleCommand(
+                    token = token,
+                    chatId = message.chat.id,
+                    text = prepared.text,
+                    isVoice = prepared.isVoice,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A failed delivery must not replay earlier commands and their tool side effects.
+                logger.error("Error processing control update (updateId={}, error={})", update.updateId, e::class.simpleName)
+            }
         }
 
         return nextOffset
