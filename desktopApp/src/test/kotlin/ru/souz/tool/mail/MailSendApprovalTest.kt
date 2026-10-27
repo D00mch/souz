@@ -3,6 +3,7 @@ package ru.souz.tool.mail
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
@@ -109,26 +110,72 @@ class MailSendApprovalTest {
         assertTrue(shown.last().contains("No matching pending email"))
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `failed delivery of a complete preview never enables sending`() = runTest {
+    fun `rate limited previews resume delivered chunks without enabling an incomplete send`() = runTest {
         val content = "😀".repeat(4_000)
         val snapshot = restJsonMapper.readTree(mailSnapshot) as com.fasterxml.jackson.databind.node.ObjectNode
         snapshot.put("content", content)
         every { bash.sh(any(), *anyVararg()) } returns snapshot.toString()
         val token = request()
         val delivered = mutableListOf<String>()
+        val attempts = mutableListOf<String>()
+        val attemptTimes = mutableListOf<Long>()
+        // Each attempt can deliver one chunk before Telegram rejects the next one.
+        repeat(2) {
+            var sent = 0
+            assertFailsWith<IllegalStateException> {
+                approval.handleOwnerCommand("/mail_preview $token") { chunk ->
+                    attempts += chunk
+                    attemptTimes += testScheduler.currentTime
+                    if (sent++ == 1) error("Telegram rejected sendMessage (429)")
+                    delivered += chunk
+                }
+            }
+            command("/mail_send $token")
+            verify(exactly = 1) { bash.sh(any(), *anyVararg()) }
+            assertTrue(shown.last().contains("Review the email first"))
+        }
+        approval.handleOwnerCommand("/mail_preview $token") { chunk ->
+            attempts += chunk
+            attemptTimes += testScheduler.currentTime
+            delivered += chunk
+        }
+        val preview = delivered.dropLast(1).joinToString("")
+        assertEquals(content, preview.substringAfter("Body:\n"))
+        assertEquals(1, delivered.count { it.startsWith("Email to send\n") })
+        assertEquals(attempts[1], attempts[2], "Retry the first failed chunk")
+        assertEquals(attempts[3], attempts[4], "Retry the next failed chunk")
+        assertTrue(delivered.all { !it.first().isLowSurrogate() && !it.last().isHighSurrogate() })
+        assertTrue(attemptTimes.zipWithNext().all { (before, after) -> after - before >= 1_000 })
+        command("/mail_send $token")
+        verify(exactly = 1) {
+            bash.sh(MailAppleScriptCommands.approvalCommand(true, send = true), *args.toTypedArray(), snapshot.toString())
+        }
+    }
+
+    @Test
+    fun `failed approval prompt resumes after the body and still requires explicit owner send`() = runTest {
+        val token = request()
+        val delivered = mutableListOf<String>()
         assertFailsWith<IllegalStateException> {
-            approval.handleOwnerCommand("/mail_preview $token") {
-                delivered += it
-                if (delivered.size == 2) error("Telegram unavailable")
+            approval.handleOwnerCommand("/mail_preview $token") { chunk ->
+                if (chunk.startsWith("To send this exact email")) error("Telegram rejected sendMessage (429)")
+                delivered += chunk
             }
         }
+        assertEquals(1, delivered.size)
         command("/mail_send $token")
         verify(exactly = 1) { bash.sh(any(), *anyVararg()) }
         assertTrue(shown.last().contains("Review the email first"))
+        shown.clear()
         command("/mail_preview $token")
-        assertTrue(shown.joinToString("").contains(content))
-        assertTrue(shown.all { !it.first().isLowSurrogate() && !it.last().isHighSurrogate() })
+        assertTrue(shown.single().contains("/mail_send $token"))
+        verify(exactly = 1) { bash.sh(any(), *anyVararg()) }
+        command("/mail_send $token")
+        verify(exactly = 1) {
+            bash.sh(MailAppleScriptCommands.approvalCommand(true, send = true), *args.toTypedArray(), mailSnapshot)
+        }
     }
 
     @Test

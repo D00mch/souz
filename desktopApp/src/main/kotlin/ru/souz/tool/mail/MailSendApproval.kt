@@ -1,5 +1,6 @@
 package ru.souz.tool.mail
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.llms.restJsonMapper
@@ -23,6 +24,7 @@ class MailSendApproval(
         val snapshot: String,
         val preview: String,
         val createdAt: Long,
+        val previewOffset: Int = 0,
         val presented: Boolean = false,
     )
 
@@ -69,16 +71,22 @@ class MailSendApproval(
             when (parts[0]) {
                 "/mail_preview" -> {
                     // Send every field through the host, including long bodies, before enabling approval.
-                    var start = 0
+                    var start = if (request.presented) 0 else request.previewOffset
+                    pending = request.copy(previewOffset = start, presented = false)
                     while (start < request.preview.length) {
                         var end = (start + 3_500).coerceAtMost(request.preview.length)
                         if (end < request.preview.length && request.preview[end - 1].isHighSurrogate()) end--
+                        // Pace even the first chunk after another control-bot response or failed attempt.
+                        delay(1_000)
                         show(request.preview.substring(start, end))
                         start = end
+                        // A failed or rate-limited delivery resumes at the first unacknowledged chunk.
+                        pending = request.copy(previewOffset = start, presented = false)
                     }
+                    delay(1_000)
                     show("To send this exact email, reply with /mail_send ${request.token}\n" +
                         "To cancel: /mail_cancel ${request.token}")
-                    pending = request.copy(presented = true)
+                    pending = request.copy(previewOffset = start, presented = true)
                     null
                 }
                 "/mail_cancel" -> {
