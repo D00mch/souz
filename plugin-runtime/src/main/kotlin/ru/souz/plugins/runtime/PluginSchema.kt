@@ -13,7 +13,7 @@ internal fun validatePluginDefinition(definition: PluginToolDefinition) {
 private fun validateSchema(schema: JsonNode, root: Boolean, depth: Int) {
     require(depth <= 16 && schema.isObject) { "Invalid tool schema" }
     val allowed = if (root) setOf("type", "properties", "required")
-        else setOf("type", "description", "enum", "items", "properties")
+        else setOf("type", "description", "enum", "items", "properties", "required")
     require(schema.fieldNames().asSequence().all { it in allowed }) { "Unsupported tool schema keyword" }
     val type = schema.path("type").asText()
     require(type in schemaTypes) { "Unsupported schema type" }

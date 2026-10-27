@@ -266,6 +266,11 @@ internal class BackendConversationRuntimeFactory(
             configuredModels = settingsProvider.subagentModels,
             commandToolNamesProvider = { catalog -> catalog.toolsByCategory.values.flatMap { it.keys }.toSet() - serverNames },
             commandInstructions = CLIENT_TOOL_ROUTING_INSTRUCTIONS,
+            reasoningEfforts = { provider, model ->
+                namedModels[model]?.let { named ->
+                    named.reasoningEfforts ?: ru.souz.llms.supportedReasoningEfforts(provider, named.modelId)
+                } ?: ru.souz.llms.supportedReasoningEfforts(provider, model)
+            },
         )
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,

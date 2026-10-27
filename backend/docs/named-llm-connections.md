@@ -25,7 +25,12 @@ All configured model names are advertised in `/v1/bootstrap`; no per-user allowl
 
 `GET /health` reports the server default using the same selection policy, without user settings or user-managed keys.
 
-`subagentModels` and `summarization` are optional. A child without an explicit model inherits the parent's named selection. Dedicated summarization uses its own connection and preserves `OPENAI_SUMMARIZATION_PARAMETERS`. Existing `OPENAI_*`, summarization model/connection/parameter settings and `SUBAGENT_MODELS_JSON` remain usable when no named override is configured.
+`subagentModels` and `summarization` are optional. Each named model may declare
+`reasoningEfforts`, an array of supported effort labels (an empty array disables
+overrides). Otherwise subagent validation resolves known capabilities from its
+upstream `modelId`. Unknown models require omitted effort, preserving provider
+defaults. `SpawnSubagent` advertises choices per model and rejects incompatible
+overrides before any child work. A child without an explicit model inherits the parent's named selection. Dedicated summarization uses its own connection and preserves `OPENAI_SUMMARIZATION_PARAMETERS`. Existing `OPENAI_*`, summarization model/connection/parameter settings and `SUBAGENT_MODELS_JSON` remain usable when no named override is configured.
 
 `CONTEXT_SIZE` is the single server context window for conversation, subagents and summaries (default `125000`). Startup rejects values that are not integers of at least `24000` tokens. All configured models must support that window; no model-specific effective window is calculated. Users and HTTP request options cannot override it, and continuations use the running server value.
 

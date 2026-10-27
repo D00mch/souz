@@ -21,6 +21,7 @@ import ru.souz.backend.events.model.MessageDeltaPayload
 import ru.souz.backend.events.model.RawAgentEventPayload
 import ru.souz.backend.events.model.ToolCallFailedPayload
 import ru.souz.backend.events.model.ToolCallFinishedPayload
+import ru.souz.backend.events.model.PluginCallFinishedPayload
 import ru.souz.backend.events.model.ToolCallStartedPayload
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.events.model.ThreadCancelledPayload
@@ -539,6 +540,12 @@ private fun AgentEventPayload.toTransportPayload(type: AgentEventType): Map<Stri
             "argumentsPreview" to argumentsPreview,
         ).withoutNulls()
 
+        is PluginCallFinishedPayload -> linkedMapOf<String, Any?>(
+            "invocationId" to invocationId, "pluginId" to pluginId, "toolName" to toolName,
+            "version" to version, "digest" to digest, "status" to status,
+            "outcome" to outcome, "errorCode" to errorCode, "durationMs" to durationMs,
+        ).withoutNulls()
+
         is ToolCallFinishedPayload -> linkedMapOf<String, Any?>(
             "toolCallId" to toolCallId,
             "name" to name,
@@ -649,6 +656,10 @@ private fun Map<String, String>.toLegacyTransportPayload(type: AgentEventType): 
             copyLongIfPresent("durationMs")
         }
 
+        AgentEventType.PLUGIN_CALL_FINISHED -> buildLegacyPayload {
+            listOf("invocationId", "pluginId", "toolName", "version", "digest", "status", "outcome", "errorCode").forEach { copyIfPresent(it) }
+            copyLongIfPresent("durationMs")
+        }
         AgentEventType.ASSISTANT_MESSAGE -> error("Assistant messages have no legacy payload")
         AgentEventType.THREAD_COMPLETED -> buildLegacyPayload { copyIfPresent("response") }
         AgentEventType.THREAD_FAILED -> buildLegacyPayload { copyJsonValueIfPresent("error") }

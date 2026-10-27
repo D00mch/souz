@@ -1011,6 +1011,7 @@ components:
       oneOf:
         - $ref: "#/components/schemas/AssistantMessageEvent"
         - $ref: "#/components/schemas/ToolCallStartedEvent"
+        - $ref: "#/components/schemas/PluginCallFinishedEvent"
         - $ref: "#/components/schemas/ThreadCompletedEvent"
         - $ref: "#/components/schemas/ThreadFailedEvent"
         - $ref: "#/components/schemas/ThreadCancelledEvent"
@@ -1063,6 +1064,58 @@ components:
           $ref: "#/components/schemas/NonEmptyString"
         deviceType:
           $ref: "#/components/schemas/DeviceType"
+    PluginCallFinishedEvent:
+      description: Durable informational receipt for a server plugin invocation, including child calls. Never send tool.result or an ACK. Does not complete the thread. Contains no argument values or result bodies.
+      type: object
+      additionalProperties: false
+      required: [kind, seq, type, chatId, threadId, payload, createdAt]
+      properties:
+        kind:
+          type: string
+          enum: [event]
+        seq:
+          $ref: "#/components/schemas/EventSeq"
+        type:
+          type: string
+          enum: [plugin.call.finished]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        payload:
+          $ref: "#/components/schemas/PluginCallFinishedPayload"
+        createdAt:
+          $ref: "#/components/schemas/DateTime"
+    PluginCallFinishedPayload:
+      type: object
+      additionalProperties: false
+      required: [invocationId, pluginId, toolName, version, digest, status, durationMs]
+      properties:
+        invocationId:
+          $ref: "#/components/schemas/UUID"
+        pluginId:
+          type: string
+        toolName:
+          type: string
+        version:
+          type: string
+        digest:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        status:
+          type: string
+          enum: [succeeded, rejected, failed, cancelled]
+          description: Invocation/transport outcome. A valid rate-limit response is succeeded.
+        outcome:
+          type: string
+          enum: [ok, not_found, rate_limited, api_error]
+          description: Optional explicit plugin-reported domain outcome, never inferred from arbitrary result JSON.
+        errorCode:
+          type: string
+          description: Safe failure code when available. No raw exception or remote body.
+        durationMs:
+          type: integer
+          minimum: 0
     ToolCallStartedEvent:
       type: object
       additionalProperties: false

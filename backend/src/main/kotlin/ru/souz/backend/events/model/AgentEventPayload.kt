@@ -103,6 +103,19 @@ data class ToolCallFinishedPayload(
     val durationMs: Long? = null,
 ) : AgentEventPayload
 
+/** Informational server execution receipt. It never requests a client tool.result. */
+data class PluginCallFinishedPayload(
+    val invocationId: String,
+    val pluginId: String,
+    val toolName: String,
+    val version: String,
+    val digest: String,
+    val status: String,
+    val outcome: String? = null,
+    val errorCode: String? = null,
+    val durationMs: Long,
+) : AgentEventPayload
+
 data class ToolCallFailedPayload(
     val toolCallId: String,
     val name: String,
@@ -171,6 +184,7 @@ internal object AgentEventPayloadStorageCodec {
                 } else {
                     mapper.treeToValue(payload, ToolCallStartedPayload::class.java)
                 }
+                AgentEventType.PLUGIN_CALL_FINISHED -> mapper.treeToValue(payload, PluginCallFinishedPayload::class.java)
                 AgentEventType.TOOL_CALL_FINISHED -> mapper.treeToValue(payload, ToolCallFinishedPayload::class.java)
                 AgentEventType.TOOL_CALL_FAILED -> mapper.treeToValue(payload, ToolCallFailedPayload::class.java)
                 AgentEventType.OPTION_REQUESTED -> mapper.treeToValue(payload, ChoiceRequestedPayload::class.java)

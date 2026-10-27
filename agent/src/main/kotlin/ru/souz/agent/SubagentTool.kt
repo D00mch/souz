@@ -17,6 +17,7 @@ import ru.souz.llms.restJsonMapper
 class SubagentTool(
     private val createAgent: (maxTurns: Int) -> Agent,
     modelChoices: List<String>? = null,
+    reasoningEfforts: Map<String, List<String>?> = emptyMap(),
     private val prepare: suspend (Input, ToolInvocationMeta) -> Setup,
 ) : LLMToolSetup {
     data class Input(
@@ -49,8 +50,10 @@ class SubagentTool(
                 "model" to LLMRequest.Property("string", "Optional exact model ID from the advertised choices. Defaults to the parent's model.", enum = modelChoices),
                 "maxTurns" to LLMRequest.Property("integer", "Maximum child LLM calls, from 1 to 128. Defaults to 32."),
                 "reasoningEffort" to LLMRequest.Property(
-                    "string", "Optional child reasoning effort. Omit to use provider defaults; support depends on the provider and model.",
-                    enum = REASONING_EFFORTS,
+                    "string", "Optional child reasoning effort. Omit to use provider defaults. " +
+                        reasoningEfforts.entries.joinToString("; ") { (model, efforts) -> "$model: ${efforts?.joinToString()?.ifEmpty { "omit" } ?: "unknown; omit"}" },
+                    enum = if (reasoningEfforts.isEmpty()) REASONING_EFFORTS
+                        else reasoningEfforts.values.filterNotNull().flatten().distinct().takeIf { it.isNotEmpty() },
                 ),
             ),
             required = listOf("task"),
@@ -125,7 +128,7 @@ class SubagentTool(
 
     companion object {
         const val NAME = "SpawnSubagent"
-        private val REASONING_EFFORTS = listOf("minimal", "low", "medium", "high")
+        private val REASONING_EFFORTS = listOf("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
         private const val MAX_REPORTED_TOOL_CALLS = 8
         private const val MAX_TOOL_RESULT_CHARS = 1024
         private const val MAX_TOOL_ID_CHARS = 256

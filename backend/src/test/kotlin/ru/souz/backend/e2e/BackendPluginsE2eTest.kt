@@ -44,6 +44,7 @@ class BackendPluginsE2eTest {
                     "parameters" to mapOf("type" to "object"),
                 ))))))
                 assertEquals("accepted", readJson(socket)["status"].asText())
+                assertEquals("plugin.call.finished", readJson(socket)["type"].asText())
                 assertEquals("thread.completed", readJson(socket)["type"].asText())
                 assertTrue(llm.requests.last().messages.any {
                     it.name == "RunSkillCommand" && it.content.contains("invalid_client_tool_catalogue")
@@ -129,8 +130,10 @@ class BackendPluginsE2eTest {
         }
     }
 
-    @Test fun `subagents receive only selected enabled plugin tools`() {
-        pluginJar(directory.resolve("fixture.jar"))
+    @Test fun `subagents receive only selected enabled plugin tools and arbitrary JSON is not an outcome`() {
+        pluginJar(directory.resolve("fixture.jar"), invokeBody = """
+            return JsonNodeFactory.instance.objectNode().put("version", "1").put("status", "rate_limited").put("error", "ordinary data");
+        """.trimIndent())
         val llm = E2eLlmApi { request ->
             val last = request.messages.lastOrNull { it.role == ru.souz.llms.LLMMessageRole.function }
             when {
@@ -150,6 +153,43 @@ class BackendPluginsE2eTest {
             assertTrue(llm.requests.any { it.functions.map { it.name } == listOf("fixture__version") })
             val result = llm.requests.flatMap { it.messages }.last { it.name == "SpawnSubagent" }
             assertTrue(result.content.contains("version"), result.content)
+            val events = client.get(BackendHttpRoutes.chatEvents(chat)) { trusted(user) }.jsonBody()["items"]
+            val receipt = events.single { it["type"].asText() == "plugin.call.finished" }["payload"]
+            assertEquals("fixture__version", receipt["toolName"].asText())
+            assertEquals("succeeded", receipt["status"].asText())
+            assertFalse(receipt.has("outcome") || receipt.has("errorCode"))
+        }
+    }
+
+    @Test fun `receipt storage failures preserve plugin results and cancellation`() {
+        for (cancel in listOf(false, true)) {
+            pluginJar(directory.resolve("fixture.jar"), invokeBody = if (cancel)
+                """throw new java.util.concurrent.CancellationException("fixture cancelled");"""
+                else """return JsonNodeFactory.instance.objectNode().put("version", "1");""")
+            backendE2eTest("plugin_receipt_failure", pluginDirectory = directory) {
+                sql { connection -> connection.createStatement().use { statement ->
+                    statement.execute("""
+                        create function reject_plugin_receipt() returns trigger language plpgsql as ${'$'}${'$'}
+                        begin
+                          if NEW.type = 'plugin.call.finished' then raise exception 'private storage detail'; end if;
+                          return NEW;
+                        end ${'$'}${'$'};
+                        create trigger reject_plugin_receipt before insert on agent_events
+                        for each row execute function reject_plugin_receipt();
+                    """.trimIndent())
+                } }
+                val user = UUID.randomUUID().toString()
+                val chat = createPublicChat(user)
+                llm.requestSkill("fixture__version", emptyMap())
+                val sent = client.post(BackendHttpRoutes.chatMessages(chat)) {
+                    trusted(user); jsonBody("""{"content":"inspect","options":{"model":"${E2E_MODEL.alias}"}}""")
+                }.jsonBody()
+                val executionId = UUID.fromString(sent["execution"]["id"].asText())
+                backend.awaitExecution(executionId)
+                val execution = backend.executionRepository.getByChat(user, UUID.fromString(chat), executionId)!!
+                assertEquals(if (cancel) "CANCELLED" else "COMPLETED", execution.status.name)
+                if (!cancel) assertEquals("1", lastSkillResult()["version"].asText())
+            }
         }
     }
 

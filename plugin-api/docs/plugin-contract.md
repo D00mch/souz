@@ -9,7 +9,7 @@ outside this SDK. Use cooperative cancellation and structured coroutine work.
 ## Building a plugin
 
 Publish the SDK locally with `./gradlew :plugin-api:publishToMavenLocal`, then use
-`compileOnly("ru.souz:plugin-api:1.1.0")` in a Java 21 Kotlin/JVM project. SDK 1 is
+`compileOnly("ru.souz:plugin-api:1.2.0")` in a Java 21 Kotlin/JVM project. SDK 1 is
 tested with Kotlin 2.4.10, Jackson 2.21.3, and coroutines 1.11.0. The published
 Gradle metadata/POM records the SDK dependencies and coroutine version constraint.
 Use these versions; do not embed SDK, Kotlin, Jackson, or coroutines classes in a
@@ -32,14 +32,14 @@ IDs match `[a-z][a-z0-9_]{0,31}`. Local tool names use lowercase letters, digits
 and underscores; the host exposes `<pluginId>__<toolName>` (at most 64 characters).
 Tool definitions carry a description, an existing Souz category name, and an
 object input schema. Supported schema keywords are root `type`, `properties`,
-`required`; properties support `type`, `description`, string `enum`, `items`, and
-nested `properties`. Other schema keywords are rejected rather than dropped.
-Required nested properties, references, unions, and arbitrary JSON Schema are
-outside v1. Tool arguments are checked against this subset before invocation.
+`required`; properties support `type`, `description`, string `enum`, `items`,
+nested `properties`, and `required`. Other schema keywords are rejected rather
+than dropped. References, unions, and arbitrary JSON Schema are outside v1.
+Tool arguments are checked against this subset before invocation.
 
 `tools()` and `start()` run before activation; `stop()` runs after retirement and
-the last execution lease. Lifecycle methods must complete cooperatively. A faulty
-JVM plugin can require a process restart; closing a loader does not force class
+the last execution lease. Lifecycle methods must complete cooperatively within
+the host deadline (30 seconds). A faulty JVM plugin can require a process restart; closing a loader does not force class
 unloading. A failed candidate leaves its previous generation active.
 
 ## Invocation services
@@ -60,7 +60,9 @@ byte bodies, and returns status, repeated response headers and bytes. The host
 validates literals and connection-time DNS addresses, rejects private/reserved
 destinations, disables redirects/retries/shared cookies, and imposes a 30-second
 deadline and 1 MiB request/response limits. HTTP error statuses are ordinary
-responses.
+responses. Safe `PluginException` codes distinguish `plugin_http_body_too_large`,
+`plugin_http_timeout`, `plugin_http_destination_forbidden`, and
+`plugin_http_transport_failed`; preserve them when handling HTTP failures.
 
 `PluginCallContext.oauth` delegates authenticated calls to the host's existing
 OAuth gateway. Plugins supply the provider and required scopes in trusted code;
@@ -83,6 +85,12 @@ These optional host services have unavailable defaults for SDK implementers;
 plugins using them require a host that implements SDK 1.1 services. They do not
 depend on the user's compiled-tool selection. Installed plugins are trusted
 operator code and must implement their own narrower product semantics.
+
+SDK 1.2 adds optional `PluginCallContext.reportOutcome(PluginOutcome)`: report
+`OK`, `NOT_FOUND`, `RATE_LIMITED`, or `API_ERROR` explicitly when applicable. Hosts
+record the last reported label independently of invocation success; no label is
+inferred from arbitrary JSON fields. Existing plugins may omit it. Plugins calling
+this method require a host with SDK 1.2.
 
 Return Jackson JSON values. Throw `PluginException` for safe, structured errors;
 propagate coroutine cancellation. Log operational messages only, never arguments,

@@ -72,6 +72,21 @@ class BackendSettingsProviderTest {
     }
 
     @Test
+    fun `named model effort declarations preserve unknown versus disabled capabilities`() {
+        for (efforts in listOf("[]", "[\"none\",\"low\"]")) {
+            withNamedLlmConfig(NAMED_LLM_CONFIG.replace("\"modelId\":", "\"reasoningEfforts\":$efforts,\"modelId\":")) { source ->
+                assertEquals(if (efforts == "[]") emptyList() else listOf("none", "low"), source.loadNamedModels().models.getValue("tv-agent").reasoningEfforts)
+            }
+        }
+        withNamedLlmConfig { source -> assertNull(source.loadNamedModels().models.getValue("tv-agent").reasoningEfforts) }
+        for (efforts in listOf("[\"unknown\"]", "[1]", "null", "{}")) {
+            withNamedLlmConfig(NAMED_LLM_CONFIG.replace("\"modelId\":", "\"reasoningEfforts\":$efforts,\"modelId\":")) { source ->
+                assertFailsWith<IllegalArgumentException> { source.loadNamedModels() }
+            }
+        }
+    }
+
+    @Test
     fun `routing resolves named and built-in models and rejects broken blocks`() {
         val complex = """, "complex": {"model":"${LLMModel.Max.name}"}"""
         val valid = NAMED_LLM_CONFIG.trimEnd().removeSuffix("}") +

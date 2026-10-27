@@ -17,6 +17,7 @@ sealed interface AgentEventEnvelope {
 
 internal fun AgentEventEnvelope.isPublicClientEvent(): Boolean = when (type) {
     AgentEventType.ASSISTANT_MESSAGE -> !durable
+    AgentEventType.PLUGIN_CALL_FINISHED -> payload is ru.souz.backend.events.model.PluginCallFinishedPayload
     AgentEventType.TOOL_CALL_STARTED -> payload is PublicToolCallStartedPayload
     AgentEventType.THREAD_COMPLETED, AgentEventType.THREAD_FAILED, AgentEventType.THREAD_CANCELLED -> true
     // Cross-channel pushes have no execution; ordinary thread messages are filtered.

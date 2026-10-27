@@ -45,7 +45,7 @@ class SubagentToolTest {
             val subagent = subagent(streaming = streaming, prepare = { input, _ ->
                 setup(settings().copy(reasoningEffort = input.reasoningEffort))
             }) { request -> requests += request; response("done") }
-            val efforts = listOf(null, "minimal", "low", "medium", "high")
+            val efforts = listOf(null, "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
             assertEquals(efforts.filterNotNull(), subagent.fn.parameters.properties.getValue("reasoningEffort").enum)
             for (effort in efforts) assertEquals("done", subagent.call(reasoningEffort = effort)["result"].asText())
             assertEquals(efforts, requests.map { it.reasoningEffort })

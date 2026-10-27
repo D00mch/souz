@@ -73,7 +73,11 @@ before retrying; without a deadline, apply backoff rather than repeatedly callin
 Other HTTP failures return `api_error` and `statusCode`, without reflecting
 remote error bodies. Redirects are reported as HTTP errors: use the repository's
 current owner/name after a move. Invalid arguments, malformed responses, and
-transport/size-limit failures raise safe `PluginException` errors. Coroutine
+transport/size-limit failures raise safe `PluginException` errors. Host HTTP
+categories (`plugin_http_body_too_large`, `plugin_http_timeout`,
+`plugin_http_destination_forbidden`, `plugin_http_transport_failed`) remain
+actionable; oversized responses advise reducing `perPage`. GitHub explicitly
+reports its bounded domain outcome to host diagnostics. Coroutine
 cancellation propagates.
 
 The host enforces a 30-second deadline and 1 MiB per HTTP response; reduce

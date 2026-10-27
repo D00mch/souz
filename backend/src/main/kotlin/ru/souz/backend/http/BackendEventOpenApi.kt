@@ -25,6 +25,7 @@ internal object BackendEventOpenApiSchemas {
     private const val EXECUTION_CANCELLED_PAYLOAD = "BackendExecutionCancelledEventPayload"
     private const val TOOL_CALL_STARTED_PAYLOAD = "BackendToolCallStartedEventPayload"
     private const val TOOL_CALL_FINISHED_PAYLOAD = "BackendToolCallFinishedEventPayload"
+    private const val PLUGIN_CALL_FINISHED_PAYLOAD = "BackendPluginCallFinishedEventPayload"
     private const val TOOL_CALL_FAILED_PAYLOAD = "BackendToolCallFailedEventPayload"
     private const val OPTION_REQUESTED_PAYLOAD = "BackendOptionRequestedEventPayload"
     private const val OPTION_ANSWERED_PAYLOAD = "BackendOptionAnsweredEventPayload"
@@ -39,6 +40,7 @@ internal object BackendEventOpenApiSchemas {
         DurableVariant("execution.cancelled", "BackendExecutionCancelledEventEnvelope", EXECUTION_CANCELLED_PAYLOAD),
         DurableVariant("tool.call.started", "BackendToolCallStartedEventEnvelope", TOOL_CALL_STARTED_PAYLOAD),
         DurableVariant("tool.call.finished", "BackendToolCallFinishedEventEnvelope", TOOL_CALL_FINISHED_PAYLOAD),
+        DurableVariant("plugin.call.finished", "BackendPluginCallFinishedEventEnvelope", PLUGIN_CALL_FINISHED_PAYLOAD),
         DurableVariant("tool.call.failed", "BackendToolCallFailedEventEnvelope", TOOL_CALL_FAILED_PAYLOAD),
         DurableVariant("option.requested", "BackendOptionRequestedEventEnvelope", OPTION_REQUESTED_PAYLOAD),
         DurableVariant("option.answered", "BackendOptionAnsweredEventEnvelope", OPTION_ANSWERED_PAYLOAD),
@@ -62,6 +64,7 @@ internal object BackendEventOpenApiSchemas {
         put(EXECUTION_CANCELLED_PAYLOAD, executionCancelledPayload())
         put(TOOL_CALL_STARTED_PAYLOAD, toolCallStartedPayload())
         put(TOOL_CALL_FINISHED_PAYLOAD, toolCallFinishedPayload())
+        put(PLUGIN_CALL_FINISHED_PAYLOAD, pluginCallFinishedPayload())
         put(TOOL_CALL_FAILED_PAYLOAD, toolCallFailedPayload())
         put(OPTION_ITEM, optionItem())
         put(OPTION_REQUESTED_PAYLOAD, optionRequestedPayload())
@@ -73,7 +76,7 @@ internal object BackendEventOpenApiSchemas {
             DURABLE_EVENT,
             JsonSchema(
                 title = DURABLE_EVENT,
-                description = "The 11 canonical durable event variants.",
+                description = "The canonical durable event variants.",
                 oneOf = durableVariants.map { schema(it.componentName) },
                 discriminator = JsonSchemaDiscriminator(
                     propertyName = "type",
@@ -144,6 +147,22 @@ internal object BackendEventOpenApiSchemas {
             ),
             description = "Live-only message delta envelope reserved for a future explicitly documented stream.",
         )
+
+    private fun pluginCallFinishedPayload(): JsonSchema = objectSchema(
+        required = listOf("invocationId", "pluginId", "toolName", "version", "digest", "status", "durationMs"),
+        properties = mapOf(
+            "invocationId" to value(uuidSchema()),
+            "pluginId" to value(JsonSchema(type = JsonType.STRING)),
+            "toolName" to value(JsonSchema(type = JsonType.STRING)),
+            "version" to value(JsonSchema(type = JsonType.STRING)),
+            "digest" to value(JsonSchema(type = JsonType.STRING)),
+            "status" to value(stringEnum(listOf("succeeded", "rejected", "failed", "cancelled"))),
+            "outcome" to value(stringEnum(listOf("ok", "not_found", "rate_limited", "api_error"))),
+            "errorCode" to value(JsonSchema(type = JsonType.STRING)),
+            "durationMs" to value(JsonSchema(type = JsonType.INTEGER)),
+        ),
+        description = "Informational server-side plugin receipt; no client tool.result. Domain outcome is explicit and independent of transport status.",
+    )
 
     private fun messageCreatedPayload(): JsonSchema =
         objectSchema(

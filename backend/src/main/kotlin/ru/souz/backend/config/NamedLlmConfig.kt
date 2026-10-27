@@ -15,7 +15,7 @@ import ru.souz.llms.resolveChatModel
 import ru.souz.llms.restJsonMapper
 
 /** Backend deployment selections; credentials are deliberately excluded from generated toString methods. */
-class NamedLlmModel(val modelId: String, val baseUrl: String, val apiKey: String)
+class NamedLlmModel(val modelId: String, val baseUrl: String, val apiKey: String, val reasoningEfforts: List<String>? = null)
 
 class NamedLlmConfig(
     val models: Map<String, NamedLlmModel> = emptyMap(),
@@ -48,10 +48,16 @@ internal fun BackendConfigSource.loadNamedModels(): NamedLlmConfig {
     }
     val models = root.entries("models").mapValues { (name, node) ->
         require(resolveChatModel(name) is ModelResolution.Unknown) { "Model name $name conflicts with a built-in model." }
-        node.fieldsOnly("connection", "modelId")
+        node.fieldsOnly("connection", "modelId", "reasoningEfforts")
         require(name != value("OPENAI_MODEL", "OPENAI_MODEL")?.trim()) { "OPENAI_MODEL must not overlap named model selections." }
         val (url, key) = requireNotNull(connections[node.text("connection")]) { "Unknown connection for model $name." }
-        NamedLlmModel(node.text("modelId"), url, key)
+        val efforts = node["reasoningEfforts"]?.let { values ->
+            require(values.isArray && values.all { it.isTextual && it.asText() in reasoningEffortNames }) {
+                "reasoningEfforts must contain supported effort names."
+            }
+            values.map { it.asText() }.distinct()
+        }
+        NamedLlmModel(node.text("modelId"), url, key, efforts)
     }
     fun model(name: String): NamedLlmModel = requireNotNull(models[name]) { "Unknown configured model $name." }
     val subagents = root["subagentModels"]?.let { node ->
@@ -93,3 +99,5 @@ private fun JsonNode.text(name: String): String {
     }
     return node.textValue()
 }
+
+private val reasoningEffortNames = setOf("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")

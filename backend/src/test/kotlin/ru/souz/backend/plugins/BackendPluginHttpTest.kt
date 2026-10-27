@@ -63,7 +63,7 @@ class BackendPluginHttpTest {
             assertEquals(302, response.status)
             assertEquals(1, calls)
             assertFailsWith<IllegalArgumentException> { http.execute(PluginHttpRequest("https://example.com", body = ByteArray(PLUGIN_MAX_BYTES + 1))) }
-            assertFailsWith<IllegalArgumentException> { http.execute(PluginHttpRequest("http://127.0.0.1")) }
+            assertEquals("plugin_http_destination_forbidden", assertFailsWith<PluginException> { http.execute(PluginHttpRequest("http://127.0.0.1")) }.code)
             assertEquals(1, calls)
         }
         BackendPluginHttp(HttpClient(MockEngine { respond("x".repeat(PLUGIN_MAX_BYTES + 1)) })).use { oversized ->
@@ -77,7 +77,7 @@ class BackendPluginHttpTest {
                 withTimeout(100) { http.execute(PluginHttpRequest("https://example.com")) }
             }
             val started = TimeSource.Monotonic.markNow()
-            assertFailsWith<HttpRequestTimeoutException> { http.execute(PluginHttpRequest("https://example.com")) }
+            assertEquals("plugin_http_timeout", assertFailsWith<PluginException> { http.execute(PluginHttpRequest("https://example.com")) }.code)
             assertTrue(started.elapsedNow() >= 29.seconds)
         }
     }

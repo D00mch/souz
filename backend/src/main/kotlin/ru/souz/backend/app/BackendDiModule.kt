@@ -178,7 +178,7 @@ fun backendDiModule(
                 ru.souz.backend.common.BackendToolCapabilityPolicy.executionBoundToolNames +
                 listOf("GetSkillByName", "GetSkillsByCategory", "GetSkillsNamesByCategory", "GetKnowledge",
                     "SearchKnowledge", "SearchMemory", "RunSkillCommand", "SpawnSubagent")).toSet(),
-            gateway = instanceOrNull(), channelRegistry = instance(), sandboxes = instance(),
+            gateway = instanceOrNull(), channelRegistry = instance(), sandboxes = instance(), events = instance(),
         )
     }
     bindSingleton<Clock> { Clock.systemUTC() }

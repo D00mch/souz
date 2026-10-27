@@ -206,6 +206,7 @@ class AgentEventService(
 
 private fun AgentEvent.isPublicClientDiagnosticEvent(): Boolean = when (type) {
     AgentEventType.THREAD_COMPLETED, AgentEventType.THREAD_FAILED, AgentEventType.THREAD_CANCELLED -> true
+    AgentEventType.PLUGIN_CALL_FINISHED -> payload is ru.souz.backend.events.model.PluginCallFinishedPayload
     AgentEventType.TOOL_CALL_STARTED -> payload is PublicToolCallStartedPayload
     AgentEventType.MESSAGE_CREATED -> executionId == null
     else -> false

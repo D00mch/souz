@@ -19,3 +19,10 @@ Duplicating a function call into message content exposes its JSON as transient a
 ## Verification
 
 Run `./gradlew :sharedLogic:test :backend:test`. Cover provider serialization, streaming tool calls, usage accounting, and failure isolation.
+
+Subagent effort capabilities live in `supportedReasoningEfforts`: match exact model
+IDs (including dated snapshots) and providers. Unknown deployments use omitted
+effort unless configured by the host. Supported choices are based on the official
+[GPT-5](https://developers.openai.com/api/docs/models/gpt-5),
+[GPT-5.2](https://developers.openai.com/api/docs/models/gpt-5.2), and other
+linked model pages; keep the capability table current when adding models.

@@ -21,12 +21,51 @@ import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.llm.withNamedLlmConfig
+import ru.souz.backend.llm.NAMED_LLM_CONFIG
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.http.providerHttpClientDefaults
 
 class BackendSubagentE2eTest {
+    @Test
+    fun `named GPT 5 2 rejects minimal before provider and accepts none on correction`() =
+        withNamedLlmConfig(NAMED_LLM_CONFIG.replace("shared-model", "gpt-5.2")) { source ->
+            var childCalls = 0
+            val http = HttpClient(MockEngine { request ->
+                childCalls++
+                val body = restJsonMapper.readTree(request.body.toByteArray())
+                assertEquals("gpt-5.2", body["model"].asText())
+                assertEquals("none", body["reasoning_effort"].asText())
+                respond("""{"choices":[{"index":0,"message":{"role":"assistant","content":"child done"},"finish_reason":"stop"}],"created":1}""",
+                    headers = headersOf(HttpHeaders.ContentType, "application/json"))
+            }) { providerHttpClientDefaults() }
+            backendE2eTest("subagent_effort", settingsSource = source,
+                providerClients = ProviderHttpClients(standard = http, openAi = http),
+                llm = E2eLlmApi { request ->
+                    val result = request.messages.lastOrNull { it.name == "SpawnSubagent" }?.let { restJsonMapper.readTree(it.content) }
+                    if (result?.has("result") == true) reply(request, "complete")
+                    else {
+                        if (result != null) {
+                            assertEquals("invalid_subagent_input", result["error"]["code"].asText())
+                            assertEquals(0, childCalls)
+                        }
+                        toolCallReply(request, "SpawnSubagent", mapOf("task" to "Answer", "model" to "tv-agent",
+                            "reasoningEffort" to if (result == null) "minimal" else "none"))
+                    }
+                }) {
+                val user = UUID.randomUUID().toString()
+                val chat = createPublicChat(user)
+                val sent = client.post(BackendHttpRoutes.chatMessages(chat)) {
+                    trusted(user); jsonBody("""{"content":"delegate","options":{"model":"${E2E_MODEL.alias}"}}""")
+                }.jsonBody()
+                backend.awaitExecution(UUID.fromString(sent["execution"]["id"].asText()))
+                assertEquals(1, childCalls)
+                assertEquals(3, llm.requests.size)
+                assertEquals("child done", restJsonMapper.readTree(llm.requests.last().messages.last { it.name == "SpawnSubagent" }.content)["result"].asText())
+            }
+        }
+
     @Test
     fun `legacy and named remote children preserve credentials and usage`() = withNamedLlmConfig { namedSource ->
         listOf(false, true).forEach { streaming ->

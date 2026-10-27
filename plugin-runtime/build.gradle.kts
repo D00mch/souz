@@ -4,6 +4,7 @@ dependencies {
     implementation(project(":plugin-api"))
     implementation(libs.kotlinx.coroutines)
     testFixturesImplementation(project(":plugin-api"))
+    testFixturesImplementation(libs.kotlinx.coroutines)
     testImplementation(libs.kotlin.testJunit5)
     testImplementation(libs.kotlinx.coroutinesTest)
 }

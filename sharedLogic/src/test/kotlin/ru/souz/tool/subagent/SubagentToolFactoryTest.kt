@@ -243,7 +243,7 @@ class SubagentToolFactoryTest {
     @Test
     fun `reasoning effort belongs to each child and omission keeps provider defaults`() = runTest {
         val fixture = Fixture()
-        val parent = fixture.parent.copy(reasoningEffort = "high")
+        val parent = fixture.parent.copy(model = "gpt-5", provider = LlmProvider.OPENAI, reasoningEffort = "high")
         val tool = fixture.factory().create(parent)
         for (effort in listOf("minimal", "low", "medium", "high", null)) {
             val arguments = buildMap<String, Any> {
@@ -254,6 +254,27 @@ class SubagentToolFactoryTest {
             assertEquals(effort, fixture.context.settings.reasoningEffort)
         }
         assertEquals("high", parent.reasoningEffort)
+    }
+
+    @Test
+    fun `selected model capabilities reject incompatible effort before any child work`() = runTest {
+        val fixture = Fixture()
+        val models = mapOf("gpt-5.2" to LlmProvider.OPENAI, "gpt-5" to LlmProvider.OPENAI, "custom" to LlmProvider.OPENAI)
+        val tool = fixture.factory(configuredModels = models).create(fixture.parent)
+        assertContains(tool.fn.parameters.properties.getValue("reasoningEffort").description!!, "gpt-5.2: none, low, medium, high, xhigh")
+        val invalid = tool.call(mapOf("task" to "Inspect", "model" to "gpt-5.2", "reasoningEffort" to "minimal", "skillIds" to listOf("unloaded")))
+        assertEquals("invalid_subagent_input", invalid["error"]["code"].asText())
+        assertContains(invalid["error"]["message"].asText(), "none, low, medium, high, xhigh")
+        assertTrue(fixture.contexts.isEmpty())
+        coVerify(exactly = 0) { fixture.bundles.loadSkillBundle(any(), any()) }
+        for (effort in listOf("none", "low", "xhigh")) {
+            assertEquals("child answer", tool.call(mapOf("task" to "Inspect", "model" to "gpt-5.2", "reasoningEffort" to effort))["result"].asText())
+            assertEquals(effort, fixture.context.settings.reasoningEffort)
+        }
+        assertEquals("child answer", tool.call(mapOf("task" to "Inspect", "model" to "gpt-5", "reasoningEffort" to "minimal"))["result"].asText())
+        assertEquals("invalid_subagent_input", tool.call(mapOf("task" to "Inspect", "model" to "custom", "reasoningEffort" to "low"))["error"]["code"].asText())
+        assertEquals("child answer", tool.call(mapOf("task" to "Inspect", "model" to "custom"))["result"].asText())
+        assertEquals(null, fixture.context.settings.reasoningEffort)
     }
 
     @Test

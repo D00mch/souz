@@ -6,6 +6,7 @@ enum class AgentEventType(val value: String) {
     MESSAGE_DELTA("message.delta"),
     MESSAGE_COMPLETED("message.completed"),
     TOOL_CALL_STARTED("tool.call.started"),
+    PLUGIN_CALL_FINISHED("plugin.call.finished"),
     TOOL_CALL_FINISHED("tool.call.finished"),
     TOOL_CALL_FAILED("tool.call.failed"),
     OPTION_REQUESTED("option.requested"),

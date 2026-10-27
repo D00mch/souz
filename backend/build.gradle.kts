@@ -93,7 +93,7 @@ tasks.named<Jar>("shadowJar") {
 }
 
 tasks.test {
-    listOf("saved-links" to "savedLinks", "gmail" to "gmail").forEach { (module, property) ->
+    listOf("saved-links" to "savedLinks", "gmail" to "gmail", "github" to "github").forEach { (module, property) ->
         val pluginJar = project(":plugins:$module").layout.buildDirectory.file("libs/$module.jar")
         dependsOn(":plugins:$module:jar")
         inputs.file(pluginJar)

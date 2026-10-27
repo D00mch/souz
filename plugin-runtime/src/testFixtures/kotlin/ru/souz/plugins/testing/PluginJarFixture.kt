@@ -22,6 +22,7 @@ fun pluginJar(
     duplicateTools: Boolean = false,
     toolName: String = "version",
     schemaBody: String = "",
+    invokeBody: String = """return JsonNodeFactory.instance.objectNode().put("version", "$version");""",
 ): Path {
     val root = Files.createTempDirectory(path.parent, "compiler-")
     val source = root.resolve("FixturePlugin.java")
@@ -42,14 +43,14 @@ fun pluginJar(
                         return new PluginToolDefinition("$toolName", "Report generation $version", schema, "NOTES");
                     }
                     public Object invoke(ObjectNode arguments, PluginCallContext context, Continuation<? super JsonNode> c) {
-                        return JsonNodeFactory.instance.objectNode().put("version", "$version");
+                        $invokeBody
                     }
                 };
                 return java.util.List.of(${if (duplicateTools) "tool, tool" else "tool"});
             }
         }
     """.trimIndent())
-    val classpath = listOf(SouzPlugin::class.java, JsonNode::class.java, JsonToken::class.java, Unit::class.java)
+    val classpath = listOf(PluginLifecycleProbe::class.java, SouzPlugin::class.java, JsonNode::class.java, JsonToken::class.java, Unit::class.java)
         .joinToString(java.io.File.pathSeparator) { Path.of(it.protectionDomain.codeSource.location.toURI()).toString() }
     check(ToolProvider.getSystemJavaCompiler().run(null, null, null, "-classpath", classpath, "-d", root.toString(), source.toString()) == 0)
     val manifest = Manifest().apply {
@@ -72,4 +73,12 @@ fun pluginJar(
     Files.move(temporary, path, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
     Files.walk(root).use { files -> files.sorted(Comparator.reverseOrder()).forEach { Files.delete(it) } }
     return path
+}
+
+/** Parent-loaded test boundary for deterministic coordination with independently loaded fixtures. */
+object PluginLifecycleProbe {
+    var onStart: suspend () -> Unit = {}
+    var onStop: suspend () -> Unit = {}
+    @JvmStatic suspend fun start() = onStart()
+    @JvmStatic suspend fun stop() = onStop()
 }

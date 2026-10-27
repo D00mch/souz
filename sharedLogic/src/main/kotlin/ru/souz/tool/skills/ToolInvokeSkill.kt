@@ -31,12 +31,12 @@ class ToolInvokeSkill(
 ) : LLMToolSetup {
     data class Input(
         val skillId: String,
-        val arguments: Map<String, Any> = emptyMap(),
+        val arguments: Map<String, Any>? = null,
     )
 
     override val fn: LLMRequest.Function = LLMRequest.Function(
         name = NAME,
-        description = "Invoke one available Skill. Inspect its details with GetSkillByName or GetSkillsByCategory first, then pass arguments matching the returned input schema.",
+        description = "Select a Skill by skillId first: omit arguments to receive its input schema without executing. Then call again with arguments matching that schema (use {} for a no-argument call). GetSkillByName also returns the schema.",
         parameters = LLMRequest.Parameters(
             type = "object",
             properties = mapOf(
@@ -62,11 +62,15 @@ class ToolInvokeSkill(
             }
             val resolver = resolver()
             when (val resolved = resolver.resolve(SkillId(skillId), meta.userId)) {
-                is SkillResolution.Compiled -> resolved.tool.invoke(
+                is SkillResolution.Compiled -> if (input.arguments == null) resultMessage(functionCall.name, resolved.tool.toDetail())
+                else resolved.tool.invoke(
                     LLMResponse.FunctionCall(resolved.tool.fn.name, input.arguments),
                     meta = meta,
                 ).copy(name = functionCall.name)
                 is SkillResolution.Bundle -> {
+                    if (input.arguments == null) return resultMessage(functionCall.name, SkillLookupResponse(
+                        skill = resolved.bundle.toDetail(), executionSchema = fileSkillExecutionSchema(),
+                    ))
                     val arguments = restJsonMapper.convertValue(input.arguments, SkillCommandExecutor.Args::class.java)
                     val result = if (arguments.composite == null) {
                         commandExecutor.execute(resolved.bundle, resolved.bundleHash, arguments, meta)

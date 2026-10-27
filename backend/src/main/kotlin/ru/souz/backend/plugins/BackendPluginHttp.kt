@@ -4,6 +4,9 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpRequestTimeoutException
+import kotlinx.coroutines.CancellationException
+import java.net.SocketTimeoutException
 import io.ktor.client.request.prepareRequest
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
@@ -27,13 +30,14 @@ internal class BackendPluginHttp(
     private val client: HttpClient = pluginHttpClient(),
 ) : PluginHttp, AutoCloseable {
     override suspend fun execute(request: PluginHttpRequest): PluginHttpResponse {
-        validatePluginUrl(request.url)
+        try { validatePluginUrl(request.url) }
+        catch (_: Exception) { throw PluginException("plugin_http_destination_forbidden", "Expected a public HTTP(S) destination without credentials") }
         require(request.body.size <= PLUGIN_MAX_BYTES) { "HTTP request body exceeds 1 MiB" }
         require(request.method in httpMethods) { "Unsupported HTTP method" }
         require(request.headers.keys.none { it.lowercase() in reservedHeaders }) {
             "Reserved HTTP header"
         }
-        return client.prepareRequest(request.url) {
+        return try { client.prepareRequest(request.url) {
             method = HttpMethod.parse(request.method)
             request.headers.forEach { (name, values) -> values.forEach { headers.append(name, it) } }
             setBody(request.body)
@@ -41,6 +45,20 @@ internal class BackendPluginHttp(
             val bytes = response.bodyAsChannel().readRemaining(PLUGIN_MAX_BYTES + 1L).use { it.readByteArray() }
             if (bytes.size > PLUGIN_MAX_BYTES) throw PluginException("plugin_http_body_too_large", "HTTP response exceeds 1 MiB")
             PluginHttpResponse(response.status.value, response.headers.entries().associate { it.key to it.value.toList() }, bytes)
+        } } catch (e: CancellationException) { throw e }
+        catch (e: PluginException) { throw e }
+        catch (e: Exception) {
+            val causes = generateSequence<Throwable>(e) { it.cause }.take(10).toList()
+            val code = when {
+                causes.any { it is PluginDestinationDenied } -> "plugin_http_destination_forbidden"
+                causes.any { it is HttpRequestTimeoutException || it is SocketTimeoutException || it is io.ktor.client.network.sockets.SocketTimeoutException || it is io.ktor.client.network.sockets.ConnectTimeoutException } -> "plugin_http_timeout"
+                else -> "plugin_http_transport_failed"
+            }
+            throw PluginException(code, when (code) {
+                "plugin_http_destination_forbidden" -> "HTTP destination is not public"
+                "plugin_http_timeout" -> "HTTP request exceeded its deadline; retry later if appropriate"
+                else -> "HTTP transport failed; retry later if appropriate"
+            })
         }
     }
 
@@ -104,10 +122,12 @@ internal fun isPublicPluginAddress(address: InetAddress): Boolean {
 
 internal fun pluginDns(delegate: Dns = Dns.SYSTEM): Dns = Dns { host ->
     delegate.lookup(host).also { addresses ->
-        if (addresses.isEmpty() || addresses.any { !isPublicPluginAddress(it) }) throw UnknownHostException("Non-public HTTP destination")
+        if (addresses.isEmpty() || addresses.any { !isPublicPluginAddress(it) }) throw PluginDestinationDenied()
     }
 }
 
 private val httpMethods = setOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
 private val reservedHeaders = setOf("host", "connection", "content-length", "transfer-encoding", "proxy-authorization")
 private val urlSchemes = setOf("http", "https")
+
+private class PluginDestinationDenied : UnknownHostException("Non-public HTTP destination")

@@ -52,6 +52,12 @@ Schema validation messages identify the first failing rule and its JSON Pointer 
 
 Client tools use `GetSkillByName` and `RunSkillCommand`. Declared and discovered definitions retain their exact wire names and normalized schemas; known names also receive bundled usage instructions appended to their description. Defaults use open object schemas except `orion.tools.list`, which accepts an empty object. Parents and selected subagents receive that guidance; persisted declarations and creation hashes retain the original descriptions. `user.ask` uses `CHAT`, `web.search` uses `WEB_SEARCH`, and other client tools use `APPLICATIONS`. Successful results must be JSON objects; malformed success output becomes `invalid_tool_result` for the model. Custom tools have a one-minute deadline. Known Skill names use bundled deadlines: five minutes for `user.ask`, 30 seconds for `device.mcp.list_devices`, `device.mcp.list_tools`, and `orion.tools.list`, and one minute for the remaining Skills. `channelId` is reserved routing metadata, removed before schema validation and device dispatch; it cannot be declared as a tool parameter. Orion owns device binding; creation adds no device fields or binding checks.
 
+Informational `plugin.call.finished` receipts describe server plugin execution,
+including child calls, with plugin/tool/version/digest, invocation status and
+optional explicit domain outcome/error code. They are durable and replayable,
+contain no arguments or results, and require no ACK or `tool.result`. See the
+[plugin trace](examples/plugin-execution.jsonl). They do not finish a thread.
+
 Every public `tool.call.started` requests client execution and omits `target`. Return `tool.result`, respecting `deadlineAt` when present. The example covers `user.ask`, `device.media.open` and `web.search`; argument/result shapes are documented in the schemas and trace.
 
 Cross-channel client Skills accept `channelId` from `ListActiveChannels`. The target must be an owned,
@@ -142,7 +148,7 @@ Events saved during disconnection or recovery remain available. Reopening the so
 
 On the connection processing a command, Souz sends its `ack` and any submit/cancel `thread.status` feedback before subsequent events. An explicit subscription ACK precedes its replay. Other connections, cross-channel commands, and reconnect replay proceed independently and may precede a retried ACK. Execution and durable event storage continue after disconnect without waiting for an ACK retry. Retries return the stored receipt with `duplicate:true`; ACKs and status are not replayed.
 
-Durable public events are same-thread `tool.call.started`, `thread.completed|failed|cancelled`, and out-of-band `message.created` with `threadId:null`. Ordinary in-thread transcript events are excluded. Durable events are sequenced within each chat; chats may interleave, and filtered internal events leave valid sequence gaps. Live-only assistant blocks preserve their relative order when delivered, but stale blocks may be dropped during durable catch-up.
+Durable public events are `plugin.call.finished`, same-thread `tool.call.started`, `thread.completed|failed|cancelled`, and out-of-band `message.created` with `threadId:null`. Ordinary in-thread transcript events are excluded. Durable events are sequenced within each chat; chats may interleave, and filtered internal events leave valid sequence gaps. Live-only assistant blocks preserve their relative order when delivered, but stale blocks may be dropped during durable catch-up.
 
 | Operation | Idempotency key |
 | --- | --- |

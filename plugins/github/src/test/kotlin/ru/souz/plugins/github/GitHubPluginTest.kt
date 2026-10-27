@@ -22,7 +22,7 @@ class GitHubPluginTest {
 
     @BeforeTest fun loadJar() = runTest {
         Files.copy(Path.of(System.getProperty("github.plugin.jar")), directory.resolve("github.jar"))
-        registry = PluginRegistry(directory, reportFailure = { _, error -> throw error })
+        registry = PluginRegistry(directory, reportFailure = { error(it.toString()) })
         lease = registry.acquire(registry.installed().map { it.binding })
     }
 
@@ -212,8 +212,13 @@ class GitHubPluginTest {
 
     @Test fun `network failures are sanitized while cancellation propagates`() = runTest {
         val error = assertFailsWith<PluginException> { call("get_repository") { throw IllegalStateException("sensitive network detail") } }
-        assertEquals("github_http_failed", error.code)
+        assertEquals("plugin_http_transport_failed", error.code)
         assertFalse(error.message.orEmpty().contains("sensitive"))
+        for (code in listOf("plugin_http_body_too_large", "plugin_http_timeout", "plugin_http_destination_forbidden", "plugin_http_transport_failed")) {
+            val failure = assertFailsWith<PluginException> { call("list_issues") { throw PluginException(code, "Safe host failure") } }
+            assertEquals(code, failure.code)
+            if (code == "plugin_http_body_too_large") assertTrue(failure.message!!.contains("perPage"))
+        }
         val cancellation = CancellationException("cancelled")
         assertSame(cancellation, assertFailsWith<CancellationException> { call("get_repository") { throw cancellation } })
     }

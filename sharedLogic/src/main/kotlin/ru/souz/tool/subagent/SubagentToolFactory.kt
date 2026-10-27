@@ -16,6 +16,7 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
+import ru.souz.llms.supportedReasoningEfforts
 import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.skills.SkillCommandExecutor
@@ -37,13 +38,22 @@ class SubagentToolFactory(
     private val configuredModels: Map<String, LlmProvider> = emptyMap(),
     private val commandToolNamesProvider: (AgentToolCatalog) -> Set<String> = { emptySet() },
     private val commandInstructions: String = "",
+    private val reasoningEfforts: (LlmProvider, String) -> List<String>? = ::supportedReasoningEfforts,
 ) {
     fun create(parentSettings: AgentSettings): LLMToolSetup {
         val models = configuredModels + (parentSettings.model to parentSettings.provider)
-        return SubagentTool(createAgent, models.keys.toList()) { input, meta ->
+        val efforts = models.mapValues { (model, provider) -> reasoningEfforts(provider, model)?.toList() }
+        return SubagentTool(createAgent, models.keys.toList(), efforts) { input, meta ->
             val model = input.model ?: parentSettings.model
             val provider = models[model]
                 ?: fail("subagent_model_unavailable", "Choose an advertised model ID: $model is unavailable.")
+            input.reasoningEffort?.let { effort ->
+                val allowed = efforts[model]
+                if (allowed == null || effort !in allowed) fail("invalid_subagent_input",
+                    "Unsupported reasoningEffort for $model. " +
+                        (allowed?.takeIf { it.isNotEmpty() }?.let { "Choose one of $it, or omit for provider defaults." }
+                            ?: "Omit reasoningEffort to use provider defaults."))
+            }
             prepare(input, parentSettings.copy(model = model, provider = provider, reasoningEffort = input.reasoningEffort), meta)
         }
     }

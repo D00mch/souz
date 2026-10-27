@@ -149,7 +149,11 @@ private suspend fun get(context: PluginCallContext, path: String, query: Map<Str
             ),
         ))
     } catch (cancelled: CancellationException) { throw cancelled }
-    catch (_: Exception) { throw PluginException("github_http_failed", "GitHub request failed or exceeded the host HTTP limits") }
+    catch (error: PluginException) {
+        if (error.code == "plugin_http_body_too_large") throw PluginException(error.code, "GitHub response exceeds the host limit; reduce perPage. A single oversized object cannot be retrieved.")
+        throw error
+    }
+    catch (_: Exception) { throw PluginException("plugin_http_transport_failed", "GitHub request failed; retry later if appropriate") }
     fun header(name: String): String? = response.headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value?.firstOrNull()
     fun headerNumber(name: String): Long? = header(name)?.toLongOrNull()?.takeIf { it >= 0 }
     val status = when {
@@ -158,6 +162,7 @@ private suspend fun get(context: PluginCallContext, path: String, query: Map<Str
         response.status == 404 -> "not_found"
         else -> "api_error"
     }
+    context.reportOutcome(PluginOutcome.valueOf(status.uppercase()))
     val result = json.createObjectNode().put("status", status).put("statusCode", response.status)
     listOf("rateLimitRemaining" to "X-RateLimit-Remaining", "rateLimitReset" to "X-RateLimit-Reset", "retryAfterSeconds" to "Retry-After")
         .forEach { (key, name) -> headerNumber(name)?.let { result.put(key, it) } }

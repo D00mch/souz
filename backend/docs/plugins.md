@@ -15,7 +15,8 @@ storage, HTTP, tool schemas, and the saved-links example.
 
 Keep both paths outside user workspaces. Publish `name.jar.part` using an atomic
 rename to `name.jar`; changes are reconciled every five seconds. Activation failures
-are logged with the plugin ID and exception class. The previous generation remains
+identify the installation path, attempted ID/version/digest when readable, stage,
+and safe operator guidance. Cache integrity failures are isolated per artifact. The previous generation remains
 available. Remove a JAR to retire it for new executions. Preserve cached artifacts
 needed by waiting executions; a missing artifact fails the resume. Replicas scan
 independently and need the relevant cache for any execution they resume.
@@ -33,7 +34,10 @@ do not expand the compiled-tool allowlist.
 Accepted executions snapshot enabled plugin generations into metadata and preserve
 them across option waits. Setting changes and artifact updates affect subsequent
 executions. The existing Skill inventory, lookup, invocation, and subagent catalog
-work with plugin tool names; there are no new WebSocket operations or plugin routes.
+work with plugin tool names. Omit `arguments` from `RunSkillCommand` to load only
+the selected schema; provide `arguments` (including `{}`) to execute. Validation
+returns up to 32 JSON Pointer errors and the expected schema without argument
+values, before running the handler or making network requests.
 
 PostgreSQL `plugin_data` stores `(user_id, plugin_id, record_key)` JSONB records.
 Invocation identity comes from `ToolInvocationMeta`, never model arguments.
@@ -61,3 +65,20 @@ Python connection state and replacing hook prompts.
 Run `./gradlew :plugin-runtime:test :plugins:saved-links:test :plugins:gmail:test :backend:test` with
 Docker available. The production-wired plugin tests use real JAR loading and
 PostgreSQL, substituting only the external HTTP/LLM boundaries.
+
+## Invocation diagnostics
+
+Durable `plugin.call.finished` events contain `invocationId`, `pluginId`, actual
+`toolName`, `version`, `digest`, invocation `status`, optional domain `outcome` and
+`errorCode`, and `durationMs`. Receipts cover parent and child calls and are
+available in the existing event audit/replay APIs and public WebSocket stream.
+They carry no arguments, response bodies, credentials, or stored values.
+`status` is `succeeded`, `rejected` (schema validation), `failed`, or `cancelled`;
+`outcome` is explicitly reported by the plugin through the SDK. A valid GitHub
+429 response has `status:succeeded` and `outcome:rate_limited`. Generic
+`RunSkillCommand` audit status continues to describe the enclosing tool dispatch.
+No client ACK or `tool.result` is required for plugin receipts. Only public
+`tool.call.started` requests client execution. Receipts do not finish the thread.
+A process crash or persistence failure can interrupt publication after a plugin
+side effect. Receipt failures log safe identifiers without changing the result or
+masking cancellation; receipts are diagnostics, not an exactly-once guarantee.

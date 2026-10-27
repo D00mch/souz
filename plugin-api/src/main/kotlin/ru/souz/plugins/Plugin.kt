@@ -29,6 +29,8 @@ data class PluginToolDefinition(
 interface PluginCallContext {
     val data: PluginData
     val http: PluginHttp
+    /** Optional explicit domain outcome, independent of invocation/transport success. */
+    fun reportOutcome(outcome: PluginOutcome) {}
     val logger: PluginLogger
     val oauth: PluginOAuth get() = throw PluginException("plugin_service_unavailable", "OAuth is unavailable")
     val files: PluginFiles get() = throw PluginException("plugin_service_unavailable", "Files are unavailable")
@@ -94,3 +96,6 @@ fun interface PluginLogger { fun info(message: String) }
 
 /** Expected, safe-to-display tool failure. Coroutine cancellation must be rethrown separately. */
 class PluginException(val code: String, message: String) : Exception(message)
+
+/** Bounded diagnostic labels. Never infer these from arbitrary response JSON. */
+enum class PluginOutcome { OK, NOT_FOUND, RATE_LIMITED, API_ERROR }

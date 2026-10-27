@@ -58,6 +58,12 @@ Creation validates the complete catalogue and stores it with the chat in one ins
 - Assistant progress uses the droppable live queue and `seq:null`, without persistence or transcript rows. Check cancellation before publishing; the submitting connection orders delivery after its ACK. Its internal durable position lets replay suppress overtaken progress; tools never wait for progress receipts or speech.
 - Iterate the event bus's concurrent subscriber set directly during publication; Kotlin collection-size fast paths can race with disconnect and throw while copying it.
 
+Server plugin invocations, including child calls, produce durable informational
+`plugin.call.finished` receipts. They identify the pinned plugin/tool generation
+and separate invocation status from explicitly reported domain outcome. Clients
+never answer these receipts with `tool.result`; public `tool.call.started` retains
+its client-execution meaning.
+
 ## Diagnostics
 
 `SouzClientWebSocket` logs connection lifecycle, frame receipt, persisted chat identity, prepared subscriptions, sent acknowledgements, subscription cleanup, and public event sends at INFO. `AgentEventService` logs stored public client events at INFO. JSON stdout carries correlation fields in `mdc`: `socketId`, `userId`, `chatId`, `threadId`, `clientRequestId`, `toolCallId`, `seq`, and event `type` where known. Frame failures include the processing stage, elapsed time, and stack trace. Policy closes and contract rejections include their codes. Cancellation propagates immediately; cleanup logs interrupted frames when the scope is inactive. The final close code is included only when already available, alongside coroutine activity; logging must not wait for the close handshake.
