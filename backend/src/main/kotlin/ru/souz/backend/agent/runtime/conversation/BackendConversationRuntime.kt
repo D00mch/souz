@@ -75,7 +75,7 @@ internal class BackendConversationRuntime(
         )
         val attachments = result.attachments
         val nextSession = AgentConversationSession(
-            attachmentExecutionId = request.executionId,
+            attachmentExecutionId = request.executionId.takeIf { attachments.isNotEmpty() },
             replyAttachments = attachments,
             history = result.context.history,
             temperature = result.context.settings.temperature,

@@ -1,6 +1,7 @@
 package ru.souz.backend.storage.postgres
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import java.sql.Connection
@@ -41,6 +42,7 @@ import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.user.model.UserRecord
 import ru.souz.backend.vk.VkBotBinding
+import ru.souz.llms.FileContent
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.findLLMModel
@@ -175,8 +177,11 @@ internal data class StoredConversationContext(
     val temperature: Float,
     val locale: String,
     val timeZone: String,
+    // Omitted without a selection, so text-only sessions stay readable by releases without attachments.
+    @field:JsonInclude(JsonInclude.Include.NON_NULL)
     val attachmentExecutionId: String? = null,
-    val replyAttachments: List<ru.souz.llms.FileContent> = emptyList(),
+    @field:JsonInclude(JsonInclude.Include.NON_EMPTY)
+    val replyAttachments: List<FileContent> = emptyList(),
 )
 
 internal data class StoredOptionAnswer(

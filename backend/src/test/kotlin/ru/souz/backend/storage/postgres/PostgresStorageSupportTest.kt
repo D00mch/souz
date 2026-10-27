@@ -12,6 +12,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertFailsWith
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.toConversationSession
+import ru.souz.llms.FileContent
+import ru.souz.llms.FileReference
 
 class PostgresStorageSupportTest {
     @Test
@@ -56,8 +58,11 @@ class PostgresStorageSupportTest {
         val json = postgresStorageMapper.readTree(state.toContextJson())
 
         assertFalse(json.has("activeAgentId"))
+        // Text-only sessions keep the field set that releases without attachments can read.
+        assertFalse(json.has("attachmentExecutionId"))
+        assertFalse(json.has("replyAttachments"))
         assertEquals(emptyList(), state.toConversationSession().replyAttachments)
-        val file = ru.souz.llms.FileContent(ru.souz.llms.FileReference("file-id"), "report.md", "text/markdown", 12)
+        val file = FileContent(FileReference("file-id"), "report.md", "text/markdown", 12)
         val withFiles = state.copy(schemaVersion = 2, attachmentExecutionId = "execution", replyAttachments = listOf(file))
         val restored = postgresStorageMapper.readValue<StoredConversationContext>(withFiles.toContextJson())
         assertEquals(listOf(file), restored.replyAttachments)
