@@ -8,6 +8,8 @@ A forced history refresh replaces that chat's cached history, while a regular fe
 
 Send and Saved Messages tools resolve attachments through `TelegramAttachmentPathResolver`. Forwarding and state-changing tools must honor SafeMode and reject execution until the caller repeats the operation with explicit confirmation.
 
+Mail tools open drafts by default. Sending a new email or reply requires `send=true` and `confirmed=true` after the user approves the recipient and message in a separate exchange. This confirmation is required independently of SafeMode and works through the Telegram control bot without waiting for a desktop dialog. Unconfirmed send calls perform no Mail operations. Confirmed sends run without opening or activating Mail; message fields are passed as process arguments rather than interpolated into scripts.
+
 ## Why it is fragile
 
 Authorization, TDLib updates, cache fetches, bot polling, and UI selections are asynchronous. Bypassing their owners can create stale histories, duplicate polling, unresolved selection continuations, or destructive actions without a visible approval step.

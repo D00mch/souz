@@ -17,10 +17,18 @@ class ToolMailReplyMessage(private val bash: ToolRunBashCommand) : ToolSetup<Too
 
         @InputParamDescription("Body content for reply")
         val content: String? = null,
+
+        @InputParamDescription("Send the reply instead of opening a draft; requires explicit user confirmation")
+        val send: Boolean = false,
+
+        @InputParamDescription("Set true only after showing the original message recipient and reply body and receiving explicit user approval to send")
+        val confirmed: Boolean = false,
     )
 
     override val name: String = "MailReplyMessage"
-    override val description: String = "Reply to a specific message by its ID."
+    override val description: String = "Create a reply draft for a specific message by its ID. " +
+        "To send without opening Mail, read the original message and ask the user to approve the recipient and reply body first, " +
+        "then call with send=true and confirmed=true. Never infer confirmation from the initial send request."
 
     override val fewShotExamples = listOf(
         FewShotExample(
@@ -37,8 +45,12 @@ class ToolMailReplyMessage(private val bash: ToolRunBashCommand) : ToolSetup<Too
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         if (input.messageId <= 0) throw BadInputException("messageId must be a positive integer")
+        if (input.send && !input.confirmed) {
+            throw BadInputException("Show the original message recipient and reply body, ask the user to confirm sending, " +
+                "then repeat with send=true and confirmed=true only after explicit approval. Nothing was sent.")
+        }
         val replyContent = input.content ?: ""
-        return bash.sh(MailAppleScriptCommands.replyMessageCommand(input.messageId, replyContent))
+        return bash.sh(MailAppleScriptCommands.replyMessageCommand(input.send), input.messageId.toString(), replyContent)
     }
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)

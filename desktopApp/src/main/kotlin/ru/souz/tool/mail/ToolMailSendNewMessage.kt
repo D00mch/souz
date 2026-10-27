@@ -23,10 +23,18 @@ class ToolMailSendNewMessage(private val bash: ToolRunBashCommand) : ToolSetup<T
 
         @InputParamDescription("Recipient name (for new email)")
         val recipientName: String? = null,
+
+        @InputParamDescription("Send the email instead of opening a draft; requires explicit user confirmation")
+        val send: Boolean = false,
+
+        @InputParamDescription("Set true only after showing the recipient, subject and body and receiving explicit user approval to send")
+        val confirmed: Boolean = false,
     )
 
     override val name: String = "MailSendNewMessage"
-    override val description: String = "Create a new email draft with recipient, subject, and body."
+    override val description: String = "Create a new email draft with recipient, subject, and body. " +
+        "To send without opening Mail, ask the user to approve the recipient, subject and body first, " +
+        "then call with send=true and confirmed=true. Never infer confirmation from the initial send request."
 
     override val fewShotExamples = listOf(
         FewShotExample(
@@ -48,10 +56,17 @@ class ToolMailSendNewMessage(private val bash: ToolRunBashCommand) : ToolSetup<T
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         if (input.recipientAddress.isBlank()) throw BadInputException("recipientAddress is required for new email")
+        if (input.send && !input.confirmed) {
+            throw BadInputException("Show the recipient, subject and body, ask the user to confirm sending, " +
+                "then repeat with send=true and confirmed=true only after explicit approval. Nothing was sent.")
+        }
         val subj = input.subject ?: "No Subject"
         val body = input.content ?: ""
         val recName = input.recipientName ?: input.recipientAddress
-        return bash.sh(MailAppleScriptCommands.sendNewMessageCommand(recName, input.recipientAddress, subj, body))
+        return bash.sh(
+            MailAppleScriptCommands.sendNewMessageCommand(input.send),
+            recName, input.recipientAddress, subj, body,
+        )
     }
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)

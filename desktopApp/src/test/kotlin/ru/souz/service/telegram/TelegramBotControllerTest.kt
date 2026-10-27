@@ -4,9 +4,11 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.clearAllMocks
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.unmockkAll
+import io.mockk.verify
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -15,8 +17,12 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentFacade
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.giga.toGiga
 import ru.souz.llms.restJsonMapper
 import ru.souz.service.speech.SpeechRecognitionProvider
+import ru.souz.tool.ToolRunBashCommand
+import ru.souz.tool.mail.ToolMailSendNewMessage
 import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -25,6 +31,47 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class TelegramBotControllerTest {
+
+    @Test
+    fun `mail confirmation returns to Telegram before a separate owner approval sends`() = runTest {
+        val bash = mockk<ToolRunBashCommand>()
+        every { bash.sh(any(), *anyVararg()) } returns "Email sent."
+        val mail = ToolMailSendNewMessage(bash).toGiga()
+        val arguments = mapOf("recipientAddress" to "ivan@example.com", "content" to "Отчёт готов", "send" to true)
+        val agentFacade = mockk<AgentFacade>()
+        // Deterministic tool choices replace the LLM; the adapter, tool and bot command path are real.
+        coEvery { agentFacade.execute("Отправь отчёт") } coAnswers {
+            mail.invoke(LLMResponse.FunctionCall(mail.fn.name, arguments)).content
+        }
+        coEvery { agentFacade.execute("Да, отправляй") } coAnswers {
+            mail.invoke(LLMResponse.FunctionCall(mail.fn.name, arguments + ("confirmed" to true))).content
+        }
+        val botApi = FakeBotApi()
+        val controller = TelegramBotController(
+            telegramService = mockk(relaxed = true), agentFacade = agentFacade, botApi = botApi,
+        )
+        fun update(id: Long, text: String) = TelegramUpdate(
+            updateId = id,
+            message = TelegramMessage(
+                messageId = id, from = TelegramUser(id = 42, isBot = false),
+                chat = TelegramChat(id = 42, type = "private"), text = text,
+            ),
+        )
+
+        try {
+            val offset = controller.processUpdates("token", 42, listOf(update(1, "Отправь отчёт")))
+
+            assertTrue(botApi.sentTexts.last().contains("ask the user to confirm sending"))
+            verify(exactly = 0) { bash.sh(any(), *anyVararg()) }
+
+            controller.processUpdates("token", 42, listOf(update(2, "Да, отправляй")), offset)
+
+            assertTrue(botApi.sentTexts.last().contains("Email sent."))
+            verify(exactly = 1) { bash.sh(any(), "ivan@example.com", "ivan@example.com", "No Subject", "Отчёт готов") }
+        } finally {
+            controller.close()
+        }
+    }
 
     @AfterTest
     fun clearMocks() {

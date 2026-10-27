@@ -73,19 +73,13 @@ EOF
 EOF
     """.trimIndent()
 
-    fun replyMessageCommand(id: Int, content: String): String {
-        // Подготавливаем текст:
-        // 1. Экранируем слеши и кавычки, чтобы не сломать синтаксис AppleScript.
-        // 2. Заменяем переносы строк на склейку со специальным символом return в AppleScript.
-        val safeContent = content
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\" & return & \"")
+    // Message fields travel as process arguments, never as shell or AppleScript source.
+    fun replyMessageCommand(send: Boolean = false): String = """
+        osascript - "${'$'}@" <<'EOF'
+        on run argv
+        set targetId to (item 1 of argv) as integer
+        set replyContent to item 2 of argv
 
-        return """
-        osascript <<'EOF'
-        set targetId to $id
-        
         tell application "Mail"
             try
                 -- Находим оригинальное письмо
@@ -96,33 +90,49 @@ EOF
                 
                 tell newReply
                     -- Аккуратно добавляем наш текст новым абзацем в начало письма
-                    make new paragraph at beginning of content with data ("$safeContent" & return & return)
-                    
-                    -- Показываем готовое письмо пользователю для проверки
-                    set visible to true
+                    make new paragraph at beginning of content with data (replyContent & return & return)
                 end tell
-                
-                -- Переводим фокус на Mail
+
+                ${if (send) """
+                if (send newReply) then
+                    return "Email reply sent."
+                end if
+                error "Mail could not send the reply."
+                """.trimIndent() else """
+                set visible of newReply to true
                 activate
+                return "Email reply draft created."
+                """.trimIndent()}
                 
             on error errorMsg
-                display dialog "Ошибка при создании ответа.\nДетали: " & errorMsg buttons {"OK"}
+                ${if (send) "error errorMsg" else """display dialog "Ошибка при создании ответа.\nДетали: " & errorMsg buttons {"OK"}"""}
             end try
         end tell
-        EOF
+        end run
+EOF
     """.trimIndent()
-    }
 
-    fun sendNewMessageCommand(name: String, address: String, subject: String, content: String): String = """
-        osascript <<'EOF'
+    fun sendNewMessageCommand(send: Boolean = false): String = """
+        osascript - "${'$'}@" <<'EOF'
+        on run argv
+        set recipientName to item 1 of argv
+        set recipientAddress to item 2 of argv
+        set messageSubject to item 3 of argv
+        set messageContent to item 4 of argv
         tell application "Mail"
-            activate
-            set newMessage to make new outgoing message with properties {subject:"$subject", content:"$content", visible:true}
+            ${if (send) "" else "activate"}
+            set newMessage to make new outgoing message with properties {subject:messageSubject, content:messageContent, visible:${!send}}
             tell newMessage
-                make new to recipient at end of to recipients with properties {name:"$name", address:"$address"}
+                make new to recipient at end of to recipients with properties {name:recipientName, address:recipientAddress}
             end tell
-            return "New email draft created."
+            ${if (send) """
+            if (send newMessage) then
+                return "Email sent."
+            end if
+            error "Mail could not send the email."
+            """.trimIndent() else """return "New email draft created.""""}
         end tell
+        end run
 EOF
     """.trimIndent()
 }
