@@ -18,12 +18,7 @@ SOUZ_AGENT_INTEGRATION_TEST_REASONING_EFFORT=none \
 
 Replace the model ID and endpoint to evaluate another model. `OPENAI_MODEL`, `OPENAI_BASE_URL` and `OPENAI_API_KEY` are required after opt-in. Reasoning effort is optional; use a value supported by the model and endpoint, or omit it for the provider default. Streaming is disabled. Each scenario allows at most 24 model calls and four minutes, including Skill selection. The context size is 32,000 tokens. The harness does not change provider parameters or retry scenarios to obtain a passing result.
 
-Without `SOUZ_AGENT_INTEGRATION_TESTS_ON=true`, live tests skip before reading credentials or creating an HTTP client. Autonomous harness tests require no credentials:
-
-```bash
-./gradlew :sharedLogic:test --tests 'ru.souz.agent.scenarios.AgentScenarioTestSupportTest' \
-  --tests 'ru.souz.agent.scenarios.ScenarioLiveModelTest'
-```
+Without `SOUZ_AGENT_INTEGRATION_TESTS_ON=true`, live tests skip before reading credentials or creating an HTTP client.
 
 ## Add a scenario
 
