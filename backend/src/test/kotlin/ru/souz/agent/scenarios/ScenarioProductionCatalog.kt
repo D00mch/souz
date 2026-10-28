@@ -88,7 +88,7 @@ internal fun scenarioTool(productionTool: LLMToolSetup, executionMock: LLMToolSe
 
 /** processTestResources copies the complete production sandbox Skill tree, including supporting files. */
 internal suspend fun installProductionSkillBundles(registry: SkillRegistryRepository, userId: String) {
-    val root = Path.of(requireNotNull(AgentScenarioTestSupport::class.java.getResource("/skills/runtime")).toURI())
+    val root = Path.of(requireNotNull(ScenarioLiveModel::class.java.getResource("/skills/runtime")).toURI())
     val bundles = Files.list(root).use { directories ->
         directories.filter { Files.isDirectory(it) }.sorted().map { directory ->
             val files = Files.walk(directory).use { paths ->

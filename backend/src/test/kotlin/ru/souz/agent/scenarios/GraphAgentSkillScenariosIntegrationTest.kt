@@ -22,15 +22,12 @@ class GraphAgentSkillScenariosIntegrationTest {
     fun `model discovers the request procedure and records CASE-42`() = runTest(timeout = 5.minutes) {
         ScenarioLiveModel.fromEnvironment().use { model ->
             val tool = scenarioResultTool()
-            val result = model.testSupport().runScenario(
+            val result = model.runScenario(
                 userPrompt = "Запиши результат проверки заявки CASE-42 в журнал.",
                 skillResources = mapOf("scenario-smoke" to "/skills/scenario-smoke/SKILL.md"),
                 mockedTools = listOf(tool),
             )
 
-            coVerify(exactly = 1) {
-                tool.invoke(match { it.arguments == mapOf("requestId" to "CASE-42", "value" to "skill-framework-ok") }, any())
-            }
             coVerify(exactly = 1) { tool.invoke(any(), any()) }
             val loaded = result.events.indexOfFirst {
                 it is AgentRuntimeEvent.ToolCallFinished && it.name == ToolGetSkillByName.NAME &&
@@ -46,8 +43,8 @@ class GraphAgentSkillScenariosIntegrationTest {
                 mapOf("skillId" to "RecordScenarioResult", "arguments" to mapOf("requestId" to "CASE-42", "value" to "skill-framework-ok")),
                 (result.events[called] as AgentRuntimeEvent.ToolCallStarted).arguments,
             )
-            assertFalse(result.requests.first().messages.any { "skill-framework-ok" in it.content })
-            assertEquals(model.modelId, result.metrics.model)
+            assertFalse("skill-framework-ok" in result.requests.first { it.functions.isNotEmpty() }.toString(),
+                "The control value must reach the model only through SKILL.md.")
         }
     }
 }

@@ -16,23 +16,18 @@ class ScenarioLiveModel private constructor(
 ) : AutoCloseable {
     override fun close() = client.close()
 
-    fun testSupport(): AgentScenarioTestSupport = AgentScenarioTestSupport(modelId, api, reasoningEffort)
-
     companion object {
-        fun fromEnvironment(
-            read: (String) -> String? = System::getenv,
-            createClient: () -> HttpClient = ::createOpenAiProviderHttpClient,
-        ): ScenarioLiveModel {
-            assumeTrue(read(SOUZ_AGENT_INTEGRATION_TESTS_ON).equals("true", ignoreCase = true),
+        fun fromEnvironment(): ScenarioLiveModel {
+            assumeTrue(System.getenv(SOUZ_AGENT_INTEGRATION_TESTS_ON).equals("true", ignoreCase = true),
                 "Set $SOUZ_AGENT_INTEGRATION_TESTS_ON=true to evaluate a live model.")
-            fun required(name: String): String = requireNotNull(read(name)?.trim()?.takeIf { it.isNotEmpty() }) {
+            fun required(name: String): String = requireNotNull(System.getenv(name)?.trim()?.takeIf { it.isNotEmpty() }) {
                 "$name is required when $SOUZ_AGENT_INTEGRATION_TESTS_ON=true."
             }
             val model = required("OPENAI_MODEL")
             val baseUrl = required("OPENAI_BASE_URL")
             val key = required("OPENAI_API_KEY")
-            val effort = read(SOUZ_AGENT_INTEGRATION_TEST_REASONING_EFFORT)?.trim()?.takeIf { it.isNotEmpty() }
-            val client = createClient()
+            val effort = System.getenv(SOUZ_AGENT_INTEGRATION_TEST_REASONING_EFFORT)?.trim()?.takeIf { it.isNotEmpty() }
+            val client = createOpenAiProviderHttpClient()
             return ScenarioLiveModel(model, effort, OpenAICompatibleChatAPI(
                 LlmProvider.OPENAI, scenarioSettings(model), client, apiKey = key, baseUrl = baseUrl,
             ), client)

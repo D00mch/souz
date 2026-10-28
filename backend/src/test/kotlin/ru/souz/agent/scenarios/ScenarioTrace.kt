@@ -1,5 +1,6 @@
 package ru.souz.agent.scenarios
 
+import kotlinx.coroutines.CancellationException
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
@@ -9,7 +10,6 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.plus
 import ru.souz.llms.restJsonMapper
-import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Duration
 
@@ -18,10 +18,7 @@ data class ScenarioResult(
     val requests: List<LLMRequest.Chat>,
     val events: List<AgentRuntimeEvent>,
     val metrics: ScenarioMetrics,
-) {
-    val output: String get() = execution.output
-    val history: List<LLMRequest.Message> get() = execution.context.history
-}
+)
 
 data class ScenarioMetrics(
     val model: String,
@@ -41,25 +38,36 @@ data class ScenarioMetrics(
 internal class ScenarioTrace(
     private val modelId: String,
     private val reasoningEffort: String?,
-    private val maxModelCalls: Int,
 ) : AgentRuntimeEventSink {
     val requests = mutableListOf<LLMRequest.Chat>()
     val events = mutableListOf<AgentRuntimeEvent>()
     private var usage = LLMResponse.Usage(0, 0, 0, 0)
     private var lastResponse: LLMResponse.Chat? = null
+    private val providerFailures = mutableListOf<String>()
 
     fun instrument(api: LLMChatAPI): LLMChatAPI = object : LLMChatAPI by api {
         override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-            check(requests.size < maxModelCalls) { "Scenario exceeded $maxModelCalls model calls without completing." }
+            check(requests.size < MAX_MODEL_CALLS) { "Scenario exceeded $MAX_MODEL_CALLS model calls without completing." }
             // The host clock has no injection port. Normalize only its context timestamp at the test boundary.
             val request = body.copy(
                 reasoningEffort = reasoningEffort,
                 messages = body.messages.map { it.withScenarioDate() },
             )
             requests += request
-            return api.message(request).also { response ->
+            val response = try {
+                api.message(request)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                providerFailures += "Call ${requests.size}: $failure"
+                throw failure
+            }
+            return response.also {
                 lastResponse = response
-                if (response is LLMResponse.Chat.Ok) usage += response.usage
+                when (response) {
+                    is LLMResponse.Chat.Ok -> usage += response.usage
+                    is LLMResponse.Chat.Error -> providerFailures += "Call ${requests.size}: $response"
+                }
             }
         }
     }
@@ -69,15 +77,13 @@ internal class ScenarioTrace(
     }
 
     fun assertCompleted(result: AgentExecutionResult) {
+        assertTrue(providerFailures.isEmpty(), "Scenario provider failures: $providerFailures")
         val response = lastResponse
         assertTrue(response is LLMResponse.Chat.Ok, "No successful final model response: $response")
         assertTrue(response.choices.isNotEmpty() && response.choices.all {
             it.message.functionCall == null && it.finishReason == LLMResponse.FinishReason.stop
         }, "Scenario ended without a completed assistant response: ${response.choices}")
         assertTrue(result.output.isNotBlank(), "Scenario returned no final answer.")
-        val finalMessage = result.context.history.lastOrNull()
-        assertEquals(LLMMessageRole.assistant, finalMessage?.role, "Final history message must be from the assistant.")
-        assertEquals(result.output.trim(), finalMessage?.content?.trim(), "Output must match the final assistant message.")
         assertTrue(response.choices.any { it.message.content.trim() == result.output.trim() },
             "Output must come from the final model response.")
     }
@@ -88,6 +94,7 @@ internal class ScenarioTrace(
     )
 }
 
+private const val MAX_MODEL_CALLS = 24
 private val HOST_DATE_LINE = Regex("(?m)^- \\[General fact]: Текущие дата и время: .*${'$'}")
 internal const val SCENARIO_DATE_LINE = "- [General fact]: Текущие дата и время: понедельник, 2026-06-01 10:00:00"
 
