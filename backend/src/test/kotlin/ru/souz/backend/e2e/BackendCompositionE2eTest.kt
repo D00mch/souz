@@ -107,6 +107,7 @@ class BackendCompositionE2eTest {
         backendE2eTest("e2e_composition") {
             val root = client.get(BackendHttpRoutes.ROOT)
             val health = client.get(BackendHttpRoutes.HEALTH)
+            val ready = client.get(BackendHttpRoutes.READY)
             val openApi = client.get(BackendHttpRoutes.OPENAPI_DOCUMENT)
             val unauthorized = client.get(BackendHttpRoutes.SETTINGS)
             val trusted = client.get(BackendHttpRoutes.SETTINGS) {
@@ -118,12 +119,20 @@ class BackendCompositionE2eTest {
             assertTrue(
                 health.jsonBody()["model"].asText() in BackendLlmSupport.chatModels.map { it.alias }
             )
+            assertEquals(HttpStatusCode.OK, ready.status)
             assertEquals(HttpStatusCode.OK, openApi.status)
             assertTrue(openApi.jsonBody()["paths"].has(BackendHttpRoutes.SETTINGS))
             assertFalse(root.jsonBody()["endpoints"].any { it.asText().contains("telegram-bot") })
             assertEquals(HttpStatusCode.Unauthorized, unauthorized.status)
             assertEquals("untrusted_proxy", unauthorized.jsonBody()["error"]["code"].asText())
             assertEquals(HttpStatusCode.OK, trusted.status)
+
+            val held = List(backend.dataSource.maximumPoolSize) { backend.dataSource.connection }
+            val notReady = client.get(BackendHttpRoutes.READY)
+            val healthWithoutDatabase = client.get(BackendHttpRoutes.HEALTH)
+            held.forEach { it.close() }
+            assertEquals(HttpStatusCode.ServiceUnavailable, notReady.status)
+            assertEquals(HttpStatusCode.OK, healthWithoutDatabase.status)
         }
 
     @Test
@@ -447,6 +456,7 @@ class BackendCompositionE2eTest {
         val expectedWithoutTelegram = linkedMapOf(
             "/" to setOf("get"),
             "/health" to setOf("get"),
+            "/ready" to setOf("get"),
             "/metrics" to setOf("get"),
             "/hooks/{hookId}" to setOf("post"),
             "/v1/hooks/reload" to setOf("post"),
@@ -500,7 +510,7 @@ class BackendCompositionE2eTest {
                         .filter { it.key in methods }
                         .forEach { (method, operation) ->
                             val publicOperation =
-                                path == "/" || path == "/health" || path == "/metrics" ||
+                                path == "/" || path == "/health" || path == "/ready" || path == "/metrics" ||
                                     (path == "/v1/chats" && method == "post") ||
                                     (path == "/v1/chats/{chatId}/threads/{threadId}" && method == "get")
                             if (path == "/hooks/{hookId}") {
