@@ -7,6 +7,7 @@ Before changing this module, read the relevant pain-point topics below.
 - `:skill-oauth-api` owns provider-neutral Skill OAuth contracts.
 - Keep host, HTTP transport, provider implementation, and persistence dependencies outside this module.
 - Implementations depend on this API; the API must not depend on `:skill-oauth-impl` or `:backend`.
+- An optional request response limit is enforced by the gateway while streaming; owner-bound plugin adapters can impose a stricter cap without changing existing Skill calls.
 
 ## Pain points
 

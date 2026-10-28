@@ -153,6 +153,8 @@ internal fun backendE2eTest(
     llmLimits: BackendLlmLimits = BackendLlmLimits(),
     sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
     skillOAuth: Boolean = false,
+    pluginDirectory: java.nio.file.Path? = null,
+    pluginOAuthHttp: (() -> HttpClient)? = null,
     complexityClassifier: TaskComplexityClassifier? = null,
     block: suspend BackendE2eScope.() -> Unit,
 ) = testApplication {
@@ -160,6 +162,8 @@ internal fun backendE2eTest(
         schema = schema,
         featureFlags = featureFlags,
         skillOAuth = skillOAuth,
+        pluginDirectory = pluginDirectory,
+        pluginOAuthHttp = pluginOAuthHttp,
         llm = llm,
         telegramApi = telegramApi,
         vkApi = vkApi,
@@ -350,6 +354,8 @@ internal class BackendE2eBackend(
     private val schema: String,
     private val featureFlags: BackendFeatureFlags,
     private val skillOAuth: Boolean = false,
+    private val pluginDirectory: java.nio.file.Path? = null,
+    private val pluginOAuthHttp: (() -> HttpClient)? = null,
     llm: E2eLlmApi,
     telegramApi: TelegramBotApi?,
     vkApi: VkBotApi?,
@@ -379,6 +385,10 @@ internal class BackendE2eBackend(
         scheduledTasks = scheduledTasks,
         llmLimits = llmLimits,
         policyPrompt = E2E_POLICY_PROMPT,
+        pluginDirectory = pluginDirectory,
+        skillOAuthProviderCredentials = if (pluginOAuthHttp == null && skillOAuth) mapOf("yandex" to
+            ru.souz.backend.app.SkillOAuthProviderCredentials("test-yandex-client-id", "test-yandex-client-secret", "https://backend.test/oauth/callback")) else if (pluginOAuthHttp == null) emptyMap() else mapOf("google" to
+            ru.souz.backend.app.SkillOAuthProviderCredentials("google-test", "secret", "https://backend.test/oauth/callback")),
     )
     private val source = object : BackendConfigSource {
         override fun env(key: String): String? = settingsSource?.env(key) ?: when {
@@ -391,6 +401,7 @@ internal class BackendE2eBackend(
     }
 
     private val di = DI.invoke(allowSilentOverride = true) {
+        if (pluginOAuthHttp != null) bindSingleton<HttpClient>(tag = "skillOAuthHttp") { pluginOAuthHttp() }
         import(
             backendDiModule(
                 systemPrompt = "You are the backend E2E assistant.",
@@ -486,6 +497,8 @@ internal class BackendE2eBackend(
 
     suspend fun awaitExecution(id: UUID) { di.direct.instance<AgentExecutionLauncher>().join(id) }
 
+    val plugins: ru.souz.backend.plugins.PluginRegistry get() = di.direct.instance()
+    val oauthCredentials: ru.souz.skilloauth.impl.SkillOAuthCredentialRepository get() = di.direct.instance()
     val jobService: JobService get() = di.direct.instance()
 
     suspend fun startScheduledTaskWorker() {
@@ -522,6 +535,8 @@ internal class BackendE2eBackend(
             schema = schema,
             featureFlags = featureFlags,
             skillOAuth = skillOAuth,
+            pluginDirectory = pluginDirectory,
+            pluginOAuthHttp = pluginOAuthHttp,
             llm = llm,
             telegramApi = null,
             vkApi = null,

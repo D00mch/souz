@@ -1,5 +1,8 @@
 package ru.souz.backend.execution.service
 
+import ru.souz.backend.plugins.PluginRegistry
+import ru.souz.backend.plugins.PluginBinding
+import ru.souz.backend.plugins.PLUGIN_BINDINGS
 import java.time.Instant
 import java.util.UUID
 import ru.souz.agent.spi.ModelRouting
@@ -40,6 +43,7 @@ internal class AgentExecutionRequestFactory(
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
     private val clientThreadRegistry: ClientThreadRuntimeRegistry? = null,
     private val modelRouting: ModelRouting? = null,
+    private val plugins: PluginRegistry,
 ) {
     suspend fun prepareChatTurn(
         userId: String,
@@ -53,6 +57,7 @@ internal class AgentExecutionRequestFactory(
         clientToolsEnabled: Boolean = false,
     ): PreparedChatTurn {
         val effectiveSettings = effectiveSettingsResolver.resolve(userId, requestOverrides)
+        val pluginBindings = plugins.installed().filter { it.binding.id !in effectiveSettings.disabledPlugins }.map { it.binding }
         val provider = findLLMModel(effectiveSettings.defaultModel)?.provider ?: LlmProvider.OPENAI
         if (provider !in BackendLlmSupport.chatProviders) {
             throw unsupportedBackendModel()
@@ -93,7 +98,7 @@ internal class AgentExecutionRequestFactory(
                 requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
                 enabledTools = effectiveSettings.enabledTools,
-            ),
+            ) + (PLUGIN_BINDINGS to restJsonMapper.writeValueAsString(pluginBindings)),
             latestDeviceContextJson = latestDeviceContextJson,
             runtimeOwner = clientThreadRegistry?.runtimeOwner?.takeIf { clientToolsEnabled },
             runtimeLeaseUntil = ClientThreadRuntimeRegistry.leaseUntil().takeIf { clientToolsEnabled },
@@ -117,6 +122,7 @@ internal class AgentExecutionRequestFactory(
                 narrateSteps = effectiveSettings.narrateSteps,
                 requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
+                pluginBindings = pluginBindings,
                 enabledTools = effectiveSettings.enabledTools.toSet(),
                 clientToolsEnabled = clientToolsEnabled,
                 routing = routing,
@@ -166,6 +172,9 @@ internal class AgentExecutionRequestFactory(
             requestTimeoutMillis = executionMetadataLong(execution, METADATA_REQUEST_TIMEOUT_MILLIS),
             useFewShotExamples = executionMetadataBoolean(execution, METADATA_USE_FEW_SHOT_EXAMPLES),
             enabledTools = executionMetadataStringSet(execution, METADATA_ENABLED_TOOLS),
+            pluginBindings = execution.metadata[PLUGIN_BINDINGS]?.let {
+                restJsonMapper.readValue(it, Array<PluginBinding>::class.java).toList()
+            }.orEmpty(),
         )
     }
 

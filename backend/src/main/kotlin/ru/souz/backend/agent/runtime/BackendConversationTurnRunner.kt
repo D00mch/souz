@@ -1,5 +1,7 @@
 package ru.souz.backend.agent.runtime
 
+import ru.souz.backend.plugins.PluginRegistry
+import ru.souz.backend.plugins.PluginLease
 import kotlinx.coroutines.CancellationException
 import java.util.UUID
 import ru.souz.agent.runtime.AgentRuntimeEventSink
@@ -47,6 +49,7 @@ internal interface BackendConversationTurnRunner {
 internal class BackendConversationRuntimeTurnRunner(
     private val runtimeFactory: BackendConversationRuntimeFactory,
     private val clientThreadRegistry: ClientThreadRuntimeRegistry? = null,
+    private val plugins: PluginRegistry,
 ) : BackendConversationTurnRunner {
     override suspend fun run(
         conversationKey: AgentConversationKey,
@@ -54,7 +57,19 @@ internal class BackendConversationRuntimeTurnRunner(
         eventSink: AgentRuntimeEventSink,
         initialUsage: LLMResponse.Usage,
     ): BackendConversationTurnOutcome {
-        val runtime = runtimeFactory.create(conversationKey, request, initialUsage)
+        val lease = plugins.acquire(request.pluginBindings)
+        return try { runLeased(conversationKey, request, eventSink, initialUsage, lease) }
+        finally { lease.close() }
+    }
+
+    private suspend fun runLeased(
+        conversationKey: AgentConversationKey,
+        request: BackendConversationTurnRequest,
+        eventSink: AgentRuntimeEventSink,
+        initialUsage: LLMResponse.Usage,
+        lease: PluginLease,
+    ): BackendConversationTurnOutcome {
+        val runtime = runtimeFactory.create(conversationKey, request, initialUsage, lease)
         val threadId = request.executionId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
         if (threadId != null) clientThreadRegistry?.attach(threadId, runtime)
         return try {

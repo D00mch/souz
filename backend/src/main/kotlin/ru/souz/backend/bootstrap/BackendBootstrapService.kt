@@ -1,5 +1,6 @@
 package ru.souz.backend.bootstrap
 
+import ru.souz.backend.plugins.PluginRegistry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.common.BackendToolCapabilityPolicy
@@ -20,6 +21,7 @@ class BackendBootstrapService(
     toolCatalog: AgentToolCatalog,
     private val featureFlags: BackendFeatureFlags,
     private val userProviderKeyRepository: UserProviderKeyRepository,
+    private val plugins: PluginRegistry,
 ) {
     private val advertisedToolNames: Set<String> =
         BackendToolCapabilityPolicy.advertisedToolNames(toolCatalog)
@@ -60,6 +62,10 @@ class BackendBootstrapService(
                     .map { modelCapability(it, userManagedProviders) } + effectiveSettingsResolver.namedModelNames.map {
                         BootstrapModelCapability(provider = "openai", model = it, serverManagedKey = true, userManagedKey = false)
                     },
+                plugins = plugins.installed().map { installed ->
+                    BootstrapPluginCapability(installed.binding.id, installed.binding.version, installed.tools,
+                        installed.binding.id !in effectiveSettings.disabledPlugins)
+                },
                 tools = advertisedToolNames.map { toolName ->
                     BootstrapToolCapability(name = toolName, enabled = true)
                 },

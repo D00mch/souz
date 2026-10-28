@@ -13,6 +13,7 @@ internal fun backendExecutionToolCatalog(
     clientToolCatalog: AgentToolCatalog,
     includeFewShotExamples: Boolean,
     metrics: BackendMetrics? = null,
+    pluginToolCatalog: AgentToolCatalog = AgentToolCatalog(),
 ): AgentToolCatalog {
     val selectedCompiledTools = BackendToolCapabilityPolicy.selectExecutionTools(
         processToolCatalog = compiledToolCatalog,
@@ -20,8 +21,9 @@ internal fun backendExecutionToolCatalog(
         enabledToolNames = enabledCompiledToolNames,
     )
 
+    val serverTools = AgentToolCatalog.compose(selectedCompiledTools, pluginToolCatalog)
     val mergedTools = AgentToolCatalog.compose(
-        if (metrics == null) selectedCompiledTools else selectedCompiledTools.mapTools { category, tool ->
+        if (metrics == null) serverTools else serverTools.mapTools { category, tool ->
             metrics.instrumentTool(tool, category)
         },
         clientToolCatalog,

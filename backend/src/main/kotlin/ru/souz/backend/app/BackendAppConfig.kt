@@ -1,5 +1,6 @@
 package ru.souz.backend.app
 
+import java.nio.file.Path
 import java.net.URI
 import ru.souz.backend.attachments.AttachmentStorageConfig
 import ru.souz.backend.common.BackendConfigurationException
@@ -154,6 +155,8 @@ data class BackendAppConfig(
     val hooks: HookConfig = HookConfig(),
     val scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     val attachments: AttachmentStorageConfig? = null,
+    val pluginDirectory: Path? = null,
+    val pluginCacheDirectory: Path? = null,
     val policyPrompt: String? = null,
 ) {
     fun validate(): BackendAppConfig {
@@ -204,6 +207,8 @@ data class BackendAppConfig(
             BackendAppConfig(
                 featureFlags = BackendFeatureFlags.load(source),
                 attachments = AttachmentStorageConfig.load(source),
+                pluginDirectory = source.value("SOUZ_PLUGIN_DIRECTORY", "souz.plugins.directory")?.let(Path::of),
+                pluginCacheDirectory = source.value("SOUZ_PLUGIN_CACHE_DIRECTORY", "souz.plugins.cacheDirectory")?.let(Path::of),
                 hooks = HookConfig(
                     owners = source.value("SOUZ_HOOK_OWNERS", "souz.hooks.owners")
                         ?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)?.toSet().orEmpty(),

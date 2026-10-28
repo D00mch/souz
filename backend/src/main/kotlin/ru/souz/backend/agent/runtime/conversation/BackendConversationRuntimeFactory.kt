@@ -1,5 +1,7 @@
 package ru.souz.backend.agent.runtime.conversation
 
+import ru.souz.backend.plugins.BackendPlugins
+import ru.souz.backend.plugins.PluginLease
 import com.fasterxml.jackson.databind.ObjectMapper
 import java.util.Locale
 import java.util.UUID
@@ -77,6 +79,7 @@ import ru.souz.tool.web.internal.WebResearchClient
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
 internal class BackendConversationRuntimeFactory(
+    private val plugins: BackendPlugins,
     private val userSettingsRepository: UserSettingsRepository,
     private val personalitySync: PersonalitySync,
     private val baseSettingsProvider: SettingsProvider,
@@ -120,6 +123,7 @@ internal class BackendConversationRuntimeFactory(
         key: AgentConversationKey,
         request: BackendConversationTurnRequest,
         initialUsage: LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0),
+        pluginLease: PluginLease,
     ): BackendConversationRuntime {
         val persistedSession = agentStateRepository.get(key.userId, key.chatId())?.toConversationSession()
         val settingsProvider = BackendConversationSettingsProvider(
@@ -181,14 +185,16 @@ internal class BackendConversationRuntimeFactory(
                 withProviderCall(hookBudget, LlmProvider.OPENAI) { imageGenerationGateway.generate(input) }
             },
         )
-        val clientTools = chatRepository.clientTools(key.userId, key.chatId()).filter { it.name != PersonalityTool.NAME }
+        val pluginCatalog = plugins.catalog(pluginLease, key.userId)
+        val pluginNames = pluginCatalog.toolsByCategory.values.flatMap { it.keys }.toSet()
+        val clientTools = chatRepository.clientTools(key.userId, key.chatId()).filter { it.name != PersonalityTool.NAME && it.name !in pluginNames }
         val serverNames = toolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet() +
-            BackendToolCapabilityPolicy.executionBoundToolNames
+            BackendToolCapabilityPolicy.executionBoundToolNames + pluginNames
         lateinit var baseCatalog: AgentToolCatalog
         lateinit var executionToolCatalog: AgentToolCatalog
         fun withDiscovered(discovered: DiscoveredClientTools?): AgentToolCatalog {
             if (discovered == null) return baseCatalog
-            val tools = discovered.tools.filter { it.name != PersonalityTool.NAME }
+            val tools = discovered.tools.filter { it.name != PersonalityTool.NAME && it.name !in pluginNames }
             val names = tools.map { it.name }.toSet()
             return AgentToolCatalog.compose(
                 baseCatalog.filter { _, tool -> tool.fn.name !in names },
@@ -219,6 +225,7 @@ internal class BackendConversationRuntimeFactory(
             ),
             enabledCompiledToolNames = request.enabledTools,
             clientToolCatalog = clientToolCatalog,
+            pluginToolCatalog = pluginCatalog,
             includeFewShotExamples = settingsProvider.useFewShotExamples,
             metrics = metrics,
         )

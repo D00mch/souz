@@ -254,6 +254,7 @@ internal object BackendOpenApiSchemas {
             .withPropertyDescription("temperature", "Must be a finite JSON number.")
             .withNonBlankString("locale", "A recognized BCP 47 language tag.")
             .withNonBlankString("timeZone", "An IANA time-zone identifier.")
+            .withNonBlankArrayItems("disabledPlugins")
             .withNonBlankArrayItems("enabledTools")
             .withPropertyDescription("narrateSteps", "Opt in to short RU/EN assistant progress and live WebSocket or bot delivery. Excludes initial waiting. Defaults to false; applies to new executions.")
             .withStringEnum("interfaceLanguage", listOf("en", "ru"))

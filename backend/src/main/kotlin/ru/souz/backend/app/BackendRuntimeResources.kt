@@ -6,6 +6,7 @@ import ru.souz.runtime.shutdownStep
 
 class BackendRuntimeResources(
     cancelAndJoinApplicationWork: suspend () -> Unit = {},
+    closePlugins: suspend () -> Unit = {},
     closeProviderClients: () -> Unit = {},
     closeSkillOAuthClients: () -> Unit = {},
     closeDataSource: () -> Unit = {},
@@ -14,6 +15,7 @@ class BackendRuntimeResources(
     private val shutdown = OrderedShutdown(
         steps = listOf(
             shutdownStep("application work", cancelAndJoinApplicationWork),
+            shutdownStep("plugins", closePlugins),
             shutdownStep("provider HTTP clients") { closeProviderClients() },
             shutdownStep("skill OAuth clients") { closeSkillOAuthClients() },
             shutdownStep("attachment storage") { closeAttachmentStorage() },

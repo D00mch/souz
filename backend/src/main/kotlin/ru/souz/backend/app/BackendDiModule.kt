@@ -126,6 +126,9 @@ import ru.souz.backend.vk.VkBotApi
 import ru.souz.backend.vk.VkBotBindingService
 import ru.souz.backend.vk.VkBotPollingService
 import ru.souz.backend.vk.VkBotTokenCrypto
+import ru.souz.backend.plugins.*
+import ru.souz.skilloauth.SkillOAuthGateway
+import ru.souz.plugins.PluginHttp
 import ru.souz.skilloauth.impl.SkillOAuthGatewayImpl
 import ru.souz.jobs.JobService
 import ru.souz.jobs.impl.PostgresJobService
@@ -224,6 +227,7 @@ fun backendDiModule(
         // past backend shutdown.
         BackendRuntimeResources(
             cancelAndJoinApplicationWork = { instance<BackendApplicationScope>().cancelAndJoin() },
+            closePlugins = { instance<PluginRegistry>().close(); instance<PluginHttpClient>().close() },
             closeProviderClients = {
                 instance<ProviderHttpClients>().close()
                 (instanceOrNull<VkBotApi>() as? AutoCloseable)?.close()
@@ -239,6 +243,15 @@ fun backendDiModule(
             closeAttachmentStorage = { instanceOrNull<S3AttachmentObjects>()?.close() },
         )
     }
+    bindSingleton { PluginHttpClient() }
+    bindSingleton<PluginHttp> { instance<PluginHttpClient>() }
+    bindSingleton {
+        PluginRegistry(appConfig.pluginDirectory,
+            appConfig.pluginCacheDirectory ?: appConfig.pluginDirectory?.resolve(".cache"),
+            instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG).toolsByCategory.values.flatMap { it.keys }.toSet() +
+                BackendToolCapabilityPolicy.executionBoundToolNames)
+    }
+    bindSingleton { BackendPlugins(instance<HikariDataSource>(), instance(), instanceOrNull<SkillOAuthGateway>(), instance(), instance()) }
     bindSingleton { AgentEventBus(instance()) }
     bindSingleton { ClientThreadRuntimeRegistry() }
     bindSingleton {
@@ -336,6 +349,7 @@ fun backendDiModule(
     bindSingleton<TaskComplexityClassifier> { JevClassifier(instance()) }
     bindSingleton {
         BackendConversationRuntimeFactory(
+            plugins = instance(),
             userSettingsRepository = instance(),
             personalitySync = instance(),
             llmConfig = instance(),
@@ -377,13 +391,14 @@ fun backendDiModule(
     }
     bindSingleton {
         AgentExecutionRequestFactory(
+            plugins = instance(),
             effectiveSettingsResolver = instance(),
             clientThreadRegistry = instance(),
             modelRouting = instance<NamedLlmConfig>().routing,
         )
     }
     bindSingleton<BackendConversationTurnRunner> {
-        BackendConversationRuntimeTurnRunner(instance(), instance())
+        BackendConversationRuntimeTurnRunner(instance(), instance(), instance())
     }
     bindSingleton {
         AgentExecutionFinalizer(
@@ -579,6 +594,7 @@ fun backendDiModule(
     }
     bindSingleton {
         BackendBootstrapService(
+            plugins = instance(),
             settingsProvider = instance(),
             effectiveSettingsResolver = instance(),
             toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),

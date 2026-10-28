@@ -8,7 +8,7 @@ Before changing this module, read the relevant pain-point topics below.
 
 - Treat proxy-provided identity as the authority for proxy routes. The public Client-Souz boundary accepts trusted UUID user identity in `POST /v1/chats`, `chat.create.payload.userId`, and `message.submit.payload.device.userId` and must keep those values equal for chat ownership.
 - Expose only the tools `BackendToolCapabilityPolicy` allows. Change that policy, not its callers, when backend tool exposure changes.
-- Build immutable catalog snapshots by applying each execution's enabled-tool snapshot to policy-hostable compiled tools before adding Client-Souz tool-backed Skills. The backend excludes compiled web tools; its `WEB_SEARCH` category contains only client `web.search`. Executions without a current client can target a connected client channel with `channelId`.
+- Build immutable catalog snapshots by applying each execution's enabled-tool snapshot to policy-hostable compiled tools, then adding pinned plugin tools and Client-Souz tool-backed Skills. The backend excludes compiled web tools; its compiled/client `WEB_SEARCH` category contains only client `web.search`. Executions without a current client can target a connected client channel with `channelId`.
 - Persist creation declarations atomically with the chat and retain their original idempotency hash. Always include bundled client Skills; declarations override matching defaults. Store one discovered catalogue separately per owned conversation, with precedence over declarations/defaults and binding to its supplying channel. Validate and persist a complete replacement before exposing it to the running execution. Exclude both catalogues from metadata reads. Only the parent discovers; children receive selected immutable snapshots behind `RunSkillCommand`.
 - Enrich declared known client tools with bundled `skills/client` instructions, categories, and deadlines. Preserve their exact names, persisted descriptions, and input schemas. Custom client tools use a one-minute deadline.
 - Build every turn with the backend's single request-scoped steerable `AgentId.SKILLS_GRAPH`. Advertise only its fixed core Skill tools and discover catalog capabilities through Skill inventory.
@@ -23,9 +23,11 @@ Before changing this module, read the relevant pain-point topics below.
 - Hook intake capacity is isolated per configured owner and survives reload. Verifier commands use the trusted owner's configured LOCAL/DOCKER sandbox through `SandboxCommandExecutor`, before Skill discovery or LLM use. They share that sandbox's permissions and do not create a separate verification container.
 - Give each ordinary HTTP route explicit OpenAPI metadata. Keep the WebSocket routes out of the generated document and maintain its schema in `docs/public-souz-contract`.
 - Keep Prometheus instrumentation in `:backend`, using repository commits and existing LLM/tool hooks. Restrict `/metrics` at ingress; its [metric reference](docs/metrics.md) defines accounting and replica semantics.
+- Trusted plugins use execution-pinned JAR generations and owner-bound host services; see [plugins](docs/plugins.md).
 
 ## Pain points
 
+- [Plugins](docs/plugins.md) — stateless SDK, hot reload, execution leases, and persistent ownership.
 - [Personality settings](docs/personality-settings.md) — validated user style, conversational scope and Orion snapshots.
 - [User file storage](docs/s3-storage.md) — private S3 bucket, owner-scoped metadata, expiry and retryable cleanup.
 - [Named LLM connections](docs/named-llm-connections.md) — server model names, independent endpoints and keys, subagents and summarization.

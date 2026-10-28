@@ -79,6 +79,8 @@ data class ApiCallRequest(
      * `SkillOAuthGatewayImpl.call`.
      */
     val headers: Map<String, String> = emptyMap(),
+    /** Optional byte limit enforced while reading the response, before decoding it. */
+    val maxResponseBytes: Int? = null,
 )
 
 /** Result of [SkillOAuthGateway.call] — either the provider actually responded

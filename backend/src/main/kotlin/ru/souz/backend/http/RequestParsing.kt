@@ -1,5 +1,6 @@
 package ru.souz.backend.http
 
+import ru.souz.backend.plugins.PLUGIN_ID
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive
 import java.time.DateTimeException
@@ -27,6 +28,10 @@ internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(namedModels: 
         locale = locale?.let { parseLocale(it, fieldName = "locale") },
         timeZone = timeZone?.let { parseTimeZone(it, fieldName = "timeZone") },
         systemPrompt = systemPrompt?.trim()?.takeIf { it.isNotEmpty() },
+        disabledPlugins = disabledPlugins?.map { id ->
+            id.takeIf { PLUGIN_ID.matches(it) }
+                ?: throw invalidV1Request("Invalid disabledPlugins ID.")
+        }?.toSet(),
         enabledTools = enabledTools?.map { toolName ->
             toolName.trim().takeIf { it.isNotEmpty() }
                 ?: throw invalidV1Request("enabledTools must not contain blank values.")
