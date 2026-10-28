@@ -1,4 +1,6 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.compose.desktop.application.tasks.AbstractProguardTask
+import kotlinx.kover.gradle.plugin.dsl.KoverProjectExtension
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.JavaExec
@@ -182,7 +184,10 @@ compose.desktop {
         val sqliteLibraryName = "libsqlitejdbc.dylib"
 
         buildTypes.release.proguard {
-            isEnabled.set(false)
+            isEnabled.set(System.getProperty("os.name", "").lowercase().contains("mac"))
+            optimize.set(false)
+            obfuscate.set(false)
+            joinOutputJars.set(false)
             configurationFiles.from(project.file("proguard-rules.pro"))
         }
 
@@ -279,10 +284,62 @@ compose.desktop {
 
 val releaseAppBundleDir = layout.buildDirectory.dir("compose/binaries/main-release/app/$distributionPackageName.app")
 
+tasks.withType<AbstractProguardTask>().matching { it.name == "proguardReleaseJars" }.configureEach {
+    doLast {
+        // Keep rules alone do not preserve multi-release entries or duplicate resources.
+        // Only icon JARs may change; retain every other runtime JAR byte for byte.
+        // Use Compose's exact pairs: different dependencies can have identical basenames.
+        val jarConfiguration = layout.buildDirectory.file("compose/tmp/$name/jars-config.pro").get().asFile
+        val preparedJars = jarConfiguration.readLines().zipWithNext()
+            .filter { (input, output) -> input.startsWith("-injars ") && output.startsWith("-outjars ") }
+            .associate { (input, output) ->
+                file(input.removePrefix("-injars ").removeSurrounding("'")) to
+                    file(output.removePrefix("-outjars ").removeSurrounding("'"))
+            }
+        check(preparedJars.keys == inputFiles.files + mainJar.get().asFile) {
+            "Compose's ProGuard input/output mapping does not match the release classpath."
+        }
+        preparedJars.filterKeys { !it.name.startsWith("material-icons-") }
+            .forEach { (original, prepared) ->
+                original.copyTo(prepared, overwrite = true)
+            }
+    }
+}
+
+tasks.register<Test>("verifyMacReleaseShrinking") {
+    group = "verification"
+    description = "Verify the packaged macOS release classpath and construct its retained icons."
+    dependsOn("testClasses", "createReleaseDistributable")
+    onlyIf { System.getProperty("os.name", "").lowercase().contains("mac") }
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform()
+    jvmArgs("-Xverify:all")
+    filter { includeTestsMatching("ru.souz.packaging.MacReleaseShrinkingTest") }
+    systemProperty("souz.packagedApp", releaseAppBundleDir.get().asFile.absolutePath)
+    doFirst {
+        systemProperty(
+            "souz.originalJars",
+            (configurations.runtimeClasspath.get().files + tasks.named<Jar>("jar").get().archiveFile.get().asFile)
+                .joinToString(File.pathSeparator) { it.absolutePath }
+        )
+    }
+}
+
+pluginManager.withPlugin("org.jetbrains.kotlinx.kover") {
+    extensions.configure<KoverProjectExtension> {
+        currentProject {
+            instrumentation {
+                // This test inspects a packaged application, not instrumented production classes.
+                disabledForTestTasks.add("verifyMacReleaseShrinking")
+            }
+        }
+    }
+}
+
 val syncReleaseAppRuntimeArtifacts by tasks.registering {
     group = "distribution"
-    description = "Sync the current desktopApp jar and native speech bridge into the release app bundle."
-    dependsOn("jar")
+    description = "Sync the native speech bridge into the release app bundle."
     mustRunAfter("createReleaseDistributable")
 
     onlyIf {
@@ -294,23 +351,7 @@ val syncReleaseAppRuntimeArtifacts by tasks.registering {
         val appDir = appBundle.resolve("Contents/app")
         check(appDir.exists()) { "Release app directory not found: $appDir" }
 
-        val appConfig = appDir.resolve("$distributionPackageName.cfg")
-        check(appConfig.exists()) { "Release app config not found: $appConfig" }
-
-        val classpathPrefix = "app.classpath=\$APPDIR/"
-        val desktopJarName = appConfig.readLines()
-            .asSequence()
-            .filter { it.startsWith(classpathPrefix) }
-            .map { it.removePrefix(classpathPrefix).trim() }
-            .firstOrNull { it.startsWith("desktopApp-") && it.endsWith(".jar") }
-            ?: error("desktopApp classpath jar not found in $appConfig")
-
-        copy {
-            from(tasks.named<Jar>("jar").flatMap { it.archiveFile })
-            into(appDir)
-            rename { desktopJarName }
-        }
-
+        // Compose packages the prepared release JARs; leave that classpath untouched here.
         copy {
             from(sourceAppResourcesDir.file("darwin-arm64/libsouz_macos_speech_bridge.dylib"))
             into(appDir.resolve("resources/darwin-arm64"))
