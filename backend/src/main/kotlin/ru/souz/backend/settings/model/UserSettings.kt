@@ -30,6 +30,7 @@ data class UserSettings(
     val systemPrompt: String? = null,
     val personalityPrompt: String? = null,
     val personalityRevision: Long = 1,
+    val disabledPlugins: Set<String> = emptySet(),
     /**
      * Null enables every tool the backend advertises, including tools added later; a selection of
      * every advertised tool is stored as null. A set enables exactly those tools; empty enables none.
@@ -49,6 +50,6 @@ data class UserSettings(
     val updatedAt: Instant = createdAt,
 ) {
     companion object {
-        const val CURRENT_SCHEMA_VERSION: Int = 4
+        const val CURRENT_SCHEMA_VERSION: Int = 5
     }
 }

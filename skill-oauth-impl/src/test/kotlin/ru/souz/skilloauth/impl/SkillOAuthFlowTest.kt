@@ -9,6 +9,9 @@ import io.ktor.http.Url
 import io.ktor.http.content.OutgoingContent
 import io.ktor.http.headersOf
 import io.ktor.http.parseQueryString
+import io.ktor.utils.io.ByteChannel
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.writeFully
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
@@ -20,6 +23,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import ru.souz.skilloauth.ApiCallReconnectRequired
 import ru.souz.skilloauth.ApiCallRequest
@@ -41,6 +45,37 @@ class SkillOAuthFlowTest {
         authorizationScheme = "OAuth",
     )
     private val request = ApiCallRequest("GET", "https://api.provider.example/resource")
+
+    @Test
+    fun `optional response limit counts bytes and closes oversized unfinished streams`() = runTest {
+        val openBody = ByteChannel(autoFlush = true)
+        openBody.writeFully("12345".toByteArray())
+        HttpClient(MockEngine { incoming ->
+            respond(if (incoming.url.encodedPath == "/open") openBody else ByteReadChannel("€x".toByteArray()))
+        }).use { http ->
+            skillOAuthTestDataSource(newSkillOAuthTestSchema("oauth_body_limit")).use { source ->
+                val clock = MutableClock()
+                val credentials = PostgresSkillOAuthCredentialRepository(source)
+                credentials.upsert(SkillOAuthCredential(
+                    userId = "user", provider = config.name, accessTokenEncrypted = crypto.encrypt("access"),
+                    refreshTokenEncrypted = null, grantedScopes = listOf("read"), expiresAt = null,
+                    generation = 1, createdAt = clock.instant(), updatedAt = clock.instant(),
+                ))
+                val gateway = gateway(credentials, PostgresSkillOAuthPendingStateRepository(source), http, clock)
+                for (limit in listOf(null, 4)) {
+                    val response = gateway.call("user", config.name, setOf("read"), request.copy(maxResponseBytes = limit))
+                    assertEquals("€x", assertIs<ApiCallResponse>(response).body)
+                }
+                assertFailsWith<SkillOAuthException> {
+                    gateway.call("user", config.name, setOf("read"), request.copy(maxResponseBytes = 3))
+                }
+                assertFailsWith<SkillOAuthException> {
+                    gateway.call("user", config.name, setOf("read"), request.copy(url = "https://api.provider.example/open", maxResponseBytes = 4))
+                }
+                assertTrue(openBody.isClosedForRead)
+            }
+        }
+    }
 
     @Test
     fun `credential writes remain durable when the datasource disables autocommit`() = runTest {

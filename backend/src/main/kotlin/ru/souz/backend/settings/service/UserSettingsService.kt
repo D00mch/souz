@@ -40,6 +40,7 @@ class UserSettingsService(
                 locale = overrides.locale ?: existing.locale,
                 timeZone = overrides.timeZone ?: existing.timeZone,
                 systemPrompt = overrides.systemPrompt ?: existing.systemPrompt,
+                disabledPlugins = overrides.disabledPlugins ?: existing.disabledPlugins,
                 enabledTools = if (overrides.enabledTools == null) existing.enabledTools
                     else overrides.enabledTools.takeUnless { it.containsAll(effectiveSettingsResolver.advertisedToolNames) },
                 showToolEvents = overrides.showToolEvents ?: existing.showToolEvents,

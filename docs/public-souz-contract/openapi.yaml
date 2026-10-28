@@ -141,7 +141,7 @@ components:
         name:
           type: string
           pattern: '^[A-Za-z][A-Za-z0-9_.-]{0,63}$'
-          description: Exact wire name; unique and not reserved by server or core Skills.
+          description: Exact wire name; unique, without the plugin namespace separator __, and not reserved by server or core Skills.
         description:
           type: string
           minLength: 1

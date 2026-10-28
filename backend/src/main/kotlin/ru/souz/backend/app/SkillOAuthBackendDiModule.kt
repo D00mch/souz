@@ -1,8 +1,11 @@
 package ru.souz.backend.app
 
+import io.ktor.client.HttpClient
+import ru.souz.skilloauth.impl.defaultSkillOAuthHttpClient
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import org.kodein.di.instanceOrNull
 import ru.souz.skilloauth.SkillOAuthGateway
 import ru.souz.skilloauth.impl.AuthorizationCodeOAuthClient
 import ru.souz.skilloauth.impl.AuthorizationCodeOAuthConfig
@@ -77,6 +80,7 @@ fun skillOAuthBackendModule(config: SkillOAuthBackendConfig?): DI.Module = DI.Mo
                 pendingStateRepository = instance(),
                 crypto = instance(),
                 providers = config.providers,
+                httpClient = instanceOrNull<HttpClient>(tag = "skillOAuthHttp") ?: defaultSkillOAuthHttpClient(),
             )
         }
         bindSingleton<SkillOAuthGateway> { instance<SkillOAuthGatewayImpl>() }

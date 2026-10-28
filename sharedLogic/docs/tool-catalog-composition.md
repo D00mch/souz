@@ -8,7 +8,7 @@ Runtime factories expose their catalog through `.catalog`. Execution-bound LLM t
 
 Skill lookup, invocation, and subagent selection read a host-supplied catalog provider. Each operation resolves one immutable snapshot; children retain only the capabilities selected at spawn, independently of later parent catalog changes.
 
-Backend execution restricts policy-hostable compiled and execution-bound LLM tools to the enabled-tool snapshot before merging bundled client defaults, persisted declarations, and the chat's discovered tools. Declared names override defaults; discoveries override both and retain their supplying channel. Creation reserves server names and composition rejects collisions. Few-shot filtering happens after the final merge.
+Backend execution restricts policy-hostable compiled and execution-bound LLM tools to the enabled-tool snapshot before merging bundled client defaults, persisted declarations, and the chat's discovered tools. Declared names override defaults; discoveries override both and retain their supplying channel. Creation reserves server names and composition rejects collisions. Pinned plugin catalogs join the selected server tools independently of compiled preferences. Their names cannot be replaced by client declarations or discovery. Few-shot filtering happens after the final merge.
 
 ## Safe changes
 

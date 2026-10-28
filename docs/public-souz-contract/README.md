@@ -156,4 +156,6 @@ JSON decoding rejection ACKs include `error.details` with a JSON Pointer `path` 
 - `GET /v1/chats/{chatId}/threads/{threadId}?clientType=...`: durable status and liveness.
 - `/v1/chats/{chatId}/ws?clientType=...&afterSeq=...`: single-chat socket for either client type. Replays from the cursor (default `0`) before processing input; does not accept `chat.create`, `chat.subscribe` or `chat.unsubscribe`.
 
+Installed server plugins appear in bootstrap `capabilities.plugins` and use the existing Skill tools; `disabledPlugins` in user settings controls opt-outs for subsequent executions. Plugin names contain `__`, reserved from client declarations and discovery. See [plugin behavior](../../backend/docs/plugins.md).
+
 Server-configured model names from bootstrap are accepted in `payload.meta.model`; see [named LLM connections](../../backend/docs/named-llm-connections.md).

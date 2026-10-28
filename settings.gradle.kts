@@ -30,3 +30,6 @@ include(":skill-oauth-impl")
 include(":job-api")
 include(":job-impl")
 include(":backend")
+
+include(":plugin-api")
+include(":plugins:gmail")

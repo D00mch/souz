@@ -19,6 +19,8 @@ ktor {
 }
 
 dependencies {
+    implementation(project(":plugin-api"))
+    implementation(libs.ktor.clientOkhttp)
     implementation(project(":agent"))
     implementation(project(":llms"))
     implementation(project(":sharedLogic"))
@@ -86,4 +88,16 @@ tasks.withType<AbstractArchiveTask>().configureEach {
 
 tasks.named<Jar>("shadowJar") {
     isZip64 = true
+}
+
+// Artifact-only test source set keeps plugin implementation classes off the host classpath.
+val pluginTest by sourceSets.creating
+val pluginTestJars = configurations.named(pluginTest.runtimeClasspathConfigurationName) {
+    isTransitive = false
+}
+dependencies { add(pluginTest.runtimeOnlyConfigurationName, project(path = ":plugins:gmail", configuration = "runtimeElements")) }
+tasks.test {
+    val jars = objects.fileCollection().from(pluginTestJars)
+    inputs.files(jars)
+    doFirst { systemProperty("souz.test.gmailJar", jars.files.single { it.name == "gmail.jar" }.absolutePath) }
 }

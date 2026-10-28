@@ -27,6 +27,10 @@ Validate HTTPS and the provider's exact host allowlist before attaching an acces
 Caller headers cannot override authorization. Ktor takes content type from the request body's
 metadata, so explicit content types belong on `TextContent`.
 
+`ApiCallRequest.maxResponseBytes` optionally limits response bytes before decoding.
+The gateway streams bounded calls and closes the response on overflow or cancellation.
+The plugin adapter caps this value at 36 MiB; callers that omit it retain unbounded reads.
+
 Keep the provider-neutral API, callback route, provider catalog, token payload format, and schema
 compatible during internal refactors. Verify with:
 
