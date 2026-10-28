@@ -376,6 +376,7 @@ class AgentExecutionService internal constructor(
             assistantMessageId = execution.assistantMessageId,
             publicClientThread = execution.runtimeOwner != null,
             narrateSteps = execution.metadata[METADATA_NARRATE_STEPS] == "true",
+            intermediateMessages = execution.metadata[METADATA_INTERMEDIATE_MESSAGES] != "false",
         )
 
     private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution = withContext(NonCancellable) {

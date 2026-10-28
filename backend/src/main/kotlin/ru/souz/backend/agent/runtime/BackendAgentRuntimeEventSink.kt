@@ -64,6 +64,7 @@ internal class BackendAgentRuntimeEventSink(
     private val toolCallPreviewer: ToolCallPreviewer = ToolCallPreviewer(),
     private val publicClientThread: Boolean = false,
     private val narrateSteps: Boolean = false,
+    private val intermediateMessages: Boolean = true,
 ) : AgentRuntimeEventSink {
     private val emitMutex = Mutex()
     val finalAssistantMessageId = assistantMessageId ?: UUID.randomUUID()
@@ -73,7 +74,7 @@ internal class BackendAgentRuntimeEventSink(
 
     override suspend fun emit(event: AgentRuntimeEvent) = emitMutex.withLock {
         when (event) {
-            AgentRuntimeEvent.InitialWait -> if (publicClientThread) publishLiveEvent(
+            AgentRuntimeEvent.InitialWait -> if (publicClientThread && intermediateMessages) publishLiveEvent(
                 AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload(INITIAL_WAIT_PHRASES.random()),
             )
             is AgentRuntimeEvent.MemoryPromptAugmented -> logger.atInfo()

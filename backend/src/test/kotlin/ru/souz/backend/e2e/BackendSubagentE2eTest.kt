@@ -96,7 +96,10 @@ class BackendSubagentE2eTest {
     }
 
     @Test
-    fun `both sockets deliver parent progress before child tools without replay or child text`() {
+    fun `both sockets deliver parent progress before child tools without replay or child text unless intermediate messages are off`() =
+        listOf(true, false).forEach(::assertParentProgress)
+
+    private fun assertParentProgress(intermediateMessages: Boolean) {
         val releaseChild = CompletableDeferred<Unit>()
         val blocks = listOf("Let me check.", "Another detail.", "Let me check.")
         val task = "Ask the user for a genre and report it."
@@ -121,7 +124,8 @@ class BackendSubagentE2eTest {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
             client.patch(BackendHttpRoutes.SETTINGS) {
-                trusted(userId); jsonBody("""{"streamingMessages":true,"narrateSteps":true,"systemPrompt":"custom base"}""")
+                trusted(userId)
+                jsonBody("""{"streamingMessages":true,"narrateSteps":true,"intermediateMessages":$intermediateMessages,"systemPrompt":"custom base"}""")
             }
             withPublicSocket(chatId) { session -> withMultiChatSocket { observer ->
                 try {
@@ -134,17 +138,20 @@ class BackendSubagentE2eTest {
                     val threadId = ack["thread"]["id"].asText()
                     // The tool has started before either subscriber reads or acknowledges progress.
                     llm.awaitPrompt(task)
-                    val wait = readJson(session, includeProgress = true)
-                    assertEquals("assistant.message", wait["type"].asText())
-                    assertTrue(wait["payload"]["content"].asText().isNotBlank())
-                    assertEquals(wait, readJson(observer, includeProgress = true))
-                    for (socket in listOf(session, observer)) for (content in blocks) {
-                        val event = readJson(socket, includeProgress = true)
-                        assertEquals("assistant.message", event["type"].asText())
-                        assertEquals(chatId, event["chatId"].asText())
-                        assertEquals(threadId, event["threadId"].asText())
-                        assertTrue(event["seq"].isNull)
-                        assertEquals(json.createObjectNode().put("content", content), event["payload"])
+                    // Without intermediate messages the next frame on both sockets is the tool start.
+                    if (intermediateMessages) {
+                        val wait = readJson(session, includeProgress = true)
+                        assertEquals("assistant.message", wait["type"].asText())
+                        assertTrue(wait["payload"]["content"].asText().isNotBlank())
+                        assertEquals(wait, readJson(observer, includeProgress = true))
+                        for (socket in listOf(session, observer)) for (content in blocks) {
+                            val event = readJson(socket, includeProgress = true)
+                            assertEquals("assistant.message", event["type"].asText())
+                            assertEquals(chatId, event["chatId"].asText())
+                            assertEquals(threadId, event["threadId"].asText())
+                            assertTrue(event["seq"].isNull)
+                            assertEquals(json.createObjectNode().put("content", content), event["payload"])
+                        }
                     }
                     releaseChild.complete(Unit)
                     val started = readJson(session, includeProgress = true)
@@ -177,7 +184,7 @@ class BackendSubagentE2eTest {
             assertEquals(4, llm.requests.size)
             val system = llm.requests.first().messages.first().content
             assertTrue("custom base" in system)
-            assertTrue("Перед каждым вызовом инструментов" in system)
+            assertEquals(intermediateMessages, "Перед каждым вызовом инструментов" in system)
             assertTrue(MEMORY_MUTATION_NOTICE in system)
             val childRequests = llm.requests.filter { it.functions.map { tool -> tool.name } == listOf("RunSkillCommand") }
             assertEquals(2, childRequests.size)
