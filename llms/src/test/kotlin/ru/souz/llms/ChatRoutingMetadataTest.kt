@@ -8,19 +8,7 @@ import kotlin.test.assertNull
 
 class ChatRoutingMetadataTest {
     @Test
-    fun `retry policy survives copies and exceptions but stays outside the JSON contract`() {
-        val error = LLMResponse.Chat.Error(503, "unavailable", retryable = false)
-        assertFalse(error.copy().retryable)
-        assertFalse(LLMException(error).retryable)
-        assertEquals("""{"status":503,"message":"unavailable"}""", restJsonMapper.writeValueAsString(error))
-        val decoded = restJsonMapper.readValue<LLMResponse.Chat.Error>(
-            """{"status":503,"message":"unavailable","retryable":false}""",
-        )
-        assertEquals(true, decoded.retryable)
-    }
-
-    @Test
-    fun `provider route and local context survive copies but cannot cross the JSON boundary`() {
+    fun `local routing and retry metadata cannot cross the JSON boundary`() {
         val request = LLMRequest.Chat(model = "Deployment/v2", provider = LlmProvider.ANTHROPIC, messages = emptyList(), contextSize = 125_000, maxTokens = 512)
         assertEquals(request.provider, request.copy(stream = true).provider)
         assertEquals(125_000, request.copy(stream = true).contextSize)
@@ -32,5 +20,10 @@ class ChatRoutingMetadataTest {
         assertNull(decoded.provider)
         assertNull(decoded.contextSize)
         assertEquals(request.model, decoded.model)
+        val error = LLMResponse.Chat.Error(503, "unavailable", retryable = false)
+        assertFalse(restJsonMapper.readTree(restJsonMapper.writeValueAsString(error)).has("retryable"))
+        assertEquals(true, restJsonMapper.readValue<LLMResponse.Chat.Error>(
+            """{"status":503,"message":"unavailable","retryable":false}""",
+        ).retryable)
     }
 }

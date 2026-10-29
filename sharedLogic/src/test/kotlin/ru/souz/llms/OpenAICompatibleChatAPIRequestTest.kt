@@ -3,26 +3,38 @@ package ru.souz.llms
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.MockRequestHandler
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.mockk.every
 import io.mockk.mockk
+import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import ru.souz.llms.openai.OpenAIEndpoint
+import ru.souz.llms.tunnel.AiTunnelVoiceAPI
 
 data class CompatibleProviderCase(
     val provider: LlmProvider,
@@ -33,7 +45,100 @@ data class CompatibleProviderCase(
     val embeddingEncodingFormat: String?,
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class OpenAICompatibleChatAPIRequestTest {
+
+    @Test
+    fun `AiTunnel unary operations recover on their third attempt`() = runTest {
+        for (operation in listOf("chat", "embeddings", "voice")) {
+            var calls = 0
+            retryClient {
+                when (++calls) {
+                    1 -> throw IOException("offline")
+                    2 -> respond("busy", HttpStatusCode.ServiceUnavailable)
+                    else -> respond(when (operation) {
+                        "chat" -> CHAT_REPLY
+                        "embeddings" -> EMBEDDINGS_REPLY
+                        else -> """{"text":"accepted"}"""
+                    }, headers = headersOf(HttpHeaders.ContentType, "application/json"))
+                }
+            }.use { client ->
+                val api = createApi(client, LlmProvider.AI_TUNNEL)
+                when (operation) {
+                    "chat" -> assertIs<LLMResponse.Chat.Ok>(api.message(RETRY_CHAT), operation)
+                    "embeddings" -> assertIs<LLMResponse.Embeddings.Ok>(api.embeddings(LLMRequest.Embeddings("model", listOf("hello"))), operation)
+                    else -> assertEquals("accepted", AiTunnelVoiceAPI(mockk(relaxed = true) {
+                        every { aiTunnelKey } returns "test-key"
+                        every { regionProfile } returns "ru"
+                        every { requestTimeoutMillis } returns 1_000L
+                        every { voiceRecognitionModel } returns VoiceRecognitionModel.AiTunnelGpt4oTranscribe
+                    }, client).recognize(byteArrayOf(0, 0)), operation)
+                }
+                assertEquals(3, calls, operation)
+            }
+        }
+    }
+
+    @Test
+    fun `AiTunnel streams retry before output but never replay text tools or usage`() = runTest {
+        val chunks = mapOf(
+            "before output" to null,
+            "text" to """{"choices":[{"index":0,"delta":{"content":"partial"}}]}""",
+            "tool" to TOOL_CHUNK,
+            "usage" to """{"usage":{"total_tokens":1}}""",
+        )
+        for ((case, chunk) in chunks) {
+            var calls = 0
+            retryClient {
+                calls++
+                respond(when {
+                    chunk != null -> "data: $chunk\n\n" // Premature EOF after output is terminal.
+                    calls == 1 -> "data: {broken\n\n"
+                    calls == 2 -> "data: {\"error\":{\"message\":\"busy\"}}\n\n"
+                    else -> "data: $CHAT_REPLY\n\ndata: [DONE]\n\n"
+                })
+            }.use { client ->
+                val responses = createApi(client, LlmProvider.AI_TUNNEL).messageStream(RETRY_CHAT).toList()
+                assertIs<LLMResponse.Chat.Ok>(responses.first(), case)
+                if (chunk != null) assertFalse(assertIs<LLMResponse.Chat.Error>(responses.last(), case).retryable, case)
+                assertEquals(if (chunk == null) 1 else 2, responses.size, case)
+                assertEquals(if (chunk == null) 3 else 1, calls, case)
+            }
+        }
+    }
+
+    @Test
+    fun `AiTunnel request and backoff cancellation start no further attempts`() = runTest {
+        for (duringRequest in listOf(true, false)) {
+            var calls = 0
+            retryClient {
+                calls++
+                if (duringRequest) throw CancellationException("cancelled")
+                respond("busy", HttpStatusCode.ServiceUnavailable)
+            }.use { client ->
+                val request = async { createApi(client, LlmProvider.AI_TUNNEL).messageStream(RETRY_CHAT).toList() }
+                runCurrent()
+                if (duringRequest) assertFailsWith<CancellationException> { request.await() } else request.cancelAndJoin()
+                assertEquals(1, calls, "duringRequest=$duringRequest")
+            }
+        }
+    }
+
+    @Test
+    fun `AiTunnel collector failure propagates without replay`() = runTest {
+        var calls = 0
+        retryClient { calls++; respond("data: $CHAT_REPLY\n\ndata: [DONE]\n\n") }.use { client ->
+            assertEquals("consumer failed", assertFailsWith<IllegalStateException> {
+                createApi(client, LlmProvider.AI_TUNNEL).messageStream(RETRY_CHAT).collect { error("consumer failed") }
+            }.message)
+            assertEquals(1, calls)
+        }
+    }
+
+    private fun TestScope.retryClient(handler: MockRequestHandler) = HttpClient(MockEngine) {
+        providerHttpClientDefaults()
+        engine { dispatcher = StandardTestDispatcher(testScheduler); addHandler(handler) }
+    }
 
     @Test
     fun `provider matrix applies compatible protocol differences`() = runTest {
@@ -716,6 +821,8 @@ class OpenAICompatibleChatAPIRequestTest {
     )
 
     private companion object {
+        val RETRY_CHAT = LLMRequest.Chat("model", listOf(LLMRequest.Message(LLMMessageRole.user, "hello")))
+        const val TOOL_CHUNK = """{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call","function":{"name":"lookup","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}"""
         const val CHAT_REPLY =
             """{"choices":[{"index":0,"message":{"role":"assistant","content":"Hi"},"delta":{"content":"Hi"},"finish_reason":"stop"}],"created":1,"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"""
         const val EMBEDDINGS_REPLY = """{"data":[{"embedding":[0.1],"index":0}],"model":"embeddings","object":"list"}"""
