@@ -1,5 +1,6 @@
 package ru.souz.backend.http
 
+import kotlin.time.Duration
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.chat.service.ChatService
@@ -23,6 +24,7 @@ internal data class BackendHttpDependencies(
     val bootstrapService: BackendBootstrapService,
     val metrics: BackendMetrics,
     val selectedModel: suspend () -> String,
+    val oldestDueJobWait: suspend () -> Duration,
     val onboardingService: BackendOnboardingService,
     val userSettingsService: UserSettingsService,
     val providerKeyService: UserProviderKeyService,

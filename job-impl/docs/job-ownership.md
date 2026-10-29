@@ -2,7 +2,7 @@
 
 ## Invariant
 
-Claim the earliest eligible job atomically with `FOR UPDATE SKIP LOCKED` and commit before running its handler. PostgreSQL time governs eligibility and lease validity. Renewals and outcome writes lock the row before validating the matching token, running status, and lease against current database time in the same transaction.
+Claim the earliest eligible job atomically with `FOR UPDATE SKIP LOCKED` and commit before running its handler. Before each claim the worker awaits the host's admission, which can wait for host capacity and name owners whose jobs the claim passes over; their due jobs stay pending without spending attempts. PostgreSQL time governs eligibility and lease validity. Renewals and outcome writes lock the row before validating the matching token, running status, and lease against current database time in the same transaction.
 
 Recover expired running leases before claiming: requeue attempts below the limit with their existing availability time, and fail exhausted attempts. Both eligibility scans use `statement_timestamp()` as an index range boundary; the ordered claim reads only pending rows. Recovery skips locked rows. Lease creation and post-lock ownership checks use `clock_timestamp()`.
 
@@ -21,6 +21,6 @@ Lease recovery can run an occurrence more than once. Fencing protects queue stat
 
 ## Verification
 
-Run `./gradlew :job-impl:test` with Docker available. Cover competing claims, expired final attempts, stale renewals and outcomes, cancellation races, retry identity, opt-in recurrence after exhaustion, durable occurrence failures, bounded listing pages, and interrupted shutdown.
+Run `./gradlew :job-impl:test` with Docker available. Cover competing claims, admission and skipped owners, expired final attempts, stale renewals and outcomes, cancellation races, retry identity, opt-in recurrence after exhaustion, durable occurrence failures, bounded listing pages, and interrupted shutdown.
 
 Database tests share the `jobTest` fixture, which cancels and joins worker coroutines before closing the connection pool.

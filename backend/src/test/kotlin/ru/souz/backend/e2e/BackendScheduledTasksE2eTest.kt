@@ -1,11 +1,13 @@
 package ru.souz.backend.e2e
 
 import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import java.time.Instant
 import java.time.LocalTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.util.UUID
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -13,6 +15,7 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import ru.souz.agent.runtime.AgentRuntimeEventSink
@@ -178,36 +181,52 @@ class BackendScheduledTasksE2eTest {
     }
 
     @Test
-    fun `occurrences run concurrently up to the limit and a stalled run frees its slot at the timeout`() {
-        val started = Channel<Unit>(Channel.UNLIMITED)
+    fun `an owner at its limit leaves slots to others and due tasks wait in the queue until a timeout frees one`() {
+        val started = Channel<String>(Channel.UNLIMITED)
         val cancelled = Channel<Unit>(Channel.UNLIMITED)
-        val llm = E2eLlmApi {
-            started.send(Unit)
+        val llm = E2eLlmApi { request ->
+            started.send(request.conversationPrompt().substringBefore("\n"))
             try { awaitCancellation() } finally { cancelled.trySend(Unit) }
         }
         backendE2eTest(
             schemaPrefix = "e2e_scheduled_concurrency",
             llm = llm,
-            scheduledTasks = ScheduledTaskConfig(concurrentRuns = 2, runTimeoutMillis = 3_000),
+            scheduledTasks = ScheduledTaskConfig(concurrentRuns = 3, concurrentRunsPerUser = 2, runTimeoutMillis = 5_000),
         ) {
-            val userId = UUID.randomUUID().toString()
-            scheduledTaskSetup(userId)
-            val payload = restJsonMapper.createObjectNode().put("prompt", "Run the task.")
+            val busy = UUID.randomUUID().toString()
+            val other = UUID.randomUUID().toString()
+            scheduledTaskSetup(busy)
+            scheduledTaskSetup(other)
+            suspend fun create(owner: String, prompt: String) =
+                backend.jobService.createJob(owner, CreateJobRequest(prompt, restJsonMapper.createObjectNode().put("prompt", prompt)))
             // A failed start must release its slot before valid occurrences run.
-            backend.jobService.createJob("missing-user", CreateJobRequest("Missing owner", payload))
-            repeat(3) { index ->
-                backend.jobService.createJob(userId, CreateJobRequest("Task $index", payload))
-            }
+            create("missing-user", "Missing owner")
+            // Availability order puts every busy task first.
+            listOf("Busy 1", "Busy 2", "Busy 3").forEach { create(busy, it) }
+            listOf("Other 1", "Other 2").forEach { create(other, it) }
             backend.startScheduledTaskWorker()
-            withTimeout(10.seconds) {
-                repeat(2) { started.receive() }
-                eventually("third occurrence waiting for a slot") {
-                    backend.jobService.listJobs(userId).items.single { it.title == "Task 2" }.takeIf { it.status == JobStatus.RUNNING }
+            withTimeout(15.seconds) {
+                assertEquals(setOf("Busy 1", "Busy 2", "Other 1"), List(3) { started.receive() }.toSet())
+                delay(500) // Give a full worker the chance to claim more.
+                val queued = listOf(busy, other).flatMap { backend.jobService.listJobs(it).items }
+                    .filter { it.status == JobStatus.PENDING && it.attempts == 0 }
+                assertEquals(setOf("Busy 3", "Other 2"), queued.map { it.title }.toSet(), "Waiting tasks stay unclaimed.")
+                val databaseNow = backend.sql { connection ->
+                    connection.prepareStatement("select clock_timestamp()").use { statement ->
+                        statement.executeQuery().use { rows -> rows.next(); rows.getObject(1, OffsetDateTime::class.java).toInstant() }
+                    }
                 }
-                assertTrue(started.tryReceive().isFailure, "Only two occurrences may start.")
-                assertTrue(cancelled.tryReceive().isFailure, "Both occurrences start before either times out.")
-                cancelled.receive()
-                started.receive() // Timeout frees a slot for the third occurrence.
+                val waited = java.time.Duration.between(queued.minOf { it.availableAt!! }, databaseNow).toMillis() / 1000.0
+                val metrics = client.get("/metrics").bodyAsText()
+                listOf("souz_scheduled_task_slots{state=\"busy\"} 3.0", "souz_scheduled_task_slots{state=\"free\"} 0.0",
+                    "souz_scheduled_task_owners_at_limit 1.0", "souz_scheduled_task_dispatch_delay_seconds_count 3")
+                    .forEach { assertTrue(metrics.contains(it), it) }
+                assertTrue(listOf(busy, other).none { metrics.contains(it) }, "No owner labels.")
+                val oldestDue = Regex("(?m)^souz_scheduled_task_oldest_due_seconds (\\S+)$").find(metrics)?.groupValues?.get(1)?.toDouble()
+                assertTrue(oldestDue != null && oldestDue > 0.0 && abs(oldestDue - waited) < 1.0, "$oldestDue vs $waited")
+                assertTrue(cancelled.tryReceive().isFailure, "All three start before any times out.")
+                assertEquals(setOf("Busy 3", "Other 2"), List(2) { started.receive() }.toSet())
+                repeat(3) { cancelled.receive() } // Each timed-out run is cancelled.
             }
         }
     }

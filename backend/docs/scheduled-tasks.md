@@ -11,7 +11,7 @@ The agent chooses the delivery semantics at creation with `atMostOnce`:
 - At least once (default): the IDs also include the attempt number. Competing workers on one attempt launch once, but a retry after an uncertain outcome, such as a lost lease or an unpersisted finish, launches a new execution and can repeat its effects.
 - At most once: the IDs exclude the attempt number. Retries and competing workers reuse the records without modifying or relaunching them, including completed executions.
 
-The handler returns after launch so the sequential worker keeps claiming due jobs. Up to `concurrentRuns` executions run per process; when every slot is taken, the handler waits and later jobs stay queued in PostgreSQL. A run that exceeds `runTimeoutMillis` is cancelled and joined before releasing its slot.
+The handler returns after launch so the sequential worker keeps claiming due jobs. Up to `concurrentRuns` executions run per process, at most `concurrentRunsPerUser` per owner. The worker claims only when a slot is free and passes over owners at their limit, so waiting jobs stay queued in PostgreSQL without spending attempts and another owner's due job runs first. Among the remaining owners, due jobs keep availability order: owners whose bursts together fill every slot still delay others, which only more `concurrentRuns` relieves. Both limits apply per process; each replica admits up to `concurrentRunsPerUser` runs of one owner. A run that exceeds `runTimeoutMillis` is cancelled and joined before releasing its slot.
 
 Create rejects a task when the user's planned runs per day would exceed `runsPerUserPerDay`. A one-off task counts once and a cron task counts its occurrences over the next seven days divided by seven, rounded up, at least once. This is a soft admission limit: simultaneous creates can exceed it. Cancelling a task returns its planned runs to this estimate; it never refunds launches.
 
@@ -33,9 +33,10 @@ Occurrence executions are process-local like ordinary chat executions; see the [
 
 - Keep credentials and request-scoped data out of job payloads.
 - Do not await agent completion inside the job handler; it serializes every user's tasks behind one worker.
+- Wait for capacity in admission, not in the handler: a waiting handler holds its claim and blocks every owner's due jobs.
 - Keep hidden chats out of chat lists and channel providers whenever a client type is added.
 - Change limits through `ScheduledTaskConfig` (`SOUZ_SCHEDULED_TASK_*`); raise them locally for development.
 
 ## Verification
 
-Run `./gradlew :backend:test --tests 'ru.souz.backend.e2e.BackendScheduled*' --tests 'ru.souz.backend.scheduler.*'` with Docker. Cover both delivery semantics, delivery permissions, owner isolation, cancellation, validation, quota contention and rollover, concurrency and timeout, and a crash between persistence and launch. Run `./gradlew :job-impl:test` for transient retry, exhausted occurrence history, final-lease recovery and future recurrence.
+Run `./gradlew :backend:test --tests 'ru.souz.backend.e2e.BackendScheduled*' --tests 'ru.souz.backend.scheduler.*'` with Docker. Cover both delivery semantics, delivery permissions, owner isolation, cancellation, validation, quota contention and rollover, global and per-owner concurrency, timeout, and a crash between persistence and launch. Run `./gradlew :job-impl:test` for transient retry, exhausted occurrence history, final-lease recovery and future recurrence.

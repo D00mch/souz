@@ -334,6 +334,11 @@ data class BackendAppConfig(
                             propertyKey = "souz.scheduledTasks.concurrentRuns",
                             default = defaults.concurrentRuns,
                         ),
+                        concurrentRunsPerUser = source.intValue(
+                            envKey = "SOUZ_SCHEDULED_TASK_CONCURRENT_RUNS_PER_USER",
+                            propertyKey = "souz.scheduledTasks.concurrentRunsPerUser",
+                            default = defaults.concurrentRunsPerUser,
+                        ),
                         runTimeoutMillis = source.longValue(
                             envKey = "SOUZ_SCHEDULED_TASK_RUN_TIMEOUT_MILLIS",
                             propertyKey = "souz.scheduledTasks.runTimeoutMillis",

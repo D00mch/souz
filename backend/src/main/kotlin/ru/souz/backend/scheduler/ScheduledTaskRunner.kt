@@ -1,12 +1,16 @@
 package ru.souz.backend.scheduler
 
+import io.micrometer.core.instrument.Gauge
 import java.time.Clock
+import java.time.Duration
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.backend.channels.tool.SEND_MESSAGE_TO_CHANNEL_TOOL_NAME
@@ -16,6 +20,7 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.service.AgentExecutionLauncher
 import ru.souz.backend.execution.service.AgentExecutionService
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.jobs.JobRun
 
 /** Client type of the hidden technical chat that each scheduled occurrence runs in. */
@@ -24,17 +29,19 @@ internal const val SCHEDULED_TASK_CHAT_TYPE = "scheduled_task"
 data class ScheduledTaskConfig(
     val runsPerUserPerDay: Int = 100,
     val concurrentRuns: Int = 16,
+    val concurrentRunsPerUser: Int = 4,
     val runTimeoutMillis: Long = 300_000,
 ) {
     init {
-        require(runsPerUserPerDay > 0 && concurrentRuns > 0 && runTimeoutMillis > 0)
+        require(runsPerUserPerDay > 0 && concurrentRuns > 0 && concurrentRunsPerUser > 0 && runTimeoutMillis > 0)
     }
 }
 
 /**
  * Job handler for scheduled tasks. It starts the agent in a hidden chat and returns, so the
  * sequential job worker keeps claiming due tasks while up to [ScheduledTaskConfig.concurrentRuns]
- * executions run. When every slot is busy, the handler waits and the next tasks stay in the queue.
+ * executions run, at most [ScheduledTaskConfig.concurrentRunsPerUser] per owner. The worker claims
+ * only after [admit], so due tasks wait in the queue rather than in the handler.
  * A start failure removes the occurrence's empty hidden chat and is rethrown for the job service's retries.
  */
 internal class ScheduledTaskRunner(
@@ -44,12 +51,30 @@ internal class ScheduledTaskRunner(
     private val scope: CoroutineScope,
     private val config: ScheduledTaskConfig,
     private val clock: Clock,
+    metrics: BackendMetrics,
 ) {
-    private val slots = Semaphore(config.concurrentRuns)
+    /** Running occurrences per owner on this instance. */
+    private val running = MutableStateFlow<Map<String, Int>>(emptyMap())
+    private val dispatchDelay = metrics.registry.timer("souz.scheduled.task.dispatch.delay")
+
+    init {
+        Gauge.builder("souz.scheduled.task.slots", running) { it.value.values.sum().toDouble() }
+            .tag("state", "busy").register(metrics.registry)
+        Gauge.builder("souz.scheduled.task.slots", running) { (config.concurrentRuns - it.value.values.sum()).toDouble() }
+            .tag("state", "free").register(metrics.registry)
+        Gauge.builder("souz.scheduled.task.owners.at.limit", running) { state ->
+            state.value.values.count { it >= config.concurrentRunsPerUser }.toDouble()
+        }.register(metrics.registry)
+    }
+
+    /** Waits for a free slot and returns owners at their limit, whose due tasks stay queued meanwhile. */
+    suspend fun admit(): Set<String> = running.first { it.values.sum() < config.concurrentRuns }
+        .filterValues { it >= config.concurrentRunsPerUser }.keys
 
     @Suppress("SuspendFunSwallowedCancellation") // Dispatch errors, cancellation included, are rethrown after non-cancellable cleanup.
     suspend fun run(job: JobRun) {
-        slots.acquire()
+        // The sequential worker claims only after admit, so this occurrence has a slot within its owner's limit.
+        running.update { it + (job.userId to (it[job.userId] ?: 0) + 1) }
         var execution: AgentExecution? = null
         try {
             val now = clock.instant()
@@ -76,9 +101,10 @@ internal class ScheduledTaskRunner(
                 throw error
             }
         } finally {
-            if (execution == null) slots.release()
+            if (execution == null) release(job.userId)
         }
         val started = execution ?: return
+        dispatchDelay.record(maxOf(Duration.ZERO, Duration.between(job.scheduledAt, clock.instant())))
         // Undispatched start enters the finally block even if the application scope is shutting down.
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
@@ -87,9 +113,14 @@ internal class ScheduledTaskRunner(
                     launcher.join(started.id)
                 }
             } finally {
-                slots.release()
+                release(job.userId)
             }
         }
+    }
+
+    private fun release(owner: String) = running.update { counts ->
+        val remaining = counts.getValue(owner) - 1
+        if (remaining == 0) counts - owner else counts + (owner to remaining)
     }
 }
 

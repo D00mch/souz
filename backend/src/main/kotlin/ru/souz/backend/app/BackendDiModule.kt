@@ -540,6 +540,7 @@ fun backendDiModule(
             scope = instance<BackendApplicationScope>(),
             config = appConfig.scheduledTasks,
             clock = instance(),
+            metrics = instance(),
         )
     }
     bindSingleton {
@@ -607,6 +608,7 @@ fun backendDiModule(
             vkBotBindingService = if (featureFlags.vkBot) instance() else null,
             featureFlags = featureFlags,
             selectedModel = { settingsResolver.defaultModel() },
+            oldestDueJobWait = instance<PostgresJobService>()::oldestDueWait,
             trustedProxyToken = { appConfig.server.proxyToken },
             ensureTrustedUser = userRepository::ensureUser,
         )

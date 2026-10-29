@@ -171,7 +171,7 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
 
     routing {
         get(BackendHttpRoutes.METRICS) {
-            val exposition = withContext(Dispatchers.IO) { dependencies.metrics.scrape() }
+            val exposition = withContext(Dispatchers.IO) { dependencies.metrics.scrape(dependencies.oldestDueJobWait()) }
             call.respondText(exposition, ContentType.parse("text/plain; version=0.0.4; charset=utf-8"))
         }.describePublic(
             operationId = "getMetrics",

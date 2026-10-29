@@ -14,6 +14,8 @@ import io.micrometer.prometheusmetrics.PrometheusConfig
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration
+import kotlin.time.DurationUnit
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolExecutionEvent
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -32,6 +34,7 @@ class BackendMetrics(nanoTime: () -> Long = System::nanoTime) : AutoCloseable {
     private val sockets = AtomicInteger()
     private val tools = AtomicInteger()
     private val gc = JvmGcMetrics()
+    @Volatile private var oldestDueJobSeconds = 0.0
 
     init {
         val buckets = doubleArrayOf(.01, .05, .1, .5, 1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, 900.0)
@@ -46,6 +49,7 @@ class BackendMetrics(nanoTime: () -> Long = System::nanoTime) : AutoCloseable {
             .forEach { it.bindTo(registry) }
         Gauge.builder("souz.ws.connections.active", sockets) { it.get().toDouble() }.register(registry)
         Gauge.builder("souz.pending.tool.calls", tools) { it.get().toDouble() }.register(registry)
+        Gauge.builder("souz.scheduled.task.oldest.due", this) { it.oldestDueJobSeconds }.baseUnit("seconds").register(registry)
         listOf("completed", "failed", "cancelled").forEach { registry.counter("souz.executions", "outcome", it) }
         listOf("queue_full", "undelivered", "disconnect", "send_failure", "overtaken").forEach { dropped(it, 0.0) }
     }
@@ -131,9 +135,10 @@ class BackendMetrics(nanoTime: () -> Long = System::nanoTime) : AutoCloseable {
         } ?: "other",
     )
 
-    internal fun scrape(): String {
+    internal fun scrape(oldestDueJobWait: Duration): String {
         executions.prepareScrape()
         historyMemory.prepareScrape()
+        oldestDueJobSeconds = oldestDueJobWait.toDouble(DurationUnit.SECONDS)
         return registry.scrape()
     }
 

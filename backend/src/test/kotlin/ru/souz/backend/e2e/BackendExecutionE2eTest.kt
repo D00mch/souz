@@ -228,7 +228,7 @@ class BackendExecutionE2eTest {
 
 internal suspend fun assertExecutionMetrics(backend: BackendE2eBackend, outcome: String) {
     val metrics = backend.dependencies.metrics
-    withContext(Dispatchers.IO) { metrics.scrape() }
+    withContext(Dispatchers.IO) { metrics.scrape(backend.dependencies.oldestDueJobWait()) }
     assertEquals(1.0, metrics.registry.get("souz.executions").tag("outcome", outcome).counter().count())
     assertEquals(1L, metrics.registry.get("souz.execution.duration").timer().count())
     assertTrue(metrics.registry.find("souz.executions.active").gauges().all { it.value() == 0.0 })

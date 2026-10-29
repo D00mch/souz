@@ -1,6 +1,7 @@
 package ru.souz.jobs.impl
 
 import java.sql.SQLException
+import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -8,13 +9,18 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import ru.souz.jobs.JobRun
+import ru.souz.jobs.JobSchedule
 import ru.souz.jobs.JobStatus
 
 class JobWorkerTest {
@@ -187,6 +193,34 @@ class JobWorkerTest {
             assertEquals(2, replay.attempt)
         })
         assertEquals(JobStatus.SUCCEEDED, service.listJobs("owner").items.single().status)
+    }
+
+    @Test
+    fun `worker claims after admission and skipped owners keep due jobs pending without spending attempts`() = jobTest(fastTiming) { db, service ->
+        val skipped = service.create(title = "Skipped", userId = "busy")
+        val free = service.create(title = "Free", userId = "free")
+        service.create(title = "Future", userId = "free", schedule = JobSchedule.Once(Instant.parse("2035-01-01T00:00:00Z")))
+        db.execute("update jobs set available_at = clock_timestamp() - interval '1 hour' where id = ?", skipped.id)
+        val admitting = Channel<Unit>(Channel.UNLIMITED)
+        val admitted = Channel<Set<String>>()
+        val runs = Channel<JobRun>(Channel.UNLIMITED)
+        service.startWorker(this, admit = { admitting.send(Unit); admitted.receive() }) { runs.send(it) }
+        suspend fun pending(owner: String) = service.listJobs(owner).items.filter { it.status == JobStatus.PENDING && it.attempts == 0 }
+        withTimeout(5_000) {
+            admitting.receive()
+            assertEquals(listOf(skipped.id), pending("busy").map { it.id }, "Nothing is claimed while admission waits.")
+            assertEquals(2, pending("free").size)
+            val waited = service.oldestDueWait()
+            assertTrue(waited >= 1.hours && waited < 1.hours + 1.minutes, waited.toString())
+            admitted.send(setOf("busy"))
+            assertEquals(free.id, runs.receive().jobId, "The skipped owner's older job is passed over.")
+            admitting.receive()
+            assertEquals(listOf(skipped.id), pending("busy").map { it.id })
+            admitted.send(emptySet())
+            assertEquals(skipped.id, runs.receive().jobId)
+            admitting.receive()
+        }
+        assertEquals(Duration.ZERO, service.oldestDueWait(), "Future jobs are not due.")
     }
 
     private suspend fun awaitStatus(service: PostgresJobService, id: java.util.UUID, status: JobStatus) {

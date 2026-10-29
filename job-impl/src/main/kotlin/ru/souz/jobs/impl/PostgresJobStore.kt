@@ -9,6 +9,8 @@ import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.UUID
 import javax.sql.DataSource
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.souz.jobs.FailedJobOccurrence
@@ -63,7 +65,7 @@ internal class PostgresJobStore(private val dataSource: DataSource, private val 
         ) { if (next()) jobInfo() else null }
     }
 
-    suspend fun claim(): JobClaim? = transaction { connection ->
+    suspend fun claim(skippedOwners: Set<String> = emptySet()): JobClaim? = transaction { connection ->
         // Lock expired claims once; recording failure and advancing recurrence commit together.
         val expired = connection.query(
             """
@@ -81,11 +83,20 @@ internal class PostgresJobStore(private val dataSource: DataSource, private val 
               lease_token = ?, lease_until = clock_timestamp() + ? * interval '1 second'
             where id = (
               select id from jobs
-              where status = 'PENDING' and available_at <= statement_timestamp() and attempts < 3
+              where status = 'PENDING' and available_at <= statement_timestamp() and attempts < 3 and user_id <> all(?)
               order by available_at, id limit 1 for update skip locked
             ) returning *
-            """.trimIndent(), token, timing.leaseSeconds,
+            """.trimIndent(), token, timing.leaseSeconds, connection.createArrayOf("text", skippedOwners.toTypedArray()),
         ) { if (next()) JobClaim(jobInfo(), token) else null }
+    }
+
+    suspend fun oldestDueWait(): Duration = connection { connection ->
+        connection.query(
+            """
+            select coalesce(extract(epoch from statement_timestamp() - min(available_at)), 0) from jobs
+            where status = 'PENDING' and available_at <= statement_timestamp() and attempts < 3
+            """.trimIndent(),
+        ) { check(next()); getDouble(1).seconds }
     }
 
     suspend fun renew(claim: JobClaim): Boolean = lockedConnection(claim.job.id) { connection ->
