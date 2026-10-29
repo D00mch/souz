@@ -1,5 +1,6 @@
 package ru.souz.ui.host
 
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -22,7 +23,8 @@ sealed interface UiAudioRecordingState {
 interface UiSpeechPlayer {
     val isSpeaking: StateFlow<Boolean>
 
-    fun queue(text: String, speed: Int? = null)
+    /** Cancelling the returned job removes only this utterance, including active playback. */
+    fun queue(text: String, speed: Int? = null): Job
     fun clearQueue()
     fun playTextRand(speed: Int, vararg texts: String)
     fun playMacPing()
@@ -44,7 +46,7 @@ object NoopUiAudioRecorder : UiAudioRecorder {
 object NoopUiSpeechPlayer : UiSpeechPlayer {
     override val isSpeaking: StateFlow<Boolean> = MutableStateFlow(false)
 
-    override fun queue(text: String, speed: Int?) = Unit
+    override fun queue(text: String, speed: Int?): Job = Job().apply { complete() }
     override fun clearQueue() = Unit
     override fun playTextRand(speed: Int, vararg texts: String) = Unit
     override fun playMacPing() = Unit

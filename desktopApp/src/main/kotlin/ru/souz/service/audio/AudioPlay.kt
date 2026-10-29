@@ -3,6 +3,8 @@
 package ru.souz.service.audio
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -12,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.newSingleThreadContext
+import kotlinx.coroutines.runInterruptible
 import java.io.File
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.LineEvent
@@ -23,21 +26,26 @@ import java.util.Random
 
 private const val SPEED_KEY = ToolSoundConfig.SPEED_KEY
 
-class Say : UiSpeechPlayer {
-    private var sayProcess: Process? = null
+class Say(
+    managingDispatcher: CoroutineDispatcher = newSingleThreadContext("say-manage"),
+    voiceDispatcher: CoroutineDispatcher = newSingleThreadContext("say"),
+    private val startSpeech: (String, Int) -> Process = { text, speed ->
+        ProcessBuilder("say", "-r", "$speed", "--", "$text ").start()
+    },
+) : UiSpeechPlayer {
     private val random = Random()
 
     private val jobs = ArrayList<Job>()
     private val _isSpeaking = MutableStateFlow(false)
-    private val managingScope = CoroutineScope(SupervisorJob() + newSingleThreadContext("say-manage"))
-    private val voiceScope = CoroutineScope(SupervisorJob() + newSingleThreadContext("say"))
+    private val managingScope = CoroutineScope(SupervisorJob() + managingDispatcher)
+    private val voiceScope = CoroutineScope(SupervisorJob() + voiceDispatcher)
 
     override val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
 
-    override fun queue(text: String, speed: Int?) {
+    override fun queue(text: String, speed: Int?): Job {
         val effectiveSpeed = speed ?: ConfigStore.get(SPEED_KEY, DEFAULT_SPEED)
+        val job = voiceScope.launch(start = CoroutineStart.LAZY) { playText(text, effectiveSpeed) }
         managingScope.launch {
-            val job = voiceScope.launch { playText(text, effectiveSpeed) }
             jobs.add(job)
             updateSpeakingState()
             job.invokeOnCompletion {
@@ -46,7 +54,9 @@ class Say : UiSpeechPlayer {
                     updateSpeakingState()
                 }
             }
+            job.start()
         }
+        return job
     }
 
     fun queue(text: String) = queue(text, speed = null)
@@ -58,28 +68,20 @@ class Say : UiSpeechPlayer {
             jobs.forEach { it.cancel() }
             jobs.clear()
             updateSpeakingState()
-            stopPlayText()
         }
     }
 
-    /** Global Voice command. Only one speech is possible at the time. Use [stopPlayText] to stop the current one */
-    private fun playText(text: String, speed: Int = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED)) {
-        stopPlayText()
-        val saveEnding = "$text "
-        sayProcess = ProcessBuilder("say", "-r", "$speed", "--", saveEnding).start()
-        sayProcess?.waitFor()
-    }
-
-    /** Stops the speech started by [playText] */
-    private fun stopPlayText() {
-        sayProcess?.destroyForcibly()
-        sayProcess = null
+    private suspend fun playText(text: String, speed: Int) = runInterruptible {
+        val process = startSpeech(text, speed)
+        try {
+            process.waitFor()
+        } finally {
+            process.destroyForcibly()
+        }
     }
 
     private fun updateSpeakingState() {
-        managingScope.launch {
-            _isSpeaking.value = jobs.isNotEmpty()
-        }
+        _isSpeaking.value = jobs.isNotEmpty()
     }
 
     override fun playTextRand(speed: Int, vararg texts: String) {

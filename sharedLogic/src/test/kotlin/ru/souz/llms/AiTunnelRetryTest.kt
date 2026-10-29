@@ -33,6 +33,12 @@ import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import ru.souz.llms.tunnel.AiTunnelVoiceAPI
 import ru.souz.llms.tunnel.retryAiTunnelRequest
+import ru.souz.memory.LlmMemoryWriter
+import ru.souz.memory.MemoryCaptureInput
+import ru.souz.memory.MemoryCaptureService
+import ru.souz.memory.MemoryService
+import ru.souz.memory.MemoryWriterException
+import ru.souz.memory.globalMemoryScope
 import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -43,6 +49,45 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AiTunnelRetryTest {
+    @Test
+    fun `memory capture never replays exhausted provider retries`() = runTest {
+        for (enabled in listOf(false, true)) {
+            for (failure in listOf("connection", "timeout", "429", "503")) {
+                var calls = 0
+                val payloads = mutableListOf<List<Byte>>()
+                HttpClient(MockEngine { request ->
+                    calls++
+                    payloads += request.body.toByteArray().toList()
+                    when (failure) {
+                        "connection" -> throw IOException("offline")
+                        "timeout" -> throw HttpRequestTimeoutException(request)
+                        else -> respond("failure-$calls", HttpStatusCode.fromValue(failure.toInt()), jsonHeaders)
+                    }
+                }) { providerHttpClientDefaults() }.use { client ->
+                    val capture = MemoryCaptureService(mockk<MemoryService>(), LlmMemoryWriter(api(client, enabled = enabled), settings()))
+                    val error = assertFailsWith<MemoryWriterException> { capture.captureAfterTurn(memoryInput()) }
+                    assertEquals(enabled, error.retriesExhausted)
+                    if (failure == "429" || failure == "503") assertTrue(error.message.orEmpty().endsWith("failure-3"))
+                }
+                assertEquals(3, calls, "memory capture/$enabled/$failure")
+                assertEquals(1, payloads.distinct().size)
+            }
+        }
+    }
+
+    @Test
+    fun `memory capture still retries malformed writer output after successful transport`() = runTest {
+        var calls = 0
+        HttpClient(MockEngine {
+            calls++
+            respond(CHAT_REPLY.replace("accepted", if (calls < 3) "not-json" else "[]"), headers = jsonHeaders)
+        }) { providerHttpClientDefaults() }.use { client ->
+            val capture = MemoryCaptureService(mockk<MemoryService>(), LlmMemoryWriter(api(client), settings()))
+            assertEquals(emptyList(), capture.captureAfterTurn(memoryInput()))
+        }
+        assertEquals(3, calls)
+    }
+
     @Test
     fun `chat embeddings and streams retry request failures with identical payloads`() = runTest {
         for (failure in listOf("connection", "timeout", "400", "401", "429", "500", "503", "malformed", "api-error")) {
@@ -274,12 +319,23 @@ class AiTunnelRetryTest {
         OpenAICompatibleChatAPI(provider, settings(), client, "test-key", retryAiTunnelRequests = enabled)
 
     private fun settings(): SettingsProvider = mockk(relaxed = true) {
+        every { gigaModel } returns LLMModel.AiTunnelGpt54Mini
+        every { executionModelId(any()) } answers { firstArg<LLMModel>().alias }
         every { requestTimeoutMillis } returns 10_000L
         every { useStreaming } returns true
         every { aiTunnelKey } returns "test-key"
         every { regionProfile } returns "ru"
         every { voiceRecognitionModel } returns VoiceRecognitionModel.AiTunnelGpt4oTranscribe
     }
+
+    private fun memoryInput() = MemoryCaptureInput(
+        scopes = listOf(globalMemoryScope()),
+        userMessage = "I prefer concise replies.",
+        assistantMessage = "Understood.",
+        conversationId = "retry-test",
+        userMessageId = "user",
+        assistantMessageId = "assistant",
+    )
 
     private fun reply(operation: String) = when (operation) {
         "embeddings" -> """{"data":[{"embedding":[0.1,0.2]}],"model":"embedding","usage":{"total_tokens":1}}"""

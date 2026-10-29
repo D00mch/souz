@@ -10,6 +10,7 @@ import io.mockk.verify
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.isActive
@@ -45,6 +46,7 @@ import ru.souz.service.observability.ChatObservabilityTracker
 import ru.souz.service.observability.ChatRequestSource
 import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.ui.main.MainState
+import ru.souz.ui.host.UiSpeechPlayer
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -54,6 +56,56 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class ChatUseCaseTest {
+    @Test
+    fun `stream retries cancel only failed speech and preserve earlier playing and queued paragraphs`() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val completed = CompletableDeferred<String>()
+        val sideEffects = MutableSharedFlow<AgentSideEffect>()
+        val player = mockk<UiSpeechPlayer>(relaxed = true)
+        val utterances = mutableListOf<Pair<String, Job>>()
+        every { player.queue(any(), any()) } answers {
+            Job().also { utterances += firstArg<String>() to it }
+        }
+        every { player.clearQueue() } answers { utterances.forEach { it.second.cancel() } }
+        val useCase = createExecutableUseCase(
+            sideEffects = sideEffects,
+            speechUseCase = SpeechUseCase(player),
+            useStreaming = true,
+            executeAnswer = { started.complete(Unit); completed.await() },
+        )
+        var state = MainState()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.outputs.collect { if (it is MainUseCaseOutput.State) state = it.reduce(state) }
+        }
+        val request = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.sendChatMessage(backgroundScope, true, "hello", requestSource = ChatRequestSource.CHAT_UI)
+        }
+        started.await()
+        runCurrent()
+        val accepted = "Accepted paragraph. Another accepted paragraph. "
+        sideEffects.emit(AgentSideEffect.Text("Accepted paragraph. "))
+        sideEffects.emit(AgentSideEffect.Text("Another accepted paragraph. "))
+        val provisionalId = state.chatMessages.last().id
+        repeat(2) {
+            sideEffects.emit(AgentSideEffect.Text("failed "))
+            sideEffects.emit(AgentSideEffect.Text("attempt"))
+            sideEffects.emit(AgentSideEffect.Text("", retractCharacters = "failed attempt".length))
+            assertEquals(accepted, state.chatMessages.last().text)
+            assertTrue(utterances.take(2).all { it.second.isActive }, "Accepted playback must remain active")
+            assertTrue(utterances.drop(2).all { it.second.isCancelled }, "Every failed chunk must be removed")
+        }
+        sideEffects.emit(AgentSideEffect.Text("Recovered answer."))
+        assertEquals(accepted + "Recovered answer.", state.chatMessages.last().text)
+        assertEquals(provisionalId, state.chatMessages.last().id)
+        completed.complete("Recovered answer.")
+        request.join()
+        assertEquals(listOf("Accepted paragraph.", "Another accepted paragraph.", "Recovered answer."),
+            utterances.filterNot { it.second.isCancelled }.map { it.first })
+        verify(exactly = 1) { player.clearQueue() } // Initial request cleanup only.
+        assertFalse(state.isProcessing)
+        utterances.forEach { it.second.cancel() }
+    }
+
     @Test
     fun `provider retry retracts partial text in place and restores speech after a failed code block`() = runTest {
         val started = CompletableDeferred<Unit>()
@@ -88,7 +140,7 @@ class ChatUseCaseTest {
         assertEquals(2, state.chatMessages.size)
         assertTrue(state.isProcessing)
         verify(exactly = 1) { speech.queuePrepared("spoken recovery") }
-        verify(atLeast = 1) { speech.clearQueue() }
+        verify(exactly = 1) { speech.clearQueue() }
 
         completed.complete("spoken recovery")
         request.join()

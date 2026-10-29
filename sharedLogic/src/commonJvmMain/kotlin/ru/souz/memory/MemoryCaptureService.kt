@@ -124,6 +124,7 @@ class MemoryCaptureService(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
+                if (error is MemoryWriterException && error.retriesExhausted) throw error
                 lastFailure = error
                 WRITER_RETRY_DELAYS_MS.getOrNull(attempt)?.let { delay(it) }
             }

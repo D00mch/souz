@@ -4,7 +4,7 @@
 
 - Remote provider adapters receive host-owned `HttpClient` instances. They do not create, derive, or close clients.
 - Desktop opts into three total AiTunnel attempts for chat and embeddings; desktop transcription also uses three attempts. All request errors retry after 250/500 ms, except coroutine cancellation. Backend and other providers retain their own policies. A failed stream, including premature EOF, emits `streamReset` before restarting the identical request, discarding failed text, tool-call state and usage without a UI retry notice.
-- Exhausted AiTunnel chat errors carry internal, non-serialized `retriesExhausted` metadata through `LLMException`. Agent graph retries respect it, including during history compaction, so enclosing nodes cannot multiply the three-attempt request budget.
+- Exhausted AiTunnel chat errors carry internal, non-serialized `retriesExhausted` metadata through `LLMException` and `MemoryWriterException`. Agent graph retries (including history compaction) and memory capture respect it, so enclosing operations cannot multiply the three-attempt request budget. Memory capture still retries malformed writer output from successful requests and retains its explicit-remember fallback.
 - Credentials, selected models, endpoints, sessions, and timeouts are request state and are applied explicitly to each request.
 - Desktop may support Giga through its application-scoped transport and token state. Backend composition excludes Giga entirely.
 - The host that creates a provider transport closes it exactly once after in-flight application work is stopped.

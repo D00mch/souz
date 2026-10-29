@@ -287,6 +287,10 @@ class ChatUseCase internal constructor(
             var isCodeBlockStarted = false
             var accumulatedText = ""
             var observedRevision = session.sideEffectRevision
+            val speechJobs = mutableListOf<Pair<Int, Job>>()
+            fun queueSpeech(text: String) {
+                speechUseCase.queuePrepared(text)?.let { speechJobs += accumulatedText.length to it }
+            }
             agentFacade.sideEffects.collect { effect ->
                 when (effect) {
                     is AgentSideEffect.Text -> {
@@ -298,6 +302,7 @@ class ChatUseCase internal constructor(
                                 observedRevision = effect.streamRevision
                                 accumulatedText = ""
                                 isCodeBlockStarted = false
+                                speechJobs.clear()
                             }
                             if (toolModifyReviewUseCase.hasPendingEdits()) {
                                 return@textEffect
@@ -308,7 +313,10 @@ class ChatUseCase internal constructor(
                                 accumulatedText = accumulatedText.dropLast(effect.retractCharacters)
                                 isCodeBlockStarted = accumulatedText.windowed(CODE_BLOCK.length)
                                     .count { it == CODE_BLOCK } % 2 != 0
-                                if (msg.isVoice) speechUseCase.clearQueue()
+                                speechJobs.removeAll { (endOffset, job) ->
+                                    if (endOffset > accumulatedText.length) job.cancel()
+                                    endOffset > accumulatedText.length || job.isCompleted
+                                }
                             }
                             accumulatedText += text
                             emitState(refreshChatSearch = true) {
@@ -328,12 +336,12 @@ class ChatUseCase internal constructor(
                             if (text.contains(CODE_BLOCK)) {
                                 isCodeBlockStarted = !isCodeBlockStarted
                                 if (isCodeBlockStarted) {
-                                    speechUseCase.queuePrepared(text.substringBefore(CODE_BLOCK))
+                                    queueSpeech(text.substringBefore(CODE_BLOCK))
                                 }
                             }
 
                             if (!isCodeBlockStarted) {
-                                speechUseCase.queuePrepared(text.substringAfter(CODE_BLOCK))
+                                queueSpeech(text.substringAfter(CODE_BLOCK))
                             }
                         }
                     }

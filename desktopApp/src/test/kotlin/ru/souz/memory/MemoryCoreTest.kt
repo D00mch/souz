@@ -314,6 +314,24 @@ class MemoryCoreTest {
     }
 
     @Test
+    fun `exhausted writer preserves explicit remember fallback without retrying`() = runTest {
+        var calls = 0
+        val writer = object : MemoryWriter {
+            override suspend fun extractCandidates(input: MemoryCaptureInput): List<MemoryFactCandidate> {
+                calls++
+                throw MemoryWriterException("provider exhausted", retriesExhausted = true)
+            }
+        }
+        val fixture = createFixture(writer = writer)
+
+        val captured = fixture.capture(userMessage = "Remember that I prefer concise replies.")
+
+        assertEquals(1, calls)
+        assertEquals(1, captured.size)
+        assertTrue(captured.single().body.contains("I prefer concise replies."))
+    }
+
+    @Test
     fun `invalid writer candidate is ignored`() = runTest {
         val fixture = createFixture(
             writer = FixedWriter(

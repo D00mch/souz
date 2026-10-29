@@ -13,7 +13,11 @@ interface MemoryWriter {
     suspend fun extractCandidates(input: MemoryCaptureInput): List<MemoryFactCandidate>
 }
 
-class MemoryWriterException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+class MemoryWriterException(
+    message: String,
+    cause: Throwable? = null,
+    val retriesExhausted: Boolean = false,
+) : RuntimeException(message, cause)
 
 class LlmMemoryWriter(
     private val api: LLMChatAPI,
@@ -45,7 +49,8 @@ class LlmMemoryWriter(
         return when (response) {
             is LLMResponse.Chat.Ok -> parseCandidates(response.choices.firstOrNull()?.message?.content.orEmpty())
             is LLMResponse.Chat.Error -> throw MemoryWriterException(
-                "Memory writer failed: ${response.status} ${response.message}"
+                "Memory writer failed: ${response.status} ${response.message}",
+                retriesExhausted = response.retriesExhausted,
             )
         }
     }
