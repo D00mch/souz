@@ -1,6 +1,6 @@
 # Backend
 
-`:backend` is the headless JVM HTTP host. It exposes public health, generated API documentation, and the credential-free Client-Souz chat creation and WebSocket boundary. Other `/v1/**` operations stay behind the trusted proxy. Chat turns run through the shared `:agent` kernel.
+`:backend` is the headless JVM HTTP host. It exposes public health and readiness, generated API documentation, and the credential-free Client-Souz chat creation and WebSocket boundary. Other `/v1/**` operations stay behind the trusted proxy. Chat turns run through the shared `:agent` kernel.
 
 Before changing this module, read the relevant pain-point topics below.
 
