@@ -18,7 +18,11 @@ SOUZ_AGENT_INTEGRATION_TEST_REASONING_EFFORT=none \
 ./gradlew :backend:test --tests 'ru.souz.agent.scenarios.GraphAgentSkillScenariosIntegrationTest'
 ```
 
-Replace the model ID and endpoint to evaluate another model. `OPENAI_MODEL`, `OPENAI_BASE_URL` and `OPENAI_API_KEY` are required after opt-in. Reasoning effort is optional; use a value supported by the model and endpoint, or omit it for the provider default. Streaming is disabled. Each scenario allows at most 24 model calls and four minutes, including Skill selection. The context size is 32,000 tokens. The harness does not change provider parameters or retry scenarios to obtain a passing result.
+Replace the model ID and endpoint to evaluate another model. The provider defaults to `openai`; `OPENAI_MODEL`, `OPENAI_BASE_URL` and `OPENAI_API_KEY` are required after opt-in.
+
+For an existing Codex login, set `SOUZ_AGENT_INTEGRATION_TEST_PROVIDER=codex`, select the Codex model with `OPENAI_MODEL`, and supply its current `CODEX_ACCESS_TOKEN` and `CODEX_ACCOUNT_ID` through the invoking process environment. This uses the production `CodexChatAPI`; `OPENAI_API_KEY` and `OPENAI_BASE_URL` are not required. The harness borrows only the access token. Its owning Codex session manages refresh; obtain a current token again if it expires. Keep tokens out of tracked files and test output.
+
+Reasoning effort is optional; use a value supported by the selected provider, or omit it for the provider default. Agent calls use the ordinary response interface; Codex internally collects its required SSE stream. Each scenario allows at most 24 model calls and four minutes, including Skill selection. The context size is 32,000 tokens. The harness does not change provider parameters or retry scenarios to obtain a passing result.
 
 Without `SOUZ_AGENT_INTEGRATION_TESTS_ON=true`, live tests skip before reading credentials or creating an HTTP client.
 

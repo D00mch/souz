@@ -33,6 +33,7 @@ import ru.souz.backend.memory.hindsight.ToolForgetMemoryFact
 import ru.souz.db.SettingsProvider
 import ru.souz.knowledge.SandboxConversationKnowledgeStore
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
@@ -69,8 +70,9 @@ suspend fun ScenarioLiveModel.runScenario(
     var completed = false
     try {
         val execution = withTimeout(4.minutes) {
+            val baseSettings = scenarioSettings(modelId, provider)
             val settings = BackendConversationSettingsProvider(
-                delegate = scenarioSettings(modelId),
+                delegate = baseSettings,
                 defaultSystemPrompt = BackendRuntime.backendSystemPrompt(),
                 policyPrompt = SystemBackendConfigSource.value("SOUZ_BACKEND_POLICY_PROMPT", "souz.backend.policyPrompt")
                     ?.trim()?.takeIf { it.isNotEmpty() },
@@ -80,8 +82,8 @@ suspend fun ScenarioLiveModel.runScenario(
                 applyRequest(BackendConversationTurnRequest(
                     userPrompt, modelId, locale = "ru-RU", timeZone = "Europe/Moscow", clientToolsEnabled = true,
                 ), temperature = 0f)
-                // Every scenario uses its selected OpenAI-compatible endpoint, including known model aliases.
-                gigaModel = LLMModel.OpenAICompatibleCustom
+                // Keep the scenario's selected provider, including when the model ID is a known alias.
+                gigaModel = baseSettings.gigaModel
             }
             val userSettings = mockk<UserSettingsRepository> {
                 coEvery { personality(any()) } returns PersonalitySnapshot()
@@ -175,8 +177,8 @@ suspend fun ScenarioLiveModel.runScenario(
     }
 }
 
-internal fun scenarioSettings(modelId: String): SettingsProvider = mockk {
-    every { gigaModel } returns LLMModel.OpenAICompatibleCustom
+internal fun scenarioSettings(modelId: String, provider: LlmProvider): SettingsProvider = mockk {
+    every { gigaModel } returns if (provider == LlmProvider.CODEX) LLMModel.CodexGpt6Astra else LLMModel.OpenAICompatibleCustom
     every { executionModelId(any()) } returns modelId
     every { activeAgentId } returns AgentId.SKILLS_GRAPH
     every { regionProfile } returns "ru"
