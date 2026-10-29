@@ -67,18 +67,18 @@ class PostgresJobService internal constructor(dataSource: DataSource, private va
     override suspend fun cancelJob(userId: String, jobId: UUID): JobInfo? = store.cancel(userId, jobId)
 
     /**
-     * One sequential worker per service instance. Before each claim, [admit] suspends until the host can start a job
-     * and returns owners whose due jobs stay pending meanwhile. Repeated starts retain the original scope and callbacks.
+     * One sequential worker per service instance. [awaitCapacity] runs before each claim and returns owners to skip.
+     * Repeated starts retain the original scope and callbacks.
      */
     suspend fun startWorker(
         scope: CoroutineScope,
-        admit: suspend () -> Set<String> = { emptySet() },
+        awaitCapacity: suspend () -> Set<String> = { emptySet() },
         handler: suspend (JobRun) -> Unit,
     ): Job = startup.withLock {
         worker?.takeUnless { it.isCompleted } ?: scope.launch {
             while (isActive) {
                 try {
-                    if (processNext(admit(), handler)) continue
+                    if (processNext(awaitCapacity(), handler)) continue
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {

@@ -2,7 +2,7 @@
 
 ## Invariant
 
-Claim the earliest eligible job atomically with `FOR UPDATE SKIP LOCKED` and commit before running its handler. Before each claim the worker awaits the host's admission, which can wait for host capacity and name owners whose jobs the claim passes over; their due jobs stay pending without spending attempts. PostgreSQL time governs eligibility and lease validity. Renewals and outcome writes lock the row before validating the matching token, running status, and lease against current database time in the same transaction.
+Claim the earliest eligible job atomically with `FOR UPDATE SKIP LOCKED` and commit before running its handler. One worker calls the host's `awaitCapacity`, claims, and dispatches sequentially. The callback waits for host capacity and returns owners to skip; their due jobs stay pending without spending attempts. PostgreSQL time governs eligibility and lease validity. Renewals and outcome writes lock the row before validating the matching token, running status, and lease against current database time in the same transaction.
 
 Recover expired running leases before claiming: requeue attempts below the limit with their existing availability time, and fail exhausted attempts. Both eligibility scans use `statement_timestamp()` as an index range boundary; the ordered claim reads only pending rows. Recovery skips locked rows. Lease creation and post-lock ownership checks use `clock_timestamp()`.
 

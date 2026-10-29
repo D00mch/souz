@@ -38,11 +38,8 @@ data class ScheduledTaskConfig(
 }
 
 /**
- * Job handler for scheduled tasks. It starts the agent in a hidden chat and returns, so the
- * sequential job worker keeps claiming due tasks while up to [ScheduledTaskConfig.concurrentRuns]
- * executions run, at most [ScheduledTaskConfig.concurrentRunsPerUser] per owner. The worker claims
- * only after [admit], so due tasks wait in the queue rather than in the handler.
- * A start failure removes the occurrence's empty hidden chat and is rethrown for the job service's retries.
+ * Starts an execution in a hidden chat and returns before it finishes.
+ * Failed starts remove empty chats and propagate for the job service's retries.
  */
 internal class ScheduledTaskRunner(
     private val chats: ChatRepository,
@@ -67,13 +64,15 @@ internal class ScheduledTaskRunner(
         }.register(metrics.registry)
     }
 
-    /** Waits for a free slot and returns owners at their limit, whose due tasks stay queued meanwhile. */
-    suspend fun admit(): Set<String> = running.first { it.values.sum() < config.concurrentRuns }
+    /**
+     * Waits for a global slot and returns owners at their limit without reserving capacity.
+     * One worker must call this, claim, and [run] sequentially; other coroutines only release capacity.
+     */
+    suspend fun awaitCapacity(): Set<String> = running.first { it.values.sum() < config.concurrentRuns }
         .filterValues { it >= config.concurrentRunsPerUser }.keys
 
     @Suppress("SuspendFunSwallowedCancellation") // Dispatch errors, cancellation included, are rethrown after non-cancellable cleanup.
     suspend fun run(job: JobRun) {
-        // The sequential worker claims only after admit, so this occurrence has a slot within its owner's limit.
         running.update { it + (job.userId to (it[job.userId] ?: 0) + 1) }
         var execution: AgentExecution? = null
         try {

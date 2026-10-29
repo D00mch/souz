@@ -204,7 +204,7 @@ class JobWorkerTest {
         val admitting = Channel<Unit>(Channel.UNLIMITED)
         val admitted = Channel<Set<String>>()
         val runs = Channel<JobRun>(Channel.UNLIMITED)
-        service.startWorker(this, admit = { admitting.send(Unit); admitted.receive() }) { runs.send(it) }
+        service.startWorker(this, awaitCapacity = { admitting.send(Unit); admitted.receive() }) { runs.send(it) }
         suspend fun pending(owner: String) = service.listJobs(owner).items.filter { it.status == JobStatus.PENDING && it.attempts == 0 }
         withTimeout(5_000) {
             admitting.receive()

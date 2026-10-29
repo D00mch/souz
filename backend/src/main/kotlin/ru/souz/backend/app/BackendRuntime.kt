@@ -34,7 +34,7 @@ class BackendRuntime private constructor(
         // The worker keeps its first handler, so this is the only job dispatch path.
         runBlocking {
             val runner = di.direct.instance<ScheduledTaskRunner>()
-            di.direct.instance<PostgresJobService>().startWorker(applicationScope, runner::admit, runner::run)
+            di.direct.instance<PostgresJobService>().startWorker(applicationScope, runner::awaitCapacity, runner::run)
         }
         if (httpDependencies.featureFlags.wsEvents) {
             runBlocking { clientThreadRecoveryService.recover() }

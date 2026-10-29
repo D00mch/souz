@@ -490,7 +490,7 @@ internal class BackendE2eBackend(
 
     suspend fun startScheduledTaskWorker() {
         val runner = di.direct.instance<ScheduledTaskRunner>()
-        di.direct.instance<PostgresJobService>().startWorker(applicationScope, runner::admit, runner::run)
+        di.direct.instance<PostgresJobService>().startWorker(applicationScope, runner::awaitCapacity, runner::run)
     }
 
     suspend fun runScheduledTask(job: JobRun) = di.direct.instance<ScheduledTaskRunner>().run(job)
