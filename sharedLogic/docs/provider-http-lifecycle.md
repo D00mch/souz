@@ -3,6 +3,7 @@
 ## Invariants
 
 - Remote provider adapters receive host-owned `HttpClient` instances. They do not create, derive, or close clients.
+- AiTunnel chat, embeddings and transcription use up to three attempts, with 250/500 ms delays. Streams retry only before their first successful chunk; cancellation propagates. Backend owns retries around each budgeted, measured attempt and uses single-attempt adapters. Terminal chat errors carry non-serialized `retryable = false` through graph and memory handling to prevent replay. Other providers retain their existing policies.
 - Credentials, selected models, endpoints, sessions, and timeouts are request state and are applied explicitly to each request.
 - Desktop may support Giga through its application-scoped transport and token state. Backend composition excludes Giga entirely.
 - The host that creates a provider transport closes it exactly once after in-flight application work is stopped.

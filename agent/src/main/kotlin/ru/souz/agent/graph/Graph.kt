@@ -16,7 +16,9 @@ internal typealias StepInfo = ru.souz.graph.StepInfo
 
 private val defaultRetryPolicy = RetryPolicy(
     maxAttempts = 2,
-    shouldRetry = { error, _, node, _ -> error is LLMException && node is RetryableNode<*, *> },
+    shouldRetry = { error, _, node, _ ->
+        error is LLMException && error.retryable && node is RetryableNode<*, *>
+    },
 )
 
 /** Opt in only for provider operations whose retry cannot replay tools or surrounding coordination. */

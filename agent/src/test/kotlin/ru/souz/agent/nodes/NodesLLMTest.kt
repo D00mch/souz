@@ -146,6 +146,7 @@ class NodesLLMTest {
     fun `chat retries only LLM exceptions and respects the attempt limit`() = runTest {
         val failures = listOf(
             LLMException(LLMResponse.Chat.Error(503, "Provider failure")) to 2,
+            LLMException(LLMResponse.Chat.Error(503, "Terminal failure", retryable = false)) to 1,
             IllegalStateException("Unexpected failure") to 1,
             CancellationException("Provider cancelled") to 1,
         )
@@ -174,6 +175,25 @@ class NodesLLMTest {
                 assertEquals(expectedAttempts, attempts)
                 assertEquals(emptyList(), events.filterIsInstance<AgentRuntimeEvent.AssistantMessage>())
             }
+        }
+    }
+
+    @Test
+    fun `compaction does not replay exhausted provider requests in direct or steerable graphs`() = runTest {
+        for (steerable in listOf(false, true)) {
+            val calls = mutableListOf<LLMRequest.Chat>()
+            val api = mockk<LLMChatAPI> {
+                coEvery { message(capture(calls)) } returns LLMResponse.Chat.Error(503, "Terminal failure", retryable = false)
+            }
+            val nodes = NodesLLM(api, mockk { every { useStreaming } returns true })
+            val graph = buildGraph<String, LLMResponse.Chat> {
+                val chat = if (steerable) SteerableChatNode(nodes, ActiveRunInputController()) else nodes.chat()
+                nodeInput.edgeTo(chat).edgeTo(nodeFinish)
+            }
+            val ctx = context(exchange("old ".repeat(18000)) + activeTurn("result ".repeat(1000)), activeExchangeStartIndex = 2)
+            assertEquals(false, assertFailsWith<LLMException> { graph.start(ctx) }.retryable, "steerable=$steerable")
+            assertTrue(calls.single().isSummarization, "steerable=$steerable")
+            coVerify(exactly = 0) { api.messageStream(any()) }
         }
     }
 

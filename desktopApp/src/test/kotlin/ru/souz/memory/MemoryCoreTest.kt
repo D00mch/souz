@@ -2,6 +2,12 @@
 
 package ru.souz.memory
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpStatusCode
+import io.mockk.every
+import io.mockk.mockk
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.Connection
@@ -20,6 +26,10 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import ru.souz.ui.main.usecases.MemoryServiceConversationCleanup
 import ru.souz.llms.LLMModel
+import ru.souz.db.SettingsProvider
+import ru.souz.llms.LlmProvider
+import ru.souz.llms.http.providerHttpClientDefaults
+import ru.souz.llms.openai.OpenAICompatibleChatAPI
 
 class MemoryCoreTest {
     @Test
@@ -311,6 +321,32 @@ class MemoryCoreTest {
             fixture.capture(userMessage = "I prefer concise replies.")
         }
         assertEquals(3, writer.callCount)
+    }
+
+    @Test
+    fun `exhausted AiTunnel requests stop memory retries and preserve explicit remember fallback`() = runTest {
+        var calls = 0
+        val settings = mockk<SettingsProvider>(relaxed = true) {
+            every { gigaModel } returns LLMModel.AiTunnelGpt54Mini
+            every { executionModelId(any()) } returns LLMModel.AiTunnelGpt54Mini.alias
+            every { requestTimeoutMillis } returns 10_000L
+        }
+        HttpClient(MockEngine { calls++; respond("busy", HttpStatusCode.TooManyRequests) }) {
+            providerHttpClientDefaults()
+        }.use { client ->
+            val api = OpenAICompatibleChatAPI(LlmProvider.AI_TUNNEL, settings, client, "test-key")
+            val fixture = createFixture(LlmMemoryWriter(api, settings))
+            assertFalse(assertFailsWith<MemoryWriterException> {
+                fixture.capture(userMessage = "I prefer concise replies.")
+            }.retryable)
+            assertEquals(3, calls, "implicit capture")
+            calls = 0
+            val captured = fixture.capture(userMessage = "Remember that I prefer concise replies.").single()
+            assertEquals(3, calls, "explicit remember")
+            assertTrue(captured.body.contains("I prefer concise replies."))
+            assertEquals(captured, fixture.repository.getFact(captured.id))
+            assertEquals(1, fixture.countRows("memory_facts"))
+        }
     }
 
     @Test

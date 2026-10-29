@@ -149,6 +149,7 @@ dependencies {
     testImplementation(libs.kotlin.testJunit5)
     testImplementation(libs.junit.jupiterParams)
     testImplementation(libs.mockk)
+    testImplementation(libs.ktor.clientMock)
     testImplementation(libs.kotlinx.coroutinesTest)
 }
 

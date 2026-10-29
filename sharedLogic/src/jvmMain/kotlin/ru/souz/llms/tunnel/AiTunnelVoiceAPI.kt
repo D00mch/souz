@@ -9,6 +9,8 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
+import ru.souz.llms.retryRequest
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.VoiceRecognitionProvider
@@ -70,6 +72,18 @@ class AiTunnelVoiceAPI(
             model = transcriptionModel,
             language = transcriptionLanguage,
         )
+        return retryRequest(shouldRetry = { it: Result<String> -> it.isFailure }) {
+            try {
+                Result.success(recognizeOnce(boundary, multipartBody))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Result.failure(failure)
+            }
+        }.getOrThrow()
+    }
+
+    private suspend fun recognizeOnce(boundary: String, multipartBody: ByteArray): String {
         val response = client.post(TRANSCRIPTIONS_URL) {
             header(HttpHeaders.Authorization, "Bearer $apiKey")
             header(HttpHeaders.Accept, ContentType.Application.Json)
@@ -84,7 +98,9 @@ class AiTunnelVoiceAPI(
             throw IllegalStateException("AiTunnel transcription failed: ${response.status.value}")
         }
 
-        return restJsonMapper.readTree(responseBody)["text"]?.asText()?.trim().orEmpty()
+        val node = restJsonMapper.readTree(responseBody)
+        check(!node.hasNonNull("error")) { "AiTunnel transcription failed: ${node["error"]}" }
+        return node["text"]?.asText()?.trim().orEmpty()
     }
 
     private companion object {
