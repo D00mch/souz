@@ -2,7 +2,6 @@ package ru.souz.ui.main.usecases
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.consumeAsFlow
@@ -35,10 +34,10 @@ class SpeechUseCase(
         speechPlayer.queue(text)
     }
 
-    fun queuePrepared(text: String): Job? {
+    fun queuePrepared(text: String) {
         val prepared = prepareTextForSpeech(text)
-        if (prepared.isBlank()) return null
-        return speechPlayer.queue(prepared)
+        if (prepared.isBlank()) return
+        speechPlayer.queue(prepared)
     }
 
     fun playMacPingSafely(scope: CoroutineScope) {

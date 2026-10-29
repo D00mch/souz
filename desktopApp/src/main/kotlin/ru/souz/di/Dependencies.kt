@@ -153,7 +153,7 @@ private object DiTags {
 
 val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     import(runtimeCoreDiModule())
-    import(runtimeLlmDiModule(logObjectMapperTag = DiTags.TAG_LOG, retryAiTunnelRequests = true))
+    import(runtimeLlmDiModule(logObjectMapperTag = DiTags.TAG_LOG))
     import(sharedUiDiModule(), allowOverride = true)
 
     // utils

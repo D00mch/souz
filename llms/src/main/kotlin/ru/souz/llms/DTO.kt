@@ -18,23 +18,14 @@ object LLMResponse {
     )
 
     sealed interface Chat {
-        data class Ok(
-            val choices: List<Choice>,
-            val created: Long,
-            val model: String,
-            val usage: Usage,
-            /** Discard this stream's preceding deltas before consuming these choices. */
-            @get:JsonIgnore
-            @field:JsonIgnore
-            val streamReset: Boolean = false,
-        ) : Chat
+        data class Ok(val choices: List<Choice>, val created: Long, val model: String, val usage: Usage) : Chat
         data class Error(
             val status: Int,
             val message: String,
-            /** The provider consumed its retry budget; enclosing operations must not replay this request. */
+            /** False when retry policy is terminal or streaming output makes replay unsafe. */
             @get:JsonIgnore
             @field:JsonIgnore
-            val retriesExhausted: Boolean = false,
+            val retryable: Boolean = true,
         ) : Chat
     }
 
@@ -360,7 +351,7 @@ enum class LLMMessageRole { system, user, assistant, function, function_in_progr
 
 @Suppress("unused")
 class LLMException(body: LLMResponse.Chat.Error, override val cause: Throwable? = null) : Exception(cause) {
-    val retriesExhausted: Boolean = body.retriesExhausted
+    val retryable: Boolean = body.retryable
 }
 
 fun String.toSystemPromptMessage() = LLMRequest.Message(

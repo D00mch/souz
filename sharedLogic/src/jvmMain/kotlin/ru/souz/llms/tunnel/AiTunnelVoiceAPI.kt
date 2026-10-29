@@ -9,6 +9,8 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
+import ru.souz.llms.retryRequest
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.VoiceRecognitionProvider
@@ -70,9 +72,15 @@ class AiTunnelVoiceAPI(
             model = transcriptionModel,
             language = transcriptionLanguage,
         )
-        return retryAiTunnelRequest {
-            recognizeOnce(boundary, multipartBody)
-        }
+        return retryRequest(shouldRetry = { it: Result<String> -> it.isFailure }) {
+            try {
+                Result.success(recognizeOnce(boundary, multipartBody))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Result.failure(failure)
+            }
+        }.getOrThrow()
     }
 
     private suspend fun recognizeOnce(boundary: String, multipartBody: ByteArray): String {

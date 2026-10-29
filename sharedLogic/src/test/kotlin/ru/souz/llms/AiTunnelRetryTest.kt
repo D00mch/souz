@@ -3,354 +3,152 @@ package ru.souz.llms
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
-import io.ktor.client.engine.mock.toByteArray
-import io.ktor.client.plugins.HttpRequestTimeoutException
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
-import io.ktor.utils.io.ByteChannel
-import io.ktor.utils.io.writeStringUtf8
 import io.mockk.every
 import io.mockk.mockk
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
-import ru.souz.ToolLoopGraphBasedAgent
-import ru.souz.agent.AgentStreamChunk
-import ru.souz.agent.state.AgentContext
-import ru.souz.agent.state.AgentSettings
-import ru.souz.agent.state.AgentTools
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import ru.souz.llms.tunnel.AiTunnelVoiceAPI
-import ru.souz.llms.tunnel.retryAiTunnelRequest
 import ru.souz.memory.LlmMemoryWriter
 import ru.souz.memory.MemoryCaptureInput
 import ru.souz.memory.MemoryCaptureService
 import ru.souz.memory.MemoryService
 import ru.souz.memory.MemoryWriterException
 import ru.souz.memory.globalMemoryScope
-import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertIs
 import kotlin.test.assertFailsWith
-import kotlin.test.assertTrue
+import kotlin.test.assertIs
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AiTunnelRetryTest {
     @Test
-    fun `memory capture never replays exhausted provider retries`() = runTest {
-        for (enabled in listOf(false, true)) {
-            for (failure in listOf("connection", "timeout", "429", "503")) {
-                var calls = 0
-                val payloads = mutableListOf<List<Byte>>()
-                HttpClient(MockEngine { request ->
-                    calls++
-                    payloads += request.body.toByteArray().toList()
-                    when (failure) {
-                        "connection" -> throw IOException("offline")
-                        "timeout" -> throw HttpRequestTimeoutException(request)
-                        else -> respond("failure-$calls", HttpStatusCode.fromValue(failure.toInt()), jsonHeaders)
-                    }
-                }) { providerHttpClientDefaults() }.use { client ->
-                    val capture = MemoryCaptureService(mockk<MemoryService>(), LlmMemoryWriter(api(client, enabled = enabled), settings()))
-                    val error = assertFailsWith<MemoryWriterException> { capture.captureAfterTurn(memoryInput()) }
-                    assertEquals(enabled, error.retriesExhausted)
-                    if (failure == "429" || failure == "503") assertTrue(error.message.orEmpty().endsWith("failure-3"))
+    fun `unary operations recover on their third attempt`() = runTest {
+        for (operation in listOf("chat", "embeddings", "voice")) {
+            var calls = 0
+            HttpClient(MockEngine {
+                when (++calls) {
+                    1 -> throw IOException("offline")
+                    2 -> respond("busy", HttpStatusCode.ServiceUnavailable)
+                    else -> respond(REPLY, headers = JSON_HEADERS)
                 }
-                assertEquals(3, calls, "memory capture/$enabled/$failure")
-                assertEquals(1, payloads.distinct().size)
+            }) { providerHttpClientDefaults() }.use { client ->
+                when (operation) {
+                    "chat" -> assertIs<LLMResponse.Chat.Ok>(api(client).message(CHAT))
+                    "embeddings" -> assertIs<LLMResponse.Embeddings.Ok>(api(client).embeddings(LLMRequest.Embeddings("model", listOf("hello"))))
+                    else -> assertEquals("accepted", AiTunnelVoiceAPI(settings(), client).recognize(byteArrayOf(0, 0)))
+                }
+                assertEquals(3, calls, operation)
             }
         }
     }
 
     @Test
-    fun `memory capture still retries malformed writer output after successful transport`() = runTest {
-        var calls = 0
-        HttpClient(MockEngine {
-            calls++
-            respond(CHAT_REPLY.replace("accepted", if (calls < 3) "not-json" else "[]"), headers = jsonHeaders)
-        }) { providerHttpClientDefaults() }.use { client ->
-            val capture = MemoryCaptureService(mockk<MemoryService>(), LlmMemoryWriter(api(client), settings()))
-            assertEquals(emptyList(), capture.captureAfterTurn(memoryInput()))
-        }
-        assertEquals(3, calls)
-    }
-
-    @Test
-    fun `chat embeddings and streams retry request failures with identical payloads`() = runTest {
-        for (failure in listOf("connection", "timeout", "400", "401", "429", "500", "503", "malformed", "api-error")) {
-            for (operation in listOf("chat", "embeddings", "stream")) {
-                var calls = 0
-                val payloads = mutableListOf<List<Byte>>()
-                val engine = MockEngine { request ->
-                    calls++
-                    payloads += request.body.toByteArray().toList()
-                    if (calls < 3) {
-                        when (failure) {
-                            "connection" -> throw IOException("connection failed")
-                            "timeout" -> throw HttpRequestTimeoutException(request)
-                            "malformed" -> respond("{", headers = jsonHeaders)
-                            "api-error" -> respond(
-                                if (operation == "stream") "data: {\"error\":{\"message\":\"busy\"}}\n\n"
-                                else """{"error":{"message":"busy"}}""", headers = jsonHeaders)
-                            else -> respond("failure-$calls", HttpStatusCode.fromValue(failure.toInt()), jsonHeaders)
-                        }
-                    } else respond(reply(operation), headers = jsonHeaders)
-                }
-                HttpClient(engine) { providerHttpClientDefaults() }.use { client ->
-                    val api = api(client)
-                    when (operation) {
-                        "chat" -> assertIs<LLMResponse.Chat.Ok>(api.message(chat))
-                        "embeddings" -> assertIs<LLMResponse.Embeddings.Ok>(api.embeddings(embeddings))
-                        else -> {
-                            val responses = api.messageStream(chat).toList()
-                            assertFalse(responses.any { it is LLMResponse.Chat.Error })
-                            assertEquals("accepted", responses.filterIsInstance<LLMResponse.Chat.Ok>()
-                                .flatMap { it.choices }.joinToString("") { it.message.content })
-                        }
-                    }
-                }
-                assertEquals(3, calls, "$operation/$failure")
-                assertEquals(1, payloads.distinct().size, "$operation/$failure changes the request")
-            }
-        }
-    }
-
-    @Test
-    fun `attempt limit returns only the last error through the existing response contract`() = runTest {
-        for (operation in listOf("chat", "embeddings", "stream")) {
+    fun `streams retry before output but never replay text tools or usage`() = runTest {
+        for (partial in listOf(null, TEXT, TOOL, """{"usage":{"total_tokens":1}}""")) {
             var calls = 0
             HttpClient(MockEngine {
                 calls++
-                respond("failure-$calls", HttpStatusCode.TooManyRequests, jsonHeaders)
+                respond(when {
+                    partial != null -> "data: $partial\n\n" // EOF after a successful chunk is terminal.
+                    calls == 1 -> "data: {broken\n\n"
+                    calls == 2 -> "data: {\"error\":{\"message\":\"busy\"}}\n\n"
+                    else -> "data: $TEXT\n\ndata: [DONE]\n\n"
+                }, headers = JSON_HEADERS)
             }) { providerHttpClientDefaults() }.use { client ->
-                val api = api(client)
-                if (operation == "embeddings") {
-                    assertEquals(LLMResponse.Embeddings.Error(429, "failure-3"), api.embeddings(embeddings))
-                } else {
-                    val response = if (operation == "stream") api.messageStream(chat).toList()
-                        .filterIsInstance<LLMResponse.Chat.Error>().single() else api.message(chat)
-                    assertEquals(LLMResponse.Chat.Error(429, "failure-3", retriesExhausted = true), response)
-                }
+                val responses = api(client).messageStream(CHAT).toList()
+                assertIs<LLMResponse.Chat.Ok>(responses.first())
+                if (partial != null) assertFalse(assertIs<LLMResponse.Chat.Error>(responses.last()).retryable)
+                else assertEquals(1, responses.size)
+                assertEquals(if (partial == null) 3 else 1, calls)
             }
+        }
+    }
+
+    @Test
+    fun `memory capture cannot multiply exhausted provider attempts`() = runTest {
+        var calls = 0
+        HttpClient(MockEngine { calls++; respond("busy", HttpStatusCode.TooManyRequests) }) {
+            providerHttpClientDefaults()
+        }.use { client ->
+            val capture = MemoryCaptureService(mockk<MemoryService>(), LlmMemoryWriter(api(client), settings()))
+            val error = assertFailsWith<MemoryWriterException> {
+                capture.captureAfterTurn(MemoryCaptureInput(
+                    scopes = listOf(globalMemoryScope()), userMessage = "hello", assistantMessage = "answer",
+                    conversationId = "chat", userMessageId = "user", assistantMessageId = "assistant",
+                ))
+            }
+            assertFalse(error.retryable)
             assertEquals(3, calls)
         }
     }
 
     @Test
-    fun `successful requests and other hosts and providers stay at one attempt`() = runTest {
-        for (provider in listOf(LlmProvider.AI_TUNNEL, LlmProvider.OPENAI, LlmProvider.QWEN)) {
-            for (enabled in listOf(false, true)) {
-                for (success in listOf(false, true)) {
-                    for (operation in listOf("chat", "embeddings", "stream")) {
-                        var calls = 0
-                        HttpClient(MockEngine {
-                            calls++
-                            respond(if (success) reply(operation) else "failed",
-                                if (success) HttpStatusCode.OK else HttpStatusCode.ServiceUnavailable, jsonHeaders)
-                        }) { providerHttpClientDefaults() }.use { client ->
-                            val api = api(client, provider, enabled)
-                            when (operation) {
-                                "chat" -> {
-                                    val response = api.message(chat)
-                                    if (!success) assertEquals(provider == LlmProvider.AI_TUNNEL && enabled,
-                                        assertIs<LLMResponse.Chat.Error>(response).retriesExhausted)
-                                }
-                                "embeddings" -> api.embeddings(embeddings)
-                                else -> api.messageStream(chat).toList()
-                            }
-                        }
-                        assertEquals(if (!success && provider == LlmProvider.AI_TUNNEL && enabled) 3 else 1, calls)
-                    }
-                }
-            }
-        }
-    }
-
-    @Test
-    fun `failed partial stream is discarded before restarting and tools execute once`() = runTest {
-        for (failure in listOf("disconnect", "eof", "api-error", "malformed")) {
+    fun `request and backoff cancellation start no further attempts`() = runTest {
+        for (duringRequest in listOf(true, false)) {
             var calls = 0
-            var toolCalls = 0
-            val partial = ByteChannel(autoFlush = true)
-            val partialReceived = CompletableDeferred<Unit>()
-            val continueStream = CompletableDeferred<Unit>()
-            val prefix = "failed partial output longer than a side effect batch"
-            // A real tool implementation records execution, not merely emitted provider chunks.
-            val executableTool = object : LLMToolSetup {
-                override val fn = LLMRequest.Function("lookup", "lookup")
-                override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message {
-                    toolCalls++
-                    return LLMRequest.Message(LLMMessageRole.function, "tool result", functionsStateId = "accepted-call")
-                }
-            }
-            HttpClient(MockEngine {
-                calls++
-                when (calls) {
-                    1 -> respond(partial, headers = streamHeaders)
-                    2 -> respond(TOOL_STREAM, headers = streamHeaders)
-                    else -> respond(reply("stream"), headers = streamHeaders)
-                }
-            }) { providerHttpClientDefaults() }.use { client ->
-                val settings = settings()
-                val agent = ToolLoopGraphBasedAgent(api(client), settings)
-                var rendered = ""
-                val collector = backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
-                    agent.sideEffects.collect { chunk: AgentStreamChunk ->
-                        rendered = rendered.dropLast(chunk.retractCharacters) + chunk.text
-                        if (rendered == prefix) partialReceived.complete(Unit)
+            HttpClient(MockEngine) {
+                providerHttpClientDefaults()
+                engine {
+                    dispatcher = StandardTestDispatcher(testScheduler)
+                    addHandler {
+                        calls++
+                        if (duringRequest) throw CancellationException("cancelled")
+                        respond("busy", HttpStatusCode.ServiceUnavailable)
                     }
                 }
-                val writer = launch {
-                    partial.writeStringUtf8("data: ${chunk(prefix)}\n\n")
-                    partial.flush()
-                    continueStream.await()
-                    when (failure) {
-                        "disconnect" -> partial.cancel(IOException("stream disconnected"))
-                        "eof" -> partial.close()
-                        "api-error" -> { partial.writeStringUtf8("data: {\"error\":{\"message\":\"busy\"}}\n\n"); partial.close() }
-                        else -> { partial.writeStringUtf8("data: {broken\n\n"); partial.close() }
-                    }
-                }
-                val result = async {
-                    agent.execute(AgentContext(
-                        input = "hello",
-                        settings = AgentSettings("model", LlmProvider.AI_TUNNEL, 0f, AgentTools(listOf(executableTool))),
-                        history = emptyList(),
-                        activeTools = listOf(executableTool.fn),
-                        systemPrompt = "",
-                    ))
-                }
-                partialReceived.await()
-                assertFalse(result.isCompleted, "The first attempt must render before the stream finishes")
-                assertEquals(prefix, rendered)
-                continueStream.complete(Unit)
-                val completed = result.await()
-                writer.join()
-                assertEquals("accepted", completed.output)
-                assertFalse(completed.context.history.any { it.content.contains(prefix) })
-                assertFalse(rendered.contains(prefix), rendered)
-                assertEquals(1, toolCalls)
-                assertEquals(3, calls, "two attempts for the tool request, one subsequent final request")
-                collector.cancelAndJoin()
+            }.use { client ->
+                val request = async { api(client).messageStream(CHAT).toList() }
+                runCurrent()
+                if (duringRequest) assertFailsWith<CancellationException> { request.await() }
+                else request.cancelAndJoin()
+                assertEquals(1, calls)
             }
         }
     }
 
     @Test
-    fun `cancellation during requests starts no further attempts`() = runTest {
-        for (operation in listOf("chat", "embeddings", "stream", "voice")) {
-            var calls = 0
-            HttpClient(MockEngine {
-                calls++
-                throw CancellationException("cancelled")
-            }) { providerHttpClientDefaults() }.use { client ->
-                val request = async {
-                    val api = api(client)
-                    when (operation) {
-                        "chat" -> api.message(chat)
-                        "embeddings" -> api.embeddings(embeddings)
-                        "voice" -> AiTunnelVoiceAPI(settings(), client).recognize(byteArrayOf(0, 0))
-                        else -> api.messageStream(chat).toList()
-                    }
-                }
-                assertFailsWith<CancellationException> { request.await() }
-            }
-            assertEquals(1, calls, operation)
-        }
-    }
-
-    @Test
-    fun `cancellation during retry backoff prevents another request`() = runTest {
+    fun `collector failure propagates without replay`() = runTest {
         var calls = 0
-        val request = async { retryAiTunnelRequest(isError = { true }) { calls++; "failed" } }
-        runCurrent()
-        assertEquals(1, calls)
-        request.cancelAndJoin()
-        assertEquals(1, calls)
-    }
-
-    @Test
-    fun `transcription retries unchanged audio and returns the last failure after three attempts`() = runTest {
-        for (failure in listOf("connection", "timeout", "malformed", "api-error", "401")) {
-            for (succeed in listOf(false, true)) {
-                var calls = 0
-                val bodies = mutableListOf<List<Byte>>()
-                HttpClient(MockEngine { request ->
-                    calls++
-                    bodies += request.body.toByteArray().toList()
-                    when {
-                        calls == 1 -> when (failure) {
-                            "connection" -> throw IOException("connection failed")
-                            "timeout" -> throw HttpRequestTimeoutException(request)
-                            "malformed" -> respond("{", headers = jsonHeaders)
-                            "api-error" -> respond("""{"error":{"message":"busy"}}""", headers = jsonHeaders)
-                            else -> respond("unauthorized", HttpStatusCode.Unauthorized, jsonHeaders)
-                        }
-                        calls == 2 -> respond("busy", HttpStatusCode.TooManyRequests, jsonHeaders)
-                        succeed -> respond("""{"text":" recognized "}""", headers = jsonHeaders)
-                        else -> respond("last failure", HttpStatusCode.ServiceUnavailable, jsonHeaders)
-                    }
-                }) { providerHttpClientDefaults() }.use { client ->
-                    val voice = AiTunnelVoiceAPI(settings(), client)
-                    if (succeed) assertEquals("recognized", voice.recognize(byteArrayOf(1, 2)))
-                    else assertEquals("AiTunnel transcription failed: 503",
-                        assertFailsWith<IllegalStateException> { voice.recognize(byteArrayOf(1, 2)) }.message)
-                }
-                assertEquals(3, calls)
-                assertEquals(1, bodies.distinct().size)
-            }
+        val failure = IllegalStateException("consumer failed")
+        HttpClient(MockEngine { calls++; respond("data: $TEXT\n\ndata: [DONE]\n\n", headers = JSON_HEADERS) }) {
+            providerHttpClientDefaults()
+        }.use { client ->
+            assertEquals(failure.message, assertFailsWith<IllegalStateException> {
+                api(client).messageStream(CHAT).collect { throw failure }
+            }.message)
+            assertEquals(1, calls)
         }
     }
 
-    private fun api(client: HttpClient, provider: LlmProvider = LlmProvider.AI_TUNNEL, enabled: Boolean = true) =
-        OpenAICompatibleChatAPI(provider, settings(), client, "test-key", retryAiTunnelRequests = enabled)
+    private fun api(client: HttpClient) = OpenAICompatibleChatAPI(LlmProvider.AI_TUNNEL, settings(), client, "test-key")
 
     private fun settings(): SettingsProvider = mockk(relaxed = true) {
         every { gigaModel } returns LLMModel.AiTunnelGpt54Mini
         every { executionModelId(any()) } answers { firstArg<LLMModel>().alias }
         every { requestTimeoutMillis } returns 10_000L
-        every { useStreaming } returns true
         every { aiTunnelKey } returns "test-key"
         every { regionProfile } returns "ru"
         every { voiceRecognitionModel } returns VoiceRecognitionModel.AiTunnelGpt4oTranscribe
     }
 
-    private fun memoryInput() = MemoryCaptureInput(
-        scopes = listOf(globalMemoryScope()),
-        userMessage = "I prefer concise replies.",
-        assistantMessage = "Understood.",
-        conversationId = "retry-test",
-        userMessageId = "user",
-        assistantMessageId = "assistant",
-    )
-
-    private fun reply(operation: String) = when (operation) {
-        "embeddings" -> """{"data":[{"embedding":[0.1,0.2]}],"model":"embedding","usage":{"total_tokens":1}}"""
-        "stream" -> "data: $CHAT_REPLY\n\ndata: [DONE]\n\n"
-        else -> CHAT_REPLY
-    }
-
-    private fun chunk(content: String) = """{"choices":[{"index":0,"delta":{"content":"$content"}}]}"""
-
     private companion object {
-        val jsonHeaders = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
-        val streamHeaders = headersOf(HttpHeaders.ContentType, ContentType.Text.EventStream.toString())
-        val chat = LLMRequest.Chat("model", listOf(LLMRequest.Message(LLMMessageRole.user, "hello")))
-        val embeddings = LLMRequest.Embeddings("embedding", listOf("hello"))
-        const val CHAT_REPLY = """{"choices":[{"index":0,"message":{"role":"assistant","content":"accepted"},"delta":{"role":"assistant","content":"accepted"},"finish_reason":"stop"}],"created":1}"""
-        const val TOOL_STREAM = "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"accepted-call\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n"
+        val JSON_HEADERS = headersOf("Content-Type", "application/json")
+        val CHAT = LLMRequest.Chat("model", listOf(LLMRequest.Message(LLMMessageRole.user, "hello")))
+        const val REPLY = """{"choices":[],"data":[{"embedding":[0.1]}],"text":"accepted"}"""
+        const val TEXT = """{"choices":[{"index":0,"delta":{"content":"partial"}}]}"""
+        const val TOOL = """{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call","function":{"name":"lookup","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}"""
     }
 }

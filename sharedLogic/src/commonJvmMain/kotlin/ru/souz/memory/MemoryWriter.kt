@@ -16,7 +16,7 @@ interface MemoryWriter {
 class MemoryWriterException(
     message: String,
     cause: Throwable? = null,
-    val retriesExhausted: Boolean = false,
+    val retryable: Boolean = true,
 ) : RuntimeException(message, cause)
 
 class LlmMemoryWriter(
@@ -50,7 +50,7 @@ class LlmMemoryWriter(
             is LLMResponse.Chat.Ok -> parseCandidates(response.choices.firstOrNull()?.message?.content.orEmpty())
             is LLMResponse.Chat.Error -> throw MemoryWriterException(
                 "Memory writer failed: ${response.status} ${response.message}",
-                retriesExhausted = response.retriesExhausted,
+                retryable = response.retryable,
             )
         }
     }

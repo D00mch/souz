@@ -17,7 +17,7 @@ import io.ktor.http.isSuccess
 import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
@@ -28,9 +28,9 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toFinishReason
-import ru.souz.llms.tunnel.AI_TUNNEL_MAX_ATTEMPTS
-import ru.souz.llms.tunnel.delayAiTunnelRetry
-import ru.souz.llms.tunnel.retryAiTunnelRequest
+import ru.souz.llms.AI_TUNNEL_MAX_ATTEMPTS
+import ru.souz.llms.retryChatStream
+import ru.souz.llms.retryRequest
 import java.io.File
 
 class OpenAICompatibleChatAPI(
@@ -40,7 +40,7 @@ class OpenAICompatibleChatAPI(
     apiKey: String? = null,
     private val baseUrl: String? = null,
     private val requestParameters: String? = null,
-    private val retryAiTunnelRequests: Boolean = false,
+    private val maxAttempts: Int = if (provider == LlmProvider.AI_TUNNEL) AI_TUNNEL_MAX_ATTEMPTS else 1,
 ) : LLMChatAPI {
     init {
         require(provider == LlmProvider.OPENAI || provider == LlmProvider.AI_TUNNEL || provider == LlmProvider.QWEN) {
@@ -83,12 +83,12 @@ class OpenAICompatibleChatAPI(
         }
 
     private val retriesEnabled: Boolean
-        get() = retryAiTunnelRequests && provider == LlmProvider.AI_TUNNEL
+        get() = maxAttempts > 1 && provider == LlmProvider.AI_TUNNEL
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
         if (!retriesEnabled) return messageOnce(body)
-        val response = retryAiTunnelRequest(isError = { it is LLMResponse.Chat.Error }) { messageOnce(body) }
-        return if (response is LLMResponse.Chat.Error) response.copy(retriesExhausted = true) else response
+        val response = retryRequest(maxAttempts, shouldRetry = { it is LLMResponse.Chat.Error }) { messageOnce(body) }
+        return if (response is LLMResponse.Chat.Error) response.copy(retryable = false) else response
     }
 
     private suspend fun messageOnce(body: LLMRequest.Chat): LLMResponse.Chat = try {
@@ -115,21 +115,9 @@ class OpenAICompatibleChatAPI(
     }
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> =
-        if (!retriesEnabled) messageStreamOnce(body) else flow {
-            repeat(AI_TUNNEL_MAX_ATTEMPTS) { attempt ->
-                var failure: LLMResponse.Chat.Error? = null
-                messageStreamOnce(body).collect { response ->
-                    if (response is LLMResponse.Chat.Error) failure = response else emit(response)
-                }
-                if (failure == null) return@flow
-                emit(LLMResponse.Chat.Ok(emptyList(), 0, body.model, parseUsage(null), streamReset = true))
-                if (attempt == AI_TUNNEL_MAX_ATTEMPTS - 1) {
-                    emit(failure.copy(retriesExhausted = true))
-                    return@flow
-                }
-                delayAiTunnelRetry(attempt)
-            }
-        }
+        if (!retriesEnabled) messageStreamOnce(body) else
+            retryChatStream(maxAttempts) { messageStreamOnce(body) }
+                .map { if (it is LLMResponse.Chat.Error) it.copy(retryable = false) else it }
 
     private fun messageStreamOnce(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = channelFlow {
         try {
@@ -158,7 +146,7 @@ class OpenAICompatibleChatAPI(
 
                         try {
                             val chunkNode: JsonNode = restJsonMapper.readTree(data)
-                            if (retriesEnabled && chunkNode.hasNonNull("error")) {
+                            if (provider == LlmProvider.AI_TUNNEL && chunkNode.hasNonNull("error")) {
                                 send(LLMResponse.Chat.Error(-1, chunkNode["error"].toString()))
                                 return@execute
                             }
@@ -176,12 +164,12 @@ class OpenAICompatibleChatAPI(
                         } catch (cancellation: CancellationException) {
                             throw cancellation
                         } catch (e: Exception) {
-                            if (retriesEnabled) throw e
+                            if (provider == LlmProvider.AI_TUNNEL) throw e
                             l.warn("Model: ${body.model}. Failed to parse stream chunk: $data", e)
                         }
                     }
                 }
-                if (retriesEnabled && !completed) {
+                if (provider == LlmProvider.AI_TUNNEL && !completed) {
                     send(LLMResponse.Chat.Error(-1, "Connection error: stream ended before [DONE]"))
                 }
             }
@@ -197,7 +185,7 @@ class OpenAICompatibleChatAPI(
     }
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =
-        if (retriesEnabled) retryAiTunnelRequest(isError = { it is LLMResponse.Embeddings.Error }) { embeddingsOnce(body) }
+        if (retriesEnabled) retryRequest(maxAttempts, shouldRetry = { it is LLMResponse.Embeddings.Error }) { embeddingsOnce(body) }
         else embeddingsOnce(body)
 
     private suspend fun embeddingsOnce(body: LLMRequest.Embeddings): LLMResponse.Embeddings = try {
@@ -534,7 +522,7 @@ class OpenAICompatibleChatAPI(
 
     private fun parseCompletionsResponse(text: String, requestModel: String): LLMResponse.Chat {
         val node = restJsonMapper.readTree(text)
-        if (retriesEnabled && node.hasNonNull("error")) {
+        if (provider == LlmProvider.AI_TUNNEL && node.hasNonNull("error")) {
             return LLMResponse.Chat.Error(-1, node["error"].toString())
         }
         val choices = prepareChoices(parseChoices(node["choices"], isStream = false))
@@ -643,7 +631,7 @@ class OpenAICompatibleChatAPI(
 
     private fun parseEmbeddingsResponse(text: String): LLMResponse.Embeddings {
         val node = restJsonMapper.readTree(text)
-        if (retriesEnabled && node.hasNonNull("error")) {
+        if (provider == LlmProvider.AI_TUNNEL && node.hasNonNull("error")) {
             return LLMResponse.Embeddings.Error(-1, node["error"].toString())
         }
         val data = node["data"]?.mapIndexed { index, item ->

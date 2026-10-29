@@ -66,7 +66,6 @@ fun runtimeCoreDiModule(
 
 fun runtimeLlmDiModule(
     logObjectMapperTag: Any? = null,
-    retryAiTunnelRequests: Boolean = false,
 ): DI.Module = DI.Module("runtimeLlm") {
     import(runtimeProviderHttpDiModule())
     import(runtimeLocalLlmDiModule())
@@ -101,7 +100,6 @@ fun runtimeLlmDiModule(
                     provider = LlmProvider.AI_TUNNEL,
                     settingsProvider = settings,
                     client = clients.standard,
-                    retryAiTunnelRequests = retryAiTunnelRequests,
                 ),
                 LlmProvider.ANTHROPIC to instance<AnthropicChatAPI>(),
                 LlmProvider.OPENAI to OpenAICompatibleChatAPI(

@@ -319,7 +319,7 @@ class MemoryCoreTest {
         val writer = object : MemoryWriter {
             override suspend fun extractCandidates(input: MemoryCaptureInput): List<MemoryFactCandidate> {
                 calls++
-                throw MemoryWriterException("provider exhausted", retriesExhausted = true)
+                throw MemoryWriterException("provider exhausted", retryable = false)
             }
         }
         val fixture = createFixture(writer = writer)

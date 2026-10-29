@@ -8,15 +8,15 @@ import kotlin.test.assertNull
 
 class ChatRoutingMetadataTest {
     @Test
-    fun `retry exhaustion survives copies and exceptions but stays outside the JSON contract`() {
-        val error = LLMResponse.Chat.Error(503, "unavailable", retriesExhausted = true)
-        assertEquals(true, error.copy().retriesExhausted)
-        assertEquals(true, LLMException(error).retriesExhausted)
+    fun `retry policy survives copies and exceptions but stays outside the JSON contract`() {
+        val error = LLMResponse.Chat.Error(503, "unavailable", retryable = false)
+        assertFalse(error.copy().retryable)
+        assertFalse(LLMException(error).retryable)
         assertEquals("""{"status":503,"message":"unavailable"}""", restJsonMapper.writeValueAsString(error))
         val decoded = restJsonMapper.readValue<LLMResponse.Chat.Error>(
-            """{"status":503,"message":"unavailable","retriesExhausted":true}""",
+            """{"status":503,"message":"unavailable","retryable":false}""",
         )
-        assertFalse(decoded.retriesExhausted)
+        assertEquals(true, decoded.retryable)
     }
 
     @Test

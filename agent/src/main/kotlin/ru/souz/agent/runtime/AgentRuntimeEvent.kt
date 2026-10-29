@@ -27,7 +27,6 @@ sealed interface AgentRuntimeEvent {
 
     data class LlmMessageDelta(
         val text: String,
-        val retractCharacters: Int = 0,
     ) : AgentRuntimeEvent
 
     data class AssistantMessage(val content: String) : AgentRuntimeEvent

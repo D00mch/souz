@@ -7,6 +7,7 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondOk
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
 import io.mockk.mockk
@@ -73,6 +74,44 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.TestTimeSource
 
 class BackendExecutionLlmChatApiTest {
+    @Test
+    fun `AiTunnel retries have one owner and charge each real attempt`() = runTest {
+        PostgresDataSourceFactory.create(postgresAppConfig(newPostgresSchema("aitunnel_retry")).postgres).use { db ->
+            PostgresUserRepository(db).ensureUser("user-a")
+            for (kind in listOf("chat", "stream", "embeddings")) {
+                val store = HookStore(db, HookConfig(llmCallsPerEvent = 3))
+                val hook = LoadedHook(HookDefinition(1, "retry-test", "user-a", auth = HookAuth("bearer", "a".repeat(64)), prompt = "Test"))
+                val receiptId = store.accept(hook, "{}", null).receiptId
+                store.update(receiptId, "running")
+                val budget = HookLlmBudget(requireNotNull(store.find("user-a", receiptId)), store, ExecutionQuotaManager(BackendLlmLimits()))
+                var calls = 0
+                val delays = mutableListOf<Long>()
+                val client = HttpClient(MockEngine { calls++; respond("busy", HttpStatusCode.TooManyRequests) }) {
+                    providerHttpClientDefaults()
+                }
+                facadeFixture(client = client, providerApiOverride = null, hookBudget = budget, delayMillis = { delays += it }).use { fixture ->
+                    suspend fun call() {
+                        val request = chat(LLMModel.AiTunnelGpt54Mini.alias).copy(provider = LlmProvider.AI_TUNNEL)
+                        when (kind) {
+                            "chat" -> assertFalse(assertIs<LLMResponse.Chat.Error>(fixture.api.message(request)).retryable)
+                            "stream" -> assertFalse(assertIs<LLMResponse.Chat.Error>(fixture.api.messageStream(request).toList().single()).retryable)
+                            else -> assertIs<LLMResponse.Embeddings.Error>(fixture.api.embeddings(embeddings(EmbeddingsModel.AiTunnelEmbedding3Small.name)))
+                        }
+                    }
+                    call()
+                    assertEquals(3, calls, kind)
+                    assertEquals(3, store.find("user-a", receiptId)?.llmCalls)
+                    assertEquals(listOf(250L, 500L), delays)
+                    assertEquals(3.0, fixture.metrics.registry.get("souz.llm.requests")
+                        .tags("provider", "ai_tunnel", "outcome", "error").counter().count())
+                    assertEquals("hook_execution_llm_limit", assertFailsWith<BackendV1Exception> { call() }.code)
+                    assertEquals(3, calls)
+                    assertEquals(2, delays.size, "Budget rejection must not retry")
+                }
+            }
+        }
+    }
+
     @Test
     fun `raw routes preserve IDs across providers retries and stream accounting`() = runTest {
         val requests = mutableListOf<Pair<LlmProvider, LLMRequest.Chat>>()
@@ -155,6 +194,21 @@ class BackendExecutionLlmChatApiTest {
             cancel = true
             assertFailsWith<CancellationException> { fixture.api.message(chat(primary)) }
             assertEquals(listOf(primary, fallback, primary, primary), calls)
+        }
+
+        for (status in listOf(400, 503)) {
+            val attempted = mutableListOf<String>()
+            val tunnel = LLMModel.AiTunnelGpt54Mini.alias
+            facadeFixture(
+                fallbackModels = listOf(fallback),
+                providerApiOverride = { StubChatApi(message = {
+                    attempted += it.model
+                    LLMResponse.Chat.Error(if (it.model == tunnel) 503 else status, "down")
+                }) },
+            ).use {
+                assertFalse(assertIs<LLMResponse.Chat.Error>(it.api.message(chat(tunnel))).retryable)
+                assertEquals(listOf(tunnel, tunnel, tunnel, fallback), attempted)
+            }
         }
 
         // Named connections with one endpoint and upstream ID still differ by key.

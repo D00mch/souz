@@ -11,7 +11,6 @@ sealed interface AgentSideEffect {
     data class Text(
         val v: String,
         val streamRevision: Long = 0L,
-        val retractCharacters: Int = 0,
     ) : AgentSideEffect
 
     data class Fn(val call: LLMResponse.FunctionCall) : AgentSideEffect
@@ -21,8 +20,6 @@ sealed interface AgentSideEffect {
 data class AgentStreamChunk(
     val text: String,
     val streamRevision: Long,
-    /** Remove only the failed provider call's published text, retaining earlier calls. */
-    val retractCharacters: Int = 0,
 )
 
 /** Durable messages observed before one user input submitted to an active execution. */
