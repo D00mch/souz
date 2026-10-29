@@ -87,7 +87,7 @@ Durable replay preserves the event's original device values, including omission 
 
 ## Intermediate assistant messages
 
-Souz sends one Russian waiting phrase matching the request's kind, such as web search or travel, or a generic one, through `assistant.message` after non-simple classification, or before the first model call when routing is absent. Simple selection suppresses it. Waiting is independent of `narrateSteps`, `streamingMessages` and `showToolEvents`; duplicate submissions, reconnects, tool loops and active-thread continuations do not repeat it. It is absent from history and replay.
+Souz attempts at most one Russian waiting phrase through `assistant.message` after non-simple classification, or before the first model call when routing is absent. It selects an activity pool when classification is sufficiently confident, otherwise a generic pool. Simple selection suppresses it. Delivery is best-effort and does not block the model call: narration, a parent tool start (including internal tools), completion or cancellation can discard a pending phrase. Delivery failures do not fail the request. Duplicate submissions, reconnects, tool loops and active-thread continuations do not repeat it. It is absent from history and replay.
 
 Other progress is opt-in through the trusted settings API: `PATCH /v1/me/settings` with `{"narrateSteps":true}`. Settings responses expose the effective value, defaulting to `false`. The preference controls the additive RU/EN prompt instruction and live WebSocket, Telegram, and VK delivery independently of `streamingMessages` and `showToolEvents`. Each execution snapshots it, including option continuations; settings changes affect subsequent executions.
 

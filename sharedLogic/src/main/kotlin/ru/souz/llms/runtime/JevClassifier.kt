@@ -17,10 +17,12 @@ class JevClassifier(
     private val client: JevClient,
     private val threshold: Double = 0.5,
     private val waitCategories: Map<String, String> = emptyMap(),
+    private val waitCategoryThreshold: Double = 0.5,
 ) : SkillClassifier, TaskComplexityClassifier {
     private val logger = LoggerFactory.getLogger(JevClassifier::class.java)
     init {
         require(threshold in 0.0..1.0) { "JEV_THRESHOLD must be a number within [0, 1]" }
+        require(waitCategoryThreshold in 0.0..1.0) { "JEV_WAIT_CATEGORY_THRESHOLD must be a number within [0, 1]" }
     }
 
     override suspend fun selectSkills(request: LLMRequest.Chat, descriptions: Map<SkillId, String>): Set<SkillId> {
@@ -50,7 +52,8 @@ class JevClassifier(
                 waitCategories + (OTHER_WAIT to OTHER_WAIT_DESCRIPTION))
         }
         val simple = noul.getValue("simple")
-        val waitCategory = waits.maxByOrNull { it.value }?.key?.takeIf { it != OTHER_WAIT }
+        val waitCategory = waits.maxByOrNull { it.value }
+            ?.takeIf { it.key != OTHER_WAIT && it.value >= waitCategoryThreshold }?.key
         logger.info("Jev complexity simpleProbability={} threshold=0.9 waitCategory={} capabilities={} contextMessages={}",
             simple, waitCategory, capabilities.size, previous.size)
         return TaskClassification(complex = simple < 0.9, waitCategory = waitCategory)

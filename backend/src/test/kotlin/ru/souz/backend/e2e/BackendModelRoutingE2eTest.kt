@@ -96,12 +96,16 @@ class BackendModelRoutingE2eTest {
         val phrases = WaitingPhrases.load()
         backendE2eTest("e2e_initial_wait", settingsSource = source, featureFlags = BackendFeatureFlags(wsEvents = true),
             complexityClassifier = TaskComplexityClassifier { _, _ ->
-                TaskClassification(decision ?: error("Jev unavailable"), waitCategory = "travel")
+                TaskClassification(decision ?: error("Jev unavailable"), waitCategory = "travel_planning")
             }) {
             val user = UUID.randomUUID().toString()
-            val decisions = listOf(false, true, null)
-            for ((index, next) in decisions.withIndex()) {
+            val decisions = listOf(false to true, true to true, null to true, true to false)
+            for ((index, scenario) in decisions.withIndex()) {
+                val (next, enabled) = scenario
                 decision = next
+                client.patch(BackendHttpRoutes.SETTINGS) {
+                    trusted(user); jsonBody("""{"intermediateMessages":$enabled}""")
+                }
                 val prompt = "turn-$index"
                 val chat = createPublicChat(user, requestId = prompt)
                 llm.pausePromptUntilReleased(prompt)
@@ -111,11 +115,11 @@ class BackendModelRoutingE2eTest {
                         socket.send(Frame.Text(frame))
                         assertEquals("accepted", readJson(socket, includeProgress = true)["status"].asText())
                         assertEquals("thread.status", readJson(socket, includeProgress = true)["type"].asText())
-                        if (next != false) {
+                        if (next != false && enabled) {
                             val wait = readJson(socket, includeProgress = true)
                             assertEquals("assistant.message", wait["type"].asText())
                             assertTrue(wait["seq"].isNull)
-                            val pool = if (next == true) phrases.categories.getValue("travel").phrases else phrases.generic
+                            val pool = if (next == true) phrases.categories.getValue("travel_planning").phrases else phrases.generic
                             assertTrue(wait["payload"]["content"].asText() in pool)
                         }
                         llm.awaitPrompt(prompt)

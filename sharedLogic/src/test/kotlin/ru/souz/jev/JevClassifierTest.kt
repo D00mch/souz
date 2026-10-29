@@ -120,7 +120,7 @@ class JevClassifierTest {
     }
 
     @Test
-    fun `complexity chooses the waiting category in the same request and maps other or an invalid choice to none`() = runTest {
+    fun `routing preserves its verdict while waiting categories require a valid confident choice`() = runTest {
         var simple = 0.2
         var choice = ""
         val categories = mapOf("travel" to "Trips.", "weather" to "Weather.")
@@ -136,16 +136,27 @@ class JevClassifierTest {
             respond("""{"answers":{"simple":{"type":"noul","noul":$simple},"choice":$choice}}""")
         }
         HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
-            val classifier = JevClassifier(JevClient(http, "test-token"), waitCategories = categories)
-            choice = """{"type":"choice","probabilities":{"travel":0.6,"weather":0.3,"other":0.1}}"""
-            assertEquals(TaskClassification(complex = true, waitCategory = "travel"), classifier.classify(request, emptyMap()))
-            choice = """{"type":"choice","probabilities":{"travel":0.2,"weather":0.3,"other":0.5}}"""
-            assertEquals(TaskClassification(complex = true), classifier.classify(request, emptyMap()))
-            // An invalid choice keeps the routing verdict and falls back to a generic phrase.
-            simple = 0.95
-            choice = """{"type":"choice","probabilities":{"travel":0.6}}"""
-            assertEquals(TaskClassification(complex = false), classifier.classify(request, emptyMap()))
-            assertEquals(3, engine.requestHistory.size)
+            val client = JevClient(http, "test-token")
+            val cases = listOf(
+                Triple("""{"type":"choice","probabilities":{"travel":0.6,"weather":0.3,"other":0.1}}""", 0.5, "travel"),
+                Triple("""{"type":"choice","probabilities":{"travel":0.5,"weather":0.3,"other":0.2}}""", 0.5, "travel"),
+                Triple("""{"type":"choice","probabilities":{"travel":0.49,"weather":0.3,"other":0.21}}""", 0.5, null),
+                Triple("""{"type":"choice","probabilities":{"travel":0.2,"weather":0.3,"other":0.5}}""", 0.5, null),
+                Triple("""{"type":"choice","probabilities":{"travel":0.6,"weather":0.3,"other":0.1}}""", 0.7, null),
+                Triple("""{"type":"choice","probabilities":{"travel":0.6}}""", 0.5, null),
+                Triple("""{"type":"noul","probabilities":{"travel":1,"weather":0,"other":0}}""", 0.5, null),
+                Triple("null", 0.5, null),
+            )
+            for ((answer, threshold, expected) in cases) for (probability in listOf(0.2, 0.95)) {
+                choice = answer
+                simple = probability
+                val classifier = JevClassifier(client, waitCategories = categories, waitCategoryThreshold = threshold)
+                assertEquals(TaskClassification(simple < 0.9, expected), classifier.classify(request, emptyMap()), answer)
+            }
+            simple = -1.0
+            assertFailsWith<IllegalStateException> {
+                JevClassifier(client, waitCategories = categories).classify(request, emptyMap())
+            }
         }
     }
 
@@ -185,12 +196,6 @@ class JevClassifierTest {
             for (response in invalid) {
                 body = response
                 assertFailsWith<IllegalStateException>(response) { client.evaluate(state, questions) }
-            }
-            // Probability values share the Noul validation above.
-            val invalidChoice = listOf("""{"type":"noul","probabilities":{"A":0.5,"B":0.5}}""", """{"type":"choice","probabilities":{"A":1.0}}""")
-            for (response in invalidChoice) {
-                body = """{"answers":{"choice":$response}}"""
-                assertFailsWith<IllegalStateException>(response) { client.choose(state, "Which one?", mapOf("A" to "A", "B" to "B")) }
             }
             status = HttpStatusCode.Unauthorized
             body = "test-token and private message"

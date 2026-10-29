@@ -72,6 +72,21 @@ class BackendFeatureFlagsTest {
 
 class BackendAppConfigTest {
     @Test
+    fun `waiting category threshold defaults to half and rejects invalid probabilities`() {
+        fun load(value: String? = null) = BackendAppConfig.load(MapBackendConfigSource(
+            env = mapOf("SOUZ_MASTER_KEY" to "test-key") +
+                listOfNotNull(value?.let { "JEV_WAIT_CATEGORY_THRESHOLD" to it }).toMap(),
+        )).validate()
+        assertEquals(0.5, load().jevWaitCategoryThreshold)
+        for (value in listOf("0", "0.5", "0.75", "1")) {
+            assertEquals(value.toDouble(), load(value).jevWaitCategoryThreshold)
+        }
+        for (value in listOf("", "invalid", "NaN", "Infinity", "-0.1", "1.1")) {
+            assertFailsWith<BackendConfigurationException>(value) { load(value) }
+        }
+    }
+
+    @Test
     fun `server config reads defaults and explicit settings`() {
         val defaultConfig = BackendAppConfig.load(
             MapBackendConfigSource(
