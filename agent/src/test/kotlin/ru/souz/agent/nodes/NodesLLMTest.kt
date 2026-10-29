@@ -12,10 +12,12 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import ru.souz.agent.AgentStreamChunk
@@ -40,7 +42,43 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class NodesLLMTest {
+    @ParameterizedTest
+    @ValueSource(strings = ["short", "published text longer than twenty characters", "```pending code"])
+    fun `provider reset retracts only this call and discards pending text tools and usage`(failedText: String) = runTest {
+        val events = mutableListOf<AgentRuntimeEvent>()
+        val responses = listOf(
+            flow { emit(block(0, "earlier successful call")) },
+            flow {
+                emit(block(0, failedText))
+                emit(block(9, "", tool = true))
+                emit(block(0, "").copy(choices = emptyList(), streamReset = true))
+                emit(block(2, "accepted").copy(usage = LLMResponse.Usage(7, 3, 10, 0)))
+            },
+        )
+        val api = mockk<LLMChatAPI> { coEvery { messageStream(any()) } returnsMany responses }
+        val nodes = NodesLLM(api, mockk { every { useStreaming } returns true })
+        val chunks = mutableListOf<AgentStreamChunk>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { nodes.sideEffects.collect { chunks += it } }
+        val runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10)
+        val earlier = nodes.chat(streamRevision = 7).execute(context(emptyList(), recordingSink(events)), runtime)
+        val result = nodes.chat(streamRevision = 7).execute(earlier.map { "next" }, runtime)
+
+        val response = result.input as LLMResponse.Chat.Ok
+        assertEquals("accepted", response.choices.single().message.content)
+        assertEquals(2, response.choices.single().index)
+        assertEquals(null, response.choices.single().message.functionCall)
+        assertEquals(LLMResponse.Usage(7, 3, 10, 0), response.usage)
+        assertEquals(listOf("earlier successful call", "accepted"), result.history.map { it.content })
+        assertEquals("earlier successful callaccepted", chunks.fold("") { text, chunk ->
+            assertEquals(7, chunk.streamRevision)
+            text.dropLast(chunk.retractCharacters) + chunk.text
+        })
+        assertEquals("earlier successful callaccepted", events.filterIsInstance<AgentRuntimeEvent.LlmMessageDelta>()
+            .fold("") { text, delta -> text.dropLast(delta.retractCharacters) + delta.text })
+    }
+
     @Test
     fun `compaction preserves the active exchange through steering and tool loops`() = runTest {
         val calls = mutableListOf<LLMRequest.Chat>()

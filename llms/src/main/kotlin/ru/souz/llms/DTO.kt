@@ -18,7 +18,16 @@ object LLMResponse {
     )
 
     sealed interface Chat {
-        data class Ok(val choices: List<Choice>, val created: Long, val model: String, val usage: Usage) : Chat
+        data class Ok(
+            val choices: List<Choice>,
+            val created: Long,
+            val model: String,
+            val usage: Usage,
+            /** Discard this stream's preceding deltas before consuming these choices. */
+            @get:JsonIgnore
+            @field:JsonIgnore
+            val streamReset: Boolean = false,
+        ) : Chat
         data class Error(val status: Int, val message: String) : Chat
     }
 

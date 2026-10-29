@@ -70,6 +70,12 @@ class AiTunnelVoiceAPI(
             model = transcriptionModel,
             language = transcriptionLanguage,
         )
+        return retryAiTunnelRequest {
+            recognizeOnce(boundary, multipartBody)
+        }
+    }
+
+    private suspend fun recognizeOnce(boundary: String, multipartBody: ByteArray): String {
         val response = client.post(TRANSCRIPTIONS_URL) {
             header(HttpHeaders.Authorization, "Bearer $apiKey")
             header(HttpHeaders.Accept, ContentType.Application.Json)
@@ -84,7 +90,9 @@ class AiTunnelVoiceAPI(
             throw IllegalStateException("AiTunnel transcription failed: ${response.status.value}")
         }
 
-        return restJsonMapper.readTree(responseBody)["text"]?.asText()?.trim().orEmpty()
+        val node = restJsonMapper.readTree(responseBody)
+        check(!node.hasNonNull("error")) { "AiTunnel transcription failed: ${node["error"]}" }
+        return node["text"]?.asText()?.trim().orEmpty()
     }
 
     private companion object {

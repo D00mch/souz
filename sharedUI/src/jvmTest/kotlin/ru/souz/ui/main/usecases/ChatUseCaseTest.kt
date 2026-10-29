@@ -55,6 +55,48 @@ import kotlin.test.assertTrue
 
 class ChatUseCaseTest {
     @Test
+    fun `provider retry retracts partial text in place and restores speech after a failed code block`() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val completed = CompletableDeferred<String>()
+        val sideEffects = MutableSharedFlow<AgentSideEffect>()
+        val speech = mockk<SpeechUseCase>(relaxed = true)
+        val useCase = createExecutableUseCase(
+            sideEffects = sideEffects,
+            speechUseCase = speech,
+            useStreaming = true,
+            executeAnswer = { started.complete(Unit); completed.await() },
+        )
+        var state = MainState()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.outputs.collect { if (it is MainUseCaseOutput.State) state = it.reduce(state) }
+        }
+        val request = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.sendChatMessage(backgroundScope, true, "hello", requestSource = ChatRequestSource.CHAT_UI)
+        }
+        started.await()
+        runCurrent()
+        sideEffects.emit(AgentSideEffect.Text("earlier. "))
+        sideEffects.emit(AgentSideEffect.Text("```failed code"))
+        val provisionalId = state.chatMessages.last().id
+        assertEquals("earlier. ```failed code", state.chatMessages.last().text)
+
+        sideEffects.emit(AgentSideEffect.Text("", retractCharacters = "```failed code".length))
+        assertEquals("earlier. ", state.chatMessages.last().text)
+        sideEffects.emit(AgentSideEffect.Text("spoken recovery"))
+        assertEquals("earlier. spoken recovery", state.chatMessages.last().text)
+        assertEquals(provisionalId, state.chatMessages.last().id)
+        assertEquals(2, state.chatMessages.size)
+        assertTrue(state.isProcessing)
+        verify(exactly = 1) { speech.queuePrepared("spoken recovery") }
+        verify(atLeast = 1) { speech.clearQueue() }
+
+        completed.complete("spoken recovery")
+        request.join()
+        assertEquals(listOf("hello", "spoken recovery"), state.chatMessages.map { it.text })
+        assertFalse(state.isProcessing)
+    }
+
+    @Test
     fun `stale streamed chunk queued before continuation is not rendered after reset`() = runTest {
         val executeStarted = CompletableDeferred<Unit>()
         val executeResult = CompletableDeferred<String>()
@@ -148,6 +190,8 @@ class ChatUseCaseTest {
         runCurrent()
         sideEffects.emit(AgentSideEffect.Text("replacement", streamRevision = 1L))
         assertEquals(listOf("hello", "steer this", "replacement"), state.chatMessages.map { it.text })
+        sideEffects.emit(AgentSideEffect.Text("", streamRevision = 0L, retractCharacters = 100))
+        assertEquals("replacement", state.chatMessages.last().text)
         assertFalse(state.chatMessages.any { it.text.contains("provisional") })
 
         executeResult.complete("final answer")

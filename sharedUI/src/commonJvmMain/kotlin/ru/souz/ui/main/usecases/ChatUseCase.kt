@@ -304,6 +304,12 @@ class ChatUseCase internal constructor(
                             }
                             val msg = session.pendingBotMessage
                             val text = effect.v
+                            if (effect.retractCharacters > 0) {
+                                accumulatedText = accumulatedText.dropLast(effect.retractCharacters)
+                                isCodeBlockStarted = accumulatedText.windowed(CODE_BLOCK.length)
+                                    .count { it == CODE_BLOCK } % 2 != 0
+                                if (msg.isVoice) speechUseCase.clearQueue()
+                            }
                             accumulatedText += text
                             emitState(refreshChatSearch = true) {
                                 val updatedMessage = msg.copy(

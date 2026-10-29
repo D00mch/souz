@@ -1,0 +1,229 @@
+{
+  "issue": 432,
+  "base_commit": "c8b73e1cef9212003bd99a682b3520bb9569aa67",
+  "scope": "Desktop AiTunnel requests only; backend and other providers retain their existing policies.",
+  "implementation": [
+    "Desktop DI enables at most three total AiTunnel attempts, with 250 ms and 500 ms coroutine delays.",
+    "Chat, embeddings and desktop transcription retry connection, timeout, HTTP and response parsing failures; coroutine cancellation propagates.",
+    "Streaming retries rebuild the request and parser. Internal, non-serialized streamReset clears failed choices, tool state, held text and usage. Revision-scoped retractions remove only text published by the failed call, preserving earlier calls and live streaming.",
+    "Intermediate errors do not reach the UI. Exhaustion returns the final error through the existing response/exception contract."
+  ],
+  "regression_evidence": {
+    "sharedLogic/src/test/kotlin/ru/souz/llms/AiTunnelRetryTest.kt": [
+      "Seven passing test methods exercise chat/embeddings/stream failures: connection, timeout, HTTP 400/401/429/500/503, malformed responses and in-band API errors. Two failures followed by success produce exactly three identical request bodies.",
+      "A held partial stream renders before completion. Disconnect, EOF, malformed data and in-band errors retract it before restarting. Failed text is absent from history and the recovered tool executes exactly once.",
+      "Exhaustion reports only the third error; successful requests, disabled retry wiring and other providers keep one attempt. Cancellation starts no further attempts, including during backoff.",
+      "Transcription retries identical WAV/multipart data and preserves the last failure after three attempts."
+    ],
+    "agent/src/test/kotlin/ru/souz/agent/nodes/NodesLLMTest.kt": "Sixteen passing cases include reset of published or pending text, discarded tool choices/usage, retention of earlier successful calls and runtime-event retractions.",
+    "sharedUI/src/jvmTest/kotlin/ru/souz/ui/main/usecases/ChatUseCaseTest.kt": "Fourteen passing cases include in-place retraction, code-block speech queue recovery, same provisional message ID, and ignoring stale retractions after continuation."
+  },
+  "environment": {
+    "java_home": "/Users/dumch/work/souz/.git/main-to-kmp/toolchains/temurin-21.jdk/Contents/Home",
+    "java_version": "Temurin 21.0.13+9-LTS",
+    "gradle_version": "9.4.1; launcher and daemon JVM verified as Java 21",
+    "isolation": "Generated build/issue-432/isolation/preferences.jar supplies an in-memory PreferencesFactory. tests.init.gradle gives each test task an isolated user.home, disables live Jev and agent evaluations, and adds the factory only to test JVMs. A Java probe returned ISOLATED_PREFERENCES_OK. LaunchServices uses an isolated home and the same factory; provider credential environment variables are empty.",
+    "global_configuration_changes": false,
+    "live_provider_evaluations_run": false
+  },
+  "commands": [
+    {
+      "command": "gh issue view 432 --repo D00mch/souz --json number,title,body,state,labels,comments",
+      "result": "Open desktop issue; description verified; no discussion comments."
+    },
+    {
+      "command": "/Users/dumch/work/souz/.git/main-to-kmp/toolchains/temurin-21.jdk/Contents/Home/bin/java -version",
+      "exit_code": 0
+    },
+    {
+      "command": "JAVA_HOME=/Users/dumch/work/souz/.git/main-to-kmp/toolchains/temurin-21.jdk/Contents/Home ./gradlew --version",
+      "exit_code": 0
+    },
+    {
+      "command": "npm ci --prefix quality",
+      "exit_code": 0
+    },
+    {
+      "command": "JAVA_HOME=/Users/dumch/work/souz/.git/main-to-kmp/toolchains/temurin-21.jdk/Contents/Home ./gradlew test :sharedLogic:allTests :sharedUI:allTests :sharedUI:build :koverXmlReport :koverHtmlReport koverLog -Psouz.coverage --no-parallel -I build/issue-432/isolation/tests.init.gradle --no-daemon --console=plain",
+      "exit_code": 0,
+      "result": "All JVM suites and sharedUI build passed; XML/HTML coverage reports generated; aggregate line coverage 55.6333%."
+    },
+    {
+      "command": "JAVA_HOME=/Users/dumch/work/souz/.git/main-to-kmp/toolchains/temurin-21.jdk/Contents/Home ./gradlew souzGateFast souzDuplicationCheck :desktopApp:createReleaseDistributable :desktopApp:verifyMacReleaseShrinking --no-parallel -Pkotlin.compiler.execution.strategy=in-process -I build/issue-432/isolation/tests.init.gradle --no-daemon --console=plain",
+      "exit_code": 0,
+      "result": "Sequential final gate and release invocation passed. Six packaging tests passed; no packaging tests skipped."
+    },
+    {
+      "command": "python3 build/issue-432/launch-isolated.py",
+      "exit_code": 0,
+      "result": "Invokes /usr/bin/open -n with process-local isolation; exact LaunchServices argv in build/issue-432/launch-result.json. Process started and native bridge loaded; graphical interaction remains unverified."
+    },
+    {
+      "command": "/usr/bin/codesign --verify --deep --strict \"/Users/dumch/work/souz/.git/main-to-kmp/attempts/issue-432/investigate-4333ib5y/checkout/desktopApp/build/compose/binaries/main-release/app/Souz AI.app\"",
+      "exit_code": 0
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0
+    }
+  ],
+  "test_totals": {
+    "tests": 1512,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 224
+  },
+  "module_test_results": {
+    "graph-engine": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "llms": {
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "agent": {
+      "tests": 144,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "native": {
+      "tests": 57,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "ambientAgent": {
+      "tests": 33,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "backend": {
+      "tests": 329,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "desktopApp": {
+      "tests": 336,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 150
+    },
+    "job-impl": {
+      "tests": 24,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "sharedLogic": {
+      "tests": 394,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 11
+    },
+    "sharedUI": {
+      "tests": 126,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 39
+    },
+    "skill-oauth-impl": {
+      "tests": 58,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 24
+    }
+  },
+  "gate_notes": {
+    "fast": "warning",
+    "advisory_findings": [
+      {
+        "check": "layered-mutability",
+        "diagnostics": [
+          {
+            "path": "sharedLogic/src/commonJvmMain/kotlin/ru/souz/tool/files/DeferredToolModifyPermissionBroker.kt",
+            "line": 81,
+            "message": "Stored mutable collection contains mutable records or nested collections; review immutable entry replacement while preserving coordination."
+          }
+        ]
+      },
+      {
+        "check": "repeated-getter-computation",
+        "diagnostics": [
+          {
+            "path": "sharedUI/src/commonJvmMain/kotlin/ru/souz/ui/memory/MemoryUiState.kt",
+            "line": 53,
+            "message": "firstOrNull performs work on each getter access; review the caller or evaluation strategy. Read-only references do not prove deep immutability, and caching changes timing and identity."
+          }
+        ]
+      }
+    ],
+    "duplication_detector": "pass; production 252 duplicated tokens matches baseline; tests 0 matches baseline",
+    "exact_checkout_authority": "not_authoritative; only GitHub Actions can provide CI exact-checkout authority; local detector evidence is not a CI result"
+  },
+  "earlier_validation_attempts": [
+    "Initial focused compilation failed on test-fixture imports and the ByteChannel close API; corrected.",
+    "The next focused run found a test scheduling race in cancellation-before-request-start; replaced with separate deterministic request-cancellation and backoff-cancellation cases. The isolated focused rerun and final full graph passed.",
+    "An earlier gate invocation overlapped a Gradle rebuild of the same JAR and logged compiler read errors before fallback. The final sequential gate/release invocation passed without those errors."
+  ],
+  "packaged_app": {
+    "bundle": "/Users/dumch/work/souz/.git/main-to-kmp/attempts/issue-432/investigate-4333ib5y/checkout/desktopApp/build/compose/binaries/main-release/app/Souz AI.app",
+    "inventory_sha256": "43ba760f565e88fd5a90dce2d2f8e4d8da7f4b5166c7617ac779e78216528353",
+    "method": "sorted relative file path, NUL, hexadecimal SHA-256 file digest",
+    "file_count": 391
+  },
+  "interactive_validation": {
+    "status": "passed",
+    "at": "2026-10-29T11:59:03+00:00",
+    "method": "Owner graphical Terminal launch over VNC plus CUA app inspection",
+    "bundle_inventory_sha256": "43ba760f565e88fd5a90dce2d2f8e4d8da7f4b5166c7617ac779e78216528353",
+    "checks": [
+      {
+        "name": "exact_candidate_launch",
+        "status": "passed",
+        "observed": "Owner ran the checkout launch-isolated.py from graphical macOS Terminal over VNC and confirmed the window opened. Exact candidate process was verified."
+      },
+      {
+        "name": "first_run_to_main_window",
+        "status": "passed",
+        "observed": "CUA read the first-run setup and main chat windows. The voice reminder was dismissed; Open Souz AI then reached the main window."
+      },
+      {
+        "name": "draft_input_and_clear",
+        "status": "passed",
+        "observed": "CUA typed SOUZ_432_DRAFT_CHECK, observed that exact draft and enabled Send, cleared the draft and observed empty text with disabled Send. No request was submitted."
+      },
+      {
+        "name": "aitunnel_settings",
+        "status": "passed",
+        "observed": "CUA opened Settings > My Keys and observed Configured keys: 0 and the empty AI Tunnel Key field with provider help. No key was entered or revealed."
+      },
+      {
+        "name": "model_menus",
+        "status": "passed",
+        "observed": "CUA opened the chat and settings model menus, observed Qwen3/Gemma local options, selected the current Qwen3 model and returned to the responsive main chat. Model-download dialogs were dismissed without downloading."
+      },
+      {
+        "name": "clean_exit",
+        "status": "passed",
+        "observed": "CUA quit the isolated app with Cmd+Q; process inspection confirmed that exact candidate executable exited."
+      },
+      {
+        "name": "bundle_integrity",
+        "status": "passed",
+        "observed": "Post-check bundle inventory matches 43ba760f565e88fd5a90dce2d2f8e4d8da7f4b5166c7617ac779e78216528353, 391 files; codesign --verify --deep --strict exited 0."
+      }
+    ],
+    "live_provider_requests_submitted": false,
+    "credentials_entered": false,
+    "os_permissions_changed": false,
+    "limitations": "Voice input and live-provider GUI requests were not performed. Deterministic retry tests cover the requested failure scenarios."
+  }
+}

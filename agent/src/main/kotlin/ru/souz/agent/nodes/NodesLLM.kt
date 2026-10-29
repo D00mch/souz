@@ -192,12 +192,17 @@ internal class NodesLLM(
         val pending = StringBuilder()
         val held = mutableListOf<String>()
         var chunkSize = 20
+        var publishedLength = 0
+        var sideEffectLength = 0
 
         suspend fun publish(content: String) {
             eventSink.emit(AgentRuntimeEvent.LlmMessageDelta(content))
+            publishedLength += content.length
             pending.append(content)
             if (pending.length >= chunkSize) {
-                mutableSideEffects.tryEmit(AgentStreamChunk(pending.toString(), streamRevision))
+                if (mutableSideEffects.tryEmit(AgentStreamChunk(pending.toString(), streamRevision))) {
+                    sideEffectLength += pending.length
+                }
                 pending.clear()
                 chunkSize *= 3
             }
@@ -208,6 +213,21 @@ internal class NodesLLM(
             it is LLMResponse.Chat.Ok
         }.collect { response ->
             response as LLMResponse.Chat.Ok
+            if (response.streamReset) {
+                choices.clear()
+                pending.clear()
+                held.clear()
+                chunkSize = 20
+                if (publishedLength > 0) {
+                    eventSink.emit(AgentRuntimeEvent.LlmMessageDelta("", retractCharacters = publishedLength))
+                }
+                if (sideEffectLength > 0) {
+                    // A reset must not be dropped when the side-effect buffer is full.
+                    mutableSideEffects.emit(AgentStreamChunk("", streamRevision, retractCharacters = sideEffectLength))
+                }
+                publishedLength = 0
+                sideEffectLength = 0
+            }
             val content = response.choices.firstOrNull()?.message?.content.orEmpty()
             if (content.isNotEmpty()) {
                 held += content
