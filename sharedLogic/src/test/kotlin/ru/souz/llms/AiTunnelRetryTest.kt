@@ -97,7 +97,7 @@ class AiTunnelRetryTest {
                 } else {
                     val response = if (operation == "stream") api.messageStream(chat).toList()
                         .filterIsInstance<LLMResponse.Chat.Error>().single() else api.message(chat)
-                    assertEquals(LLMResponse.Chat.Error(429, "failure-3"), response)
+                    assertEquals(LLMResponse.Chat.Error(429, "failure-3", retriesExhausted = true), response)
                 }
             }
             assertEquals(3, calls)
@@ -118,7 +118,11 @@ class AiTunnelRetryTest {
                         }) { providerHttpClientDefaults() }.use { client ->
                             val api = api(client, provider, enabled)
                             when (operation) {
-                                "chat" -> api.message(chat)
+                                "chat" -> {
+                                    val response = api.message(chat)
+                                    if (!success) assertEquals(provider == LlmProvider.AI_TUNNEL && enabled,
+                                        assertIs<LLMResponse.Chat.Error>(response).retriesExhausted)
+                                }
                                 "embeddings" -> api.embeddings(embeddings)
                                 else -> api.messageStream(chat).toList()
                             }

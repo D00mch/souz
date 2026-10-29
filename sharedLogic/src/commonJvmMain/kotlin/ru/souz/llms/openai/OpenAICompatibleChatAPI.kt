@@ -85,9 +85,11 @@ class OpenAICompatibleChatAPI(
     private val retriesEnabled: Boolean
         get() = retryAiTunnelRequests && provider == LlmProvider.AI_TUNNEL
 
-    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
-        if (retriesEnabled) retryAiTunnelRequest(isError = { it is LLMResponse.Chat.Error }) { messageOnce(body) }
-        else messageOnce(body)
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
+        if (!retriesEnabled) return messageOnce(body)
+        val response = retryAiTunnelRequest(isError = { it is LLMResponse.Chat.Error }) { messageOnce(body) }
+        return if (response is LLMResponse.Chat.Error) response.copy(retriesExhausted = true) else response
+    }
 
     private suspend fun messageOnce(body: LLMRequest.Chat): LLMResponse.Chat = try {
         val response = client.post(chatCompletionsUrl) {
@@ -122,7 +124,7 @@ class OpenAICompatibleChatAPI(
                 if (failure == null) return@flow
                 emit(LLMResponse.Chat.Ok(emptyList(), 0, body.model, parseUsage(null), streamReset = true))
                 if (attempt == AI_TUNNEL_MAX_ATTEMPTS - 1) {
-                    emit(failure)
+                    emit(failure.copy(retriesExhausted = true))
                     return@flow
                 }
                 delayAiTunnelRetry(attempt)

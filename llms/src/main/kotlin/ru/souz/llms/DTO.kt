@@ -28,7 +28,14 @@ object LLMResponse {
             @field:JsonIgnore
             val streamReset: Boolean = false,
         ) : Chat
-        data class Error(val status: Int, val message: String) : Chat
+        data class Error(
+            val status: Int,
+            val message: String,
+            /** The provider consumed its retry budget; enclosing operations must not replay this request. */
+            @get:JsonIgnore
+            @field:JsonIgnore
+            val retriesExhausted: Boolean = false,
+        ) : Chat
     }
 
     data class Usage(
@@ -352,7 +359,9 @@ object LLMRequest {
 enum class LLMMessageRole { system, user, assistant, function, function_in_progress }
 
 @Suppress("unused")
-class LLMException(body: LLMResponse.Chat.Error, override val cause: Throwable? = null) : Exception(cause)
+class LLMException(body: LLMResponse.Chat.Error, override val cause: Throwable? = null) : Exception(cause) {
+    val retriesExhausted: Boolean = body.retriesExhausted
+}
 
 fun String.toSystemPromptMessage() = LLMRequest.Message(
     role = LLMMessageRole.system,

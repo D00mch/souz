@@ -216,6 +216,33 @@ class NodesLLMTest {
     }
 
     @Test
+    fun `compaction does not replay exhausted provider requests in direct or steerable graphs`() = runTest {
+        for (exhausted in listOf(false, true)) {
+            for (steerable in listOf(false, true)) {
+                val calls = mutableListOf<LLMRequest.Chat>()
+                val api = mockk<LLMChatAPI> {
+                    coEvery { message(capture(calls)) } returns
+                        LLMResponse.Chat.Error(503, "Last provider failure", retriesExhausted = exhausted)
+                }
+                val nodes = NodesLLM(api, mockk { every { useStreaming } returns true })
+                val graph = buildGraph<String, LLMResponse.Chat> {
+                    val chat = if (steerable) SteerableChatNode(nodes, ActiveRunInputController()) else nodes.chat()
+                    nodeInput.edgeTo(chat).edgeTo(nodeFinish)
+                }
+                val ctx = context(exchange("old ".repeat(18000)) + activeTurn("result ".repeat(1000)), activeExchangeStartIndex = 2)
+
+                val failure = assertFailsWith<LLMException> { graph.start(ctx) }
+
+                assertEquals(exhausted, failure.retriesExhausted)
+                assertEquals(if (exhausted) 1 else 2, calls.size)
+                assertEquals(1, calls.distinct().size, "Graph retries would replay the same request")
+                assertTrue(calls.all { it.isSummarization }, "An unsuccessful summary must never dispatch chat")
+                coVerify(exactly = 0) { api.messageStream(any()) }
+            }
+        }
+    }
+
+    @Test
     fun `streaming chat emits runtime deltas and keeps side effects batching`() = runTest {
         val runtimeEvents = mutableListOf<AgentRuntimeEvent>()
         val chunks = listOf("Hello", " ", "streaming world")
