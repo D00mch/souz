@@ -28,6 +28,7 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
+import ru.souz.backend.agent.runtime.WaitingPhrases
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
@@ -331,7 +332,10 @@ fun backendDiModule(
             ToolForgetAllMemory(instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance(), instance(), instance())
         }
     }
-    bindSingleton<TaskComplexityClassifier> { JevClassifier(instance()) }
+    bindSingleton { WaitingPhrases.load() }
+    bindSingleton<TaskComplexityClassifier> {
+        JevClassifier(instance(), waitCategories = instance<WaitingPhrases>().categories.mapValues { it.value.description })
+    }
     bindSingleton {
         BackendConversationRuntimeFactory(
             userSettingsRepository = instance(),
@@ -411,6 +415,7 @@ fun backendDiModule(
             optionsEnabled = appConfig.featureFlags.options,
             hookStore = instance(),
             hookConfig = appConfig.hooks,
+            waitingPhrases = instance(),
         )
     }
     if (appConfig.featureFlags.telegramBot) {

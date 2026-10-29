@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
+import ru.souz.backend.agent.runtime.WaitingPhrases
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
@@ -56,6 +57,7 @@ class AgentExecutionService internal constructor(
     private val optionsEnabled: Boolean,
     private val hookStore: HookStore,
     private val hookConfig: HookConfig,
+    private val waitingPhrases: WaitingPhrases,
 ) {
     private val logger = LoggerFactory.getLogger(AgentExecutionService::class.java)
     private val hookSlots = Semaphore(hookConfig.concurrentExecutions)
@@ -377,6 +379,7 @@ class AgentExecutionService internal constructor(
             publicClientThread = execution.runtimeOwner != null,
             narrateSteps = execution.metadata[METADATA_NARRATE_STEPS] == "true",
             intermediateMessages = execution.metadata[METADATA_INTERMEDIATE_MESSAGES] != "false",
+            waitingPhrases = waitingPhrases,
         )
 
     private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution = withContext(NonCancellable) {

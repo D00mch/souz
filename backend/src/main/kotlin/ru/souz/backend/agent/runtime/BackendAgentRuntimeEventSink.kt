@@ -65,6 +65,7 @@ internal class BackendAgentRuntimeEventSink(
     private val publicClientThread: Boolean = false,
     private val narrateSteps: Boolean = false,
     private val intermediateMessages: Boolean = true,
+    private val waitingPhrases: WaitingPhrases,
 ) : AgentRuntimeEventSink {
     private val emitMutex = Mutex()
     val finalAssistantMessageId = assistantMessageId ?: UUID.randomUUID()
@@ -74,8 +75,8 @@ internal class BackendAgentRuntimeEventSink(
 
     override suspend fun emit(event: AgentRuntimeEvent) = emitMutex.withLock {
         when (event) {
-            AgentRuntimeEvent.InitialWait -> if (publicClientThread && intermediateMessages) publishLiveEvent(
-                AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload(INITIAL_WAIT_PHRASES.random()),
+            is AgentRuntimeEvent.InitialWait -> if (publicClientThread && intermediateMessages) publishLiveEvent(
+                AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload(waitingPhrases.pick(event.category)),
             )
             is AgentRuntimeEvent.MemoryPromptAugmented -> logger.atInfo()
                 .addKeyValue("event", "memory.injected")
@@ -347,11 +348,6 @@ internal class BackendAgentRuntimeEventSink(
 
 private fun String.toPublicErrorCode(): String =
     if (this in publicErrorCodes) this else "internal_error"
-
-private val INITIAL_WAIT_PHRASES = listOf(
-    "Минуту...", "Одну минуту...", "Секунду...", "Одну секунду...",
-    "Секундочку...", "Один момент...", "Сейчас вернусь...",
-)
 
 private val publicErrorCodes = setOf(
     "invalid_request",

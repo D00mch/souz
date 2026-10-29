@@ -45,14 +45,7 @@ class JevClient(
         criteria: Map<String, Map<String, String>> = emptyMap(),
     ): Map<String, Double> {
         if (questions.isEmpty()) return emptyMap()
-        val answers = request(state, questions.mapValues { JevQuestion(it.value, criteria = criteria[it.key]) })
-        return questions.mapValues { (name, _) ->
-            val answer = answers.path(name)
-            check(answer.path("type").asText() == "noul" && answer.path("noul").isProbability()) {
-                "Jev response contains a missing or invalid Noul answer"
-            }
-            answer.path("noul").asDouble()
-        }
+        return noulAnswers(request(state, noulQuestions(questions, criteria)), questions.keys)
     }
 
     /** Asks one choice question and returns the probability of every option by its key. */
@@ -60,14 +53,50 @@ class JevClient(
         state: JsonNode,
         instructions: String,
         options: Map<String, String>,
-    ): Map<String, Double> {
-        val answer = request(state, mapOf(CHOICE_QUESTION to JevQuestion(instructions, "choice", options)))
-            .path(CHOICE_QUESTION)
-        val probabilities = answer.path("probabilities")
-        check(answer.path("type").asText() == "choice" && options.keys.all { probabilities.path(it).isProbability() }) {
-            "Jev response contains a missing or invalid choice answer"
+    ): Map<String, Double> =
+        choiceAnswer(request(state, mapOf(CHOICE_QUESTION to JevQuestion(instructions, "choice", options))), options.keys)
+
+    /**
+     * Asks [evaluate]'s Noul questions and [choose]'s choice question in one request; returns both answers.
+     * An invalid choice answer returns no option probabilities instead of discarding valid Noul answers.
+     */
+    suspend fun evaluateAndChoose(
+        state: JsonNode,
+        questions: Map<String, String>,
+        criteria: Map<String, Map<String, String>>,
+        instructions: String,
+        options: Map<String, String>,
+    ): Pair<Map<String, Double>, Map<String, Double>> {
+        require(CHOICE_QUESTION !in questions) { "Noul question name $CHOICE_QUESTION is reserved for the choice" }
+        val answers = request(
+            state,
+            noulQuestions(questions, criteria) + (CHOICE_QUESTION to JevQuestion(instructions, "choice", options)),
+        )
+        val choice = choiceProbabilities(answers, options.keys)
+        if (choice == null) logger.warn("Jev response contains a missing or invalid choice answer; ignoring it")
+        return noulAnswers(answers, questions.keys) to choice.orEmpty()
+    }
+
+    private fun noulQuestions(questions: Map<String, String>, criteria: Map<String, Map<String, String>>) =
+        questions.mapValues { JevQuestion(it.value, criteria = criteria[it.key]) }
+
+    private fun noulAnswers(answers: JsonNode, names: Set<String>): Map<String, Double> =
+        names.associateWith { name ->
+            val answer = answers.path(name)
+            check(answer.path("type").asText() == "noul" && answer.path("noul").isProbability()) {
+                "Jev response contains a missing or invalid Noul answer"
+            }
+            answer.path("noul").asDouble()
         }
-        return options.mapValues { (option, _) -> probabilities.path(option).asDouble() }
+
+    private fun choiceAnswer(answers: JsonNode, options: Set<String>): Map<String, Double> =
+        checkNotNull(choiceProbabilities(answers, options)) { "Jev response contains a missing or invalid choice answer" }
+
+    private fun choiceProbabilities(answers: JsonNode, options: Set<String>): Map<String, Double>? {
+        val answer = answers.path(CHOICE_QUESTION)
+        val probabilities = answer.path("probabilities")
+        val valid = answer.path("type").asText() == "choice" && options.all { probabilities.path(it).isProbability() }
+        return if (valid) options.associateWith { probabilities.path(it).asDouble() } else null
     }
 
     private suspend fun request(state: JsonNode, questions: Map<String, JevQuestion>): JsonNode {
