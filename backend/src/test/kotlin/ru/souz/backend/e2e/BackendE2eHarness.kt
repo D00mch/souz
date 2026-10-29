@@ -442,7 +442,7 @@ internal class BackendE2eBackend(
     }
 
     val dependencies: BackendHttpDependencies = di.direct.instance()
-    private val dataSource: HikariDataSource = di.direct.instance()
+    val dataSource: HikariDataSource = di.direct.instance()
     private val resources: BackendRuntimeResources = di.direct.instance()
 
     init {
