@@ -30,7 +30,7 @@ Backend [personality settings](backend/docs/personality-settings.md) are separat
 - [`:skill-oauth-api`](skill-oauth-api/AGENTS.md) — provider-neutral Skill OAuth contracts (`SkillOAuthGateway`) with no host or persistence dependencies.
 - [`:skill-oauth-impl`](skill-oauth-impl/AGENTS.md) — Postgres-backed `SkillOAuthGateway` implementation, provider token exchange, and the OAuth callback route, consumed only by `:backend`.
 - [`:job-api`](job-api/AGENTS.md) — owner-scoped job management and execution contracts.
-- [`:job-impl`](job-impl/AGENTS.md) — PostgreSQL job persistence, scheduling, leased workers, and retries, composed by `:backend`.
+- [`:job-impl`](job-impl/AGENTS.md) — PostgreSQL job persistence, scheduling, leased workers, retries, and queue metrics, composed by `:backend`.
 - [`:backend`](backend/AGENTS.md) — trusted-proxy HTTP host and PostgreSQL-backed conversation runtime.
 - [`build-logic`](build-logic/AGENTS.md) — included build for repository quality checks, outside the production module graph.
 

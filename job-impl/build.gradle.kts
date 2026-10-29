@@ -12,6 +12,7 @@ dependencies {
     implementation(libs.flyway.core)
     implementation(libs.flyway.database.postgresql)
     implementation(libs.slf4j.api)
+    implementation("io.micrometer:micrometer-core:1.16.3")
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlin.testJunit5)

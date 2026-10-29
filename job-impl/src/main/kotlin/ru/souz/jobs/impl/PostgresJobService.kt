@@ -1,5 +1,7 @@
 package ru.souz.jobs.impl
 
+import io.micrometer.core.instrument.Gauge
+import io.micrometer.core.instrument.MeterRegistry
 import java.util.UUID
 import javax.sql.DataSource
 import kotlinx.coroutines.CancellationException
@@ -65,12 +67,24 @@ class PostgresJobService internal constructor(dataSource: DataSource, private va
 
     override suspend fun cancelJob(userId: String, jobId: UUID): JobInfo? = store.cancel(userId, jobId)
 
-    /** One sequential worker per service instance. Repeated starts retain the original scope and handler. */
-    suspend fun startWorker(scope: CoroutineScope, handler: suspend (JobRun) -> Unit): Job = startup.withLock {
+    /** Registers queue metrics without IO; evaluating the gauge performs blocking JDBC reads. */
+    fun bindMetrics(registry: MeterRegistry) {
+        Gauge.builder("souz.jobs.oldest.due", store) { it.oldestDueSeconds() }.baseUnit("seconds").register(registry)
+    }
+
+    /**
+     * One sequential worker: [awaitCapacity] waits before each claim and returns owners to exclude.
+     * Repeated starts retain the original scope and callbacks.
+     */
+    suspend fun startWorker(
+        scope: CoroutineScope,
+        awaitCapacity: suspend () -> Set<String> = { emptySet() },
+        handler: suspend (JobRun) -> Unit,
+    ): Job = startup.withLock {
         worker?.takeUnless { it.isCompleted } ?: scope.launch {
             while (isActive) {
                 try {
-                    if (processNext(handler)) continue
+                    if (processNext(awaitCapacity(), handler)) continue
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -82,8 +96,8 @@ class PostgresJobService internal constructor(dataSource: DataSource, private va
     }
 
     @Suppress("SuspendFunSwallowedCancellation") // ensureActive propagates worker cancellation; handler cancellation is retried.
-    internal suspend fun processNext(handler: suspend (JobRun) -> Unit): Boolean {
-        val claim = store.claim() ?: return false
+    internal suspend fun processNext(excludedOwners: Set<String> = emptySet(), handler: suspend (JobRun) -> Unit): Boolean {
+        val claim = store.claim(excludedOwners) ?: return false
         val job = claim.job
         val error = try {
             coroutineScope {
