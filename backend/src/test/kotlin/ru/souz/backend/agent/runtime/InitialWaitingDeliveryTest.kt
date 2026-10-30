@@ -27,6 +27,7 @@ import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.events.bus.AgentEventBus
+import ru.souz.backend.events.bus.AgentEventSubscription
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.AssistantMessagePayload
@@ -45,44 +46,34 @@ class InitialWaitingDeliveryTest {
     @Test
     fun `finalizer publishes the answer before joining stalled waiting cleanup outside graph scopes`() = runTest {
         val fixture = Fixture()
-        val entered = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        coEvery { fixture.repository.latestSeq(any(), any()) } coAnswers {
-            entered.complete(Unit)
-            withContext(NonCancellable) { release.await() }
-            0L
-        }
-        val completed = terminal(AgentExecutionStatus.COMPLETED)
-        val executions = mockk<AgentExecutionRepository> {
-            coEvery { commitTurn(any(), any(), any(), any(), any(), any()) } returns
-                CommittedAgentTurn(completed, mockk(relaxed = true), true)
-        }
-        val runner = mockk<BackendConversationTurnRunner> {
-            coEvery { run(any(), any(), any(), any()) } coAnswers {
-                // A graph scope must finish even while the waiting lookup is still pending.
-                coroutineScope {
-                    fixture.sink.emit(AgentRuntimeEvent.InitialWait())
-                    entered.await()
-                    BackendConversationTurnOutcome.Completed("answer", LLMResponse.Usage(0, 0, 0, 0),
-                        AgentConversationSession(emptyList(), 0.5f, "ru", "UTC"))
+        fixture.withStalledLookup { entered, release, subscription ->
+            val completed = terminal(AgentExecutionStatus.COMPLETED)
+            val executions = mockk<AgentExecutionRepository> {
+                coEvery { commitTurn(any(), any(), any(), any(), any(), any()) } returns
+                    CommittedAgentTurn(completed, mockk(relaxed = true), true)
+            }
+            val runner = mockk<BackendConversationTurnRunner> {
+                coEvery { run(any(), any(), any(), any()) } coAnswers {
+                    // A graph scope must finish even while the waiting lookup is still pending.
+                    coroutineScope {
+                        fixture.sink.emit(AgentRuntimeEvent.InitialWait())
+                        entered.await()
+                        BackendConversationTurnOutcome.Completed("answer", LLMResponse.Usage(0, 0, 0, 0),
+                            AgentConversationSession(emptyList(), 0.5f, "ru", "UTC"))
+                    }
                 }
             }
-        }
-        val finalizer = AgentExecutionFinalizer(executions, runner, ClientThreadRuntimeRegistry("test"))
-        val subscription = fixture.bus.subscribe("user", fixture.chat)
-        val execution = launch {
-            finalizer.runExecution(completed, AgentConversationKey.fromChat("user", fixture.chat),
-                BackendConversationTurnRequest("request", "test-model", locale = "ru", timeZone = "UTC"), fixture.sink)
-        }
-        try {
+            val finalizer = AgentExecutionFinalizer(executions, runner, ClientThreadRuntimeRegistry("test"))
+            val execution = launch {
+                finalizer.runExecution(completed, AgentConversationKey.fromChat("user", fixture.chat),
+                    BackendConversationTurnRequest("request", "test-model", locale = "ru", timeZone = "UTC"), fixture.sink)
+            }
             assertEquals(AgentEventType.THREAD_COMPLETED, subscription.events.receive().type)
             assertTrue(!execution.isCompleted, "The execution still owns pending cleanup after delivering the answer")
-        } finally {
             release.complete(Unit)
+            execution.join()
+            assertTrue(subscription.events.tryReceive().isFailure)
         }
-        execution.join()
-        assertTrue(subscription.events.tryReceive().isFailure)
-        subscription.close()
     }
 
     @Test
@@ -132,19 +123,11 @@ class InitialWaitingDeliveryTest {
     fun `terminal publication and progress overtake a database lookup even when it ignores cancellation`() = runTest {
         for (overtake in listOf("completed", "failed", "cancelled", "narration", "tool")) {
             val fixture = Fixture(this)
-            val entered = CompletableDeferred<Unit>()
-            val release = CompletableDeferred<Unit>()
-            coEvery { fixture.repository.latestSeq(any(), any()) } coAnswers {
-                entered.complete(Unit)
-                withContext(NonCancellable) { release.await() }
-                0L
-            }
-            val subscription = fixture.bus.subscribe("user", fixture.chat)
-            fixture.sink.emit(AgentRuntimeEvent.InitialWait())
-            entered.await()
-            // Narration has its own sequence lookup and must not use the stalled waiting lookup.
-            coEvery { fixture.repository.latestSeq(any(), any()) } returns 0L
-            try {
+            fixture.withStalledLookup { entered, release, subscription ->
+                fixture.sink.emit(AgentRuntimeEvent.InitialWait())
+                entered.await()
+                // Narration has its own sequence lookup and must not use the stalled waiting lookup.
+                coEvery { fixture.repository.latestSeq(any(), any()) } returns 0L
                 when (overtake) {
                     "narration" -> fixture.sink.emit(AgentRuntimeEvent.AssistantMessage("working"))
                     "tool" -> fixture.sink.emit(AgentRuntimeEvent.ToolCallStarted("tool", "GetSkillByName", emptyMap()))
@@ -160,14 +143,12 @@ class InitialWaitingDeliveryTest {
                         else AgentEventType.entries.single { it.value == "thread.$overtake" }, delivered.type)
                 }
                 assertTrue(!release.isCompleted, "Publication must not await the pending database lookup")
-            } finally {
                 release.complete(Unit)
+                runCurrent()
+                fixture.sink.emit(AgentRuntimeEvent.InitialWait())
+                runCurrent()
+                assertTrue(subscription.events.tryReceive().isFailure, overtake)
             }
-            runCurrent()
-            fixture.sink.emit(AgentRuntimeEvent.InitialWait())
-            runCurrent()
-            assertTrue(subscription.events.tryReceive().isFailure, overtake)
-            subscription.close()
         }
     }
 
@@ -218,5 +199,22 @@ class InitialWaitingDeliveryTest {
             publicClientThread = true, narrateSteps = narrate, intermediateMessages = enabled,
             waitingPhrases = WaitingPhrases(listOf("generic wait"), mapOf("travel" to WaitingPhrases.Category("Trips", listOf("travel wait")))),
         ).also { if (scope != null) it.attachWaitingScope(scope) }
+
+        suspend fun withStalledLookup(test: suspend (CompletableDeferred<Unit>, CompletableDeferred<Unit>, AgentEventSubscription) -> Unit) {
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            coEvery { repository.latestSeq(any(), any()) } coAnswers {
+                entered.complete(Unit)
+                withContext(NonCancellable) { release.await() }
+                0L
+            }
+            val subscription = bus.subscribe("user", chat)
+            try {
+                test(entered, release, subscription)
+            } finally {
+                release.complete(Unit)
+                subscription.close()
+            }
+        }
     }
 }
