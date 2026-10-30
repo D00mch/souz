@@ -3,6 +3,7 @@ package ru.souz.tool.subagent
 import ru.souz.agent.Agent
 import ru.souz.agent.SubagentTool
 import ru.souz.agent.SubagentInputException
+import ru.souz.agent.runtime.SubagentExecutionRegistry
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillBundleProvider
@@ -37,10 +38,11 @@ class SubagentToolFactory(
     private val configuredModels: Map<String, LlmProvider> = emptyMap(),
     private val commandToolNamesProvider: (AgentToolCatalog) -> Set<String> = { emptySet() },
     private val commandInstructions: String = "",
+    private val subagentExecutions: SubagentExecutionRegistry = SubagentExecutionRegistry(),
 ) {
     fun create(parentSettings: AgentSettings): LLMToolSetup {
         val models = configuredModels + (parentSettings.model to parentSettings.provider)
-        return SubagentTool(createAgent, models.keys.toList()) { input, meta ->
+        return SubagentTool(createAgent, models.keys.toList(), subagentExecutions) { input, meta ->
             val model = input.model ?: parentSettings.model
             val provider = models[model]
                 ?: fail("subagent_model_unavailable", "Choose an advertised model ID: $model is unavailable.")

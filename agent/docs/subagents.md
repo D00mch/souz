@@ -6,6 +6,10 @@ The parent receives `SubagentTool` as an ordinary `LLMToolSetup` and awaits each
 
 The host supplies the same LLM API and complete invocation metadata. The tool leaves child `sideEffects` uncollected and sets `AgentRuntimeEventSink.NONE`; required interactions emitted by host tools retain their existing owners. The parent records the enclosing spawn tool call and its result.
 
+`SubagentExecutionRegistry` registers a lazy child job before preparation starts, scoped by the parent's user, conversation and execution (`ToolInvocationMeta.requestId`). Each invocation has a unique UUID. The host shares the registry with its authorized listing and cancellation endpoints. Entries hold only live jobs and remain present through cooperative cleanup; completion, failure, and cancellation remove them in non-cancellable cleanup. No child results or durable task state are retained.
+
+Explicit child-only cancellation uses a distinct cancellation exception. `SubagentTool` checks the caller's coroutine is still active before returning `subagent_cancelled`; parent cancellation and unrelated cancellation exceptions remain exceptional. The parent waits for child cleanup and can then process the result or queued input. Cancellation does not roll back tool side effects.
+
 ## Why this is fragile
 
 Reusing a parent agent cancels its active job. Reusing its LLM nodes or tool executor leaks child output through observable flows even when the child's event sink is empty. Altering backend invocation identifiers breaks client tools. Graph retries around a child could replay completed side effects.
@@ -17,7 +21,7 @@ Reusing a parent agent cancels its active job. Reusing its LLM nodes or tool exe
 - Keep child model, tool tables, turn counter, and graph lifecycle private to each invocation. Share plain node helpers rather than adding parent setup flags.
 - Forward the child's optional reasoning effort through `AgentSettings` to both streaming and ordinary LLM requests. Omission leaves it unspecified for provider defaults; do not inherit the parent's effort or retain a previous child's override.
 - Snapshot the parent's raw model ID and explicit provider in `AgentSettings`. The spawn factory merges host-configured model routes with the parent route taking precedence, and uses that same map for advertised choices and validation. Omission always inherits; never infer a configured ID's provider through the model enum or mutable parent settings.
-- Child graphs disable graph retries and rely on the host API for provider retries. Parent graphs retry only explicitly opted-in provider nodes; tool-call batches and enclosing coordination nodes are not retried. A later failing tool must not replay an earlier child's side effects. Child failures become structured spawn results; cancellation remains exceptional. Check the model-turn limit before each LLM request and accept final output on the last allowed turn.
+- Child graphs disable graph retries and rely on the host API for provider retries. Parent graphs retry only explicitly opted-in provider nodes; tool-call batches and enclosing coordination nodes are not retried. A later failing tool must not replay an earlier child's side effects. Child failures and explicit child-only cancellation become structured spawn results; parent and unrequested cancellation remain exceptional. Check the model-turn limit before each LLM request and accept final output on the last allowed turn.
 - Reuse `ToolInvokeSkill` with a bundle loader restricted to the owner and bundles selected and approved at spawn. Do not repeat approval inside the child or change the shared executor's stored/loose directory behavior. Never pass an unrestricted catalog or bundle loader into the child command helper.
 - Keep durable backend child records and recovery separate from the shared execution model.
 

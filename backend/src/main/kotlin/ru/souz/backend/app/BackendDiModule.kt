@@ -25,6 +25,7 @@ import ru.souz.backend.personality.PersonalitySync
 import ru.souz.backend.storage.postgres.PostgresConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.runtime.SubagentExecutionRegistry
 import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
@@ -337,6 +338,7 @@ fun backendDiModule(
         }
     }
     bindSingleton { WaitingPhrases.load() }
+    bindSingleton { SubagentExecutionRegistry() }
     bindSingleton<TaskComplexityClassifier> {
         JevClassifier(instance(), waitCategories = instance<WaitingPhrases>().categories.mapValues { it.value.description },
             waitCategoryThreshold = appConfig.jevWaitCategoryThreshold)
@@ -379,6 +381,7 @@ fun backendDiModule(
             automaticMemoryRecall = appConfig.featureFlags.wsAutomaticMemoryRecall,
             hookStore = instance(),
             executionQuotas = instance(),
+            subagentExecutions = instance(),
             metrics = instance(),
         )
     }
@@ -417,6 +420,7 @@ fun backendDiModule(
             requestFactory = instance(),
             finalizer = instance(),
             launcher = instance(),
+            subagentExecutions = instance(),
             optionsEnabled = appConfig.featureFlags.options,
             hookStore = instance(),
             hookConfig = appConfig.hooks,

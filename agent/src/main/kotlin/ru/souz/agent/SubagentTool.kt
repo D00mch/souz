@@ -4,6 +4,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.runtime.SubagentCancelledException
+import ru.souz.agent.runtime.SubagentExecutionRegistry
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
@@ -17,6 +19,7 @@ import ru.souz.llms.restJsonMapper
 class SubagentTool(
     private val createAgent: (maxTurns: Int) -> Agent,
     modelChoices: List<String>? = null,
+    private val executions: SubagentExecutionRegistry = SubagentExecutionRegistry(),
     private val prepare: suspend (Input, ToolInvocationMeta) -> Setup,
 ) : LLMToolSetup {
     data class Input(
@@ -74,19 +77,30 @@ class SubagentTool(
             if (input.reasoningEffort != null && input.reasoningEffort !in REASONING_EFFORTS) {
                 throw SubagentInputException("invalid_subagent_input", "reasoningEffort must be one of $REASONING_EFFORTS.")
             }
-            val setup = prepare(input, meta)
-            val childContext = AgentContext(
-                input = input.task,
-                settings = setup.settings,
-                history = emptyList(),
-                activeTools = setup.settings.tools.byName.values.map { it.fn },
-                systemPrompt = setup.systemPrompt,
-                toolInvocationMeta = meta,
-                runtimeEventSink = AgentRuntimeEventSink.NONE,
-            )
-            val result = createAgent(input.maxTurns).execute(childContext)
+            val result = executions.execute(meta) {
+                val setup = prepare(input, meta)
+                val childContext = AgentContext(
+                    input = input.task,
+                    settings = setup.settings,
+                    history = emptyList(),
+                    activeTools = setup.settings.tools.byName.values.map { it.fn },
+                    systemPrompt = setup.systemPrompt,
+                    toolInvocationMeta = meta,
+                    runtimeEventSink = AgentRuntimeEventSink.NONE,
+                )
+                createAgent(input.maxTurns).execute(childContext)
+            }
             currentCoroutineContext().ensureActive()
             mapOf("result" to result.output)
+        } catch (cancelled: SubagentCancelledException) {
+            // A simultaneous parent cancellation must still escape the tool invocation.
+            currentCoroutineContext().ensureActive()
+            mapOf(
+                "status" to "cancelled",
+                "subagentId" to cancelled.subagentId,
+                "sideEffectsMayHaveOccurred" to true,
+                "error" to mapOf("code" to "subagent_cancelled", "message" to cancelled.message),
+            )
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {

@@ -5,6 +5,8 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
@@ -12,8 +14,10 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.runtime.AgentToolExecutor
+import ru.souz.agent.runtime.SubagentExecutionRegistry
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.state.AgentContext
@@ -260,11 +264,13 @@ class SubagentToolTest {
 
     @Test
     fun `provider error becomes a structured tool failure`() = runTest {
-        val subagent = subagent { LLMResponse.Chat.Error(503, "provider unavailable") }
+        val executions = SubagentExecutionRegistry()
+        val subagent = subagent(executions = executions) { LLMResponse.Chat.Error(503, "provider unavailable") }
         val failure = subagent.call()["error"]
         assertEquals("subagent_failed", failure["code"].asText())
         assertContains(failure["message"].asText(), "503")
         assertContains(failure["message"].asText(), "provider unavailable")
+        assertTrue(executions.activeIds(ToolInvocationMeta.localDefault()).isEmpty())
     }
 
     @Test
@@ -279,6 +285,7 @@ class SubagentToolTest {
     @Test
     fun `parent cancellation cancels an active model or tool`() = runTest {
         for (duringTool in listOf(false, true)) {
+            val executions = SubagentExecutionRegistry()
             val started = CompletableDeferred<Unit>()
             val stopped = CompletableDeferred<Unit>()
             val waitForCancellation: suspend () -> Nothing = {
@@ -286,7 +293,7 @@ class SubagentToolTest {
                 try { awaitCancellation() } finally { stopped.complete(Unit) }
             }
             val selected = tool("Selected") { waitForCancellation() }
-            val subagent = subagent(tools = listOf(selected)) {
+            val subagent = subagent(tools = listOf(selected), executions = executions) {
                 if (duringTool) response(toolName = "Selected") else waitForCancellation()
             }
             val execution = async { subagent.call() }
@@ -294,7 +301,132 @@ class SubagentToolTest {
             execution.cancelAndJoin()
             assertTrue(stopped.isCompleted)
             assertFailsWith<CancellationException> { execution.await() }
+            assertTrue(executions.activeIds(ToolInvocationMeta.localDefault()).isEmpty())
         }
+    }
+
+    @Test
+    fun `child cancellation is scoped and leaves parent and sibling invocation runnable`() = runTest {
+        for (duringTool in listOf(false, true)) {
+            val executions = SubagentExecutionRegistry()
+            val meta = ToolInvocationMeta("owner", "chat", "execution")
+            val firstStarted = CompletableDeferred<Unit>()
+            val secondStarted = CompletableDeferred<Unit>()
+            val releaseSecond = CompletableDeferred<Unit>()
+            val selected = tool("Selected") { firstStarted.complete(Unit); awaitCancellation() }
+            val subagent = subagent(tools = listOf(selected), executions = executions) { request ->
+                if (request.messages.last().content == "second") {
+                    secondStarted.complete(Unit)
+                    releaseSecond.await()
+                    response("sibling answer")
+                } else if (duringTool) response(toolName = "Selected")
+                else { firstStarted.complete(Unit); awaitCancellation() }
+            }
+            val first = async { subagent.call("first", meta = meta) }
+            firstStarted.await()
+            val firstId = executions.activeIds(meta).single()
+            val second = async { subagent.call("second", meta = meta) }
+            secondStarted.await()
+            val secondId = (executions.activeIds(meta) - firstId).single()
+            for (foreign in listOf(meta.copy(userId = "other"), meta.copy(conversationId = "other"), meta.copy(requestId = "other"))) {
+                assertTrue(executions.activeIds(foreign).isEmpty())
+                assertFalse(executions.cancel(foreign, firstId))
+            }
+            assertTrue(executions.cancel(meta, firstId))
+            assertTrue(executions.cancel(meta, firstId))
+            val result = first.await()
+            assertEquals("subagent_cancelled", result["error"]["code"].asText())
+            assertEquals("cancelled", result["status"].asText())
+            assertEquals(firstId, result["subagentId"].asText())
+            assertTrue(result["sideEffectsMayHaveOccurred"].asBoolean())
+            assertEquals(listOf(secondId), executions.activeIds(meta))
+            assertFalse(executions.cancel(meta, firstId))
+            assertFalse(second.isCompleted)
+            releaseSecond.complete(Unit)
+            assertEquals("sibling answer", second.await()["result"].asText())
+            assertTrue(executions.activeIds(meta).isEmpty())
+            assertFalse(executions.cancel(meta, secondId))
+        }
+    }
+
+    @Test
+    fun `parent cancellation wins while child cancellation cleanup is pending`() = runTest {
+        val executions = SubagentExecutionRegistry()
+        val meta = ToolInvocationMeta.localDefault()
+        val started = CompletableDeferred<Unit>()
+        val cleaning = CompletableDeferred<Unit>()
+        val releaseCleanup = CompletableDeferred<Unit>()
+        val subagent = subagent(executions = executions) {
+            started.complete(Unit)
+            try { awaitCancellation() } finally {
+                withContext(NonCancellable) {
+                    cleaning.complete(Unit)
+                    releaseCleanup.await()
+                }
+            }
+        }
+        var returned = false
+        val parent = async { subagent.call(); returned = true }
+        started.await()
+        val id = executions.activeIds(meta).single()
+        assertTrue(executions.cancel(meta, id))
+        cleaning.await()
+        assertEquals(listOf(id), executions.activeIds(meta))
+        assertFalse(parent.isCompleted)
+        parent.cancel()
+        releaseCleanup.complete(Unit)
+        assertFailsWith<CancellationException> { parent.await() }
+        parent.join()
+        assertFalse(returned)
+        assertTrue(executions.activeIds(meta).isEmpty())
+    }
+
+    @Test
+    fun `cancellation before child startup cleans up without executing it`() = runTest {
+        val executions = SubagentExecutionRegistry()
+        val meta = ToolInvocationMeta.localDefault()
+        val subagent = subagent(executions = executions, prepare = { _, _ -> error("Child must not start") }) {
+            error("Provider must not be called")
+        }
+        val parent = async(start = CoroutineStart.UNDISPATCHED) { subagent.call() }
+        val id = executions.activeIds(meta).single()
+        assertTrue(executions.cancel(meta, id))
+        assertEquals("subagent_cancelled", parent.await()["error"]["code"].asText())
+        assertTrue(executions.activeIds(meta).isEmpty())
+    }
+
+    @Test
+    fun `completion racing cancellation returns a single outcome and removes the child`() = runTest {
+        for (cancelFirst in listOf(false, true)) {
+            val executions = SubagentExecutionRegistry()
+            val meta = ToolInvocationMeta.localDefault()
+            val started = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val subagent = subagent(executions = executions) {
+                started.complete(Unit)
+                release.await()
+                response("done")
+            }
+            val parent = async { subagent.call() }
+            started.await()
+            val id = executions.activeIds(meta).single()
+            release.complete(Unit)
+            // Completion is queued; cancellation can win before the child resumes.
+            if (cancelFirst) assertTrue(executions.cancel(meta, id))
+            val result = parent.await()
+            if (cancelFirst) assertEquals("subagent_cancelled", result["error"]["code"].asText())
+            else assertEquals("done", result["result"].asText())
+            assertFalse(executions.cancel(meta, id))
+            assertTrue(executions.activeIds(meta).isEmpty())
+        }
+    }
+
+    @Test
+    fun `unrequested child cancellation remains exceptional and releases its registration`() = runTest {
+        val executions = SubagentExecutionRegistry()
+        val subagent = subagent(executions = executions) { throw CancellationException("Provider cancelled") }
+        assertFailsWith<CancellationException> { subagent.call() }
+        assertTrue(executions.activeIds(ToolInvocationMeta.localDefault()).isEmpty())
     }
 
     @Test
@@ -362,9 +494,10 @@ class SubagentToolTest {
         streaming: Boolean = false,
         telemetry: AgentTelemetry = AgentTelemetry.NONE,
         tools: List<LLMToolSetup> = emptyList(),
+        executions: SubagentExecutionRegistry = SubagentExecutionRegistry(),
         prepare: suspend (SubagentTool.Input, ToolInvocationMeta) -> SubagentTool.Setup = { _, _ -> setup(tools = tools) },
         respond: suspend (LLMRequest.Chat) -> LLMResponse.Chat,
-    ): LLMToolSetup = SubagentTool({ maxTurns -> agent(streaming, telemetry, maxTurns, respond) }, prepare = prepare)
+    ): LLMToolSetup = SubagentTool({ maxTurns -> agent(streaming, telemetry, maxTurns, respond) }, executions = executions, prepare = prepare)
 
     private fun agent(
         streaming: Boolean = false,

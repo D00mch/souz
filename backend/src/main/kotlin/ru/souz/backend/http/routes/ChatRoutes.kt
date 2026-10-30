@@ -48,6 +48,7 @@ import java.util.UUID
 import ru.souz.backend.chat.service.CreateClientChatResult
 
 internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
+    subagentRoutes(deps)
     get(BackendHttpRoutes.CHATS) {
         val limit = call.queryPositiveInt("limit", DEFAULT_CHAT_LIMIT, MAX_CHAT_LIMIT)
         val includeArchived = call.queryBoolean("includeArchived", defaultValue = false)

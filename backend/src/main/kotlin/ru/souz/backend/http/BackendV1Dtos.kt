@@ -170,6 +170,10 @@ internal data class BackendV1CancelExecutionResponse(
     val execution: BackendV1ExecutionDto,
 )
 
+internal data class BackendV1SubagentsResponse(val subagentIds: List<String>)
+
+internal data class BackendV1CancelSubagentResponse(val subagentId: String, val cancellationRequested: Boolean)
+
 internal data class BackendV1AnswerOptionRequest(
     val selectedOptionIds: List<String> = emptyList(),
     val freeText: String? = null,

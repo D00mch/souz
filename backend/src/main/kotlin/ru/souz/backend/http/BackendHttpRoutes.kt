@@ -41,6 +41,9 @@ internal object BackendHttpRoutes {
     const val CHAT_CANCEL_ACTIVE_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/cancel-active"
     const val CHAT_EXECUTION_CANCEL_PATTERN =
         "$CHATS/$CHAT_ID_PARAMETER/executions/$EXECUTION_ID_PARAMETER/cancel"
+    const val CHAT_SUBAGENTS_PATTERN =
+        "$CHATS/$CHAT_ID_PARAMETER/executions/$EXECUTION_ID_PARAMETER/subagents"
+    const val CHAT_SUBAGENT_CANCEL_PATTERN = "$CHAT_SUBAGENTS_PATTERN/{subagentId}/cancel"
     const val OPTION_ANSWER_PATTERN = "$OPTIONS/$OPTION_ID_PARAMETER/answer"
 
     fun providerKey(provider: String): String = "$PROVIDER_KEYS/$provider"
@@ -67,6 +70,11 @@ internal object BackendHttpRoutes {
 
     fun cancelExecution(chatId: Any, executionId: Any): String =
         "$CHATS/$chatId/executions/$executionId/cancel"
+
+    fun subagents(chatId: Any, executionId: Any): String = "$CHATS/$chatId/executions/$executionId/subagents"
+
+    fun cancelSubagent(chatId: Any, executionId: Any, subagentId: Any): String =
+        "${subagents(chatId, executionId)}/$subagentId/cancel"
 
     fun optionAnswer(optionId: Any): String = "$OPTIONS/$optionId/answer"
 

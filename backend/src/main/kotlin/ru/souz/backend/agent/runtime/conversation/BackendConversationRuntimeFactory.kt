@@ -9,6 +9,7 @@ import kotlinx.coroutines.plus
 import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
+import ru.souz.agent.runtime.SubagentExecutionRegistry
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.SkillClassifier
@@ -110,6 +111,7 @@ internal class BackendConversationRuntimeFactory(
     private val automaticMemoryRecall: Boolean,
     private val hookStore: HookStore,
     private val executionQuotas: ExecutionQuotaManager,
+    private val subagentExecutions: SubagentExecutionRegistry,
     private val metrics: BackendMetrics? = null,
     private val llmConfig: NamedLlmConfig = NamedLlmConfig(),
     private val providerApiOverride: ((LlmProvider) -> LLMChatAPI?)? = null,
@@ -264,6 +266,7 @@ internal class BackendConversationRuntimeFactory(
             configuredModels = settingsProvider.subagentModels,
             commandToolNamesProvider = { catalog -> catalog.toolsByCategory.values.flatMap { it.keys }.toSet() - serverNames },
             commandInstructions = CLIENT_TOOL_ROUTING_INSTRUCTIONS,
+            subagentExecutions = subagentExecutions,
         )
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,

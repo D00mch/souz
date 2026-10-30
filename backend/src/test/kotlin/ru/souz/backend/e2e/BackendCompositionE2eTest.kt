@@ -486,6 +486,8 @@ class BackendCompositionE2eTest {
             "/v1/chats/{chatId}/events" to setOf("get"),
             "/v1/chats/{chatId}/cancel-active" to setOf("post"),
             "/v1/chats/{chatId}/executions/{executionId}/cancel" to setOf("post"),
+            "/v1/chats/{chatId}/executions/{executionId}/subagents" to setOf("get"),
+            "/v1/chats/{chatId}/executions/{executionId}/subagents/{subagentId}/cancel" to setOf("post"),
             "/v1/options/{optionId}/answer" to setOf("post"),
         )
         listOf(false, true).forEach { telegramEnabled ->
@@ -607,6 +609,22 @@ class BackendCompositionE2eTest {
             assertUuidPathParameter(cancelExecution, "chatId")
             assertUuidPathParameter(cancelExecution, "executionId")
             assertV1ErrorSchema(document, cancelExecution, "404")
+
+            for ((path, method, operationId) in listOf(
+                Triple(BackendHttpRoutes.CHAT_SUBAGENTS_PATTERN, "get", "listActiveSubagents"),
+                Triple(BackendHttpRoutes.CHAT_SUBAGENT_CANCEL_PATTERN, "post", "cancelSubagent"),
+            )) {
+                val operation = document.operation(path, method)
+                assertEquals(operationId, operation["operationId"].asText())
+                assertProxySecurity(operation)
+                assertUuidPathParameter(operation, "chatId")
+                assertUuidPathParameter(operation, "executionId")
+                if (method == "post") assertUuidPathParameter(operation, "subagentId")
+                assertV1ErrorSchema(document, operation, "404")
+                val response = document.resolveSchema(operation.jsonResponseSchema("200"))
+                assertEquals(if (method == "get") "array" else "boolean",
+                    response["properties"][if (method == "get") "subagentIds" else "cancellationRequested"]["type"].asText())
+            }
 
             val listEvents = document.operation(BackendHttpRoutes.CHAT_EVENTS_PATTERN, "get")
             assertEquals("listChatEvents", listEvents["operationId"].asText())

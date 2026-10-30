@@ -24,6 +24,31 @@ The parent receives `{"result":"..."}` or `{"error":{"code":"...","message":"...
 
 Tools requested on the last allowed model turn still execute. Exhaustion does not undo their effects, and the warning remains conservative even when no results are available. Inspect the reported results and current state before retrying to avoid repeating completed work. Cancelling the parent cancels the child; queued parent input waits for the current child to finish.
 
+## Cancelling a child
+
+Clients can stop one child while keeping the parent conversation running. Both endpoints require the trusted-proxy `X-Souz-Proxy-Auth` and `X-User-Id` headers and verify ownership of the chat and execution:
+
+- `GET /v1/chats/{chatId}/executions/{executionId}/subagents` returns `{"subagentIds":["<UUID>"]}` for live invocations, including cancellation cleanup.
+- `POST /v1/chats/{chatId}/executions/{executionId}/subagents/{subagentId}/cancel` returns `{"subagentId":"<UUID>","cancellationRequested":true}` when cancellation is requested for a live child. The request has no body.
+
+Repeated cancellation requests are safe. `cancellationRequested` is `false` for an unknown or finished child, including when completion wins a race with cancellation. Missing or unowned chats and executions return 404; malformed UUIDs return 400. IDs are unique per invocation and disappear after cleanup. There is no completed-child status or result lookup. These endpoints use process-local state, so route them to the backend process running the parent; a different process sees no live children. For public Client-Souz threads, `executionId` is the `threadId`; these HTTP operations still require proxy authentication.
+
+Cancellation is cooperative: the parent remains suspended until the child and its cleanup end. Tool side effects are not rolled back, and an external operation may have already completed. A child-only cancellation returns the following tool result, allowing the parent to continue:
+
+```json
+{
+  "status": "cancelled",
+  "subagentId": "<UUID>",
+  "sideEffectsMayHaveOccurred": true,
+  "error": {
+    "code": "subagent_cancelled",
+    "message": "Subagent cancelled by user request. Tool side effects are not rolled back."
+  }
+}
+```
+
+Cancelling the parent still cancels all its active children and ends the parent execution, including when a child-only cancellation is already in progress. `SpawnSubagent` continues to wait for its result; the parent model has no child lifecycle tools or independent orchestration.
+
 ## Model configuration
 
 `SUBAGENT_MODELS_JSON` adds model IDs grouped by provider. For example, configure the backend with:

@@ -13,6 +13,8 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.slf4j.LoggerFactory
+import ru.souz.agent.runtime.SubagentExecutionRegistry
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
@@ -54,6 +56,7 @@ class AgentExecutionService internal constructor(
     private val requestFactory: AgentExecutionRequestFactory,
     private val finalizer: AgentExecutionFinalizer,
     private val launcher: AgentExecutionLauncher,
+    private val subagentExecutions: SubagentExecutionRegistry,
     private val optionsEnabled: Boolean,
     private val hookStore: HookStore,
     private val hookConfig: HookConfig,
@@ -344,14 +347,26 @@ class AgentExecutionService internal constructor(
         chatId: UUID,
         executionId: UUID,
     ): CancelExecutionResult {
-        requireOwnedChat(userId, chatId)
-        val execution = executionRepository.getByChat(userId, chatId, executionId)
-            ?: throw BackendV1Exception(
-                status = HttpStatusCode.NotFound,
-                code = "execution_not_found",
-                message = "Execution not found.",
-            )
+        val execution = requireOwnedExecution(userId, chatId, executionId)
         return CancelExecutionResult(cancelExecutionInternal(execution))
+    }
+
+    suspend fun activeSubagentIds(userId: String, chatId: UUID, executionId: UUID): List<String> {
+        requireOwnedExecution(userId, chatId, executionId)
+        return subagentExecutions.activeIds(ToolInvocationMeta(userId, chatId.toString(), executionId.toString()))
+    }
+
+    suspend fun cancelSubagent(userId: String, chatId: UUID, executionId: UUID, subagentId: UUID): Boolean {
+        requireOwnedExecution(userId, chatId, executionId)
+        return subagentExecutions.cancel(
+            ToolInvocationMeta(userId, chatId.toString(), executionId.toString()), subagentId.toString(),
+        )
+    }
+
+    private suspend fun requireOwnedExecution(userId: String, chatId: UUID, executionId: UUID): AgentExecution {
+        requireOwnedChat(userId, chatId)
+        return executionRepository.getByChat(userId, chatId, executionId)
+            ?: throw BackendV1Exception(HttpStatusCode.NotFound, "execution_not_found", "Execution not found.")
     }
 
     internal suspend fun finalizeInterruptedExecution(started: AgentExecution): AgentExecution? {
