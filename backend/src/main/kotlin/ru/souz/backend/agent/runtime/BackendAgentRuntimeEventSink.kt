@@ -2,8 +2,14 @@ package ru.souz.backend.agent.runtime
 
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
@@ -43,11 +49,7 @@ import ru.souz.backend.toolcall.repository.ToolCallRepository
 private val logger = LoggerFactory.getLogger(BackendAgentRuntimeEventSink::class.java)
 
 /**
- * Not logically concurrent.
- *
- * This sink keeps mutable per-execution state and expects events for one
- * execution to be processed in order. A Mutex is used as a defensive guard
- * against accidental concurrent emit calls.
+ * Serializes per-execution events and waiting publication. Waiting preparation runs outside the mutex.
  */
 internal class BackendAgentRuntimeEventSink(
     private val userId: String,
@@ -64,25 +66,61 @@ internal class BackendAgentRuntimeEventSink(
     private val toolCallPreviewer: ToolCallPreviewer = ToolCallPreviewer(),
     private val publicClientThread: Boolean = false,
     private val narrateSteps: Boolean = false,
+    private val intermediateMessages: Boolean = true,
+    private val waitingPhrases: WaitingPhrases,
 ) : AgentRuntimeEventSink {
     private val emitMutex = Mutex()
+    private var waitingScope: CoroutineScope? = null
+    private var waitingJob: Job? = null
+    private var waitingClosed = false
     val finalAssistantMessageId = assistantMessageId ?: UUID.randomUUID()
     private var requestedOptionId: UUID? = null
 
     val hasRequestedOption: Boolean get() = requestedOptionId != null
 
+    /** Attach the outer execution scope before running the graph; node scopes must not await waiting delivery. */
+    fun attachWaitingScope(scope: CoroutineScope) {
+        check(waitingScope == null)
+        waitingScope = scope
+    }
+
+    // Called under emitMutex, like closeInitialWait.
+    private fun scheduleInitialWait(category: String?) {
+        if (!publicClientThread || !intermediateMessages || waitingClosed || waitingJob != null) return
+        waitingJob = checkNotNull(waitingScope).launch {
+            try {
+                val event = eventService.prepareLive(userId, chatId, executionId, AgentEventType.ASSISTANT_MESSAGE,
+                    AssistantMessagePayload(waitingPhrases.pick(category)))
+                emitMutex.withLock { eventService.publishPreparedLive(event) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                logger.warn("Initial waiting delivery failed for execution {}", executionId, error)
+            }
+        }
+    }
+
+    /** Close publication before finalization or progress. Cancellation never waits for a blocked preparation. */
+    suspend fun stopInitialWait() = withContext(NonCancellable) {
+        emitMutex.withLock { closeInitialWait() }
+    }
+
+    private fun closeInitialWait() {
+        waitingClosed = true
+        waitingJob?.cancel()
+    }
+
     override suspend fun emit(event: AgentRuntimeEvent) = emitMutex.withLock {
         when (event) {
-            AgentRuntimeEvent.InitialWait -> if (publicClientThread) publishLiveEvent(
-                AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload(INITIAL_WAIT_PHRASES.random()),
-            )
+            is AgentRuntimeEvent.InitialWait -> scheduleInitialWait(event.category)
             is AgentRuntimeEvent.MemoryPromptAugmented -> logger.atInfo()
                 .addKeyValue("event", "memory.injected")
                 .addKeyValue("facts", event.facts.size)
                 .addKeyValue("fact_ids", event.facts.joinToString(",") { it.factId })
                 .log("Memory facts added to the model context")
             is AgentRuntimeEvent.LlmMessageDelta -> onLlmMessageDelta(event)
-            is AgentRuntimeEvent.AssistantMessage -> if (narrateSteps) {
+            is AgentRuntimeEvent.AssistantMessage -> if (narrateSteps && intermediateMessages) {
+                closeInitialWait()
                 publishLiveEvent(AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload(event.content))
             }
             is AgentRuntimeEvent.ToolCallStarted -> onToolCallStarted(event)
@@ -125,6 +163,7 @@ internal class BackendAgentRuntimeEventSink(
     }
 
     private suspend fun onToolCallStarted(event: AgentRuntimeEvent.ToolCallStarted) {
+        closeInitialWait()
         val argumentsPreviewNode = toolCallPreviewer.argumentsPreview(event.arguments)
         toolCallRepository.started(
             context = toolCallContext(event.toolCallId.toString()),
@@ -197,6 +236,7 @@ internal class BackendAgentRuntimeEventSink(
     }
 
     suspend fun emitTerminal(execution: AgentExecution) {
+        stopInitialWait()
         when (execution.status) {
             AgentExecutionStatus.COMPLETED -> emitExecutionFinished(execution)
             AgentExecutionStatus.FAILED -> emitExecutionFailed(execution)
@@ -346,11 +386,6 @@ internal class BackendAgentRuntimeEventSink(
 
 private fun String.toPublicErrorCode(): String =
     if (this in publicErrorCodes) this else "internal_error"
-
-private val INITIAL_WAIT_PHRASES = listOf(
-    "Минуту...", "Одну минуту...", "Секунду...", "Одну секунду...",
-    "Секундочку...", "Один момент...", "Сейчас вернусь...",
-)
 
 private val publicErrorCodes = setOf(
     "invalid_request",

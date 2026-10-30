@@ -256,6 +256,7 @@ internal object BackendOpenApiSchemas {
             .withNonBlankString("timeZone", "An IANA time-zone identifier.")
             .withNonBlankArrayItems("enabledTools")
             .withPropertyDescription("narrateSteps", "Opt in to short RU/EN assistant progress and live WebSocket or bot delivery. Excludes initial waiting. Defaults to false; applies to new executions.")
+            .withPropertyDescription("intermediateMessages", "False suppresses the initial waiting phrase and step narration regardless of narrateSteps; final responses and technical events are unaffected. Defaults to true; applies to new executions.")
             .withStringEnum("interfaceLanguage", listOf("en", "ru"))
             .withMinimum("requestTimeoutMillis", 1_000.0, "Must be at least 1000 milliseconds.")
 

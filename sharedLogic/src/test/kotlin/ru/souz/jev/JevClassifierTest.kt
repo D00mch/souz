@@ -11,6 +11,7 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.skills.SkillId
+import ru.souz.agent.spi.TaskClassification
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.http.providerHttpClientDefaults
@@ -110,11 +111,52 @@ class JevClassifierTest {
         HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
             val classifier = JevClassifier(JevClient(http, "test-token"))
             assertEquals(listOf(true, false, false), listOf(0.89, 0.9, 1.0).map {
-                simple = it; classifier.isComplex(bounded, capabilities)
+                simple = it; classifier.classify(bounded, capabilities).complex
             })
             val attached = request.copy(messages = listOf(request.messages.last().copy(attachments = listOf("file-id"))))
-            assertTrue(classifier.isComplex(attached, capabilities))
+            assertTrue(classifier.classify(attached, capabilities).complex)
             assertEquals(3, engine.requestHistory.size)
+        }
+    }
+
+    @Test
+    fun `routing preserves its verdict while waiting categories require a valid confident choice`() = runTest {
+        var simple = 0.2
+        var choice = ""
+        val categories = mapOf("travel" to "Trips.", "weather" to "Weather.")
+        val engine = MockEngine { httpRequest ->
+            val questions = restJsonMapper.readTree(httpRequest.body.toByteArray())["questions"]
+            assertEquals(2, questions.size())
+            assertEquals("noul", questions["simple"]["type"].asText())
+            assertEquals("choice", questions["choice"]["type"].asText())
+            assertEquals(
+                restJsonMapper.valueToTree<JsonNode>(categories + ("other" to "None of the other options fits.")),
+                questions["choice"]["criteria"],
+            )
+            respond("""{"answers":{"simple":{"type":"noul","noul":$simple},"choice":$choice}}""")
+        }
+        HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
+            val client = JevClient(http, "test-token")
+            val cases = listOf(
+                Triple("""{"type":"choice","probabilities":{"travel":0.6,"weather":0.3,"other":0.1}}""", 0.5, "travel"),
+                Triple("""{"type":"choice","probabilities":{"travel":0.5,"weather":0.3,"other":0.2}}""", 0.5, "travel"),
+                Triple("""{"type":"choice","probabilities":{"travel":0.49,"weather":0.3,"other":0.21}}""", 0.5, null),
+                Triple("""{"type":"choice","probabilities":{"travel":0.2,"weather":0.3,"other":0.5}}""", 0.5, null),
+                Triple("""{"type":"choice","probabilities":{"travel":0.6,"weather":0.3,"other":0.1}}""", 0.7, null),
+                Triple("""{"type":"choice","probabilities":{"travel":0.6}}""", 0.5, null),
+                Triple("""{"type":"noul","probabilities":{"travel":1,"weather":0,"other":0}}""", 0.5, null),
+                Triple("null", 0.5, null),
+            )
+            for ((answer, threshold, expected) in cases) for (probability in listOf(0.2, 0.95)) {
+                choice = answer
+                simple = probability
+                val classifier = JevClassifier(client, waitCategories = categories, waitCategoryThreshold = threshold)
+                assertEquals(TaskClassification(simple < 0.9, expected), classifier.classify(request, emptyMap()), answer)
+            }
+            simple = -1.0
+            assertFailsWith<IllegalStateException> {
+                JevClassifier(client, waitCategories = categories).classify(request, emptyMap())
+            }
         }
     }
 
@@ -130,11 +172,11 @@ class JevClassifierTest {
             val classifier = JevClassifier(JevClient(http, "test-token"))
             for (text in listOf(boundary + "x", boundary + "\nEmail this to my manager.")) {
                 val longRequest = request.copy(messages = listOf(LLMRequest.Message(LLMMessageRole.user, text)))
-                assertTrue(classifier.isComplex(longRequest, emptyMap()))
+                assertTrue(classifier.classify(longRequest, emptyMap()).complex)
                 assertTrue(engine.requestHistory.isEmpty())
             }
             val exactRequest = request.copy(messages = listOf(LLMRequest.Message(LLMMessageRole.user, boundary)))
-            assertFalse(classifier.isComplex(exactRequest, emptyMap()))
+            assertFalse(classifier.classify(exactRequest, emptyMap()).complex)
             assertEquals(1, engine.requestHistory.size)
         }
     }
@@ -154,12 +196,6 @@ class JevClassifierTest {
             for (response in invalid) {
                 body = response
                 assertFailsWith<IllegalStateException>(response) { client.evaluate(state, questions) }
-            }
-            // Probability values share the Noul validation above.
-            val invalidChoice = listOf("""{"type":"noul","probabilities":{"A":0.5,"B":0.5}}""", """{"type":"choice","probabilities":{"A":1.0}}""")
-            for (response in invalidChoice) {
-                body = """{"answers":{"choice":$response}}"""
-                assertFailsWith<IllegalStateException>(response) { client.choose(state, "Which one?", mapOf("A" to "A", "B" to "B")) }
             }
             status = HttpStatusCode.Unauthorized
             body = "test-token and private message"

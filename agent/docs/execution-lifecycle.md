@@ -20,7 +20,9 @@ The request-scoped kernel exposes one steerable skills graph under `AgentId.SKIL
 
 Inventory supplies execution-local capability names with descriptions capped at 240 characters, reusing metadata reads and retaining unselected descriptions or ID-only entries. Classification receives these hints separately from dialogue, without tool schemas or additional discovery.
 
-`NodesLLM` decides initial waiting once per execution: non-simple routing emits `InitialWait` after classification, and execution without routing emits before its first call. Simple routing suppresses it throughout the execution. Retries, tool loops and queued inputs do not repeat it; child sinks discard it.
+`NodesLLM` decides initial waiting once per execution: non-simple routing emits `InitialWait` after classification with the classifier's waiting category, if any, and execution without routing emits it without a category before its first call. Simple routing suppresses it throughout the execution. Retries, tool loops and queued inputs do not repeat it; child sinks discard it.
+
+The backend schedules waiting delivery in the outer execution scope. Narration, any parent tool start, an option handoff or the turn's outcome closes pending delivery before finalization. Waiting is best-effort: a slow lookup or delivery failure must not delay the model call or final publication.
 
 ## Why this is fragile
 

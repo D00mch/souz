@@ -18,7 +18,8 @@ interface AgentRuntimeEventSink {
 }
 
 sealed interface AgentRuntimeEvent {
-    data object InitialWait : AgentRuntimeEvent
+    /** [category] is the routing classifier's waiting-phrase category; null asks for a generic phrase. */
+    data class InitialWait(val category: String? = null) : AgentRuntimeEvent
 
     data class MemoryPromptAugmented(
         val addedBlock: String,
