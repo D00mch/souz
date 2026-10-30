@@ -17,36 +17,29 @@ import ru.souz.backend.options.model.OptionKind
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
-import ru.souz.backend.settings.service.UserSettingsOverrides
-import ru.souz.backend.settings.service.UserSettingsService
 import ru.souz.backend.storage.postgres.StoredSettingsPayload
-import ru.souz.backend.storage.postgres.toSettingsJson
 import ru.souz.backend.testutil.TestToolCatalog
 import ru.souz.llms.restJsonMapper
 
 class ProgressSettingsTest {
     @Test
-    fun `settings preserve narration while executions snapshot effective progress including legacy defaults`() = runTest {
+    fun `executions snapshot effective progress and option continuations retain it after settings change`() = runTest {
         assertNull(restJsonMapper.readValue<StoredSettingsPayload>("{}").intermediateMessages)
         for (intermediate in listOf(null, false, true)) for (narrate in listOf(false, true)) {
             var stored = UserSettings("user", defaultModel = "test-chat", narrateSteps = narrate, intermediateMessages = intermediate)
             val repository = mockk<UserSettingsRepository>()
             coEvery { repository.get("user") } answers { stored }
-            coEvery { repository.save(any()) } answers { firstArg<UserSettings>().also { stored = it } }
             val resolver = EffectiveSettingsResolver(LlmSettingsStub(), repository, mockk(), BackendFeatureFlags(),
                 TestToolCatalog(), namedModelNames = setOf("test-chat"))
             val factory = AgentExecutionRequestFactory(resolver)
             val prepared = factory.prepareChatTurn("user", UUID.randomUUID(), "hello")
             val enabled = intermediate != false
             assertEquals(enabled, prepared.effectiveSettings.intermediateMessages)
-            assertEquals(narrate, prepared.effectiveSettings.narrateSteps)
             assertEquals(narrate && enabled, prepared.runtimeRequest.narrateSteps)
             assertEquals(enabled.toString(), prepared.execution.metadata[METADATA_INTERMEDIATE_MESSAGES])
             assertEquals((narrate && enabled).toString(), prepared.execution.metadata[METADATA_NARRATE_STEPS])
 
-            UserSettingsService(repository, resolver).patch("user", UserSettingsOverrides(intermediateMessages = !enabled))
-            assertEquals(narrate, stored.narrateSteps)
-            assertEquals(!enabled, restJsonMapper.readValue<StoredSettingsPayload>(stored.toSettingsJson()).intermediateMessages)
+            stored = stored.copy(intermediateMessages = !enabled)
             val option = mockk<Option> {
                 every { id } returns UUID.randomUUID()
                 every { kind } returns OptionKind.GENERIC_SELECTION

@@ -1,6 +1,8 @@
 package ru.souz.backend.agent.runtime
 
 import com.fasterxml.jackson.module.kotlin.readValue
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import ru.souz.llms.restJsonMapper
 
 /**
@@ -14,6 +16,7 @@ internal class WaitingPhrases(
 ) {
     data class Category(val description: String, val phrases: List<String>)
 
+    private val mutex = Mutex()
     private val rounds = HashMap<String?, ArrayDeque<String>>()
     private val previousPhrases = HashMap<String?, String>()
 
@@ -25,15 +28,14 @@ internal class WaitingPhrases(
     }
 
     /** A phrase of [category], or a generic one when the category is null or unknown. */
-    @Synchronized // Concurrent executions pick phrases; the lock never spans a suspension.
-    fun pick(category: String?): String {
+    suspend fun pick(category: String?): String = mutex.withLock {
         val known = category?.takeIf { it in categories }
         val round = rounds.getOrPut(known) { ArrayDeque() }
         if (round.isEmpty()) {
             round.addAll((known?.let { categories.getValue(it).phrases } ?: generic).shuffled())
             if (round.size > 1 && round.first() == previousPhrases[known]) round.addLast(round.removeFirst())
         }
-        return round.removeFirst().also { previousPhrases[known] = it }
+        round.removeFirst().also { previousPhrases[known] = it }
     }
 
     companion object {

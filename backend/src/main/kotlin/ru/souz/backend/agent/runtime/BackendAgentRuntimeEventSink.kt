@@ -6,8 +6,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -51,11 +49,7 @@ import ru.souz.backend.toolcall.repository.ToolCallRepository
 private val logger = LoggerFactory.getLogger(BackendAgentRuntimeEventSink::class.java)
 
 /**
- * Not logically concurrent.
- *
- * This sink keeps mutable per-execution state and expects events for one
- * execution to be processed in order. A Mutex is used as a defensive guard
- * against accidental concurrent emit calls.
+ * Serializes per-execution events and waiting publication. Waiting preparation runs outside the mutex.
  */
 internal class BackendAgentRuntimeEventSink(
     private val userId: String,
@@ -76,7 +70,6 @@ internal class BackendAgentRuntimeEventSink(
     private val waitingPhrases: WaitingPhrases,
 ) : AgentRuntimeEventSink {
     private val emitMutex = Mutex()
-    private val waitingMutex = Mutex()
     private var waitingScope: CoroutineScope? = null
     private var waitingJob: Job? = null
     private var waitingClosed = false
@@ -91,16 +84,14 @@ internal class BackendAgentRuntimeEventSink(
         waitingScope = scope
     }
 
-    private suspend fun scheduleInitialWait(category: String?) = waitingMutex.withLock {
-        if (!publicClientThread || !intermediateMessages || waitingClosed || waitingJob != null) return@withLock
+    // Called under emitMutex, like closeInitialWait.
+    private fun scheduleInitialWait(category: String?) {
+        if (!publicClientThread || !intermediateMessages || waitingClosed || waitingJob != null) return
         waitingJob = checkNotNull(waitingScope).launch {
             try {
                 val event = eventService.prepareLive(userId, chatId, executionId, AgentEventType.ASSISTANT_MESSAGE,
                     AssistantMessagePayload(waitingPhrases.pick(category)))
-                waitingMutex.withLock {
-                    currentCoroutineContext().ensureActive()
-                    if (!waitingClosed) eventService.publishPreparedLive(event)
-                }
+                emitMutex.withLock { eventService.publishPreparedLive(event) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -111,10 +102,12 @@ internal class BackendAgentRuntimeEventSink(
 
     /** Close publication before finalization or progress. Cancellation never waits for a blocked preparation. */
     suspend fun stopInitialWait() = withContext(NonCancellable) {
-        waitingMutex.withLock {
-            waitingClosed = true
-            waitingJob?.cancel()
-        }
+        emitMutex.withLock { closeInitialWait() }
+    }
+
+    private fun closeInitialWait() {
+        waitingClosed = true
+        waitingJob?.cancel()
     }
 
     override suspend fun emit(event: AgentRuntimeEvent) = emitMutex.withLock {
@@ -127,7 +120,7 @@ internal class BackendAgentRuntimeEventSink(
                 .log("Memory facts added to the model context")
             is AgentRuntimeEvent.LlmMessageDelta -> onLlmMessageDelta(event)
             is AgentRuntimeEvent.AssistantMessage -> if (narrateSteps && intermediateMessages) {
-                stopInitialWait()
+                closeInitialWait()
                 publishLiveEvent(AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload(event.content))
             }
             is AgentRuntimeEvent.ToolCallStarted -> onToolCallStarted(event)
@@ -137,7 +130,6 @@ internal class BackendAgentRuntimeEventSink(
             is AgentRuntimeEvent.ToolCallFailed -> onToolCallFailed(event)
 
             is AgentRuntimeEvent.ChoiceRequested -> if (optionsEnabled && !publicClientThread) {
-                stopInitialWait()
                 val option = persistOption(event)
                 requestedOptionId = option.id
                 appendDurableEvent(
@@ -171,7 +163,7 @@ internal class BackendAgentRuntimeEventSink(
     }
 
     private suspend fun onToolCallStarted(event: AgentRuntimeEvent.ToolCallStarted) {
-        stopInitialWait()
+        closeInitialWait()
         val argumentsPreviewNode = toolCallPreviewer.argumentsPreview(event.arguments)
         toolCallRepository.started(
             context = toolCallContext(event.toolCallId.toString()),
@@ -234,7 +226,6 @@ internal class BackendAgentRuntimeEventSink(
     }
 
     suspend fun emitAssistantMessageCompleted(message: ChatMessage, created: Boolean) {
-        stopInitialWait()
         if (created) emitMessageCreated(message)
         if (!publicClientThread) {
             appendDurableEvent(

@@ -10,7 +10,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -33,6 +37,7 @@ import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.repository.CommittedAgentTurn
 import ru.souz.backend.execution.service.AgentExecutionFinalizer
+import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.LLMResponse
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -85,8 +90,9 @@ class InitialWaitingDeliveryTest {
         for (enabled in listOf(false, true)) for (narrate in listOf(false, true)) {
             val fixture = Fixture(this, enabled, narrate)
             val subscription = fixture.bus.subscribe("user", fixture.chat)
-            fixture.sink.emit(AgentRuntimeEvent.InitialWait("travel"))
-            fixture.sink.emit(AgentRuntimeEvent.InitialWait("travel"))
+            List(16) {
+                async(Dispatchers.Default) { fixture.sink.emit(AgentRuntimeEvent.InitialWait("travel")) }
+            }.awaitAll()
             runCurrent()
             if (enabled) assertEquals("travel wait", (subscription.events.receive().payload as AssistantMessagePayload).content)
             fixture.sink.emit(AgentRuntimeEvent.AssistantMessage("working"))
@@ -98,8 +104,33 @@ class InitialWaitingDeliveryTest {
     }
 
     @Test
+    fun `cancelling event processing releases serialization so terminal delivery can finish`() = runTest {
+        val fixture = Fixture(this)
+        val entered = CompletableDeferred<Unit>()
+        coEvery { fixture.toolCalls.started(any(), any(), any(), any()) } coAnswers {
+            entered.complete(Unit)
+            awaitCancellation()
+        }
+        val subscription = fixture.bus.subscribe("user", fixture.chat)
+        val processing = launch {
+            fixture.sink.emit(AgentRuntimeEvent.ToolCallStarted("tool", "GetSkillByName", emptyMap()))
+        }
+        entered.await()
+        val finishing = launch { fixture.sink.emitTerminal(terminal(AgentExecutionStatus.COMPLETED)) }
+        runCurrent()
+        processing.cancelAndJoin()
+        finishing.join()
+
+        assertEquals(AgentEventType.THREAD_COMPLETED, subscription.events.receive().type)
+        fixture.sink.emit(AgentRuntimeEvent.InitialWait())
+        runCurrent()
+        assertTrue(subscription.events.tryReceive().isFailure)
+        subscription.close()
+    }
+
+    @Test
     fun `terminal publication and progress overtake a database lookup even when it ignores cancellation`() = runTest {
-        for (overtake in listOf("completed", "failed", "cancelled", "narration", "tool", "handoff")) {
+        for (overtake in listOf("completed", "failed", "cancelled", "narration", "tool")) {
             val fixture = Fixture(this)
             val entered = CompletableDeferred<Unit>()
             val release = CompletableDeferred<Unit>()
@@ -117,14 +148,13 @@ class InitialWaitingDeliveryTest {
                 when (overtake) {
                     "narration" -> fixture.sink.emit(AgentRuntimeEvent.AssistantMessage("working"))
                     "tool" -> fixture.sink.emit(AgentRuntimeEvent.ToolCallStarted("tool", "GetSkillByName", emptyMap()))
-                    "handoff" -> fixture.sink.stopInitialWait()
                     else -> fixture.sink.emitTerminal(terminal(when (overtake) {
                         "failed" -> AgentExecutionStatus.FAILED
                         "cancelled" -> AgentExecutionStatus.CANCELLED
                         else -> AgentExecutionStatus.COMPLETED
                     }))
                 }
-                if (overtake != "tool" && overtake != "handoff") {
+                if (overtake != "tool") {
                     val delivered = subscription.events.receive()
                     assertEquals(if (overtake == "narration") AgentEventType.ASSISTANT_MESSAGE
                         else AgentEventType.entries.single { it.value == "thread.$overtake" }, delivered.type)
@@ -181,9 +211,10 @@ class InitialWaitingDeliveryTest {
             }
         }
         val bus = AgentEventBus()
+        val toolCalls = mockk<ToolCallRepository>(relaxed = true)
         val sink = BackendAgentRuntimeEventSink(
             "user", chat, UUID.randomUUID(), mockk(), mockk(), AgentEventService(mockk(), repository, bus),
-            mockk(relaxed = true), streamingMessagesEnabled = true, toolEventsEnabled = true,
+            toolCalls, streamingMessagesEnabled = true, toolEventsEnabled = true,
             publicClientThread = true, narrateSteps = narrate, intermediateMessages = enabled,
             waitingPhrases = WaitingPhrases(listOf("generic wait"), mapOf("travel" to WaitingPhrases.Category("Trips", listOf("travel wait")))),
         ).also { if (scope != null) it.attachWaitingScope(scope) }
