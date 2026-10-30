@@ -74,6 +74,13 @@ application {
 
 tasks.test {
     useJUnitPlatform()
+    systemProperty("java.awt.headless", "true")
+}
+
+tasks.processTestResources {
+    from(project(":sharedLogic").layout.projectDirectory.dir("docker/skills")) {
+        into("skills/runtime")
+    }
 }
 
 tasks.withType<Sync>().configureEach {
