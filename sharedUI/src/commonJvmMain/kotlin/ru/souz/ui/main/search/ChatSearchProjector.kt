@@ -3,6 +3,9 @@ package ru.souz.ui.main.search
 import ru.souz.ui.common.MarkdownPart
 import ru.souz.ui.common.parseMarkdownContent
 import ru.souz.ui.main.ChatMessage
+import org.intellij.markdown.MarkdownElementTypes
+import org.intellij.markdown.ast.ASTNode
+import org.intellij.markdown.ast.getTextInNode
 import org.intellij.markdown.flavours.gfm.GFMElementTypes
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.parser.MarkdownParser
@@ -55,13 +58,29 @@ class ChatSearchProjector {
         val tree = MarkdownParser(GFMFlavourDescriptor()).buildMarkdownTreeFromString(text)
         val tables = tree.children.filter { it.type == GFMElementTypes.TABLE }
         if (tables.isEmpty()) return listOf(PlainTextSearchPartProjection(0, text))
+        val definitions = buildString {
+            fun collect(node: ASTNode) {
+                if (node.type == MarkdownElementTypes.LINK_DEFINITION) {
+                    append(node.getTextInNode(text)).append("\n\n")
+                } else {
+                    node.children.forEach(::collect)
+                }
+            }
+            collect(tree)
+        }
         return buildList {
             var offset = 0
             tables.forEach { table ->
                 if (offset < table.startOffset) {
                     add(PlainTextSearchPartProjection(size, text.substring(offset, table.startOffset)))
                 }
-                add(projectMarkdown(size, text.substring(table.startOffset, table.endOffset)))
+                val part = projectMarkdown(size, text.substring(table.startOffset, table.endOffset))
+                // Renderer 0.27 registers definitions in composition order. Supply the complete
+                // message's definitions first while indexing only visible table cells.
+                add(part.copy(
+                    markdown = definitions + part.markdown,
+                    leafRanges = part.leafRanges.mapKeys { (offset, _) -> offset + definitions.length },
+                ))
                 offset = table.endOffset
             }
             if (offset < text.length) add(PlainTextSearchPartProjection(size, text.substring(offset)))

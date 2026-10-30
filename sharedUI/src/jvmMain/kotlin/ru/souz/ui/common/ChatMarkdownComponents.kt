@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.mikepenz.markdown.compose.LocalMarkdownColors
 import com.mikepenz.markdown.compose.LocalMarkdownComponents
@@ -97,7 +98,15 @@ private fun ChatMarkdownTableContent(model: MarkdownComponentModel) {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val columnWidths = table.alignments.indices.map { column ->
-        val widthPx = cells.maxOf { row -> measurer.measure(row[column], style = style, softWrap = false).size.width }
+        // Bound the complete cell, including padding, before it becomes a layout constraint.
+        // Oversized content wraps within this width instead of reaching Compose's pixel limit.
+        val maxTextWidth = with(density) { (1024.dp - 24.dp).roundToPx() }
+        val widthPx = cells.maxOf { row ->
+            measurer.measure(
+                row[column], style = style, softWrap = false,
+                constraints = Constraints(maxWidth = maxTextWidth),
+            ).size.width
+        }
         with(density) { widthPx.toDp() } + 24.dp
     }
     val scroll = rememberScrollState()
