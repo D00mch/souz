@@ -12,6 +12,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.mikepenz.markdown.compose.Markdown
+import com.mikepenz.markdown.compose.components.MarkdownComponents
+import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
 
@@ -25,6 +27,7 @@ fun MessageMarkdown(
         fontSize = 13.sp,
         color = Color(0xFFE0E0E0),
     ),
+    components: MarkdownComponents = markdownComponents(),
 ) {
     val parts = remember(content) { parseMarkdownContent(content.ifBlank { "..." }) }
     Column(modifier = modifier) {
@@ -41,6 +44,7 @@ fun MessageMarkdown(
                 is MarkdownPart.TextContent -> {
                     Markdown(
                         content = part.content,
+                        components = components,
                         colors = DefaultMarkdownColors(
                             text = textStyle.color,
                             codeText = codeStyle.color,

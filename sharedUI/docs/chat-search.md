@@ -2,7 +2,11 @@
 
 ## Invariant
 
-Search offsets describe visible rendered text, not raw Markdown. User messages use one plain-text projection; assistant messages use separate Markdown and code-block parts so each rendered block can receive its own highlights. `MarkdownSearchTraversal` and `MarkdownSearchAnnotator` must implement the same flattening and offset rules.
+Search offsets describe visible rendered text, not raw Markdown. User messages retain plain-text projections outside top-level GFM tables; their tables use Markdown projections. Assistant messages use separate Markdown and code-block parts so each rendered block can receive its own highlights. `MarkdownSearchTraversal` and `MarkdownSearchAnnotator` share indexed source-to-visible leaf ranges.
+
+Desktop chat tables use the renderer's GFM cell AST and inline styling. Header cells define column counts, missing body cells are empty, and excess cells are ignored. Column widths are shared across rows; tables wider than the message area scroll horizontally. Search separates cells with tabs and rows with newlines, omits delimiter rows and cell-edge whitespace, and uses source offsets rather than callback order because individual cells can recompose independently.
+
+The renderer 0.27 custom hook consumes unknown nodes, including list items. `ChatMarkdownComponents` preserves recursive dispatch to the existing components for non-table nodes; retain that fallback when updating the renderer.
 
 The projection used to index a message is also the rendering contract for that message. Query text, matches, and active selection belong to `MainState.chatSearch`; the compact search panel owns only open/focus and keyboard display state.
 
