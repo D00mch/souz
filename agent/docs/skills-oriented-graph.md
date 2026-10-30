@@ -2,7 +2,7 @@
 
 ## Invariant
 
-`SkillsGraphBasedAgent` exposes `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand`. It installs the backend's execution-bound `SpawnSubagent` and memory-forgetting tools when supplied through `AgentCoreTools`. The graph replaces advertised and executable tools before execution. Its effective system message contains filtered tool-backed IDs, user-scoped escaped file-backed IDs, and concise descriptions beside relevant exact IDs. `AgentContext.systemPrompt` remains the caller-provided prompt. Inventory selects descriptions with Jev and execution-LLM fallback.
+`SkillsGraphBasedAgent` exposes `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand`. It installs the backend's execution-bound `SpawnSubagent`, `GetSubagentStatus`, `WaitSubagent`, `CancelSubagent` and memory-forgetting tools when supplied through `AgentCoreTools`. The graph replaces advertised and executable tools before execution. Its effective system message contains filtered tool-backed IDs, user-scoped escaped file-backed IDs, and concise descriptions beside relevant exact IDs. `AgentContext.systemPrompt` remains the caller-provided prompt. Inventory selects descriptions with Jev and execution-LLM fallback.
 
 Continuation ordering, reserved publication, response acceptance, and stream revisions follow [Execution lifecycle](execution-lifecycle.md).
 

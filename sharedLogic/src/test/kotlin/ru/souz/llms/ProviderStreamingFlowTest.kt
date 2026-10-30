@@ -30,6 +30,7 @@ import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
 import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.subagent.SubagentToolFactory
+import ru.souz.tool.subagent.spawnAndWait
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -112,7 +113,7 @@ class ProviderStreamingFlowTest {
                         skillBundleProvider = mockk(), commandExecutor = mockk(),
                         configuredModels = mapOf(model to provider),
                     ).create(AgentSettings(LLMModel.Max.alias, LlmProvider.GIGA, 0.5f, AgentTools(emptyMap())))
-                    val result = spawn.invoke(LLMResponse.FunctionCall(spawn.fn.name, mapOf("task" to "Say Hi", "model" to model)))
+                    val result = spawn.spawnAndWait(LLMResponse.FunctionCall(spawn.fn.name, mapOf("task" to "Say Hi", "model" to model)))
                     assertEquals("Hi", restJsonMapper.readTree(result.content)["result"]?.asText(), result.content)
                     assertEquals(1, requests)
                 }

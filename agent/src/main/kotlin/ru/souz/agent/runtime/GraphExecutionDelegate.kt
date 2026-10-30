@@ -34,14 +34,16 @@ internal class GraphExecutionDelegate(
         cancelActiveJob()
         val newContext = coroutineScope {
             val result: Deferred<AgentContext<String>> = async {
-                graph.start(ctx) { step, node, from, to ->
-                    val fromCtx = from as AgentContext<Any?>
-                    val toCtx = to as AgentContext<Any?>
-                    val prettyInput = runCatching {
-                        logObjectMapper.writeValueAsString(fromCtx.input)
-                    }.getOrElse { fromCtx.input.toString() }
-                    logger.debug("Step: {}, node: {}, input: {}", step.index, node.name, prettyInput)
-                    onStep?.invoke(step, node, fromCtx, toCtx)
+                withSubagentTasks {
+                    graph.start(ctx) { step, node, from, to ->
+                        val fromCtx = from as AgentContext<Any?>
+                        val toCtx = to as AgentContext<Any?>
+                        val prettyInput = runCatching {
+                            logObjectMapper.writeValueAsString(fromCtx.input)
+                        }.getOrElse { fromCtx.input.toString() }
+                        logger.debug("Step: {}, node: {}, input: {}", step.index, node.name, prettyInput)
+                        onStep?.invoke(step, node, fromCtx, toCtx)
+                    }
                 }
             }
             runningJob.store(result)
