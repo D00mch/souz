@@ -48,16 +48,8 @@ class JevClient(
         return noulAnswers(request(state, noulQuestions(questions, criteria)), questions.keys)
     }
 
-    /** Asks one choice question and returns the probability of every option by its key. */
-    suspend fun choose(
-        state: JsonNode,
-        instructions: String,
-        options: Map<String, String>,
-    ): Map<String, Double> =
-        choiceAnswer(request(state, mapOf(CHOICE_QUESTION to JevQuestion(instructions, "choice", options))), options.keys)
-
     /**
-     * Asks [evaluate]'s Noul questions and [choose]'s choice question in one request; returns both answers.
+     * Asks Noul questions and one choice question in a single request; returns both answers.
      * An invalid choice answer returns no option probabilities instead of discarding valid Noul answers.
      */
     suspend fun evaluateAndChoose(
@@ -88,9 +80,6 @@ class JevClient(
             }
             answer.path("noul").asDouble()
         }
-
-    private fun choiceAnswer(answers: JsonNode, options: Set<String>): Map<String, Double> =
-        checkNotNull(choiceProbabilities(answers, options)) { "Jev response contains a missing or invalid choice answer" }
 
     private fun choiceProbabilities(answers: JsonNode, options: Set<String>): Map<String, Double>? {
         val answer = answers.path(CHOICE_QUESTION)

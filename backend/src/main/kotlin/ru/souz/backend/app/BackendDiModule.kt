@@ -336,7 +336,8 @@ fun backendDiModule(
     }
     bindSingleton { WaitingPhrases.load() }
     bindSingleton<TaskComplexityClassifier> {
-        JevClassifier(instance(), waitCategories = instance<WaitingPhrases>().categories.mapValues { it.value.description })
+        JevClassifier(instance(), waitCategories = instance<WaitingPhrases>().categories.mapValues { it.value.description },
+            waitCategoryThreshold = appConfig.jevWaitCategoryThreshold)
     }
     bindSingleton {
         BackendConversationRuntimeFactory(

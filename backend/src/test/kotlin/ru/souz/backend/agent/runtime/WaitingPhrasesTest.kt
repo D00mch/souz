@@ -6,6 +6,18 @@ import kotlin.test.assertTrue
 
 class WaitingPhrasesTest {
     @Test
+    fun `bundled catalogue has distinct nonblank phrases and described pools`() {
+        val catalogue = WaitingPhrases.load()
+        val phrases = catalogue.generic + catalogue.categories.values.flatMap { it.phrases }
+        assertTrue(phrases.size in 950..1050)
+        assertEquals(phrases.size, phrases.toSet().size)
+        assertTrue(phrases.all { it.isNotBlank() })
+        assertTrue(catalogue.generic.isNotEmpty())
+        assertTrue(catalogue.categories.keys.all { it.isNotBlank() && it != "other" })
+        assertTrue(catalogue.categories.values.all { it.description.isNotBlank() && it.phrases.isNotEmpty() })
+    }
+
+    @Test
     fun `pools repeat a phrase only after the rest of the pool and unknown categories use generic phrases`() {
         val phrases = WaitingPhrases(listOf("a", "b", "c"), mapOf("travel" to WaitingPhrases.Category("Trips.", listOf("x", "y"))))
         val travel = mutableListOf<String>()
