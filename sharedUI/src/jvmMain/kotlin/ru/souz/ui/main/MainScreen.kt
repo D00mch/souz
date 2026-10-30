@@ -1321,30 +1321,6 @@ private fun ChatBubble(
             handleColor = scheme.primary,
             backgroundColor = scheme.primary.copy(alpha = 0.26f),
         )
-        val partProjection = messageSearchProjection.parts.firstOrNull() as? PlainTextSearchPartProjection
-        val partMatchRanges = if (searchEnabled && partProjection != null) {
-            searchState.matchRangesForPart(message.id, partProjection.partIndex)
-        } else {
-            emptyList()
-        }
-        val activeRange = if (searchEnabled && partProjection != null) {
-            searchState.activeRangeForPart(message.id, partProjection.partIndex)
-        } else {
-            null
-        }
-        val highlightedUserText = remember(
-            message.text,
-            partMatchRanges,
-            activeRange,
-        ) {
-            (partProjection?.text ?: message.text).buildSearchHighlightedAnnotatedString(
-                matchRanges = partMatchRanges,
-                highlightColor = highlightColor,
-                activeHighlightColor = activeHighlightColor,
-                activeRange = activeRange,
-            )
-        }
-
         BoxWithConstraints(modifier = contentModifier) {
             val maxBubbleWidth = maxWidth * 0.7f
             Column(
@@ -1377,12 +1353,41 @@ private fun ChatBubble(
                         if (message.text.isNotBlank()) {
                             CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
                                 SelectionContainer {
-                                    Text(
-                                        text = highlightedUserText,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        fontSize = 14.sp,
-                                        lineHeight = 22.4.sp,
+                                    val textStyle = TextStyle(
+                                        color = scheme.onSurface, fontSize = 14.sp, lineHeight = 22.4.sp,
                                     )
+                                    val codeStyle = textStyle.copy(fontFamily = FontFamily.Monospace)
+                                    val typography = chatMarkdownTypography(textStyle, codeStyle, HeadingScale.SMALL)
+                                    Column {
+                                        messageSearchProjection.parts.forEach { part ->
+                                            val ranges = if (searchEnabled) searchState.matchRangesForPart(message.id, part.partIndex) else emptyList()
+                                            val active = if (searchEnabled) searchState.activeRangeForPart(message.id, part.partIndex) else null
+                                            when (part) {
+                                                is PlainTextSearchPartProjection -> Text(
+                                                    text = part.text.buildSearchHighlightedAnnotatedString(
+                                                        ranges, highlightColor, activeHighlightColor, active,
+                                                    ),
+                                                    style = textStyle,
+                                                )
+                                                is MarkdownTextSearchPartProjection -> Markdown(
+                                                    content = part.markdown,
+                                                    colors = chatMarkdownColors(textStyle.color),
+                                                    typography = typography,
+                                                    annotator = searchMarkdownAnnotator(
+                                                        projection = part,
+                                                        matchRanges = ranges,
+                                                        highlightColor = highlightColor,
+                                                        activeHighlightColor = activeHighlightColor,
+                                                        activeRange = active,
+                                                        linkSpanStyle = typography.link.toSpanStyle(),
+                                                    ),
+                                                    components = chatMarkdownComponents(),
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                )
+                                                is CodeBlockSearchPartProjection -> Unit
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1487,6 +1492,7 @@ private fun ChatBubble(
                                     content = message.text,
                                     textStyle = baseStyle,
                                     codeStyle = codeStyle,
+                                    components = chatMarkdownComponents(),
                                 )
                             } else {
                                 Column {
@@ -1498,7 +1504,8 @@ private fun ChatBubble(
                                                 val annotator = if (partMatchRanges.isEmpty()) {
                                                     null
                                                 } else {
-                                                    rememberSearchMarkdownAnnotator(
+                                                    searchMarkdownAnnotator(
+                                                        projection = part,
                                                         matchRanges = partMatchRanges,
                                                         highlightColor = highlightColor,
                                                         activeHighlightColor = activeHighlightColor,
@@ -1508,6 +1515,7 @@ private fun ChatBubble(
                                                 }
                                                 Markdown(
                                                     content = part.markdown,
+                                                    components = chatMarkdownComponents(),
                                                     colors = colors,
                                                     typography = typography,
                                                     annotator = annotator ?: com.mikepenz.markdown.model.markdownAnnotator(),

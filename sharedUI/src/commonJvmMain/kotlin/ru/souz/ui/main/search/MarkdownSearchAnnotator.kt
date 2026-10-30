@@ -1,16 +1,15 @@
 package ru.souz.ui.main.search
 
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.SpanStyle
 import com.mikepenz.markdown.model.MarkdownAnnotator
-import com.mikepenz.markdown.model.markdownAnnotator
+import com.mikepenz.markdown.model.DefaultMarkdownAnnotator
 import com.mikepenz.markdown.utils.MARKDOWN_TAG_URL
 import org.intellij.markdown.MarkdownTokenTypes
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.MarkdownElementTypes
 
-@Composable
-fun rememberSearchMarkdownAnnotator(
+fun searchMarkdownAnnotator(
+    projection: MarkdownTextSearchPartProjection,
     matchRanges: List<SearchTextRange>,
     highlightColor: androidx.compose.ui.graphics.Color,
     activeHighlightColor: androidx.compose.ui.graphics.Color = highlightColor,
@@ -18,11 +17,10 @@ fun rememberSearchMarkdownAnnotator(
     linkSpanStyle: SpanStyle? = null,
 ): MarkdownAnnotator {
     val sortedRanges = matchRanges.sortedBy { it.start }
-    var currentOffset = 0
 
-    return markdownAnnotator { content: String, child: ASTNode ->
+    return DefaultMarkdownAnnotator annotate@{ content: String, child: ASTNode ->
         val leafText = when (child.type) {
-            MarkdownTokenTypes.WHITE_SPACE if currentOffset > 0 -> " "
+            MarkdownTokenTypes.WHITE_SPACE -> " "
             MarkdownTokenTypes.EMPH -> {
                 val parentType = child.parent?.type
                 if (parentType != MarkdownElementTypes.EMPH && parentType != MarkdownElementTypes.STRONG) {
@@ -32,12 +30,10 @@ fun rememberSearchMarkdownAnnotator(
                 }
             }
             else -> content.markdownVisibleLeafText(child)
-        } ?: return@markdownAnnotator false
+        } ?: return@annotate false
 
-        val textRange = SearchTextRange(
-            start = currentOffset,
-            endExclusive = currentOffset + leafText.length,
-        )
+        // Cells may recompose independently and in any order. Source offsets remain stable.
+        val textRange = projection.leafRanges[child.startOffset] ?: return@annotate false
         if (child.isMarkdownAutoLinkNode() && linkSpanStyle != null) {
             val destination = content.markdownAutoLinkDestination(child)
             pushStringAnnotation(MARKDOWN_TAG_URL, destination)
@@ -62,7 +58,6 @@ fun rememberSearchMarkdownAnnotator(
                 activeRange = activeRange,
             )
         }
-        currentOffset = textRange.endExclusive
         true
     }
 }

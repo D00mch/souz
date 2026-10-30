@@ -1,6 +1,8 @@
 package ru.souz.ui.main.search
 
 import com.mikepenz.markdown.utils.EntityConverter
+import ru.souz.ui.common.chatMarkdownTable
+import ru.souz.ui.common.tableCellChildren
 import org.intellij.markdown.IElementType
 import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.MarkdownTokenTypes
@@ -12,16 +14,23 @@ import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.flavours.gfm.GFMTokenTypes
 import org.intellij.markdown.parser.MarkdownParser
 
-internal fun String.buildMarkdownSearchableText(): String {
+internal data class MarkdownSearchProjection(
+    val text: String,
+    val leafRanges: Map<Int, SearchTextRange>,
+)
+
+internal fun String.buildMarkdownSearchProjection(): MarkdownSearchProjection {
     val markdown: String = this
-    if (markdown.isBlank()) return ""
+    if (markdown.isBlank()) return MarkdownSearchProjection("", emptyMap())
     val tree = MarkdownParser(GFMFlavourDescriptor()).buildMarkdownTreeFromString(markdown)
     val searchableText = StringBuilder()
+    val leafRanges = mutableMapOf<Int, SearchTextRange>()
     markdown.appendMarkdownSearchableText(
         children = tree.children,
         searchableText = searchableText,
+        leafRanges = leafRanges,
     )
-    return searchableText.toString()
+    return MarkdownSearchProjection(searchableText.toString(), leafRanges)
 }
 
 internal fun String.markdownVisibleLeafText(
@@ -57,6 +66,7 @@ fun String.markdownAutoLinkDestination(
 private fun String.appendMarkdownSearchableText(
     children: List<ASTNode>,
     searchableText: StringBuilder,
+    leafRanges: MutableMap<Int, SearchTextRange>,
 ) {
     val content = this
     var skipIfNext: IElementType? = null
@@ -72,11 +82,24 @@ private fun String.appendMarkdownSearchableText(
             else -> content.markdownVisibleLeafText(child)
         }
         if (leafText != null) {
+            leafRanges[child.startOffset] = SearchTextRange(searchableText.length, searchableText.length + leafText.length)
             searchableText.append(leafText)
             return@forEach
         }
 
         when (child.type) {
+            GFMElementTypes.TABLE -> {
+                child.chatMarkdownTable(content).rows.forEachIndexed { rowIndex, row ->
+                    if (rowIndex > 0) searchableText.append('\n')
+                    row.forEachIndexed { columnIndex, cell ->
+                        if (columnIndex > 0) searchableText.append('\t')
+                        if (cell != null) content.appendMarkdownSearchableText(
+                            cell.tableCellChildren(), searchableText, leafRanges,
+                        )
+                    }
+                }
+            }
+
             MarkdownElementTypes.PARAGRAPH,
             MarkdownElementTypes.EMPH,
             MarkdownElementTypes.STRONG,
@@ -95,12 +118,13 @@ private fun String.appendMarkdownSearchableText(
             MarkdownElementTypes.SETEXT_1,
             MarkdownElementTypes.SETEXT_2,
             GFMElementTypes.STRIKETHROUGH ->
-                content.appendMarkdownSearchableText(child.children, searchableText)
+                content.appendMarkdownSearchableText(child.children, searchableText, leafRanges)
 
             MarkdownElementTypes.CODE_SPAN ->
                 content.appendMarkdownSearchableText(
                     children = child.children.innerList(),
                     searchableText = searchableText,
+                    leafRanges = leafRanges,
                 )
 
             MarkdownElementTypes.INLINE_LINK,
@@ -108,7 +132,7 @@ private fun String.appendMarkdownSearchableText(
             MarkdownElementTypes.FULL_REFERENCE_LINK -> {
                 val linkText = child.findChildOfType(MarkdownElementTypes.LINK_TEXT)?.children?.innerList()
                 if (linkText != null) {
-                    content.appendMarkdownSearchableText(linkText, searchableText)
+                    content.appendMarkdownSearchableText(linkText, searchableText, leafRanges)
                 }
             }
 
@@ -119,7 +143,7 @@ private fun String.appendMarkdownSearchableText(
                 skipIfNext = MarkdownTokenTypes.WHITE_SPACE
             }
 
-            else -> content.appendMarkdownSearchableText(child.children, searchableText)
+            else -> content.appendMarkdownSearchableText(child.children, searchableText, leafRanges)
         }
     }
 }

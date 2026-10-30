@@ -64,7 +64,7 @@ sealed interface ChatMessageSearchPartProjection {
 }
 
 /**
- * Plain text projection used for user messages and any assistant content rendered without
+ * Plain text projection used for user text outside tables and any assistant content rendered without
  * markdown/code block structure.
  */
 data class PlainTextSearchPartProjection(
@@ -75,15 +75,17 @@ data class PlainTextSearchPartProjection(
 }
 
 /**
- * Markdown text projection for assistant text blocks.
+ * Markdown text projection for assistant text blocks and user tables.
  *
  * [markdown] keeps the original source for rendering, while [searchableText] stores the flattened
  * visible text used during indexing so match offsets line up with rendered markdown content.
+ * [leafRanges] maps source offsets to those visible ranges for independent cell rendering.
  */
 data class MarkdownTextSearchPartProjection(
     override val partIndex: Int,
     val markdown: String,
     override val searchableText: String,
+    val leafRanges: Map<Int, SearchTextRange>,
 ) : ChatMessageSearchPartProjection
 
 /**
