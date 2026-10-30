@@ -63,8 +63,9 @@ class BackendSubagentE2eTest {
                 settingsSource = source,
                 providerClients = ProviderHttpClients(standard = http, openAi = http),
                 llm = E2eLlmApi { request ->
-                    val result = request.messages.lastOrNull { it.name == "SpawnSubagent" }
-                    if (result != null) {
+                    val result = request.messages.lastOrNull { it.role == LLMMessageRole.function }
+                    if (result?.name == "SpawnSubagent") waitForChild(request, result.content)
+                    else if (result != null) {
                         assertEquals("private remote answer", restJsonMapper.readTree(result.content)["result"]?.asText(), result.content)
                         reply(request, "parent completed")
                     } else {
@@ -86,9 +87,9 @@ class BackendSubagentE2eTest {
                         .takeIf { items -> items.any { it["type"].asText() == "execution.finished" } }
                 }
                 assertEquals(1, childRequests)
-                assertEquals(2, llm.requests.size)
+                assertEquals(3, llm.requests.size)
                 val usage = events.single { it["type"].asText() == "execution.finished" }["payload"]
-                assertEquals(35, usage["totalTokens"].asInt())
+                assertEquals(45, usage["totalTokens"].asInt())
                 val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
                 assertEquals(listOf("Delegate", "parent completed"), messages.map { it["content"].asText() })
             }
@@ -113,7 +114,8 @@ class BackendSubagentE2eTest {
                             response.copy(choices = response.choices.map { it.copy(message = it.message.copy(content = "private child progress")) })
                         }
                     }
-                    result?.name == "SpawnSubagent" -> reply(request, "parent final answer")
+                    result?.name == "SpawnSubagent" -> waitForChild(request, result.content)
+                    result?.name == "WaitSubagent" -> reply(request, "parent final answer")
                     else -> toolCallReply(request, "SpawnSubagent", mapOf("task" to task, "skillIds" to listOf("user.ask")), blocks)
                 }
             },
@@ -177,7 +179,7 @@ class BackendSubagentE2eTest {
                     releaseChild.complete(Unit)
                 }
             } }
-            assertEquals(4, llm.requests.size)
+            assertEquals(5, llm.requests.size)
             val system = llm.requests.first().messages.first().content
             assertTrue("custom base" in system)
             assertTrue("Перед каждым вызовом инструментов" in system)
@@ -187,7 +189,7 @@ class BackendSubagentE2eTest {
             assertTrue("# Ask the user" in childRequests.first().messages.first().content)
             assertEquals(2, childRequests.first().messages.size)
             assertFalse(childRequests.first().messages.any { "delegate the question" in it.content || "<skill_inventory>" in it.content })
-            val parentResult = llm.requests.last().messages.single { it.name == "SpawnSubagent" }
+            val parentResult = llm.requests.last().messages.single { it.name == "WaitSubagent" }
             assertEquals("private child answer: Horror", json.readTree(parentResult.content)["result"].asText())
             assertTrue("private child progress" in llm.streamedChunks)
             assertTrue("private child answer: Horror" in llm.streamedChunks)
@@ -207,7 +209,8 @@ class BackendSubagentE2eTest {
             llm = E2eLlmApi { request ->
                 when {
                     request.functions.isEmpty() -> reply(request, "private child text")
-                    request.messages.any { it.name == "SpawnSubagent" } -> reply(request, "parent synthesized answer")
+                    request.messages.any { it.name == "WaitSubagent" } -> reply(request, "parent synthesized answer")
+                    request.messages.any { it.name == "SpawnSubagent" } -> waitForChild(request, request.messages.last().content)
                     else -> toolCallReply(request, "SpawnSubagent", mapOf("task" to "Produce a private child answer."))
                 }
             },
@@ -228,12 +231,12 @@ class BackendSubagentE2eTest {
                     items.any { it["type"].asText() == "execution.finished" }
                 }
             }
-            assertEquals(3, llm.requests.size)
+            assertEquals(4, llm.requests.size)
             assertTrue("private child text" in llm.streamedChunks)
             val finished = events.single { it["type"].asText() == "execution.finished" }["payload"]
-            assertEquals(21, finished["promptTokens"].asInt())
-            assertEquals(9, finished["completionTokens"].asInt())
-            assertEquals(30, finished["totalTokens"].asInt())
+            assertEquals(28, finished["promptTokens"].asInt())
+            assertEquals(12, finished["completionTokens"].asInt())
+            assertEquals(40, finished["totalTokens"].asInt())
             val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
             assertEquals(listOf("user", "assistant"), messages.map { it["role"].asText() })
             assertEquals("parent synthesized answer", messages.last()["content"].asText())
@@ -275,3 +278,6 @@ class BackendSubagentE2eTest {
             assertEquals("parent recovered", messages.last()["content"].asText())
         }
 }
+
+private fun waitForChild(request: ru.souz.llms.LLMRequest.Chat, spawnResult: String) = toolCallReply(request,
+    "WaitSubagent", mapOf("subagentId" to restJsonMapper.readTree(spawnResult)["subagentId"].asText(), "timeoutMs" to 30000))

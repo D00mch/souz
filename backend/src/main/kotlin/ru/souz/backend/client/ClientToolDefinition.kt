@@ -2,6 +2,7 @@ package ru.souz.backend.client
 
 import com.fasterxml.jackson.databind.JsonNode
 import java.util.UUID
+import ru.souz.agent.SubagentTool
 import ru.souz.backend.http.invalidV1Request
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.restJsonMapper
@@ -52,9 +53,9 @@ internal fun List<ClientToolDefinition>.normalizeClientTools(
 // Include optional server capabilities even when their integrations are not configured.
 private val reservedSkillNames = setOf(
     "GetSkillByName", "GetSkillsByCategory", "GetSkillsNamesByCategory", "RunSkillCommand",
-    "SpawnSubagent", "GetKnowledge", "SearchKnowledge", "SearchMemory", "ForgetMemoryFact", "ForgetAllMemory",
+    "GetKnowledge", "SearchKnowledge", "SearchMemory", "ForgetMemoryFact", "ForgetAllMemory",
     "ConnectOAuthProvider", "SafeApiCall",
-)
+) + SubagentTool.NAMES
 
 private fun requireCatalogue(valid: Boolean, message: String) {
     if (!valid) throw invalidV1Request(message)

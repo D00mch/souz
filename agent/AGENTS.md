@@ -19,12 +19,12 @@ Before changing this module, read the relevant pain-point topics below.
 - Propagate coroutine cancellation. Error handling may degrade optional integrations, but must not convert cancellation into a normal result.
 - Agent settings carry an explicit provider and host-resolved model ID. Update them together when selecting a model and preserve them through child and classifier requests. Classifiers accept typed chat requests; JSON round trips discard internal routing metadata. Requests carry the bounded conversation as separate messages ending with the new user message; each classifier renders it for its engine.
 - `AgentSettings.routing` is pending complexity routing for a turn's first LLM call: with a `TaskComplexityClassifier`, `NodesLLM` runs it on the simple or the complex model and keeps the choice for the rest of the turn. Routing reuses inventory descriptions as untrusted hints; simple execution retains context but has no advertised or executable tools. See [model routing](docs/execution-lifecycle.md#model-routing).
-- `SubagentTool` constructs one isolated context from host-supplied `Setup` and awaits a fresh `Agent` from an injected factory in the caller's coroutine. `ToolLoopGraphBasedAgent` provides the default model/tool loop. Share host APIs and invocation identity, not agent instances, history, or event streams. See [subagent execution](docs/subagents.md).
+- `SubagentTool` constructs an isolated context from host-supplied `Setup` and starts a fresh `Agent` in an execution-owned task registry. Parent-only status, bounded-wait, and cancellation tools share that registry; execution exit cancels and joins unfinished children. `ToolLoopGraphBasedAgent` provides the default model/tool loop. Share host APIs and invocation identity, not agent instances, history, or event streams. See [subagent execution](docs/subagents.md).
 
 ## Pain points
 
 - [Execution lifecycle](docs/execution-lifecycle.md) — cancellation, session ownership, continuation, and request-scoped kernels.
-- [Subagent execution](docs/subagents.md) — parent suspension, capability isolation, and child lifecycle.
+- [Subagent execution](docs/subagents.md) — asynchronous orchestration, capability isolation, and child lifecycle.
 - [Skill activation](docs/skill-activation.md) — turn ordering, bundle loading, validation caching, and command exposure.
 - [Skills-oriented graph](docs/skills-oriented-graph.md) — core-tool isolation, large-result offloading, and Knowledge lifetime.
 

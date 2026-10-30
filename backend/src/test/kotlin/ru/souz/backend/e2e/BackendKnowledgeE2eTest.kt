@@ -38,7 +38,11 @@ class BackendKnowledgeE2eTest {
                     request.functions.map { it.name } == listOf("RunSkillCommand") ->
                         toolCallReply(request, "RunSkillCommand", mapOf("skillId" to "user.ask", "arguments" to mapOf("question" to "Report progress")))
 
-                    result?.name.let { it == "RunSkillCommand" || it == "SpawnSubagent" } -> {
+                    result?.name == "SpawnSubagent" -> toolCallReply(request, "WaitSubagent", mapOf(
+                        "subagentId" to restJsonMapper.readTree(result.content)["subagentId"].asText(), "timeoutMs" to 30000,
+                    ))
+
+                    result?.name.let { it == "RunSkillCommand" || it == "WaitSubagent" } -> {
                         val body = restJsonMapper.readTree(result!!.content)
                         if (failWrites) {
                             assertFalse(body.has("knowledgeId"))
@@ -59,7 +63,7 @@ class BackendKnowledgeE2eTest {
                             val text = body["text"].asText()
                             val report = restJsonMapper.readTree(text)
                             assertEquals("subagent_turn_limit", report["error"]["code"].asText())
-                            assertEquals("incomplete", report["status"].asText())
+                            assertEquals("failed", report["status"].asText())
                             assertEquals(8, report["progress"]["completedToolCallCount"].asInt())
                             expectedMatchStart = text.indexOf("progress-evidence")
                         } else {

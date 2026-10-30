@@ -12,7 +12,7 @@ Produce a short brief of the user's chosen notes folder: current status, open ac
 1. Obtain the target folder from the user. Ask if it is missing; use an absolute path or a path beginning with `~/` so the child does not depend on the parent's working directory.
 2. Call `SpawnSubagent` exactly once with `skillIds` set to `["ListFiles", "ExtractTextFromFile"]`, `maxTurns` set to `8`, and no model override. Do not delegate this Skill itself: its instructions belong to the parent.
 3. Build the child's `task` from the template below, replacing `DIRECTORY`, `USER_FOCUS`, and `OUTPUT_LANGUAGE` with the actual values. If no focus is supplied, use "status, actions, and contradictions". Include the user's relevant constraints because the child has no parent conversation history.
-4. Await the result. Present the brief with its source filenames and say which files the child inspected. If spawning returns an error, report its code and message; do not silently complete the reading yourself or retry with more tools.
+4. Save the returned `subagentId` and call `WaitSubagent` with that ID and `timeoutMs: 1000` until it returns `completed`, `failed`, or `cancelled`. A `running` result means wait again; do not spawn a replacement. Present the brief with its source filenames and say which files the child inspected. If spawning or execution fails or is cancelled, report the status and any error code and message; do not silently complete the reading yourself or retry with more tools.
 
 ## Child task template
 

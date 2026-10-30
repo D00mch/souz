@@ -1,6 +1,6 @@
 # Subagents
 
-`SpawnSubagent` delegates a self-contained task and suspends the parent until the child returns. The child receives a fresh history, selected capabilities, and a final-answer instruction. It cannot delegate further. The backend creates a separate child graph for each invocation.
+`SpawnSubagent` starts a self-contained task and returns `{"subagentId":"..."}`. The parent can continue working while multiple children run. The child receives a fresh history, selected capabilities, and a final-answer instruction. It cannot delegate further. The backend creates a separate child graph for each invocation.
 
 ```json
 {
@@ -20,9 +20,29 @@ The optional `model` selects an exact advertised model ID; omission inherits the
 
 The optional `reasoningEffort` accepts `minimal`, `low`, `medium`, or `high` and applies only to the child. For example, add `"reasoningEffort": "low"` for a mostly mechanical task. Omission leaves effort unspecified for provider defaults, even if the parent has an explicit effort. Support depends on the selected provider and model.
 
-The parent receives `{"result":"..."}` or `{"error":{"code":"...","message":"..."}}`. Turn exhaustion keeps the `subagent_turn_limit` error and adds `status: "incomplete"` and `progress`: `modelTurns`, `sideEffectsMayHaveOccurred`, `completedToolCallCount`, `omittedToolCallCount`, and bounded recent `completedToolCalls`. Each reported call contains `toolCallId`, `name`, `result`, and a `truncated` flag; attachments and child reasoning are omitted. Counts describe returned tool messages, which can include tool-level errors, rather than successful operations.
+Spawn validation failures return `{"error":{"code":"...","message":"..."}}` without creating a child. After a successful spawn, use these parent-only tools with its `subagentId`:
 
-Tools requested on the last allowed model turn still execute. Exhaustion does not undo their effects, and the warning remains conservative even when no results are available. Inspect the reported results and current state before retrying to avoid repeating completed work. Cancelling the parent cancels the child; queued parent input waits for the current child to finish.
+| Tool | Behavior |
+| --- | --- |
+| `GetSubagentStatus` | Returns the current status without waiting. |
+| `WaitSubagent` | Waits up to `timeoutMs` (default 1,000; range 0–30,000). Zero polls; timeout does not cancel the child. |
+| `CancelSubagent` | Requests cancellation of one child and returns its status. Repeated cancellation is harmless. |
+
+All three return `subagentId` and `status`: `running`, `completed`, `failed`, or `cancelled`. Completed results include `result`; failures include `error`. Reads do not consume results. A completed or failed child keeps its outcome when cancelled afterward. Unknown IDs return `subagent_not_found`; IDs are usable only in their owning parent execution.
+
+For example, call `WaitSubagent` with `{"subagentId":"<returned ID>","timeoutMs":1000}`. A completed answer looks like `{"subagentId":"...","status":"completed","result":"242"}`. If still `running`, continue other work or wait again; do not spawn the same task again just to retrieve its result.
+
+Turn exhaustion returns `status: "failed"`, the `subagent_turn_limit` error, and `progress`: `modelTurns`, `sideEffectsMayHaveOccurred`, `completedToolCallCount`, `omittedToolCallCount`, and bounded recent `completedToolCalls`. Each reported call contains `toolCallId`, `name`, `result`, and a `truncated` flag; attachments and child reasoning are omitted. Counts describe returned tool messages, which can include tool-level errors, rather than successful operations.
+
+Tools requested on the last allowed model turn still execute. Exhaustion does not undo their effects, and the warning remains conservative even when no results are available. Inspect the reported results and current state before retrying to avoid repeating completed work. Cancellation is cooperative and does not roll back side effects. A `cancelled` response acknowledges the request; cleanup may still be running. Child-only cancellation leaves the parent and siblings runnable. Queued input can steer the parent while children work; a current bounded wait completes before queued input is applied.
+
+Completed, failed, and cancelled results stay in memory until the parent execution ends. Every parent exit—success, failure, or cancellation—cancels unfinished children, joins cleanup, and releases the registry. Collect required results before the parent's final answer. Children do not survive a new turn, restart, or option continuation. Client tools retain their existing host concurrency limits, including one outstanding same-thread client-tool waiter.
+
+## Compatibility and migration
+
+The blocking `SpawnSubagent` contract is unsupported: consumers must read `subagentId`, then use `WaitSubagent` or `GetSubagentStatus` to obtain the answer. Update Skill instructions that expect a result directly from spawn. Turn-limit consumers must recognize `failed` plus `error.code == "subagent_turn_limit"`; the bounded progress fields retain their meanings. There is no blocking compatibility mode or backend child-cancellation endpoint.
+
+Hosts install all four tools with `SubagentToolFactory.create(settings).tools` through `AgentCoreTools.subagentTools`. Standard agent graphs own the lifecycle automatically. Direct tool hosts wrap the entire parent loop in `withSubagentTasks`; wrapping just a spawn call would cancel its child on return.
 
 ## Model configuration
 
@@ -50,7 +70,8 @@ description: Calculate an item total including delivery.
 
 Call SpawnSubagent with the user's quantities, prices, and delivery cost
 included in task, skillIds set to ["Calculator"], and maxTurns set to 8.
-Use the child's result to answer the user. If delegation fails, explain
+Save subagentId and call WaitSubagent until its status is terminal.
+Use the completed result to answer the user. If delegation fails, explain
 the failure or complete the calculation using an available tool.
 ```
 

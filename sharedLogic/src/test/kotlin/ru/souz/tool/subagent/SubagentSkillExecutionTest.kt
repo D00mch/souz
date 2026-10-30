@@ -99,7 +99,7 @@ class SubagentSkillExecutionTest {
                 { maxTurns -> ToolLoopGraphBasedAgent(api, settings, maxTurns) },
                 { catalog }, filter, registry, commands, approval,
             ).create(AgentSettings(LLMModel.Max.alias, LLMModel.Max.provider, 0.5f, AgentTools(emptyMap())))
-            val result = spawn.invoke(
+            val result = spawn.spawnAndWait(
                 LLMResponse.FunctionCall(spawn.fn.name, mapOf("task" to "Run the skill", "skillIds" to listOf("loose"))), meta,
             )
             assertEquals("ready", restJsonMapper.readTree(result.content)["result"].asText())

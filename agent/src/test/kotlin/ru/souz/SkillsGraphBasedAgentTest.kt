@@ -286,7 +286,7 @@ internal fun testCoreTools(
     searchKnowledge = testTool("SearchKnowledge"),
     searchMemory = testTool("SearchMemory"),
     runtimeCommand = runtimeCommand,
-    spawnSubagent = spawnSubagent,
+    subagentTools = spawnSubagent?.let { create -> { settings -> listOf(create(settings)) } },
 )
 
 internal fun testTool(name: String): LLMToolSetup = object : LLMToolSetup {
