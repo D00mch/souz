@@ -52,6 +52,7 @@ import ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntime
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.scheduler.ScheduledTaskConfig
 import ru.souz.backend.scheduler.ScheduledTaskRunner
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.jobs.JobService
 import ru.souz.jobs.JobRun
 import ru.souz.jobs.impl.PostgresJobService
@@ -401,6 +402,7 @@ internal class BackendE2eBackend(
         bindSingleton<Clock>(overrides = true) { clock }
         bindSingleton<PostgresJobService>(overrides = true) {
             PostgresJobService(instance<HikariDataSource>(), pollIntervalMillis = 50)
+                .also { it.bindMetrics(instance<BackendMetrics>().registry) }
         }
         if (appConfig.hindsightApiUrl != null) {
             bindSingleton<HistoryMemoryWorker>(overrides = true) {
@@ -489,7 +491,8 @@ internal class BackendE2eBackend(
     val jobService: JobService get() = di.direct.instance()
 
     suspend fun startScheduledTaskWorker() {
-        di.direct.instance<PostgresJobService>().startWorker(applicationScope, di.direct.instance<ScheduledTaskRunner>()::run)
+        val runner = di.direct.instance<ScheduledTaskRunner>()
+        di.direct.instance<PostgresJobService>().startWorker(applicationScope, runner::awaitCapacity, runner::run)
     }
 
     suspend fun runScheduledTask(job: JobRun) = di.direct.instance<ScheduledTaskRunner>().run(job)

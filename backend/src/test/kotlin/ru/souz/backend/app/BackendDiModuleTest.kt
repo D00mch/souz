@@ -246,6 +246,7 @@ class BackendDiModuleTest {
             assertIs<PostgresVkBotBindingRepository>(di.direct.instance<PostgresVkBotBindingRepository>())
             assertIs<PostgresJobService>(di.direct.instance<JobService>())
             assertSame(di.direct.instance<JobService>(), di.direct.instance<PostgresJobService>())
+            assertNotNull(di.direct.instance<BackendMetrics>().registry.find("souz.jobs.oldest.due").gauge())
             assertIs<PostgresBackendServerPreferenceStore>(di.direct.instance<BackendServerPreferenceStore>())
             assertIs<BackendSettingsProvider>(di.direct.instance<ru.souz.db.SettingsProvider>())
             assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())

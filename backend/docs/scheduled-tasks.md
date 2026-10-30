@@ -11,7 +11,9 @@ The agent chooses the delivery semantics at creation with `atMostOnce`:
 - At least once (default): the IDs also include the attempt number. Competing workers on one attempt launch once, but a retry after an uncertain outcome, such as a lost lease or an unpersisted finish, launches a new execution and can repeat its effects.
 - At most once: the IDs exclude the attempt number. Retries and competing workers reuse the records without modifying or relaunching them, including completed executions.
 
-The handler returns after launch so the sequential worker keeps claiming due jobs. Up to `concurrentRuns` executions run per process; when every slot is taken, the handler waits and later jobs stay queued in PostgreSQL. A run that exceeds `runTimeoutMillis` is cancelled and joined before releasing its slot.
+One sequential worker awaits capacity, claims, and dispatches each job; the handler returns after launch. Each process allows one active scheduled execution per owner and up to `concurrentRuns` in total. Claims skip busy owners and select the oldest available eligible job, leaving waiting jobs pending without spending attempts. Global-capacity waits wake when execution cleanup finishes; an unsuccessful claim uses five-second polling. Aggregate overload has no bounded-wait guarantee. Limits are process-local, so ten replicas can run ten executions for one owner.
+
+Capacity tracks launched execution IDs and their owners, excluding the single dispatch preparing its execution. Failed and duplicate starts reserve nothing. Timeout and shutdown cancel and join the execution before releasing capacity; stalled cancellation cleanup retains its slot.
 
 Create rejects a task when the user's planned runs per day would exceed `runsPerUserPerDay`. A one-off task counts once and a cron task counts its occurrences over the next seven days divided by seven, rounded up, at least once. This is a soft admission limit: simultaneous creates can exceed it. Cancelling a task returns its planned runs to this estimate; it never refunds launches.
 
@@ -33,9 +35,10 @@ Occurrence executions are process-local like ordinary chat executions; see the [
 
 - Keep credentials and request-scoped data out of job payloads.
 - Do not await agent completion inside the job handler; it serializes every user's tasks behind one worker.
+- Await capacity before claiming, and retain the single sequential dispatch path.
 - Keep hidden chats out of chat lists and channel providers whenever a client type is added.
-- Change limits through `ScheduledTaskConfig` (`SOUZ_SCHEDULED_TASK_*`); raise them locally for development.
+- Configure the total capacity, daily budget, and timeout through `ScheduledTaskConfig` (`SOUZ_SCHEDULED_TASK_*`); one execution per owner per process is fixed.
 
 ## Verification
 
-Run `./gradlew :backend:test --tests 'ru.souz.backend.e2e.BackendScheduled*' --tests 'ru.souz.backend.scheduler.*'` with Docker. Cover both delivery semantics, delivery permissions, owner isolation, cancellation, validation, quota contention and rollover, concurrency and timeout, and a crash between persistence and launch. Run `./gradlew :job-impl:test` for transient retry, exhausted occurrence history, final-lease recovery and future recurrence.
+Run `./gradlew :backend:test --tests 'ru.souz.backend.e2e.BackendScheduled*' --tests 'ru.souz.backend.scheduler.*'` with Docker. Cover both delivery semantics, delivery permissions, owner isolation, cancellation, validation, quota contention and rollover, owner/global capacity through timeout cleanup, and a crash between persistence and launch. Run `./gradlew :job-impl:test` for transient retry, exhausted occurrence history, final-lease recovery and future recurrence.
