@@ -26,8 +26,8 @@ import ru.souz.llms.LLMResponse
 class BackendOptionsE2eTest {
     @Test
     fun `option request persists and answering continues through HTTP and Postgres`() {
-        listOf(null, "low").forEach { effort ->
-            val narrate = effort != null
+        listOf(Triple(null, false, true), Triple("low", true, true), Triple("low", true, false)).forEach { (effort, narrate, intermediate) ->
+            val effectiveNarration = narrate && intermediate
             val runner = ScriptedOptionTurnRunner()
             backendE2eTest(
                 schemaPrefix = "e2e_options",
@@ -39,7 +39,7 @@ class BackendOptionsE2eTest {
                 client.get(BackendHttpRoutes.SETTINGS) { trusted(userId) }
                 storeReasoningEffort(userId, effort)
                 client.patch(BackendHttpRoutes.SETTINGS) {
-                    trusted(userId); jsonBody("""{"narrateSteps":$narrate}""")
+                    trusted(userId); jsonBody("""{"narrateSteps":$narrate,"intermediateMessages":$intermediate}""")
                 }
                 val sent = client.post(BackendHttpRoutes.chatMessages(chatId)) {
                     trusted(userId)
@@ -78,15 +78,15 @@ class BackendOptionsE2eTest {
 
                 // Changes to the user default must not alter the pending execution's snapshot.
                 if (!narrate) sql { connection ->
-                    // Executions stored before narration existed have no preference key.
-                    connection.prepareStatement("update agent_executions set metadata = metadata - 'narrateSteps' where id = ?").use {
+                    // Legacy executions have neither progress preference key.
+                    connection.prepareStatement("update agent_executions set metadata = metadata - 'narrateSteps' - 'intermediateMessages' where id = ?").use {
                         it.setObject(1, UUID.fromString(executionId))
                         assertEquals(1, it.executeUpdate())
                     }
                 }
                 storeReasoningEffort(userId, "high")
                 client.patch(BackendHttpRoutes.SETTINGS) {
-                    trusted(userId); jsonBody("""{"narrateSteps":${!narrate}}""")
+                    trusted(userId); jsonBody("""{"narrateSteps":${!effectiveNarration},"intermediateMessages":${!intermediate}}""")
                 }
                 val answer = client.post(BackendHttpRoutes.optionAnswer(optionId)) {
                     trusted(userId)
@@ -109,7 +109,7 @@ class BackendOptionsE2eTest {
                 assertEquals(1L, backend.dependencies.metrics.registry.get("souz.execution.wait.duration")
                     .tag("reason", "user_option").timer().count())
                 assertEquals(listOf(effort, effort), runner.reasoningEfforts.toList())
-                assertEquals(listOf(narrate, narrate), runner.narrationPreferences.toList())
+                assertEquals(listOf(effectiveNarration, effectiveNarration), runner.narrationPreferences.toList())
                 val events = client.get(BackendHttpRoutes.chatEvents(chatId)) {
                     trusted(userId)
                 }.jsonBody()["items"]
