@@ -33,6 +33,7 @@ import ru.souz.backend.execution.service.CancelExecutionResult
 import ru.souz.backend.settings.model.EffectiveUserSettings
 import ru.souz.backend.telegram.TelegramBotBinding
 import ru.souz.backend.vk.VkBotBinding
+import ru.souz.llms.FileContent
 import ru.souz.llms.restJsonMapper
 
 internal data class BackendV1SettingsResponse(
@@ -198,6 +199,7 @@ internal data class BackendV1MessageDto(
     val content: String,
     val metadata: Map<String, String>,
     val createdAt: String,
+    val attachments: List<FileContent> = emptyList(),
 )
 
 internal data class BackendV1TelegramBotBindingDto(
@@ -378,6 +380,7 @@ internal fun ChatMessage.toDto(): BackendV1MessageDto =
         content = content,
         metadata = metadata,
         createdAt = createdAt.toString(),
+        attachments = attachments,
     )
 
 internal fun AgentExecution.toDto(): BackendV1ExecutionDto =

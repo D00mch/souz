@@ -7,6 +7,7 @@ import javax.sql.DataSource
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.MessageRepository
+import ru.souz.llms.FileContent
 
 class PostgresMessageRepository(
     private val dataSource: DataSource,
@@ -19,9 +20,11 @@ class PostgresMessageRepository(
         metadata: Map<String, String>,
         id: UUID,
         createdAt: Instant,
+        attachments: List<FileContent>,
     ): ChatMessage = dataSource.write { connection ->
         connection.lockChat(userId, chatId)
-        append(connection, userId, chatId, role, content, metadata, id, createdAt)
+        connection.validateAttachments(userId, attachments)
+        append(connection, userId, chatId, role, content, metadata, id, createdAt, attachments)
     }
 
     internal fun append(
@@ -33,6 +36,7 @@ class PostgresMessageRepository(
         metadata: Map<String, String>,
         id: UUID,
         createdAt: Instant,
+        attachments: List<FileContent> = emptyList(),
     ): ChatMessage {
         val nextSeq = connection.prepareStatement(
             "select coalesce(max(seq), 0) + 1 from messages where user_id = ? and chat_id = ?"
@@ -46,8 +50,8 @@ class PostgresMessageRepository(
         }
         connection.prepareStatement(
             """
-            insert into messages(id, user_id, chat_id, seq, role, content, metadata, created_at)
-            values (?, ?, ?, ?, ?, ?, ?, ?)
+            insert into messages(id, user_id, chat_id, seq, role, content, metadata, created_at, attachments)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent()
         ).use { statement ->
             statement.setObject(1, id)
@@ -58,6 +62,7 @@ class PostgresMessageRepository(
             statement.setString(6, content)
             statement.setJson(7, postgresStorageMapper.writeValueAsString(metadata))
             statement.setInstant(8, createdAt)
+            statement.setJson(9, postgresStorageMapper.writeValueAsString(attachments))
             statement.executeUpdate()
         }
         return ChatMessage(
@@ -69,6 +74,7 @@ class PostgresMessageRepository(
             content = content,
             metadata = metadata,
             createdAt = createdAt,
+            attachments = attachments,
         )
     }
 
@@ -132,19 +138,21 @@ class PostgresMessageRepository(
         chatId: UUID,
         messageId: UUID,
         content: String,
+        attachments: List<FileContent>? = null,
     ): ChatMessage? =
         connection.prepareStatement(
             """
             update messages
-            set content = ?
+            set content = ?, attachments = coalesce(?::jsonb, attachments)
             where user_id = ? and chat_id = ? and id = ?
             returning *
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, content)
-            statement.setString(2, userId)
-            statement.setObject(3, chatId)
-            statement.setObject(4, messageId)
+            statement.setString(2, attachments?.let(postgresStorageMapper::writeValueAsString))
+            statement.setString(3, userId)
+            statement.setObject(4, chatId)
+            statement.setObject(5, messageId)
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next()) resultSet.toMessage() else null
             }
