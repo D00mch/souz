@@ -1,7 +1,7 @@
 # Desktop GFM tables — issue 476
 
 Validation date: 2026-10-30. Base commit: `1c35e678314fc325a1677395a816f57c3fb86565`.
-Candidate: this checkout's uncommitted issue-476 patch. Issue description and empty discussion were read through the GitHub connector; no GitHub mutations were made.
+Candidate: the original issue-476 patch committed as `028c7dfa1f230dd80c0428efba4dad32ba97dccd`. Its results do not validate subsequent repairs; see [table repair validation](issue-476-table-repair.md). Issue description and empty discussion were read through the GitHub connector; no GitHub mutations were made.
 
 ## Current-code evidence and change
 
