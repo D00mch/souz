@@ -4,9 +4,10 @@ Before changing this module, read the relevant pain-point topics below.
 
 ## Purpose and boundaries
 
-- `:job-impl` owns PostgreSQL persistence, migrations, cron scheduling, leased claims, retries, cancellation, and sequential coroutine workers.
+- `:job-impl` owns PostgreSQL persistence, migrations, cron scheduling, leased claims, retries, cancellation, sequential coroutine workers, and queue metrics.
 - It implements `:job-api`; the host supplies a suspend handler and owns its application scope and credentials.
 - Keep SQL helpers internal. Do not add repository interfaces or executor registries without another concrete implementation.
+- The host supplies its Micrometer registry through `bindMetrics`; gauge reads perform JDBC IO, so scrape on an IO dispatcher.
 
 ## Pain points
 

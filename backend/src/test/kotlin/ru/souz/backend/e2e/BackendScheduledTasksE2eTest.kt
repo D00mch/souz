@@ -1,6 +1,7 @@
 package ru.souz.backend.e2e
 
 import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import java.time.Instant
 import java.time.LocalTime
 import java.time.OffsetDateTime
@@ -11,9 +12,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.agent.model.AgentConversationKey
@@ -178,36 +182,51 @@ class BackendScheduledTasksE2eTest {
     }
 
     @Test
-    fun `occurrences run concurrently up to the limit and a stalled run frees its slot at the timeout`() {
-        val started = Channel<Unit>(Channel.UNLIMITED)
+    fun `owners share capacity and timed out runs keep their slots until cancellation cleanup finishes`() {
+        val started = Channel<String>(Channel.UNLIMITED)
         val cancelled = Channel<Unit>(Channel.UNLIMITED)
-        val llm = E2eLlmApi {
-            started.send(Unit)
-            try { awaitCancellation() } finally { cancelled.trySend(Unit) }
+        val finishCleanup = CompletableDeferred<Unit>()
+        val llm = E2eLlmApi { request ->
+            started.send(request.conversationPrompt().substringBefore("\n"))
+            try { awaitCancellation() } finally {
+                cancelled.trySend(Unit)
+                withContext(NonCancellable) { finishCleanup.await() }
+            }
         }
         backendE2eTest(
             schemaPrefix = "e2e_scheduled_concurrency",
             llm = llm,
-            scheduledTasks = ScheduledTaskConfig(concurrentRuns = 2, runTimeoutMillis = 3_000),
+            scheduledTasks = ScheduledTaskConfig(concurrentRuns = 2, runTimeoutMillis = 5_000),
         ) {
-            val userId = UUID.randomUUID().toString()
-            scheduledTaskSetup(userId)
-            val payload = restJsonMapper.createObjectNode().put("prompt", "Run the task.")
-            // A failed start must release its slot before valid occurrences run.
-            backend.jobService.createJob("missing-user", CreateJobRequest("Missing owner", payload))
-            repeat(3) { index ->
-                backend.jobService.createJob(userId, CreateJobRequest("Task $index", payload))
+            val owners = List(3) { UUID.randomUUID().toString() }
+            owners.forEach { scheduledTaskSetup(it) }
+            // A failed start consumes no capacity; A's older backlog must not block B.
+            listOf("missing-user" to "Missing owner", owners[0] to "A1", owners[0] to "A2",
+                owners[1] to "B1", owners[2] to "C1").forEach { (owner, title) ->
+                backend.jobService.createJob(owner, CreateJobRequest(title, restJsonMapper.createObjectNode().put("prompt", title)))
             }
-            backend.startScheduledTaskWorker()
-            withTimeout(10.seconds) {
-                repeat(2) { started.receive() }
-                eventually("third occurrence waiting for a slot") {
-                    backend.jobService.listJobs(userId).items.single { it.title == "Task 2" }.takeIf { it.status == JobStatus.RUNNING }
+            suspend fun queued() = owners.flatMap { backend.jobService.listJobs(it).items }
+                .filter { it.status == JobStatus.PENDING && it.attempts == 0 }.map { it.title }.toSet()
+            try {
+                backend.startScheduledTaskWorker()
+                withTimeout(15.seconds) {
+                    assertEquals(setOf("A1", "B1"), List(2) { started.receive() }.toSet())
+                    assertEquals(setOf("A2", "C1"), queued(), "Waiting tasks stay unclaimed.")
+                    assertTrue(cancelled.tryReceive().isFailure, "Both owners start before either times out.")
+                    repeat(2) { cancelled.receive() }
+                    val metrics = client.get("/metrics").bodyAsText()
+                    listOf("souz_scheduled_task_slots{state=\"busy\"} 2.0", "souz_scheduled_task_slots{state=\"free\"} 0.0",
+                        "souz_scheduled_task_dispatch_delay_seconds_count 2").forEach { assertTrue(it in metrics, it) }
+                    val oldestDue = Regex("(?m)^souz_jobs_oldest_due_seconds (\\S+)$").find(metrics)?.groupValues?.get(1)?.toDouble()
+                    assertTrue(oldestDue != null && oldestDue > 0.0, "Oldest due wait: $oldestDue")
+                    assertTrue(owners.none { it in metrics }, "No owner labels.")
+                    assertEquals(setOf("A2", "C1"), queued(), "Cancellation cleanup still owns the slots.")
+                    assertTrue(started.tryReceive().isFailure, "No execution starts before cleanup finishes.")
+                    finishCleanup.complete(Unit)
+                    assertEquals(setOf("A2", "C1"), List(2) { started.receive() }.toSet())
                 }
-                assertTrue(started.tryReceive().isFailure, "Only two occurrences may start.")
-                assertTrue(cancelled.tryReceive().isFailure, "Both occurrences start before either times out.")
-                cancelled.receive()
-                started.receive() // Timeout frees a slot for the third occurrence.
+            } finally {
+                finishCleanup.complete(Unit)
             }
         }
     }
