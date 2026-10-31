@@ -42,6 +42,7 @@ Before changing this module, read the relevant pain-point topics below.
 - [Telegram bindings](docs/telegram-bindings.md) — token custody, private-account linking, polling leases, and checkpoint safety.
 - [VK bindings](docs/vk-bindings.md) — private-account linking, encrypted tokens, Long Poll cursors, and lease fencing.
 - [Testing](docs/testing.md) — production-wired E2E coverage, Docker requirement, and allowed test doubles.
+- [Model scenario tests](docs/agent-scenario-tests.md) — opt-in model evaluation against the full production catalog with mocked execution and scenario fixtures.
 - [Container builds](docs/container-builds.md) — JVM temporary files and Kaniko snapshots.
 - [External memory](docs/external-memory.md) — Hindsight owner isolation, scope tags, grounded capture, and safe mutation boundaries.
 
