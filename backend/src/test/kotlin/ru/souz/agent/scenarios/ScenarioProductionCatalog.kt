@@ -4,6 +4,13 @@ import io.mockk.coEvery
 import io.mockk.mockk
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
+import java.util.UUID
+import ru.souz.backend.chat.model.Chat
+import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.client.ClientToolChannel
+import ru.souz.backend.client.ClientToolDefinition
+import ru.souz.llms.LLMRequest
 import kotlinx.coroutines.CoroutineScope
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
@@ -55,7 +62,7 @@ internal fun scenarioBackendDi(
 }
 
 /** Reuses backend registrations and client Skill resources; only invocation is replaced. */
-internal fun scenarioProductionCatalog(
+internal suspend fun scenarioProductionCatalog(
     di: DI,
     settings: SettingsProvider,
     resolver: ToolInvocationRuntimeSandboxResolver,
@@ -63,7 +70,16 @@ internal fun scenarioProductionCatalog(
 ): AgentToolCatalog {
     val llmTools = LlmBackedToolCatalog(mockk(), settings, FilesToolUtil(resolver), mockk(), mockk(), mockk())
     val personality = PersonalityTool(mockk(), mockk(), mockk(), settings, scope)
-    val clientSkills = BackendClientSkills(mockk(), mockk(), mockk(), mockk()).catalog(emptyList())
+    val channel = Chat(UUID.randomUUID(), "scenario", "Scenario device", false, Instant.EPOCH, Instant.EPOCH)
+    val declarations = listOf("user.ask", "device.media.open", "device.mcp.list_devices",
+        "device.mcp.list_tools", "device.mcp.call_tool", "web.search").map {
+        ClientToolDefinition(it, "Invoke $it", LLMRequest.Parameters("object"))
+    }
+    val chats = mockk<ChatRepository> {
+        coEvery { clientToolChannels(channel.userId) } returns listOf(ClientToolChannel(channel, declarations, false))
+    }
+    val clientSkills = BackendClientSkills(mockk(), mockk(), mockk(relaxed = true), chats)
+        .catalog(channel.userId, emptySet()) {}
     return backendExecutionToolCatalog(
         compiledToolCatalog = di.direct.instance(tag = BackendDiTags.MERGED_TOOL_CATALOG),
         executionLlmToolCatalog = AgentToolCatalog.compose(

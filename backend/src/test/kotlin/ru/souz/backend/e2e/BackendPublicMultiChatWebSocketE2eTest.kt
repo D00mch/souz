@@ -465,14 +465,14 @@ class BackendPublicMultiChatWebSocketE2eTest {
         backendE2eTest("e2e_channel_tools") {
             val user = UUID.randomUUID().toString()
             withMultiChatSocket { socket ->
-                val target = request(socket, createFrame(user, "target", tools = clientToolsJson("user.ask")))["chatId"].asText()
+                val target = request(socket, createFrame(user, "target", tools = clientToolsJson("user.ask", "orion.call")))["chatId"].asText()
                 val foreign = request(socket, createFrame(UUID.randomUUID().toString()))["chatId"].asText()
                 llm.requestSkillForPrompt("local", "user.ask", mapOf("question" to "Continue?"))
                 val local = submit(socket, target, user, "local", "local")
                 for (http in listOf(false, true)) {
                     val prompt = "remote-$http"
-                    val source = if (http) createPublicChat(user, prompt, tools = clientToolsJson("orion.call"))
-                        else request(socket, createFrame(user, prompt, tools = clientToolsJson("orion.call")))["chatId"].asText()
+                    val source = if (http) createPublicChat(user, prompt)
+                        else request(socket, createFrame(user, prompt))["chatId"].asText()
                     llm.requestSkillForPrompt(prompt, "orion.call", mapOf("channelId" to target, "utterance" to "включи Pink Floyd"))
                     val sourceThread = if (http) {
                         client.post(BackendHttpRoutes.chatMessages(source)) {
@@ -532,7 +532,7 @@ class BackendPublicMultiChatWebSocketE2eTest {
     fun `invalid unavailable and unowned channel targets fail and cancellation discards pending calls`() =
         backendE2eTest("e2e_channel_tool_failures") {
             val user = UUID.randomUUID().toString()
-            val offline = createPublicChat(user, "offline")
+            val offline = createPublicChat(user, "offline", tools = clientToolsJson("orion.call"))
             val archived = createPublicChat(user, "archived")
             client.post(BackendHttpRoutes.archiveChat(archived)) { trusted(user) }
             val mobile = client.post(BackendHttpRoutes.CHATS) {
@@ -546,7 +546,8 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     val prompt = "invalid-$index"
                     llm.requestSkillForPrompt(prompt, "orion.call", mapOf("channelId" to target, "utterance" to "тише"))
                     assertEquals("thread.completed", submit(socket, source, user, prompt, prompt)["type"].asText())
-                    assertTrue(llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content.contains("client_context_missing"))
+                    assertEquals(if (index < 3 || target == offline) "client_context_missing" else "client_tool_unavailable",
+                        json.readTree(llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content)["error"]["code"].asText())
                 }
                 request(socket, subscribeFrame(offline))
                 llm.requestSkillForPrompt("cancel", "orion.call", mapOf("channelId" to offline, "utterance" to "тише"))

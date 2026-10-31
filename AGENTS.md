@@ -2,7 +2,7 @@
 
 Souz is a backend-only Kotlin/JVM AI assistant with a Ktor HTTP host, graph-based agent execution, and PostgreSQL persistence.
 
-Backend client Skills are bundled under `backend/src/main/resources/skills/client/`. Orion command tools come from chat declarations or discovery. Chat declarations override matching defaults; discovered Orion tools override both and remain bound to their supplying channel until refreshed in that conversation.
+Client Skill guidance is bundled under `backend/src/main/resources/skills/client/`. Only `orion.tools.list` is injected into every public WebSocket channel. Declarations and discovery describe that channel’s tools; all conversations can use their user’s unarchived channels. Discovery overrides matching declarations on its provider. Equal definitions share one Skill with provider metadata; conflicting names and server control commands are hidden from the model. `user.ask` is supported when declared or discovered. Local calls default to the current channel; explicit routing takes priority, and only model-callable `web.search` can automatically select another provider. Discovery is explicit and persists across backend restarts, including successful empty catalogues.
 
 Complexity routing admits only confident tool-free turns to the light model. Public-client executions attempt one best-effort live waiting phrase unless routed simple or `intermediateMessages` is off; progress or completion can overtake it. See [model routing](agent/docs/execution-lifecycle.md#model-routing).
 

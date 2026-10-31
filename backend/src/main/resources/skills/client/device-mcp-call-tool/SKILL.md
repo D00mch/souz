@@ -1,6 +1,6 @@
 ---
 name: device-mcp-call-tool
-description: Perform an action or read a setting on a device (its own OS/app function — e.g. set the volume, read a network setting), reachable via the user's active client device. Use for any request to control or query a specific device once you know (or have looked up with device.mcp.list_tools) which function to use and its arguments.
+description: Perform an action or read a setting on a device (its own OS/app function — e.g. set the volume, read a network setting), reachable via the selected channel’s device. Use for any request to control or query a specific device once you know (or have looked up with device.mcp.list_tools) which function to use and its arguments.
 metadata:
   souz.skill-id: device.mcp.call_tool
   souz.transport: client-websocket
@@ -12,15 +12,18 @@ metadata:
 
 Invoke `RunSkillCommand` with `skillId` set to `device.mcp.call_tool`. Arguments:
 - `target`: optional device `id` from `device.mcp.list_devices`. Omit it to mean "the device
-  currently on the call".
+  connected through the selected channel".
 - `name`: required, the exact MCP tool name (from `device.mcp.list_tools`).
 - `arguments`: object matching that tool's `inputSchema` exactly.
 
 ```json
-{"skillId":"device.mcp.call_tool","arguments":{"target":"a1b2c3","name":"set_volume","arguments":{"level":7}}}
+{"skillId":"device.mcp.call_tool","arguments":{"channelId":"<provider-chat-uuid>","target":"a1b2c3","name":"set_volume","arguments":{"level":7}}}
 ```
 
-Souz sends a durable `tool.call.started` event named `device.mcp.call_tool` to the active client
+Omit routing `channelId` to use the current channel. For an explicitly selected other device,
+pass its provider’s `channelId` in `arguments`.
+
+Souz sends a `tool.call.started` event named `device.mcp.call_tool` to the selected channel’s
 device and waits up to one minute for `tool.result`. Don't pass a timeout — there is none to give;
 the emulator applies its own internal budget for this call.
 
@@ -41,7 +44,7 @@ The result preserves MCP's own two-level error model exactly:
   arguments don't satisfy `inputSchema`, timeout) → `RunSkillCommand` reports a `ClientError`:
   `device_not_connected`, `device_disconnected`, `device_timeout`, `mcp_target_not_found`,
   `mcp_server_unreachable`, `mcp_tool_not_found`, `mcp_invalid_arguments`. If the Skill reports
-  missing client context, no active public WebSocket device is available for this execution.
+  missing client context, the selected channel is unavailable.
 
 Only claim the operation succeeded when you see `isError: false` (or absent) in the result — a
 `ClientError` here means the operation's actual outcome is unknown, not that it failed to run.
