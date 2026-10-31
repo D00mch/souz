@@ -157,6 +157,7 @@ data class BackendAppConfig(
     val scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     val attachments: AttachmentStorageConfig? = null,
     val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
+    val imageModel: String = "gpt-image-1",
     val policyPrompt: String? = null,
 ) {
     fun validate(): BackendAppConfig {
@@ -217,6 +218,7 @@ data class BackendAppConfig(
                         ?: throw BackendConfigurationException("JEV_WAIT_CATEGORY_THRESHOLD must be a number within [0, 1].")
                 } ?: 0.5,
                 attachments = AttachmentStorageConfig.load(source),
+                imageModel = source.value("SOUZ_IMAGE_MODEL", "souz.image.model")?.trim()?.takeIf { it.isNotEmpty() } ?: "gpt-image-1",
                 attachmentHistoryLimit = source.intValue("SOUZ_ATTACHMENTS_HISTORY_LIMIT", "souz.attachments.historyLimit", DEFAULT_ATTACHMENT_HISTORY_LIMIT),
                 hooks = HookConfig(
                     owners = source.value("SOUZ_HOOK_OWNERS", "souz.hooks.owners")

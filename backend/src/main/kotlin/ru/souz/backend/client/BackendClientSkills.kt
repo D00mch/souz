@@ -272,6 +272,7 @@ private class ClientWebSocketSkill(
                 )
             }),
             name = functionName,
+            files = outcome.imageFiles(),
         )
 
     private suspend fun awaitResultUntilDeadline(

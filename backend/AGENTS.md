@@ -29,6 +29,7 @@ Before changing this module, read the relevant pain-point topics below.
 - [Personality settings](docs/personality-settings.md) — validated user style, conversational scope and Orion snapshots.
 - [User file storage](docs/s3-storage.md) — private S3 bucket, owner-scoped metadata, expiry and retryable cleanup.
 - [Attachment contracts](docs/attachments.md) — message references, session persistence, sandbox preparation, and explicit reply selection.
+- [Images](docs/images.md) — request-local vision, shared generation/editing routes, paid-operation receipts and client screenshots.
 - [Named LLM connections](docs/named-llm-connections.md) — server model names, independent endpoints and keys, subagents and summarization.
 - [Metrics accounting](docs/metrics-accounting.md) — commit boundaries, bounded labels, waiting time and replica ownership; see the [metric reference](docs/metrics.md).
 - [Workspace hooks](docs/hooks.md) — trusted ownership, admission, persistent call budgets, sequential dispatch and single-process recovery.

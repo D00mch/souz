@@ -1,5 +1,6 @@
 package ru.souz.backend.common
 
+import ru.souz.backend.attachments.ToolGenerateAttachmentImage
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.attachments.ToolAttachFileToReply
 import ru.souz.backend.attachments.ToolDetachFileFromReply
@@ -28,7 +29,7 @@ object BackendToolCapabilityPolicy {
     )
 
     /** Advertised tools whose LLM dependency is bound per execution, so no process catalog holds them. */
-    val executionBoundToolNames: Set<String> = setOf(ToolViewImage.NAME, ToolGenerateImage.NAME, PersonalityTool.NAME)
+    val executionBoundToolNames: Set<String> = setOf(ToolViewImage.NAME, ToolGenerateImage.NAME, PersonalityTool.NAME, ToolGenerateAttachmentImage.NAME)
 
     /** Names the backend advertises and accepts in a user's `enabledTools`, in stable order. */
     fun advertisedToolNames(processToolCatalog: AgentToolCatalog): Set<String> =
