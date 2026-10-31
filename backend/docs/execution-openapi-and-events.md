@@ -54,6 +54,8 @@ Generated OpenAPI is also easy to drift: route helpers and deferred registration
 - Keep compiler inference limited to explicitly commented paths; runtime route descriptions and reflection are authoritative for helpers and conditional behavior.
 - Exclude WebSocket routes and their upgrade fallback through both compiler and runtime OpenAPI controls.
 
+Public `thread.completed` and forwarded `message.created` events persist nonempty attachment descriptors as `{objectKey, name, presentation}`. They resolve internal UUIDs at event creation; replay does not access storage.
+
 ## Deployment compatibility
 
 Settings schema 5 stores `intermediateMessages`. Deploy with older instances stopped or drained before this version writes settings. Builds whose settings decoder does not recognize the field cannot share those rows; rollback requires a compatible build or removal of the field from stored settings. Mixed-version storage support is not provided.

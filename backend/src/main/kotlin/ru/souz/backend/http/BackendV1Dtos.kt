@@ -451,7 +451,9 @@ private fun AgentEventPayload.toTransportPayload(type: AgentEventType): Map<Stri
             "deadlineAt" to deadlineAt,
         ).withoutNulls()
 
-        is ThreadCompletedPayload -> linkedMapOf("response" to response)
+        is ThreadCompletedPayload -> linkedMapOf<String, Any?>(
+            "response" to response, "attachments" to attachments.takeIf { it.isNotEmpty() },
+        ).withoutNulls()
 
         is ThreadFailedPayload -> linkedMapOf(
             "error" to linkedMapOf(
@@ -468,6 +470,7 @@ private fun AgentEventPayload.toTransportPayload(type: AgentEventType): Map<Stri
             "role" to role,
             "content" to content,
             "clientMessageId" to clientMessageId,
+            "attachments" to attachments.takeIf { it.isNotEmpty() },
         ).withoutNulls()
 
         is MessageDeltaPayload -> linkedMapOf(

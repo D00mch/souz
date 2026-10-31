@@ -32,6 +32,24 @@ Assistant tool history uses `content: {"type":"tool_call","name":"weather","argu
 
 With `HINDSIGHT_API_URL` configured and `SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL=true`, Souz retrieves memory once before the first LLM call of each new thread. The flag defaults to `false` and controls all backend executions. Client-supplied memory history remains available in either mode. Tool loops, duplicate submits, reconnects and active-thread continuation do not repeat automatic recall. The agent can invoke `SearchMemory` explicitly in either mode. With Hindsight enabled, accepted text history also enters background memory capture. See [external memory](../../backend/docs/external-memory.md) for retention, acknowledgement timing, attribution, privacy and recovery rules.
 
+## Attachments
+
+`message.submit.payload` accepts `attachments` alongside `content`, or without `content` for files-only input. An omitted array and `[]` are equivalent. Explicit null is invalid; if supplied, `content.text` must be nonblank. `history.append` retains its text/tool-history contract.
+
+```json
+{
+  "objectKey": "files/owner-hash/upload-uuid",
+  "name": "report.pdf",
+  "presentation": "document"
+}
+```
+
+The key is the complete, case-sensitive path inside the configured private S3 bucket, never a signed URL. Any naming convention is allowed; do not derive the internal file UUID from it. Keys must be nonblank, without control characters, and at most 1,024 UTF-8 bytes. Upload the complete immutable object before submitting, preserve its MIME metadata in S3, and never overwrite or reuse its key. Shared-bucket writers are trusted; PG owns file authorization after import.
+
+At most 10 distinct keys and 100 MB total are accepted, subject to the server's per-file upload limit. `name` is required and sanitized on import. `presentation` defaults to `document`; `image`, `voice` (voice note) and `audio` (audio track) must match detected content. MIME and size are not wire fields. Without configured storage, attachments return `feature_disabled`.
+
+`thread.completed.payload.attachments` and out-of-band `message.created.payload.attachments` use the same descriptor with explicit presentation and sanitized name; empty arrays are omitted. The final response may have empty text when files are selected. Clients read MIME from S3 and deliver the selected files. Accepted retries return the stored receipt before consulting storage; replay preserves the original descriptors after expiry or cleanup, but does not extend file availability.
+
 ## Client tool catalogue
 
 HTTP `POST /v1/chats` and WS `chat.create.payload` accept optional `tools`, an array of `{name, description, parameters}` definitions. Bundled client Skills are always available: `user.ask`, `device.media.open`, `device.mcp.list_devices`, `device.mcp.list_tools`, `device.mcp.call_tool`, `web.search`, and `orion.tools.list`. Orion command tools come from declarations or discovery. Declarations override matching defaults. Missing `tools` and `[]` are equivalent; explicit `null` is invalid. Server tools keep their existing policy.

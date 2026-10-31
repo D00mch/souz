@@ -85,6 +85,7 @@ class PostgresClientRequestRepository(
                 chatId = key.chatId,
                 role = ChatRole.USER,
                 content = input.content,
+                attachments = input.attachments,
                 metadata = input.metadata,
                 id = input.messageId,
                 createdAt = input.createdAt,
