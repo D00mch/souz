@@ -1,83 +1,63 @@
 package ru.souz.llms.openai
 
 import io.ktor.client.HttpClient
-import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.timeout
-import io.ktor.client.request.header
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
-import io.ktor.http.isSuccess
+import io.ktor.client.request.*
+import io.ktor.client.request.forms.*
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.*
+import io.ktor.utils.io.readRemaining
+import kotlinx.io.readByteArray
 import java.util.Base64
-import kotlinx.coroutines.CancellationException
-import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.restJsonMapper
-import ru.souz.llms.runtime.GeneratedImage
-import ru.souz.llms.runtime.ImageFileFormats
-import ru.souz.llms.runtime.ImageGenerationGateway
-import ru.souz.llms.runtime.ImageGenerationInput
+import ru.souz.llms.runtime.*
 
 class OpenAIImageGenerationGateway(
     private val settingsProvider: SettingsProvider,
     private val client: HttpClient,
     private val apiKeyProvider: suspend () -> String = {
-        settingsProvider.openaiKey
-            ?: System.getenv("OPENAI_API_KEY")
-            ?: System.getProperty("OPENAI_API_KEY")
-            ?: throw IllegalStateException("OPENAI_API_KEY is not set")
+        settingsProvider.openaiKey ?: System.getenv("OPENAI_API_KEY")
+            ?: System.getProperty("OPENAI_API_KEY") ?: error("OPENAI_API_KEY is not set")
     },
+    private val baseUrl: String? = null,
 ) : ImageGenerationGateway {
-    private val l = LoggerFactory.getLogger(OpenAIImageGenerationGateway::class.java)
+    fun buildRequestPayload(input: ImageGenerationInput): Map<String, Any> =
+        OpenAIImageGenerationRequestBuilder.build(input, "gpt-image-1")
 
-    override suspend fun generate(input: ImageGenerationInput): GeneratedImage = try {
-        val outputFormat = (input.outputFormat ?: OpenAIImageGenerationRequestBuilder.DEFAULT_OUTPUT_FORMAT).lowercase()
-        val response = client.post(imagesUrl) {
-            header(HttpHeaders.ContentType, ContentType.Application.Json)
-            header(HttpHeaders.Accept, ContentType.Application.Json)
+    override suspend fun generate(input: ImageGenerationInput): GeneratedImage {
+        require(input.prompt.isNotBlank() && input.prompt.length <= 32_000) { "image_prompt_invalid" }
+        val payload = buildRequestPayload(input)
+        val path = if (input.images.isEmpty()) "images/generations" else "images/edits"
+        val url = baseUrl?.trimEnd('/')?.let { "$it/$path" } ?: settingsProvider.openAIEndpoint().endpoint(path)
+        return client.preparePost(url) {
             header(HttpHeaders.Authorization, "Bearer ${apiKeyProvider()}")
             timeout { requestTimeoutMillis = settingsProvider.requestTimeoutMillis }
-            setBody(buildRequestPayload(input))
+            if (input.images.isEmpty()) {
+                contentType(ContentType.Application.Json)
+                setBody(payload)
+            } else {
+                setBody(MultiPartFormDataContent(formData {
+                    payload.forEach { (key, value) -> append(key, value.toString()) }
+                    input.images.forEachIndexed { index, source ->
+                        append("image[]", source.bytes, Headers.build {
+                            append(HttpHeaders.ContentType, source.mimeType)
+                            append(HttpHeaders.ContentDisposition, "filename=\"source-$index.${source.mimeType.substringAfter('/')}\"")
+                        })
+                    }
+                }))
+            }
+        }.execute { response ->
+            check(response.status.isSuccess()) { "image_provider_http_${response.status.value}" }
+            val maxResponse = ImageSource.MAX_BYTES * 4L / 3 + 1_000_000
+            val bytes = response.bodyAsChannel().readRemaining(maxResponse + 1).readByteArray()
+            check(bytes.size <= maxResponse) { "image_response_too_large" }
+            val root = imageResponseMapper.readTree(bytes)
+            val data = root["data"]
+            check(data != null && data.size() == 1) { "image_result_count_invalid" }
+            val encoded = data[0]["b64_json"]?.asText() ?: error("image_result_missing")
+            val image = ImageSource(Base64.getDecoder().decode(encoded))
+            GeneratedImage(image.bytes, image.mimeType, "OPENAI", input.model ?: "gpt-image-1")
         }
-        val text = response.bodyAsText()
-        if (!response.status.isSuccess()) {
-            throw IllegalStateException("OpenAI image generation failed: ${response.status.value}. $text")
-        }
-        parseResponse(text, outputFormat)
-    } catch (e: ClientRequestException) {
-        val text = e.response.bodyAsText()
-        throw IllegalStateException("OpenAI image generation failed: ${e.response.status.value}. $text")
-    } catch (cancellation: CancellationException) {
-        throw cancellation
-    } catch (t: Throwable) {
-        throw IllegalStateException("OpenAI image generation failed: ${t.message}", t)
     }
-
-    fun buildRequestPayload(input: ImageGenerationInput): Map<String, Any> =
-        OpenAIImageGenerationRequestBuilder.build(input, defaultModel = DEFAULT_IMAGE_MODEL)
-
-    private fun parseResponse(text: String, outputFormat: String): GeneratedImage {
-        val node = restJsonMapper.readTree(text)
-        val item = node["data"]?.firstOrNull()
-            ?: throw IllegalStateException("OpenAI image generation returned no image data.")
-        val base64 = item["b64_json"]?.asText()
-            ?: throw IllegalStateException("OpenAI image generation response did not contain b64_json.")
-        return GeneratedImage(
-            bytes = Base64.getDecoder().decode(base64),
-            mimeType = ImageFileFormats.mimeTypeForExtension(outputFormat)
-                ?: throw IllegalStateException("Unsupported OpenAI image output format: $outputFormat"),
-            provider = "OPENAI",
-            model = node["model"]?.asText() ?: DEFAULT_IMAGE_MODEL,
-        )
-    }
-
-    private companion object {
-        const val IMAGES_PATH = "images/generations"
-        const val DEFAULT_IMAGE_MODEL = "gpt-image-1"
-    }
-
-    private val imagesUrl: String
-        get() = settingsProvider.openAIEndpoint().endpoint(IMAGES_PATH)
 }

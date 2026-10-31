@@ -198,7 +198,10 @@ class CodexChatAPI(
 
     private fun mapMessageToInputItem(msg: LLMRequest.Message): Map<String, Any?>? {
         return when (msg.role) {
-            LLMMessageRole.user -> mapOf("type" to "message", "role" to "user", "content" to msg.content)
+            LLMMessageRole.user -> mapOf("type" to "message", "role" to "user", "content" to if (msg.attachments.isNullOrEmpty()) msg.content else buildList {
+                add(mapOf("type" to "input_text", "text" to msg.content))
+                msg.attachments.orEmpty().forEach { add(mapOf("type" to "input_image", "image_url" to it)) }
+            })
             LLMMessageRole.assistant, LLMMessageRole.function_in_progress -> {
                 if (msg.functionsStateId != null) {
                     // assistant tool call

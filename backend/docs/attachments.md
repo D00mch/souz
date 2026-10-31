@@ -18,6 +18,6 @@ Before chat and summarization, non-tool message files are rendered into request 
 
 Selection lives in context/session and resumes only for a matching non-null execution ID. A different or missing ID starts empty. Persist the resulting selection without merging the old snapshot back in.
 
-The final transaction validates file ownership, availability, metadata, presentation and limits, then commits text, attachments, session and execution status together. Unavailable input files fail admission; unavailable final reply files are dropped without losing the answer. Trusted message reads expose metadata; upload/download routes, vision and transport support are outside this layer.
+The final transaction validates file ownership, availability, metadata, presentation and limits, then commits text, attachments, session and execution status together. Unavailable input files fail admission; unavailable final reply files are dropped without losing the answer. Trusted message reads expose metadata; [image preparation and generation](images.md) happen at the provider/tool boundary. Upload/download routes and transport support are outside this layer.
 
 Session schema 2 reads schema 1. Empty attachment fields are omitted, keeping text-only snapshots readable by older releases. Rolling back to a release without attachment support breaks sessions containing file references.

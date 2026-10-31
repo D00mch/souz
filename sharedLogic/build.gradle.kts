@@ -3,6 +3,7 @@ plugins {
 }
 
 dependencies {
+    runtimeOnly(libs.imageio.webp)
     implementation(projects.agent)
     implementation(projects.llms)
     implementation(projects.skillOauthApi)

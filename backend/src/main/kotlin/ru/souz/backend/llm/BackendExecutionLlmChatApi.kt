@@ -1,5 +1,6 @@
 package ru.souz.backend.llm
 
+import ru.souz.backend.attachments.AttachmentStorage
 import java.io.File
 import kotlin.math.min
 import kotlinx.coroutines.delay
@@ -50,6 +51,7 @@ internal class BackendExecutionLlmChatApi(
     private val llmConfig: NamedLlmConfig = NamedLlmConfig(),
     private val fallbackModels: List<String> = emptyList(),
     private val failureMemory: ModelFailureMemory = ModelFailureMemory(),
+    private val attachmentStorage: AttachmentStorage? = null,
 ) : LLMChatAPI {
     private val providerStateMutex = Mutex()
     private val credentials = mutableMapOf<LlmProvider, ResolvedProviderCredential?>()
@@ -248,7 +250,8 @@ internal class BackendExecutionLlmChatApi(
     }
 
     private suspend fun callProvider(provider: LlmProvider, body: LLMRequest.Chat, api: LLMChatAPI): LLMResponse.Chat {
-        val request = hookBudget?.limitRequest(body) ?: body
+        val prepared = body.withAttachmentImages(userId, attachmentStorage)
+        val request = hookBudget?.limitRequest(prepared) ?: prepared
         return withProviderCall(hookBudget, provider) {
             measureAttempt(provider, request.model) { outcome ->
                 api.message(request).also { response ->
@@ -260,7 +263,8 @@ internal class BackendExecutionLlmChatApi(
     }
 
     private fun retryingStream(provider: LlmProvider, api: LLMChatAPI, body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
-        val request = hookBudget?.limitRequest(body) ?: body
+        val prepared = body.withAttachmentImages(userId, attachmentStorage)
+        val request = hookBudget?.limitRequest(prepared) ?: prepared
         var attempt = 0
         while (true) {
             try {

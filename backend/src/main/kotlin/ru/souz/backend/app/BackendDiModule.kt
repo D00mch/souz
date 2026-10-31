@@ -1,5 +1,7 @@
 package ru.souz.backend.app
 
+import ru.souz.backend.client.ClientImages
+import ru.souz.backend.attachments.ImageGeneration
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
@@ -178,6 +180,8 @@ fun backendDiModule(
         bindSingleton { AttachmentStorage(config, instance(), instance(), instance()) }
         bindSingleton { AttachmentCleanupWorker(instance()) }
         bindSingleton { BackendAttachmentAccess(instance(), instance()) }
+        bindSingleton { ImageGeneration(instance(), instance<HikariDataSource>()) }
+        bindSingleton { ClientImages(instance()) }
     }
     bindSingleton<BackendFeatureFlags> { appConfig.featureFlags }
     bindSingleton { BackendMetrics() }
@@ -232,6 +236,7 @@ fun backendDiModule(
             cancelAndJoinApplicationWork = { instance<BackendApplicationScope>().cancelAndJoin() },
             closeProviderClients = {
                 instance<ProviderHttpClients>().close()
+                instanceOrNull<ClientImages>()?.close()
                 (instanceOrNull<VkBotApi>() as? AutoCloseable)?.close()
             },
             closeSkillOAuthClients = {
@@ -358,6 +363,9 @@ fun backendDiModule(
             effectiveSettingsResolver = instance(),
             retryPolicy = appConfig.providerRetryPolicy,
             attachmentHistoryLimit = appConfig.attachmentHistoryLimit,
+            imageModel = appConfig.imageModel,
+            imageGeneration = instanceOrNull(),
+            attachmentStorage = instanceOrNull(),
             providerHttpClients = instance(),
             providerApiOverride = instanceOrNull(),
             codexOAuthService = instance<CodexOAuthService>(),
@@ -575,6 +583,7 @@ fun backendDiModule(
     bindSingleton {
         PublicClientService(
             namedModelNames = instance<NamedLlmConfig>().models.keys,
+            clientImages = instanceOrNull(),
             chatRepository = instance(),
             executionRepository = instance(),
             clientRequestRepository = instance(),

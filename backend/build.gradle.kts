@@ -19,6 +19,7 @@ ktor {
 }
 
 dependencies {
+    implementation(libs.okhttp)
     implementation(project(":agent"))
     implementation(project(":llms"))
     implementation(project(":sharedLogic"))

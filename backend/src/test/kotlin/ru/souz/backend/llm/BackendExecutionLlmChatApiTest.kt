@@ -71,6 +71,43 @@ import kotlin.time.TestTimeSource
 
 class BackendExecutionLlmChatApiTest {
     @Test
+    fun `image selection routes independently of chat through OpenAI named and Codex connections`() = runTest {
+        val settings = LlmSettingsStub().apply {
+            gigaModel = LLMModel.QwenMax
+            codexAccessToken = "codex-test-token"
+            codexExpiresAt = Long.MAX_VALUE
+        }
+        val pixels = java.io.ByteArrayOutputStream().also {
+            javax.imageio.ImageIO.write(java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", it)
+        }.toByteArray()
+        val encoded = java.util.Base64.getEncoder().encodeToString(pixels)
+        val requests = mutableListOf<CapturedRequest>()
+        val http = HttpClient(MockEngine { request ->
+            requests += CapturedRequest(request.url.toString(), request.headers[HttpHeaders.Authorization],
+                restJsonMapper.readTree(request.body.toByteArray()))
+            if (request.url.host == "chatgpt.com") respond(
+                "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"image_generation_call\",\"result\":\"$encoded\"}}\n\n" +
+                    "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n",
+                headers = headersOf(HttpHeaders.ContentType, "text/event-stream"))
+            else respond("""{"data":[{"b64_json":"$encoded"}]}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }) { providerHttpClientDefaults() }
+        val models = NamedLlmConfig(mapOf("named-image" to NamedLlmModel("image-model", "https://images.test/v1", "named-key")))
+        facadeFixture(client = http, settingsProvider = settings).use { fixture ->
+            val clients = ProviderHttpClients(http, http)
+            for (selection in listOf("gpt-image-1", "named-image", "CodexGpt61Sol")) {
+                val gateway = imageGateway(selection, models, settings, clients, CodexOAuthService(settings, http), fixture.api, null)
+                kotlin.test.assertContentEquals(pixels, gateway.generate(ru.souz.llms.runtime.ImageGenerationInput("draw")).bytes)
+            }
+            assertEquals(listOf("gpt-image-1", "image-model", "gpt-6.1-sol"), requests.map { it.body["model"].asText() })
+            assertEquals("https://images.test/v1/images/generations", requests[1].url)
+            assertEquals(listOf("Bearer test-key", "Bearer named-key", "Bearer codex-test-token"), requests.map { it.authorization })
+            assertFailsWith<IllegalArgumentException> {
+                imageGateway("unknown", models, settings, clients, CodexOAuthService(settings, http), fixture.api, null)
+            }
+        }
+    }
+
+    @Test
     fun `raw routes preserve IDs across providers retries and stream accounting`() = runTest {
         val requests = mutableListOf<Pair<LlmProvider, LLMRequest.Chat>>()
         val delays = mutableListOf<Long>()
