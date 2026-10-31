@@ -18,7 +18,6 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import ru.souz.backend.channels.ChannelDeliveryService
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.events.bus.AgentEventBus
@@ -57,12 +56,15 @@ class BackendChannelToolsTest {
                 assertTrue(skill.invoke(call, meta).content.contains("client_tool_busy"))
                 assertTrue(registry.isEmpty())
 
-                val sync = PersonalitySync(mockk(), ChannelDeliveryService(chats, mockk(), events), events,
+                val sync = PersonalitySync(mockk(), chats, events,
                     LiveClientToolDispatcher(registry, events))
                 for (hasFallback in listOf(true, false)) {
-                    val receivingChat = if (hasFallback) target.copy(id = UUID.randomUUID()) else target
+                    val receivingChat = if (hasFallback) target.copy(id = UUID.randomUUID(), clientType = "mobile_app") else target
                     val receiver = if (hasFallback) bus.subscribe(target.userId, receivingChat.id) else subscription
-                    coEvery { chats.getByIds(any()) } returns listOf(target, receivingChat).distinct()
+                    coEvery { chats.clientToolChannels(target.userId) } returns listOf(target, receivingChat).distinct().map {
+                        ClientToolChannel(it, listOf(ClientToolDefinition(PERSONALITY_SYNC_COMMAND,
+                            "Synchronize personality", ru.souz.llms.LLMRequest.Parameters("object"))), discoveryComplete = false)
+                    }
                     try {
                         val started = testScheduler.currentTime
                         val syncing = async(start = CoroutineStart.UNDISPATCHED) {

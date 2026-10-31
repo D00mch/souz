@@ -101,8 +101,8 @@ class BackendPersonalityE2eTest {
     @Test
     fun `Orion snapshots prefer the source fall back when offline and reconnect without replay`() =
         backendE2eTest("personality_sync", llm = personalityApi()) {
-            val source = createPublicChat(owner)
-            val other = createPublicChat(owner, "other")
+            val source = createPublicChat(owner, tools = clientToolsJson(PERSONALITY_SYNC_COMMAND))
+            val other = createPublicChat(owner, "other", clientToolsJson(PERSONALITY_SYNC_COMMAND))
             withPublicSocket(other) { fallback ->
                 acknowledge(fallback, snapshot(fallback), null, 1)
                 withPublicSocket(source) { socket ->
@@ -128,11 +128,97 @@ class BackendPersonalityE2eTest {
                 }
             }
             turn(source, "reset")
-            assertEquals("pending", toolResult()["sync"].asText())
+            assertEquals("skipped", toolResult()["sync"].asText())
             withPublicSocket(source) { socket -> acknowledge(socket, snapshot(socket), null, 4) }
             for (chat in listOf(source, other)) {
                 val events = client.get(BackendHttpRoutes.chatEvents(chat)) { trusted(owner) }.jsonBody()["items"]
                 assertTrue(events.none { it.path("payload").path("name").asText() == PERSONALITY_SYNC_COMMAND })
+            }
+        }
+
+    @Test
+    fun `an undeclared source uses a declaring receiver without broadcasting or exposing the control`() =
+        backendE2eTest("personality_declared", llm = personalityApi()) {
+            val source = createPublicChat(owner)
+            val provider = createPublicChat(owner, "orion", clientToolsJson(PERSONALITY_SYNC_COMMAND))
+            withPublicSocket(provider) { device ->
+                acknowledge(device, snapshot(device), null, 1)
+                withPublicSocket(source) { bot ->
+                    coroutineScope {
+                        val changing = async { turn(source, "brief") }
+                        acknowledge(device, snapshot(device), "brief", 2)
+                        changing.await()
+                    }
+                    assertEquals("synced", toolResult()["sync"].asText())
+                    assertFalse(PERSONALITY_SYNC_COMMAND in llm.requests.last().messages.first().content)
+                    // Read raw frames: the common reader acknowledges personality commands automatically.
+                    bot.send(Frame.Text(historyFrame(source, "barrier", "user", "passive context")))
+                    assertEquals("ack", readRawJson(bot)["kind"].asText())
+                }
+            }
+        }
+
+    @Test
+    fun `unknown support requires discovery before saving and survives restart without rediscovery`() {
+        val schema = newPostgresSchema("personality_discovery")
+        var source = ""
+        backendE2eTest("personality_discovery_seed", schema = schema, llm = personalityApi()) {
+            source = createPublicChat(owner)
+            withPublicSocket(source) { socket ->
+                socket.send(Frame.Text(historyFrame(source, "ready", "user", "Connection ready")))
+                assertEquals("ack", readRawJson(socket)["kind"].asText())
+                turn(source, "brief")
+                val rejected = toolResult()
+                assertFalse(rejected["saved"].asBoolean())
+                assertEquals("client_tool_discovery_required", rejected["error"]["code"].asText())
+                val instruction = rejected["error"]["message"].asText()
+                assertTrue(source in instruction)
+                assertTrue("retry personality.update with the same arguments" in instruction)
+                assertTrue("hidden from discovery output" in instruction)
+                assertEquals(1, settings()["personalityRevision"].asLong())
+                assertTrue(settings()["personalityPrompt"].isNull)
+                assertTrue(llm.requests.none { it.messages.first().content == PERSONALITY_VALIDATION_PROMPT })
+                discover(socket, source, clientToolsJson(PERSONALITY_SYNC_COMMAND))
+                assertEquals(0, toolResult()["tools"].size())
+                coroutineScope {
+                    val changing = async { turn(source, "brief") }
+                    acknowledge(socket, snapshot(socket), "brief", 2)
+                    changing.await()
+                }
+                assertEquals("synced", toolResult()["sync"].asText())
+                assertEquals(2, settings()["personalityRevision"].asLong())
+                assertEquals(1, llm.requests.count { it.messages.first().content == PERSONALITY_VALIDATION_PROMPT })
+            }
+        }
+        backendE2eTest("personality_discovery_restart", schema = schema, llm = personalityApi()) {
+            withPublicSocket(source) { socket ->
+                // A saved discovery is sufficient for reconnect synchronization after restart.
+                acknowledge(socket, snapshot(socket), "brief", 2)
+                coroutineScope {
+                    val changing = async { turn(source, "captain") }
+                    acknowledge(socket, snapshot(socket), "captain", 3)
+                    changing.await()
+                }
+                assertEquals("synced", toolResult()["sync"].asText())
+                assertEquals(3, settings()["personalityRevision"].asLong())
+            }
+        }
+    }
+
+    @Test
+    fun `completed empty catalogue saves without a receiver and does not rediscover`() =
+        backendE2eTest("personality_empty_catalogue", llm = personalityApi()) {
+            val source = createPublicChat(owner)
+            withPublicSocket(source) { socket ->
+                socket.send(Frame.Text(historyFrame(source, "ready", "user", "Connection ready")))
+                assertEquals("ack", readRawJson(socket)["kind"].asText())
+                discover(socket, source, "[]")
+                for ((index, style) in listOf("brief", "captain").withIndex()) {
+                    turn(source, style)
+                    assertTrue(toolResult()["saved"].asBoolean())
+                    assertEquals("skipped", toolResult()["sync"].asText())
+                    assertEquals(index + 2L, settings()["personalityRevision"].asLong())
+                }
             }
         }
 
@@ -155,6 +241,17 @@ class BackendPersonalityE2eTest {
         }
     }
 
+    private suspend fun BackendE2eScope.discover(socket: DefaultClientWebSocketSession, chat: String, tools: String) =
+        withTimeout(15_000) {
+            coroutineScope {
+                val discovering = async { turn(chat, "discover:$chat") }
+                var frame: JsonNode
+                do { frame = readRawJson(socket) } while (frame.path("payload").path("name").asText() != "orion.tools.list")
+                socket.send(Frame.Text(toolResultFrame(frame, "succeeded", mapOf("tools" to json.readTree(tools)))))
+                discovering.await()
+            }
+        }
+
     private suspend fun BackendE2eScope.patch(body: String) {
         assertEquals(200, client.patch(BackendHttpRoutes.SETTINGS) { trusted(owner); jsonBody(body) }.status.value)
     }
@@ -169,7 +266,12 @@ class BackendPersonalityE2eTest {
     }
     private suspend fun BackendE2eScope.snapshot(socket: DefaultClientWebSocketSession): JsonNode = withTimeout(15_000) {
         var frame: JsonNode
-        do { frame = readRawJson(socket) } while (frame.path("payload").path("name").asText() != PERSONALITY_SYNC_COMMAND)
+        do {
+            frame = readRawJson(socket)
+            if (frame.path("type").asText() == "tool.call.started") {
+                assertEquals(PERSONALITY_SYNC_COMMAND, frame["payload"]["name"].asText())
+            }
+        } while (frame.path("payload").path("name").asText() != PERSONALITY_SYNC_COMMAND)
         frame
     }
     private suspend fun BackendE2eScope.acknowledge(socket: DefaultClientWebSocketSession, frame: JsonNode, prompt: String?, revision: Long, failed: Boolean = false) {
@@ -206,6 +308,9 @@ private fun personalityApi(before: suspend (String, String) -> Unit = { _, _ -> 
             wish.startsWith("also ") -> mapOf("action" to "append", "request" to wish)
             else -> mapOf("request" to wish)
         }
-        scriptedSkillReply(body, listOf(SkillScript(PersonalityTool.NAME, args)))
+        val script = if (wish.startsWith("discover:"))
+            SkillScript("orion.tools.list", mapOf("channelId" to wish.substringAfter(':')))
+        else SkillScript(PersonalityTool.NAME, args)
+        scriptedSkillReply(body, listOf(script))
     }
 }

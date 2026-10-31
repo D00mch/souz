@@ -8,7 +8,7 @@ Complexity routing admits only confident tool-free turns to the light model. Pub
 
 Backend uses one startup-validated `CONTEXT_SIZE` (minimum 24,000 tokens) for all models, including summaries. Compaction and input validation share an 80% limit independent of output limits; context size is not a user or execution setting.
 
-Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts and synchronize revisioned snapshots to Orion.
+Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts. Revisioned snapshots go to the current connected channel if it declares `prompt.personality.set`, otherwise to another declaring channel. With no known receiver, unknown connected catalogues require parent discovery before mutation; known absence saves with synchronization skipped.
 
 Backend [attachment contracts](backend/docs/attachments.md) carry owner-scoped file references through messages, tools and sessions. Public WebSocket attachments use opaque bucket keys stored in `object_key`, independently of internal file UUIDs. Import completed uploads before acceptance, resolve accepted retries before storage access, and persist reply descriptors for replay.
 

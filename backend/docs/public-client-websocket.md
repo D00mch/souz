@@ -3,7 +3,8 @@
 ## Invariant
 
 Orion personality synchronization shares live command dispatch and result waiting with cross-channel
-Skills. Its revisioned snapshots are server-driven and independent of tool discovery; see
+Skills. Channels declare support through creation or discovery; the command is hidden from model tools.
+Revisioned snapshots prefer the current eligible channel and otherwise use another eligible receiver; see
 [personality settings](personality-settings.md).
 
 `POST /v1/chats` and `chat.create` share creation idempotency by `(user_id, request_id)` and stores the normalized payload hash on `chats`. Both socket endpoints allow one active thread per chat, where `agent_executions.id` is the public `threadId`. `message.submit` alone selects a thread: an omitted `threadId` selects the active thread and creates one only when none exists. `history.append` is threadless durable chat context. `message.submit`, `history.append`, and `thread.cancel` share `(chat_id, request_id)` in `client_requests`; `tool.result` uses the client `tool_calls` row.

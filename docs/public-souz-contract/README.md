@@ -2,9 +2,11 @@
 
 Draft contract for Souz Cloud. Exact fields are in [OpenAPI](openapi.yaml); [happy-path.jsonl](examples/happy-path.jsonl) shows two users' chats, a creation retry, history before and during execution, continued and new threads, client tools, a forwarded message, unsubscribe and resubscribe with replay per chat. Each line is a complete WebSocket frame: Souz sends `ack`, `status` and `event`; the client sends the other kinds. Local setup: [Postman](postman/) / [Bruno](bruno/).
 
-Orion handles server-driven [`prompt.personality.set`](../../backend/docs/personality-settings.md) snapshots
-on subscription/reconnection and after a user style change. These live commands use `seq:null` and the
-normal `tool.result` acknowledgement, independently of the tool catalogue.
+Channels supporting server-driven [`prompt.personality.set`](../../backend/docs/personality-settings.md)
+declare it through chat creation or discovery. The command remains hidden from model tools. Style changes
+prefer the current eligible connected channel, otherwise another eligible receiver; no receiver means
+synchronization is skipped. Supporting channels also receive the saved snapshot on subscription/reconnection.
+These live commands use `seq:null` and the normal `tool.result` acknowledgement.
 
 ## Connection
 

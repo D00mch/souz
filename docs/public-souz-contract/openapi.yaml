@@ -1128,6 +1128,10 @@ components:
         createdAt:
           $ref: "#/components/schemas/DateTime"
     PersonalitySetArguments:
+      description: >-
+        Server-driven snapshot for a channel declaring prompt.personality.set through creation or discovery.
+        Prefer the current eligible connected channel, otherwise another eligible receiver. The command is
+        hidden from model tools; supporting channels also receive the snapshot on subscription/reconnection.
       type: object
       additionalProperties: false
       required: [prompt, revision]

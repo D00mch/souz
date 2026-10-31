@@ -30,6 +30,7 @@ internal class PersonalityTool(
         "Save a lasting communication style for text and voice. update replaces the entire style (default); " +
             "append requires an explicit request to add or keep the rest; reset clears it. Pass the user's whole wish. " +
             "An independent validator checks it before saving. saved=true confirms storage; sync=synced confirms Orion. " +
+            "client_tool_discovery_required means nothing was saved: discover the indicated channel, then retry this operation. " +
             "Never repeat a saved mutation to retry delivery.",
         LLMRequest.Parameters("object", mapOf(
             "action" to LLMRequest.Property("string", enum = listOf("update", "append", "reset")),
@@ -48,6 +49,7 @@ internal class PersonalityTool(
         }
         if (meta.userId.isBlank()) return failure("personality_context_missing")
         try {
+            sync.discoveryRequired(meta.userId, uuid(meta.conversationId))?.let { return failure(it.code, it.message) }
             repeat(3) {
                 val previous = repository.personality(meta.userId)
                 if (previous.revision == PersonalitySnapshot.MAX_REVISION) return failure("personality_revision_exhausted")
