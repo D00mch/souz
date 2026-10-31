@@ -520,7 +520,7 @@ SOUZ_VK_POLLING_MAX_CONCURRENCY=4
 # Required when enabled; Base64 of 32 random bytes
 VK_TOKEN_ENCRYPTION_KEY=...
 
-# Scheduled tasks: planned runs per user per day, concurrent runs per process, run timeout
+# Scheduled tasks: planned runs per user per day, concurrent runs per process (one per user), run timeout
 # The daily value also caps launches per user per UTC day.
 SOUZ_SCHEDULED_TASK_RUNS_PER_USER_PER_DAY=100
 SOUZ_SCHEDULED_TASK_CONCURRENT_RUNS=16

@@ -1,21 +1,25 @@
 package ru.souz.backend.scheduler
 
+import io.micrometer.core.instrument.Gauge
 import java.time.Clock
+import java.time.Duration
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.backend.channels.tool.SEND_MESSAGE_TO_CHANNEL_TOOL_NAME
 import ru.souz.backend.channels.tool.ToolSendMessageToChannel
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRepository
-import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.service.AgentExecutionLauncher
 import ru.souz.backend.execution.service.AgentExecutionService
+import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.jobs.JobRun
 
 /** Client type of the hidden technical chat that each scheduled occurrence runs in. */
@@ -32,10 +36,8 @@ data class ScheduledTaskConfig(
 }
 
 /**
- * Job handler for scheduled tasks. It starts the agent in a hidden chat and returns, so the
- * sequential job worker keeps claiming due tasks while up to [ScheduledTaskConfig.concurrentRuns]
- * executions run. When every slot is busy, the handler waits and the next tasks stay in the queue.
- * A start failure removes the occurrence's empty hidden chat and is rethrown for the job service's retries.
+ * Starts executions in hidden chats without awaiting completion. The worker calls [awaitCapacity],
+ * claims, and [run] sequentially to enforce one execution per owner and the process-wide limit.
  */
 internal class ScheduledTaskRunner(
     private val chats: ChatRepository,
@@ -44,50 +46,58 @@ internal class ScheduledTaskRunner(
     private val scope: CoroutineScope,
     private val config: ScheduledTaskConfig,
     private val clock: Clock,
+    metrics: BackendMetrics,
 ) {
-    private val slots = Semaphore(config.concurrentRuns)
+    private val running = MutableStateFlow<Map<UUID, String>>(emptyMap())
+    private val dispatchDelay = metrics.registry.timer("souz.scheduled.task.dispatch.delay")
+
+    init {
+        Gauge.builder("souz.scheduled.task.slots", running) { it.value.size.toDouble() }
+            .tag("state", "busy").register(metrics.registry)
+        Gauge.builder("souz.scheduled.task.slots", running) { (config.concurrentRuns - it.value.size).toDouble() }
+            .tag("state", "free").register(metrics.registry)
+    }
+
+    /** Waits for global capacity and returns busy owners to skip; it does not reserve a slot. */
+    suspend fun awaitCapacity(): Set<String> = running.first { it.size < config.concurrentRuns }.values.toSet()
 
     @Suppress("SuspendFunSwallowedCancellation") // Dispatch errors, cancellation included, are rethrown after non-cancellable cleanup.
     suspend fun run(job: JobRun) {
-        slots.acquire()
-        var execution: AgentExecution? = null
-        try {
-            val now = clock.instant()
-            val chat = chats.getOrCreate(
-                Chat(
-                    id = job.occurrenceId("chat"), userId = job.userId, title = "Scheduled task: ${job.title}",
-                    archived = false, createdAt = now, updatedAt = now, clientType = SCHEDULED_TASK_CHAT_TYPE,
-                )
+        val now = clock.instant()
+        val chat = chats.getOrCreate(
+            Chat(
+                id = job.occurrenceId("chat"), userId = job.userId, title = "Scheduled task: ${job.title}",
+                archived = false, createdAt = now, updatedAt = now, clientType = SCHEDULED_TASK_CHAT_TYPE,
             )
-            execution = try {
-                executions.executeChatTurnIfAbsent(
-                    job.userId, chat.id, scheduledTaskInput(job), job.occurrenceId("execution"), config.runsPerUserPerDay,
-                    requiredTools = if (job.payload.path("requiresDelivery").asBoolean(true)) {
-                        setOf(SEND_MESSAGE_TO_CHANNEL_TOOL_NAME)
-                    } else emptySet(),
-                )
-            } catch (error: Exception) {
-                // A rejected dispatch leaves no execution, so its hidden chat would stay empty forever.
-                try {
-                    withContext(NonCancellable) { chats.deleteEmptyScheduledChat(job.userId, chat.id) }
-                } catch (cleanupError: Exception) {
-                    error.addSuppressed(cleanupError)
-                }
-                throw error
+        )
+        val started = try {
+            executions.executeChatTurnIfAbsent(
+                job.userId, chat.id, scheduledTaskInput(job), job.occurrenceId("execution"), config.runsPerUserPerDay,
+                requiredTools = if (job.payload.path("requiresDelivery").asBoolean(true)) {
+                    setOf(SEND_MESSAGE_TO_CHANNEL_TOOL_NAME)
+                } else emptySet(),
+            )
+        } catch (error: Exception) {
+            // A rejected dispatch leaves no execution, so its hidden chat would stay empty forever.
+            try {
+                withContext(NonCancellable) { chats.deleteEmptyScheduledChat(job.userId, chat.id) }
+            } catch (cleanupError: Exception) {
+                error.addSuppressed(cleanupError)
             }
-        } finally {
-            if (execution == null) slots.release()
-        }
-        val started = execution ?: return
+            throw error
+        } ?: return
+        running.update { it + (started.id to job.userId) }
+        dispatchDelay.record(maxOf(Duration.ZERO, Duration.between(job.scheduledAt, clock.instant())))
         // Undispatched start enters the finally block even if the application scope is shutting down.
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
-                if (withTimeoutOrNull(config.runTimeoutMillis) { launcher.join(started.id) } == null) {
+                withTimeoutOrNull(config.runTimeoutMillis) { launcher.join(started.id) }
+            } finally {
+                withContext(NonCancellable) {
                     launcher.cancel(started.id)
                     launcher.join(started.id)
+                    running.update { it - started.id }
                 }
-            } finally {
-                slots.release()
             }
         }
     }

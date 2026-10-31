@@ -194,7 +194,9 @@ fun backendDiModule(
                 metrics.historyMemory.bindDatabase(it)
             }
     }
-    bindSingleton { PostgresJobService(instance<HikariDataSource>()) }
+    bindSingleton {
+        PostgresJobService(instance<HikariDataSource>()).also { it.bindMetrics(instance<BackendMetrics>().registry) }
+    }
     bindSingleton<JobService> { instance<PostgresJobService>() }
     bindSingleton { PostgresReadinessProbe(instance<HikariDataSource>()) }
     bindSingleton<BackendServerPreferenceStore> {
@@ -553,6 +555,7 @@ fun backendDiModule(
             scope = instance<BackendApplicationScope>(),
             config = appConfig.scheduledTasks,
             clock = instance(),
+            metrics = instance(),
         )
     }
     bindSingleton {

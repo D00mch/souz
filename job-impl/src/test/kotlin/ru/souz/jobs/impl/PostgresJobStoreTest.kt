@@ -1,5 +1,6 @@
 package ru.souz.jobs.impl
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import java.time.Instant
 import java.time.OffsetDateTime
 import kotlin.test.Test
@@ -21,8 +22,9 @@ import ru.souz.jobs.JobStatus
 
 class PostgresJobStoreTest {
     @Test
-    fun `claim orders pending and recovered jobs while skipping future jobs and locked rows`() = jobTest { db, service ->
+    fun `claim orders pending and recovered jobs while skipping excluded owners future jobs and locked rows`() = jobTest { db, service ->
         service.create(schedule = JobSchedule.Once(Instant.parse("2035-01-01T00:00:00Z")))
+        val excluded = service.create(userId = "busy", schedule = JobSchedule.Once(Instant.parse("2019-01-01T00:00:00Z")))
         val oldest = service.create(schedule = JobSchedule.Once(Instant.parse("2020-01-01T00:00:00Z")))
         val later = service.create(schedule = JobSchedule.Once(Instant.parse("2020-01-02T00:00:00Z")))
         db.connection.use { lock ->
@@ -31,15 +33,24 @@ class PostgresJobStoreTest {
                 statement.setObject(1, oldest.id)
                 statement.executeQuery().use { assertTrue(it.next()) }
             }
-            assertEquals(later.id, service.store.claim()?.job?.id)
+            assertEquals(later.id, service.store.claim(setOf("busy"))?.job?.id)
             lock.rollback()
         }
         db.execute("update jobs set lease_until = clock_timestamp() - interval '1 second' where id = ?", later.id)
-        assertEquals(oldest.id, service.store.claim()?.job?.id)
-        val recovered = assertNotNull(service.store.claim())
+        assertEquals(oldest.id, service.store.claim(setOf("busy"))?.job?.id)
+        val recovered = assertNotNull(service.store.claim(setOf("busy")))
         assertEquals(later.id, recovered.job.id)
         assertEquals(2, recovered.job.attempts)
-        assertNull(service.store.claim())
+        assertNull(service.store.claim(setOf("busy")))
+        val registry = SimpleMeterRegistry()
+        service.bindMetrics(registry)
+        val oldestDue = registry.get("souz.jobs.oldest.due").gauge()
+        val pending = service.listJobs("busy").items.single()
+        assertEquals(JobStatus.PENDING, pending.status)
+        assertEquals(0, pending.attempts)
+        assertTrue(oldestDue.value() > 0.0, "Excluded owners still contribute to queue age.")
+        assertEquals(excluded.id, service.store.claim()?.job?.id)
+        assertEquals(0.0, oldestDue.value(), "Future jobs are not due.")
     }
 
     @Test
