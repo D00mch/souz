@@ -38,6 +38,7 @@ import ru.souz.backend.http.invalidV1Request
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.settings.service.UserSettingsOverrides
+import ru.souz.backend.storage.postgres.PostgresAttachmentRepository
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.FileContent
 
@@ -59,6 +60,7 @@ class AgentExecutionService internal constructor(
     private val hookStore: HookStore,
     private val hookConfig: HookConfig,
     private val waitingPhrases: WaitingPhrases,
+    private val attachmentRepository: PostgresAttachmentRepository? = null,
 ) {
     private val logger = LoggerFactory.getLogger(AgentExecutionService::class.java)
     private val hookSlots = Semaphore(hookConfig.concurrentExecutions)
@@ -387,6 +389,7 @@ class AgentExecutionService internal constructor(
             narrateSteps = execution.metadata[METADATA_NARRATE_STEPS] == "true",
             intermediateMessages = execution.metadata[METADATA_INTERMEDIATE_MESSAGES] != "false",
             waitingPhrases = waitingPhrases,
+            attachmentRepository = attachmentRepository,
         )
 
     private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution = withContext(NonCancellable) {

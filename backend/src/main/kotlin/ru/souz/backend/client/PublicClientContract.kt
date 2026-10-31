@@ -1,5 +1,7 @@
 package ru.souz.backend.client
 
+import com.fasterxml.jackson.annotation.JsonSetter
+import com.fasterxml.jackson.annotation.Nulls
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
@@ -112,7 +114,12 @@ data class ClientRequestMeta(
 
 data class MessageSubmitPayload(
     val device: ClientDevice,
-    val content: RecognizedTextContent,
+    @param:JsonSetter(nulls = Nulls.FAIL)
+    @get:JsonInclude(JsonInclude.Include.NON_NULL)
+    val content: RecognizedTextContent? = null,
+    @param:JsonSetter(nulls = Nulls.FAIL, contentNulls = Nulls.FAIL)
+    @get:JsonInclude(JsonInclude.Include.NON_EMPTY)
+    val attachments: List<ClientAttachment> = emptyList(),
     val meta: ClientRequestMeta? = null,
 )
 

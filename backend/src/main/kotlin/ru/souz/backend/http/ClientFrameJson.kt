@@ -85,7 +85,7 @@ private fun JsonProcessingException.toClientContractException(frame: JsonNode): 
 }
 
 private fun Class<*>.jsonTypeName(): String = when {
-    this == String::class.java -> "string"
+    this == String::class.java || isEnum -> "string"
     this == Boolean::class.java || this == Boolean::class.javaObjectType -> "boolean"
     isPrimitive || Number::class.java.isAssignableFrom(this) -> "number"
     isArray || Collection::class.java.isAssignableFrom(this) -> "array"
@@ -96,6 +96,7 @@ internal class InvalidClientFrameException(message: String) : RuntimeException(m
 
 internal val clientFrameMapper = jacksonObjectMapper { enable(KotlinFeature.StrictNullChecks) }
     .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+    .enable(DeserializationFeature.FAIL_ON_NUMBERS_FOR_ENUMS)
     .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
     .apply {
         coercionConfigFor(LogicalType.Textual)

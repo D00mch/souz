@@ -5,6 +5,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.UUID
+import ru.souz.backend.crypto.sha256Hex
 import kotlinx.coroutines.runBlocking
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
@@ -22,6 +23,24 @@ import ru.souz.backend.storage.postgres.postgresAppConfig
 import ru.souz.backend.storage.postgres.write
 
 internal object AttachmentMinio {
+    suspend fun upload(config: AttachmentStorageConfig, userId: String, name: String, bytes: ByteArray,
+        id: UUID = UUID.randomUUID(), objectKey: String = attachmentObjectKey(userId, id)): StoredAttachment {
+        val now = Instant.now()
+        val file = StoredAttachment(id, userId, name, attachmentMime(bytes, name), bytes.size.toLong(),
+            bytes.sha256Hex(), "ready", now, now, now.plus(ATTACHMENT_RETENTION), now.plus(ATTACHMENT_RETENTION), objectKey)
+        S3AttachmentObjects(config).use { it.put(file, bytes) }
+        return file
+    }
+
+    fun config(): AttachmentStorageConfig {
+        val id = UUID.randomUUID().toString()
+        return AttachmentStorageConfig(
+            endpoint = "http://${server.host}:${server.firstMappedPort}", bucket = "attachments-$id",
+            accessKey = "user-$id", secretKey = "attachment-user-secret",
+        ).also(::provision)
+    }
+
+
     // Public source build; pin the multi-platform index for both CI (amd64) and local arm64.
     // Build recipe: https://github.com/coollabsio/minio
     private const val IMAGE = "ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z" +

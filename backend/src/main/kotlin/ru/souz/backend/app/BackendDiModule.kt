@@ -425,6 +425,7 @@ fun backendDiModule(
             hookStore = instance(),
             hookConfig = appConfig.hooks,
             waitingPhrases = instance(),
+            attachmentRepository = instanceOrNull(),
         )
     }
     if (appConfig.featureFlags.telegramBot) {
@@ -504,6 +505,7 @@ fun backendDiModule(
             chatRepository = instance(),
             messageRepository = instance(),
             eventService = instance(),
+            attachmentRepository = instanceOrNull(),
         )
     }
     bindSingleton {
@@ -512,6 +514,7 @@ fun backendDiModule(
         PublicClientChannelProvider(
             chatRepository = instance(),
             deliveryService = instance(),
+            attachmentStorage = instanceOrNull(),
             isClaimedByAnotherProvider = { chatId ->
                 // Gated on the same flags TelegramChannelProvider/VkChannelProvider's registration
                 // is gated on below — otherwise a leftover Telegram/VK binding would hide a chat
@@ -582,6 +585,7 @@ fun backendDiModule(
             executionService = instance(),
             registry = instance(),
             applicationScope = instance<BackendApplicationScope>(),
+            attachmentStorage = instanceOrNull(),
         )
     }
     bindSingleton {

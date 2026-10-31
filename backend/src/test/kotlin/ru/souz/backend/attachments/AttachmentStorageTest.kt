@@ -222,7 +222,7 @@ class AttachmentStorageTest {
     }
 }
 
-private suspend fun assertAttachmentError(code: String, block: suspend () -> Unit) {
+internal suspend fun assertAttachmentError(code: String, block: suspend () -> Unit) {
     assertEquals(code, assertFailsWith<AttachmentException> { block() }.code)
 }
 
