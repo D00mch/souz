@@ -15,31 +15,71 @@ import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.backend.client.ClientToolDefinition
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMMessageRole
+import ru.souz.backend.personality.PERSONALITY_SYNC_COMMAND
 
 class BackendClientToolRegistrationE2eTest {
     private val definition = """{"name":"speaker.say","description":"Speak text","parameters":{"type":"object","properties":{"text":{"type":"string"},"volume":{"type":"integer"}},"required":["text","volume"],"additionalProperties":false}}"""
 
     @Test
-    fun `bundled defaults coexist with declarations and preserve schemas guidance and deadlines`() =
-        backendE2eTest("e2e_bundled_defaults") {
+    fun `server controls stay hidden after declaration and discovery without hiding ordinary client commands`() {
+        var provider = ""
+        val ordinary = "prompt.personality.preview"
+        val llm = E2eLlmApi { request ->
+            val turn = request.messages.drop(request.messages.indexOfLast { it.role == LLMMessageRole.user })
+            if (turn.any { it.role == LLMMessageRole.function }) reply(request, "Done")
+            else when (request.conversationPrompt().substringBefore(':')) {
+                "lookup" -> toolCallReply(request, "GetSkillByName", mapOf("skillId" to PERSONALITY_SYNC_COMMAND))
+                "invoke" -> toolCallReply(request, "RunSkillCommand", mapOf("skillId" to PERSONALITY_SYNC_COMMAND,
+                    "arguments" to mapOf("channelId" to provider, "prompt" to "bad", "revision" to 1)))
+                "delegate" -> toolCallReply(request, "SpawnSubagent", mapOf("task" to "Change personality",
+                    "skillIds" to listOf(PERSONALITY_SYNC_COMMAND)))
+                else -> toolCallReply(request, "RunSkillCommand", mapOf(
+                    "skillId" to if (request.conversationPrompt() == "discover") "orion.tools.list" else ordinary,
+                    "arguments" to mapOf("channelId" to provider)))
+            }
+        }
+        backendE2eTest("e2e_control_visibility", llm = llm) {
             val owner = UUID.randomUUID().toString()
-            val parameters = LLMRequest.Parameters(
-                "object", mapOf("query" to LLMRequest.Property("string")),
-                required = listOf("query"), additionalProperties = false,
-            )
+            val source = createPublicChat(owner)
+            val tools = clientToolsJson(PERSONALITY_SYNC_COMMAND, ordinary)
+            provider = createPublicChat(owner, "provider", tools)
+            withMultiChatSocket { socket ->
+                subscribe(socket, provider)
+                for (state in listOf("declared", "discovered")) {
+                    if (state == "discovered") {
+                        assertEquals("thread.completed", answer(socket, submit(socket, source, owner, "discover"),
+                            """{"tools":$tools}""")["type"].asText())
+                        assertEquals(listOf(ordinary), output()["tools"].map { it["name"].asText() })
+                    }
+                    for (operation in listOf("lookup", "invoke", "delegate")) {
+                        assertEquals("thread.completed", submit(socket, source, owner, "$operation:$state")["type"].asText())
+                        val request = llm.requests.last()
+                        assertFalse(PERSONALITY_SYNC_COMMAND in request.messages.first().content)
+                        val result = request.messages.last { it.role == LLMMessageRole.function }
+                        assertEquals("skill_not_found", json.readTree(result.content)["error"]["code"].asText())
+                    }
+                    val call = submit(socket, source, owner, "ordinary:$state")
+                    assertEquals(ordinary, call["payload"]["name"].asText())
+                    assertEquals("thread.completed", answer(socket, call)["type"].asText())
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `only discovery is injected and declared tools retain their schemas guidance and deadlines`() =
+        backendE2eTest("e2e_declared_tools") {
+            val owner = UUID.randomUUID().toString()
+            val parameters = LLMRequest.Parameters("object", mapOf("query" to LLMRequest.Property("string")),
+                required = listOf("query"), additionalProperties = false)
             val tools = json.writeValueAsString(listOf(ClientToolDefinition("device.media.open", "Custom media description", parameters)))
-            val cases = listOf<Triple<String, Map<String, Any>, Long>>(
-                Triple("user.ask", mapOf("question" to "Which genre?"), 300),
-                Triple("device.media.open", mapOf("query" to "The Thing"), 60),
-                Triple("device.mcp.list_devices", emptyMap(), 30),
-                Triple("device.mcp.list_tools", mapOf("target" to "speaker"), 30),
-                Triple("device.mcp.call_tool", mapOf("name" to "set_volume", "arguments" to mapOf("level" to 7)), 60),
-                Triple("web.search", mapOf("query" to "Kotlin release"), 60),
-                Triple("orion.tools.list", emptyMap(), 30),
-            )
             val chat = createPublicChat(owner, tools = tools)
             withMultiChatSocket { socket ->
-                for ((name, arguments, seconds) in cases) {
+                for ((name, arguments, seconds) in listOf(
+                    Triple("device.media.open", mapOf("query" to "The Thing"), 60L),
+                    Triple("orion.tools.list", emptyMap(), 30L),
+                )) {
                     llm.requestSkillForPrompt(name, name, arguments)
                     val before = Instant.now()
                     val started = submit(socket, chat, owner, name)
@@ -54,82 +94,77 @@ class BackendClientToolRegistrationE2eTest {
                     if (name == "device.media.open") {
                         assertTrue(detail["description"].asText().startsWith("Custom media description\n\n"))
                         assertTrue("# Open media" in detail["description"].asText())
+                        assertTrue("Omit routing `channelId`" in detail["description"].asText())
+                        assertFalse("active client device" in detail["description"].asText())
                         assertEquals(json.valueToTree<JsonNode>(parameters), detail["inputSchema"])
-                    } else if (name != "orion.tools.list") {
-                        assertEquals(json.valueToTree<JsonNode>(LLMRequest.Parameters("object")), detail["inputSchema"])
                     }
-                    val result = if (name == "orion.tools.list") """{"tools":[]}""" else """{"ok":true}"""
-                    assertEquals("thread.completed", answer(socket, started, result)["type"].asText())
+                    assertEquals("thread.completed", answer(socket, started,
+                        if (name == "orion.tools.list") """{"tools":[]}""" else """{"ok":true}""")["type"].asText())
                 }
                 llm.requestSkillForPrompt("invalid schema", "device.media.open", mapOf("text" to "wrong schema"))
                 assertEquals("thread.completed", submit(socket, chat, owner, "invalid schema")["type"].asText())
                 assertEquals("mcp_invalid_arguments", output()["error"]["code"].asText())
             }
+            val otherOwner = UUID.randomUUID().toString()
+            val empty = createPublicChat(otherOwner)
             withMultiChatSocket { socket ->
-                socket.send(Frame.Text("""{"kind":"chat.create","requestId":"empty-tools","payload":{"userId":"$owner","tools":[]}}"""))
-                val created = readJson(socket)
-                assertEquals("accepted", created["status"].asText())
-                llm.requestSkillForPrompt("empty array", "device.media.open", emptyMap(), "orion.call" to emptyMap())
-                val started = submit(socket, created["chatId"].asText(), owner, "empty array")
-                assertEquals("device.media.open", started["payload"]["name"].asText())
-                assertEquals("thread.completed", answer(socket, started)["type"].asText())
-                assertEquals("skill_not_found", output()["error"]["code"].asText())
+                for (name in listOf("device.media.open", "user.ask", "web.search", "orion.call")) {
+                    llm.requestSkillForPrompt(name, name, emptyMap())
+                    assertEquals("thread.completed", submit(socket, empty, otherOwner, name)["type"].asText())
+                    assertEquals("skill_not_found", output()["error"]["code"].asText())
+                    assertTrue("orion.tools.list" in llm.requests.last().messages.first().content)
+                }
+                llm.requestSkillForPrompt("empty discovery", "orion.tools.list", emptyMap())
+                val started = submit(socket, empty, otherOwner, "empty discovery")
+                assertEquals("thread.completed", answer(socket, started, """{"tools":[]}""")["type"].asText())
+                llm.requestSkillForPrompt("discover questions", "orion.tools.list", emptyMap(),
+                    "user.ask" to mapOf("question" to "Continue?"))
+                val discovery = submit(socket, empty, otherOwner, "discover questions")
+                val before = Instant.now()
+                val question = answer(socket, discovery, """{"tools":${clientToolsJson("user.ask")}}""")
+                val after = Instant.now()
+                assertEquals("user.ask", question["payload"]["name"].asText())
+                assertEquals("Continue?", question["payload"]["arguments"]["question"].asText())
+                val deadline = Instant.parse(question["payload"]["deadlineAt"].asText())
+                assertTrue(deadline >= before.plusSeconds(300) && deadline <= after.plusSeconds(300))
+                assertEquals("thread.completed", answer(socket, question, """{"answer":"Yes"}""")["type"].asText())
             }
         }
 
     @Test
-    fun `discovery refreshes immediately binds its channel and preserves the catalogue on invalid results`() =
+    fun `discovery belongs to its provider and is shared with empty chats without overriding other providers`() =
         backendE2eTest("e2e_discovery_refresh") {
             val owner = UUID.randomUUID().toString()
-            val source = createPublicChat(owner, tools = "[$definition]")
-            val first = createPublicChat(owner, "first")
+            val source = createPublicChat(owner)
+            val first = createPublicChat(owner, "first", tools = "[$definition]")
             val second = createPublicChat(owner, "second")
-            val clock = """{"name":"current_time","description":"Current time","parameters":{"type":"object","additionalProperties":false}}"""
+            val clock = """{"name":"current_time","description":"${"Current time ".repeat(750)}","parameters":{"type":"object","additionalProperties":false}}"""
             val speaker = definition.replace("Speak text", "Discovered speaker")
             val speech = mapOf<String, Any>("text" to "hello", "volume" to 1)
             withMultiChatSocket { socket ->
-                for (channel in listOf(first, second)) {
-                    socket.send(Frame.Text("""{"kind":"chat.subscribe","chatId":"$channel","requestId":"subscribe-$channel"}"""))
-                    assertEquals("accepted", readJson(socket)["status"].asText())
-                }
-                llm.requestSkillForPrompt("local discovery", "orion.tools.list", emptyMap(), "current_time" to emptyMap())
-                val discovery = submit(socket, source, owner, "local discovery")
-                assertEquals("orion.tools.list", discovery["payload"]["name"].asText())
-                val large = """{"tools":[${clock.replace("Current time", "x".repeat(9_000))}]}"""
-                val local = answer(socket, discovery, large)
-                assertEquals("current_time", local["payload"]["name"].asText())
-                assertEquals(source, local["chatId"].asText())
-                assertFalse(local["seq"].isNull)
-                assertTrue(output().has("knowledgeId"))
-                assertEquals("thread.completed", answer(socket, local)["type"].asText())
-
-                llm.requestSkillForPrompt("remote discovery", "orion.tools.list", mapOf("channelId" to first), "speaker.say" to speech)
+                subscribe(socket, first, second)
+                llm.requestSkillForPrompt("remote discovery", "orion.tools.list", mapOf("channelId" to first), "speaker.say" to (speech + ("channelId" to first)))
                 val remote = submit(socket, source, owner, "remote discovery")
                 assertEquals(first, remote["chatId"].asText())
                 assertEquals(json.readTree("{}"), remote["payload"]["arguments"])
                 val spoken = answer(socket, remote, """{"tools":[$clock,$speaker]}""")
+                assertTrue(output().has("knowledgeId"))
                 assertEquals(first, spoken["chatId"].asText())
                 assertTrue(spoken["seq"].isNull)
                 assertEquals(json.valueToTree<JsonNode>(speech), spoken["payload"]["arguments"])
-                val detail = json.readTree(llm.requests.last().messages.last { it.name == "GetSkillByName" }.content)["skill"]
-                assertEquals("Discovered speaker", detail["description"].asText())
                 assertEquals("thread.completed", answer(socket, spoken)["type"].asText())
-
-                val failures = listOf(
+                for ((failure, result) in listOf(
                     "strict" to """{"tools":[],"unknown":true}""",
                     "self" to """{"tools":[${clock.replace("current_time", "orion.tools.list")}]}""",
                     "transport" to "{}",
-                    "storage" to """{"tools":[$clock]}""",
-                )
-                for ((failure, result) in failures) {
+                    "storage" to """{"tools":[]}""",
+                )) {
                     val prompt = "$failure refresh"
-                    llm.requestSkillForPrompt(prompt, "orion.tools.list", mapOf("channelId" to second), "current_time" to emptyMap())
+                    llm.requestSkillForPrompt(prompt, "orion.tools.list", mapOf("channelId" to first), "current_time" to mapOf("channelId" to first))
                     val refresh = submit(socket, source, owner, prompt)
-                    assertEquals(second, refresh["chatId"].asText())
                     if (failure == "storage") backend.sql { connection ->
                         connection.createStatement().use { it.execute(
-                            "alter table chats add constraint reject_discovery check (discovered_client_tools->>'channelId' <> '$second') not valid",
-                        ) }
+                            "alter table chats add constraint reject_discovery check (discovered_client_tools->>'channelId' <> '$first') not valid") }
                     }
                     val retained = try {
                         answer(socket, refresh, result, errorCode = "client_tool_failed".takeIf { failure == "transport" })
@@ -138,45 +173,76 @@ class BackendClientToolRegistrationE2eTest {
                             connection.createStatement().use { it.execute("alter table chats drop constraint reject_discovery") }
                         }
                     }
-                    val expected = if (failure == "strict" || failure == "self") "invalid_client_tool_catalogue" else "client_tool_failed"
-                    assertEquals(expected, output()["error"]["code"].asText())
+                    assertEquals(if (failure == "strict" || failure == "self") "invalid_client_tool_catalogue" else "client_tool_failed",
+                        output()["error"]["code"].asText())
                     assertEquals("current_time", retained["payload"]["name"].asText())
                     assertEquals(first, retained["chatId"].asText())
                     assertEquals("thread.completed", answer(socket, retained)["type"].asText())
                 }
-                llm.requestSkillForPrompt("override binding", "current_time", mapOf("channelId" to second))
-                assertEquals("thread.completed", submit(socket, source, owner, "override binding")["type"].asText())
-                assertEquals("client_context_mismatch", output()["error"]["code"].asText())
-
-                llm.requestSkillForPrompt(
-                    "replace", "orion.tools.list", mapOf("channelId" to second),
-                    "orion.call" to mapOf("text" to "stop", "volume" to 1), "current_time" to emptyMap(),
-                )
-                val replacement = submit(socket, source, owner, "replace")
-                val orion = answer(socket, replacement, """{"tools":[${speaker.replace("speaker.say", "orion.call")}]}""")
-                assertEquals(second, orion["chatId"].asText())
-                assertEquals("orion.call", orion["payload"]["name"].asText())
-                assertEquals("Discovered speaker", json.readTree(llm.requests.last().messages.last { it.name == "GetSkillByName" }.content)["skill"]["description"].asText())
-                assertEquals("thread.completed", answer(socket, orion)["type"].asText())
-                assertEquals("skill_not_found", output()["error"]["code"].asText())
-
-                llm.requestSkillForPrompt(
-                    "empty refresh", "orion.tools.list", mapOf("channelId" to second),
-                    "speaker.say" to speech, "device.media.open" to mapOf("query" to "The Thing"), "orion.call" to emptyMap(),
-                )
-                val empty = submit(socket, source, owner, "empty refresh")
-                val declared = answer(socket, empty, """{"tools":[]}""")
-                assertEquals(source, declared["chatId"].asText())
+                // Clearing another channel cannot clear the first channel's discovery.
+                llm.requestSkillForPrompt("clear other", "orion.tools.list", mapOf("channelId" to second), "current_time" to mapOf("channelId" to first))
+                val retained = answer(socket, submit(socket, source, owner, "clear other"), """{"tools":[]}""")
+                assertEquals(first, retained["chatId"].asText())
+                assertEquals("thread.completed", answer(socket, retained)["type"].asText())
+                llm.requestSkillForPrompt("wrong provider", "current_time", mapOf("channelId" to second))
+                assertEquals("thread.completed", submit(socket, source, owner, "wrong provider")["type"].asText())
+                assertEquals("client_tool_unavailable", output()["error"]["code"].asText())
+                llm.requestSkillForPrompt("clear provider", "orion.tools.list", mapOf("channelId" to first), "speaker.say" to (speech + ("channelId" to first)),
+                    "current_time" to mapOf("channelId" to first))
+                val declared = answer(socket, submit(socket, source, owner, "clear provider"), """{"tools":[]}""")
+                assertEquals(first, declared["chatId"].asText())
                 assertEquals("speaker.say", declared["payload"]["name"].asText())
-                assertEquals("Speak text", json.readTree(llm.requests.last().messages.last { it.name == "GetSkillByName" }.content)["skill"]["description"].asText())
-                val bundled = answer(socket, declared)
-                assertEquals(source, bundled["chatId"].asText())
-                assertEquals("device.media.open", bundled["payload"]["name"].asText())
-                assertEquals("thread.completed", answer(socket, bundled)["type"].asText())
+                assertEquals("thread.completed", answer(socket, declared)["type"].asText())
                 assertEquals("skill_not_found", output()["error"]["code"].asText())
             }
         }
 
+    @Test
+    fun `equal definitions have one schema and conflicts hide the entire name until refreshed`() =
+        backendE2eTest("e2e_catalogue_conflicts") {
+            val owner = UUID.randomUUID().toString()
+            val source = createPublicChat(owner)
+            val first = createPublicChat(owner, "first", "[$definition,${definition.replace("speaker.say", "orion.tools.list")}]")
+            val reordered = definition.replace("[\"text\",\"volume\"]", "[\"volume\",\"text\"]")
+            val second = createPublicChat(owner, "second", "[$reordered,${definition.replace("speaker.say", "orion.tools.list").replace("Speak text", "Different discovery declaration")}]")
+            // Foreign conflicting definitions must never affect this user's catalogue.
+            createPublicChat(UUID.randomUUID().toString(), tools = "[${definition.replace("Speak text", "Foreign")}]")
+            val speech = mapOf<String, Any>("text" to "hello", "volume" to 1)
+            withMultiChatSocket { socket ->
+                subscribe(socket, first, second)
+                llm.requestSkillForPrompt("equal", "speaker.say", speech + ("channelId" to second))
+                val equal = submit(socket, source, owner, "equal")
+                val detail = json.readTree(llm.requests.last().messages.last { it.name == "GetSkillByName" }.content)["skill"]
+                val description = detail["description"].asText()
+                assertTrue(first in description && second in description)
+                assertEquals(2, detail["inputSchema"]["properties"].size())
+                assertEquals(second, equal["chatId"].asText())
+                assertEquals("thread.completed", answer(socket, equal)["type"].asText())
+                // The scripted model does not resolve ambiguity when two providers are connected.
+                llm.requestSkillForPrompt("ambiguous", "speaker.say", speech)
+                assertEquals("thread.completed", submit(socket, source, owner, "ambiguous")["type"].asText())
+                assertEquals("client_tool_discovery_required", output()["error"]["code"].asText())
+                for ((index, conflict) in listOf(
+                    definition.replace("Speak text", "Different description"),
+                    definition.replace("\"integer\"", "\"string\""),
+                ).withIndex()) {
+                    llm.requestSkillForPrompt("conflict-$index", "orion.tools.list", mapOf("channelId" to second))
+                    assertEquals("thread.completed", answer(socket, submit(socket, source, owner, "conflict-$index"),
+                        """{"tools":[$conflict]}""")["type"].asText())
+                    assertEquals(0, output()["tools"].size())
+                    llm.requestSkillForPrompt("hidden-$index", "speaker.say", speech + ("channelId" to first))
+                    assertEquals("thread.completed", submit(socket, source, owner, "hidden-$index")["type"].asText())
+                    assertEquals("skill_not_found", output()["error"]["code"].asText())
+                    val inventory = llm.requests.last().messages.first().content
+                    assertFalse("speaker.say" in inventory)
+                    assertTrue("orion.tools.list" in inventory)
+                }
+                llm.requestSkillForPrompt("restore", "orion.tools.list", mapOf("channelId" to second), "speaker.say" to (speech + ("channelId" to first)))
+                val restored = answer(socket, submit(socket, source, owner, "restore"), """{"tools":[]}""")
+                assertEquals(first, restored["chatId"].asText())
+                assertEquals("thread.completed", answer(socket, restored)["type"].asText())
+            }
+        }
     @Test
     fun `creation shares normalized HTTP and WS receipts and rejects invalid catalogues atomically`() =
         backendE2eTest("e2e_catalogue") {
@@ -232,18 +298,24 @@ class BackendClientToolRegistrationE2eTest {
         }
 
     @Test
-    fun `remembered discovery survives restart without changing creation receipts or leaking between chats`() {
+    fun `discovery survives restart and is shared without changing creation receipts`() {
         val schema = newPostgresSchema("e2e_catalogue_restart")
         val owner = UUID.randomUUID().toString()
-        lateinit var chat: String
+        lateinit var provider: String
         backendE2eTest("e2e_catalogue_create", schema = schema) {
-            chat = createPublicChat(owner, tools = "[$definition]")
-            llm.requestSkillForPrompt("discover", "orion.tools.list", emptyMap())
+            provider = createPublicChat(owner, tools = "[$definition]")
+            val legacySource = createPublicChat(owner, "legacy-source")
+            backend.sql { connection ->
+                connection.prepareStatement("update chats set discovered_client_tools = ?::jsonb where id = ?").use {
+                    it.setString(1, """{"channelId":"$provider","tools":[${definition.replace("Speak text", "Stale conversation cache")}]}""")
+                    it.setObject(2, UUID.fromString(legacySource))
+                    it.executeUpdate()
+                }
+            }
+            llm.requestSkillForPrompt("discover", "orion.tools.list", mapOf("channelId" to provider))
             withMultiChatSocket { socket ->
-                val started = submit(socket, chat, owner, "discover")
-                assertEquals("thread.completed", answer(
-                    socket, started, """{"tools":[${definition.replace("Speak text", "Remembered speaker")}]}""",
-                )["type"].asText())
+                assertEquals("thread.completed", answer(socket, submit(socket, provider, owner, "discover"),
+                    """{"tools":[${definition.replace("Speak text", "Remembered speaker")}]}""")["type"].asText())
             }
         }
         backendE2eTest("e2e_catalogue_reload", schema = schema) {
@@ -252,49 +324,37 @@ class BackendClientToolRegistrationE2eTest {
             }
             assertEquals(HttpStatusCode.OK, retry.status)
             assertTrue(retry.jsonBody()["duplicate"].asBoolean())
-            assertEquals(chat, retry.jsonBody()["chat"]["id"].asText())
+            assertEquals(provider, retry.jsonBody()["chat"]["id"].asText())
             assertFalse(retry.jsonBody()["chat"].has("tools"))
             assertEquals(HttpStatusCode.Conflict, client.post(BackendHttpRoutes.CHATS) {
                 jsonBody("""{"userId":"$owner","requestId":"create-1","clientType":"backend","tools":[]}""")
             }.status)
-            val empty = createPublicChat(owner, "empty")
-            for ((target, arguments, expected) in listOf(
-                Triple(empty, emptyMap(), "skill_not_found"),
-                Triple(chat, mapOf("text" to "missing volume"), "mcp_invalid_arguments"),
-                Triple(chat, mapOf("text" to "wrong", "volume" to "loud"), "mcp_invalid_arguments"),
-                Triple(chat, mapOf("text" to "extra", "volume" to 1, "extra" to true), "mcp_invalid_arguments"),
-            )) {
-                val prompt = UUID.randomUUID().toString()
-                llm.requestSkillForPrompt(prompt, "speaker.say", arguments)
-                withMultiChatSocket { socket ->
-                    assertEquals("thread.completed", submit(socket, target, owner, prompt)["type"].asText())
-                    assertEquals(expected, output()["error"]["code"].asText())
-                    if (target == empty) assertTrue("web.search" in llm.requests.last().messages.first().content)
+            val source = createPublicChat(owner, "empty")
+            withMultiChatSocket { socket ->
+                subscribe(socket, provider)
+                for ((index, args) in listOf(
+                    mapOf("text" to "missing volume"), mapOf("text" to "wrong", "volume" to "loud"),
+                    mapOf("text" to "extra", "volume" to 1, "extra" to true),
+                ).withIndex()) {
+                    llm.requestSkillForPrompt("invalid-$index", "speaker.say", args + ("channelId" to provider))
+                    assertEquals("thread.completed", submit(socket, source, owner, "invalid-$index")["type"].asText())
+                    assertEquals("mcp_invalid_arguments", output()["error"]["code"].asText())
                 }
+                llm.requestSkillForPrompt("speak", "speaker.say", mapOf("text" to "hi", "volume" to 1, "channelId" to provider))
+                val started = submit(socket, source, owner, "speak")
+                assertEquals(provider, started["chatId"].asText())
+                val detail = json.readTree(llm.requests.last().messages.last { it.name == "GetSkillByName" }.content)["skill"]
+                assertTrue(detail["description"].asText().startsWith("Remembered speaker\n"))
+                assertEquals("thread.completed", answer(socket, started, "[]")["type"].asText())
+                assertEquals("invalid_tool_result", output()["error"]["code"].asText())
             }
-            repeat(2) { turn ->
-                val prompt = "speak-$turn"
-                val arguments = mapOf("text" to prompt, "volume" to turn)
-                if (turn == 0) llm.requestSkillForPrompt(prompt, "speaker.say", arguments)
-                else llm.requestSkillForPrompt(prompt, "orion.tools.list", emptyMap(), "speaker.say" to arguments)
-                withMultiChatSocket { socket ->
-                    val first = submit(socket, chat, owner, prompt, "device-$turn")
-                    val started = if (turn == 0) first else answer(socket, first, """{"tools":[]}""")
-                    assertEquals("speaker.say", started["payload"]["name"].asText())
-                    assertEquals("device-$turn", started["payload"]["deviceId"].asText())
-                    assertEquals(prompt, started["payload"]["arguments"]["text"].asText())
-                    val detail = json.readTree(llm.requests.last().messages.last { it.name == "GetSkillByName" }.content)["skill"]
-                    assertEquals(if (turn == 0) "Remembered speaker" else "Speak text", detail["description"].asText())
-                    assertEquals(json.valueToTree<JsonNode>(
-                        json.readValue(definition, ClientToolDefinition::class.java).parameters,
-                    ), detail["inputSchema"])
-                    val result = if (turn == 0) """{"spoken":true}""" else "[]"
-                    assertEquals("thread.completed", answer(socket, started, result)["type"].asText())
-                    if (turn == 1) {
-                        assertEquals("invalid_tool_result", output()["error"]["code"].asText())
-                    }
-                }
-            }
+        }
+    }
+
+    private suspend fun BackendE2eScope.subscribe(socket: DefaultClientWebSocketSession, vararg channels: String) {
+        for (channel in channels) {
+            socket.send(Frame.Text("""{"kind":"chat.subscribe","chatId":"$channel","requestId":"subscribe-$channel","afterSeq":9223372036854775807}"""))
+            assertEquals("accepted", readJson(socket)["status"].asText())
         }
     }
 

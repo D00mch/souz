@@ -40,6 +40,7 @@ class BackendChannelToolsTest {
     @Test
     fun `channel publication is independent of source delivery and personality sync recovers from full queues`() = runTest {
         with(Fixture(backgroundScope)) {
+            val skill = skill()
             val subscription = bus.subscribe(target.userId, target.id)
             registry.register(source, ClientDevice(target.userId, "device", "tv_box", emptySet()))
             try {
@@ -94,6 +95,7 @@ class BackendChannelToolsTest {
         for (finish in listOf("ack", "write failure", "cancellation", "timeout")) {
             BackendMetrics().use { metrics ->
                 with(Fixture(backgroundScope, metrics)) {
+                    val skill = skill()
                     val subscription = bus.subscribe(target.userId, target.id)
                     try {
                         val pending = async(start = CoroutineStart.UNDISPATCHED) { skill.invoke(call, meta) }
@@ -150,20 +152,23 @@ class BackendChannelToolsTest {
         }
     }
 
-    private class Fixture(scope: CoroutineScope, metrics: BackendMetrics? = null) {
+    private class Fixture(scope: CoroutineScope, private val metrics: BackendMetrics? = null) {
         val source = UUID.randomUUID()
         val target = Chat(UUID.randomUUID(), "user", null, false, Instant.EPOCH, Instant.EPOCH)
         val chats = mockk<ChatRepository> {
             coEvery { get(target.userId, target.id) } returns target
+            coEvery { clientToolChannels(target.userId) } returns listOf(ClientToolChannel(target, listOf(
+                ClientToolDefinition("orion.call", "Control device", ru.souz.llms.LLMRequest.Parameters("object")),
+            ), discoveryComplete = false))
         }
         val tools = mockk<ToolCallRepository> { coEvery { get(any<ToolCallContext>()) } returns null }
         val bus = AgentEventBus()
         val events = AgentEventService(chats, mockk(), bus)
         val registry = ClientThreadRuntimeRegistry()
         val startedAt = Instant.now()
-        val skill = BackendClientSkills(registry, tools, events, ChannelDeliveryService(chats, mockk(), events),
+        suspend fun skill() = BackendClientSkills(registry, tools, events, chats,
             now = { startedAt }, metrics = metrics)
-            .catalog(listOf(ClientToolDefinition("orion.call", "Control device", ru.souz.llms.LLMRequest.Parameters("object"))))
+            .catalog(target.userId, emptySet()) {}
             .toolsByCategory.values.firstNotNullOf { it["orion.call"] }
         val service = PublicClientService(chats, mockk(), mockk(), tools, mockk(), registry, scope)
         val call = LLMResponse.FunctionCall("orion.call", mapOf("channelId" to target.id.toString(), "utterance" to "play"))

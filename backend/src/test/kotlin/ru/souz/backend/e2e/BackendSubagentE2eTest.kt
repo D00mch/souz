@@ -119,7 +119,7 @@ class BackendSubagentE2eTest {
             },
         ) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            val chatId = createPublicChat(userId, tools = clientToolsJson("user.ask"))
             client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId)
                 jsonBody("""{"streamingMessages":true,"narrateSteps":true,"systemPrompt":"custom base"}""")
@@ -251,7 +251,7 @@ class BackendSubagentE2eTest {
             ))
         }) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            val chatId = createPublicChat(userId, tools = clientToolsJson("web.search"))
             val settings = client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId)
                 jsonBody("""{"defaultModel":"${E2E_MODEL.alias}","enabledTools":["InternetSearch"]}""")

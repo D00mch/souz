@@ -24,6 +24,7 @@ import ru.souz.backend.hooks.HookService
 import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.hooks.HookVerifier
 import ru.souz.backend.personality.PersonalitySync
+import ru.souz.backend.personality.PERSONALITY_SYNC_COMMAND
 import ru.souz.backend.storage.postgres.PostgresConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
@@ -310,7 +311,8 @@ fun backendDiModule(
             registry = instance(),
             toolCallRepository = instance(),
             eventService = instance(),
-            channelDeliveryService = instance(),
+            chatRepository = instance(),
+            controlCommandNames = setOf(PERSONALITY_SYNC_COMMAND),
             metrics = instance(),
         )
     }
@@ -368,7 +370,6 @@ fun backendDiModule(
             policyPrompt = appConfig.policyPrompt,
             toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
             clientSkills = instance(),
-            chatRepository = instance(),
             skillBundleProvider = instance<SkillRegistryRepository>(),
             commandExecutor = instance<SkillCommandExecutor>(),
             filesToolUtil = instance<FilesToolUtil>(),

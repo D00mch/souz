@@ -1,6 +1,6 @@
 ---
 name: orion-tools-list
-description: Discover available Orion device functions and their input schemas, including capabilities not yet known to this conversation.
+description: Discover tools and their input schemas supplied by a client channel.
 metadata:
   souz.skill-id: orion.tools.list
   souz.transport: client-websocket
@@ -8,16 +8,19 @@ metadata:
   souz.timeout: PT30S
 ---
 
-# Discover Orion tools
+# Discover channel tools
 
 Invoke `RunSkillCommand` with `skillId: "orion.tools.list"` and `arguments: {}`.
-Without a current device, use `ListActiveChannels` and add the selected `channelId` to arguments.
+The current conversation channel is the default. For another device, select its `channelId` from the providing channels and include it in arguments.
 
 The result is `{"tools":[{"name":"...","description":"...","parameters":{...}}]}`,
 excluding this discovery tool. Returned tools are immediately available through `GetSkillByName`
-and `RunSkillCommand`, bound to the supplying channel and remembered across this conversation's turns.
-A successful discovery replaces the previous discovered catalogue; an empty list restores declared and bundled tools.
-If the channel is unavailable, select a live channel and discover again.
+and `RunSkillCommand` across this user's conversations. Discovery replaces only the supplying
+channel's discovered catalogue; an empty list restores that channel's declarations.
+Equal definitions share providers; conflicting definitions and server control commands are hidden.
+Catalogues survive backend restarts. Discover an unknown intended channel before rejecting a capability
+or asking which device for a local request. Do not rediscover solely because a tool is absent from a
+completed catalogue; refresh only on request or when capabilities change.
 
 Discover before delegating, then select the required returned Skill IDs for the child.
 The discovery tool itself cannot be delegated. Invalid or failed discovery preserves the previous catalogue.
