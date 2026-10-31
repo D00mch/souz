@@ -2,6 +2,7 @@ package ru.souz.agent.nodes
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import ru.souz.agent.DEFAULT_ATTACHMENT_HISTORY_LIMIT
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMException
 import ru.souz.llms.LLMMessageRole
@@ -12,12 +13,14 @@ import ru.souz.llms.LLMResponse
 internal suspend fun LLMChatAPI.compactHistory(
     request: LLMRequest.Chat,
     activeExchangeStartIndex: Int,
+    attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
 ): List<LLMRequest.Message> {
+    require(attachmentHistoryLimit > 0) { "Attachment history limit must be positive." }
     val previous = request.messages.take(activeExchangeStartIndex)
     if (previous.none { it.role != LLMMessageRole.system }) return request.messages
 
     val body = request.copy(
-        messages = previous + LLMRequest.Message(LLMMessageRole.user, SUMMARIZATION_PROMPT),
+        messages = previous.map { it.withFileReferences() } + LLMRequest.Message(LLMMessageRole.user, SUMMARIZATION_PROMPT),
         functions = emptyList(),
         maxTokens = SUMMARIZATION_MAX_OUTPUT_TOKENS,
         isSummarization = true,
@@ -32,7 +35,9 @@ internal suspend fun LLMChatAPI.compactHistory(
         throw LLMException(LLMResponse.Chat.Error(-1, "Summarization reached its output limit."))
     }
     val summary = choice.message.content
-    val message = LLMRequest.Message(LLMMessageRole.assistant, "$SUMMARIZATION_PREFIX:\n$summary")
+    val message = LLMRequest.Message(LLMMessageRole.assistant, "$SUMMARIZATION_PREFIX:\n$summary",
+        files = previous.flatMap { it.files + it.replyFiles }.asReversed()
+            .distinctBy { it.fileId }.take(attachmentHistoryLimit).asReversed())
     return previous.filter { it.role == LLMMessageRole.system } + message + request.messages.drop(activeExchangeStartIndex)
 }
 

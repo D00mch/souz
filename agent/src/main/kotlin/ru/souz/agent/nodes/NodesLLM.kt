@@ -13,6 +13,7 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentStreamChunk
+import ru.souz.agent.DEFAULT_ATTACHMENT_HISTORY_LIMIT
 import ru.souz.agent.graph.Node
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
@@ -40,6 +41,7 @@ internal class NodesLLM(
     private val complexityClassifier: TaskComplexityClassifier? = null,
     /** Rebinds a routed turn's tools to the chosen model: a `SpawnSubagent` child defaults to its parent's model. */
     private val routedTools: ((AgentSettings) -> List<LLMToolSetup>)? = null,
+    private val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
 ) {
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
     private var initialWaitDecided = false
@@ -79,6 +81,7 @@ internal class NodesLLM(
         fun build(history: List<LLMRequest.Message>) =
             ctx.toChatRequest(history, maxOutputTokens = CHAT_MAX_OUTPUT_TOKENS)
                 .withConversationInstructions(instructions)
+                .withFileReferences()
 
         var history = ctx.history
         var request = build(history)
@@ -86,6 +89,7 @@ internal class NodesLLM(
             history = llmApi.compactHistory(
                 ctx.toChatRequest(history, maxOutputTokens = SUMMARIZATION_MAX_OUTPUT_TOKENS),
                 ctx.activeExchangeStartIndex,
+                attachmentHistoryLimit,
             )
             request = build(history)
         }
