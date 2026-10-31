@@ -68,7 +68,7 @@ class BackendRuntime private constructor(
             return BackendRuntime(di = di)
         }
 
-        private fun backendSystemPrompt(): String =
+        internal fun backendSystemPrompt(): String =
             System.getenv("SOUZ_BACKEND_SYSTEM_PROMPT")
                 ?: System.getProperty("souz.backend.systemPrompt")
                 ?: "You are Souz AI backend assistant. Answer directly and concisely in the user's language."
