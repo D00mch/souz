@@ -9,6 +9,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.agent.skills.SkillId
+import ru.souz.agent.skills.PLUGIN_SKILL_PREFIX
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.spi.AgentToolCatalog
@@ -28,6 +29,7 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
+import org.slf4j.LoggerFactory
 
 internal class BackendClientSkills(
     private val registry: ClientThreadRuntimeRegistry,
@@ -45,7 +47,12 @@ internal class BackendClientSkills(
         boundChannelId: UUID? = null,
         onDiscovery: (suspend (JsonNode, UUID) -> ClientError?)? = null,
     ): AgentToolCatalog {
-        val selected = (definitions + if (boundChannelId == null) {
+        val reserved = definitions.count { it.name.startsWith(PLUGIN_SKILL_PREFIX) }
+        if (reserved > 0) {
+            LoggerFactory.getLogger(BackendClientSkills::class.java)
+                .warn("Ignoring {} stored client capabilities in the reserved plugin namespace; replace the client catalogue.", reserved)
+        }
+        val selected = (definitions.filterNot { it.name.startsWith(PLUGIN_SKILL_PREFIX) } + if (boundChannelId == null) {
             bundledGuidance.map { (name, guidance) ->
                 ClientToolDefinition(name, guidance.description, LLMRequest.Parameters(
                     type = "object", additionalProperties = false.takeIf { name == CLIENT_TOOL_DISCOVERY_NAME },

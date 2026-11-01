@@ -5,6 +5,8 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.util.ServiceLoader
 import ru.souz.llms.LLMRequest
+import ru.souz.agent.skills.PLUGIN_SKILL_PREFIX
+import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.plugins.api.SkillPlugin
 
 /** Opening is synchronous and side-effect-free by SDK contract; initialization belongs to the runtime. */
@@ -51,10 +53,10 @@ internal class OpenPlugin(
     fun schemas(): List<LLMRequest.Function> = withPluginLoader(loader) {
         val tools = plugin.tools
         require(tools.size in 1..64) { "A plugin must provide 1..64 tools." }
-        val prefix = "plugin.${artifact.id}."
+        val prefix = "$PLUGIN_SKILL_PREFIX${artifact.id}."
         val names = mutableSetOf<String>()
         tools.map { fn ->
-            require(fn.name.startsWith(prefix) && fn.name.removePrefix(prefix).matches(PluginArtifact.ID)) {
+            require(fn.name.startsWith(prefix) && BackendToolCapabilityPolicy.isPluginToolName(fn.name)) {
                 "Tool name must be ${prefix}<tool_id>."
             }
             require(names.add(fn.name)) { "Duplicate plugin capability: ${fn.name}" }

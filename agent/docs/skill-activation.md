@@ -10,6 +10,9 @@ Hosts supply core Skill tools through `AgentCoreTools`, outside `AgentToolCatalo
 
 ## Why this is fragile
 
+The `plugin.` namespace is reserved for host-loaded capabilities. An unavailable or disabled plugin ID
+never loads a stored bundle, and reserved IDs are excluded from file-backed inventory.
+
 Loading bundles into the inventory would expand the prompt and trust surface. For hosts that enable approval, reusing it across users, hashes, or policies can return or execute content that was never approved.
 
 The core tools merge compiled tools and stored bundles into one ID namespace. Category discovery covers filtered compiled-tool categories only; bundle detail and execution load the current bundle by exact Skill ID. Generic bundle execution must bind the current bundle identity internally before using the concrete command executor.

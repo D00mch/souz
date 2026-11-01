@@ -118,6 +118,7 @@ class BackendClientToolRegistrationE2eTest {
                 val failures = listOf(
                     "strict" to """{"tools":[],"unknown":true}""",
                     "self" to """{"tools":[${clock.replace("current_time", "orion.tools.list")}]}""",
+                    "plugin" to """{"tools":[${clock.replace("current_time", "plugin.reference.report")}]}""",
                     "transport" to "{}",
                     "storage" to """{"tools":[$clock]}""",
                 )
@@ -138,7 +139,10 @@ class BackendClientToolRegistrationE2eTest {
                             connection.createStatement().use { it.execute("alter table chats drop constraint reject_discovery") }
                         }
                     }
-                    val expected = if (failure == "strict" || failure == "self") "invalid_client_tool_catalogue" else "client_tool_failed"
+                    val expected = when (failure) {
+                        "strict", "self", "plugin" -> "invalid_client_tool_catalogue"
+                        else -> "client_tool_failed"
+                    }
                     assertEquals(expected, output()["error"]["code"].asText())
                     assertEquals("current_time", retained["payload"]["name"].asText())
                     assertEquals(first, retained["chatId"].asText())
@@ -207,6 +211,7 @@ class BackendClientToolRegistrationE2eTest {
                     "[${definition.replace("speaker.say", "ConnectOAuthProvider")}]",
                     "[${definition.replace("speaker.say", "SafeApiCall")}]",
                     "[${definition.replace("speaker.say", "RunSkillCommand")}]",
+                    "[${definition.replace("speaker.say", "plugin.reference.report")}]",
                     "[${definition.replace("speaker.say", "personality.update")}]",
                     "[${definition.replace("speaker.say", "ExtractTextFromFile")}]",
                     "[${definition.replace("speaker.say", "bad name")}]",

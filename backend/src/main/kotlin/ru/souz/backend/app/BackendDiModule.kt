@@ -579,7 +579,6 @@ fun backendDiModule(
         BackendBootstrapService(
             settingsProvider = instance(),
             effectiveSettingsResolver = instance(),
-            toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
             featureFlags = instance(),
             userProviderKeyRepository = instance(),
         )

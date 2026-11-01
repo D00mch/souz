@@ -20,6 +20,21 @@ class BackendToolCapabilityPolicyTest {
         )
     }
 
+    @Test
+    fun `only the applied plugin catalog supplies reserved capabilities and selection still applies`() {
+        val pluginName = "plugin.reference.report"
+        val compiled = TestToolCatalog(ToolCategory.FILES to listOf("ReadFile", pluginName))
+        val plugins = TestToolCatalog(ToolCategory.PLUGINS to listOf(pluginName, "UnrelatedTool"))
+        assertFalse(pluginName in BackendToolCapabilityPolicy.advertisedToolNames(compiled))
+        val names = BackendToolCapabilityPolicy.advertisedToolNames(compiled, plugins)
+        assertFalse("UnrelatedTool" in names)
+        assertEquals(true, pluginName in names)
+        val selected = BackendToolCapabilityPolicy.selectExecutionTools(compiled, TestToolCatalog(), setOf(pluginName), plugins)
+        assertEquals(setOf(pluginName), selected.toolsByCategory.values.flatMap { it.keys }.toSet())
+        val disabled = BackendToolCapabilityPolicy.selectExecutionTools(compiled, TestToolCatalog(), emptySet(), plugins)
+        assertEquals(emptyList(), disabled.toolsByCategory.values.flatMap { it.keys })
+    }
+
     private fun processCatalog(): AgentToolCatalog = TestToolCatalog(
         ToolCategory.FILES to listOf("ReadFile"),
         ToolCategory.WEB_SEARCH to listOf("WebPageText", ToolWebImageSearch.NAME, "FutureWebTool"),

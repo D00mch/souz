@@ -13,11 +13,13 @@ internal fun backendExecutionToolCatalog(
     clientToolCatalog: AgentToolCatalog,
     includeFewShotExamples: Boolean,
     metrics: BackendMetrics? = null,
+    pluginToolCatalog: AgentToolCatalog = AgentToolCatalog(),
 ): AgentToolCatalog {
     val selectedCompiledTools = BackendToolCapabilityPolicy.selectExecutionTools(
         processToolCatalog = compiledToolCatalog,
         executionLlmToolCatalog = executionLlmToolCatalog,
         enabledToolNames = enabledCompiledToolNames,
+        pluginToolCatalog = pluginToolCatalog,
     )
 
     val mergedTools = AgentToolCatalog.compose(

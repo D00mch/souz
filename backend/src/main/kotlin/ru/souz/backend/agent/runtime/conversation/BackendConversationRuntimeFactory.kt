@@ -11,6 +11,7 @@ import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillBundleProvider
+import ru.souz.agent.skills.PLUGIN_SKILL_PREFIX
 import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
@@ -189,7 +190,7 @@ internal class BackendConversationRuntimeFactory(
         fun withDiscovered(discovered: DiscoveredClientTools?): AgentToolCatalog {
             if (discovered == null) return baseCatalog
             val tools = discovered.tools.filter { it.name != PersonalityTool.NAME }
-            val names = tools.map { it.name }.toSet()
+            val names = tools.map { it.name }.filterNot { it.startsWith(PLUGIN_SKILL_PREFIX) }.toSet()
             return AgentToolCatalog.compose(
                 baseCatalog.filter { _, tool -> tool.fn.name !in names },
                 clientSkills.catalog(tools, boundChannelId = discovered.channelId),

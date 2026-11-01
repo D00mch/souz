@@ -143,6 +143,7 @@ class NodesSkillInventoryTest {
                 "shadowed-skill" to "Shadowed stored bundle.",
                 "disabled-skill" to "Disabled compiled collision.",
                 "stored-only" to "Stored only.",
+                "plugin.reference.report" to "A stored bundle cannot claim a plugin ID.",
             ),
         )
         val context = contextWithCatalog(enabledToolBackedSkill, disabledToolBackedSkill)
@@ -155,6 +156,7 @@ class NodesSkillInventoryTest {
         assertContains(prompt, "- skillId: \"stored-only\"")
         assertFalse(prompt.contains("Disabled compiled collision."))
         assertFalse(prompt.contains("Stored only."))
+        assertFalse(prompt.contains("plugin.reference.report"))
     }
 
     @Test

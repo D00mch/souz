@@ -3,6 +3,7 @@ package ru.souz.backend.onboarding
 import io.ktor.http.HttpStatusCode
 import java.time.Instant
 import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.bootstrap.BootstrapModelCapability
 import ru.souz.backend.http.BackendV1Exception
@@ -101,7 +102,8 @@ class BackendOnboardingService(
             throw invalidV1Request("defaultModel must be available to the current user.")
         }
         val allowedTools = bootstrap.capabilities.tools.mapTo(linkedSetOf()) { it.name }
-        val invalidTools = overrides.enabledTools.orEmpty() - allowedTools
+        val invalidTools = (overrides.enabledTools.orEmpty() - allowedTools)
+            .filterNot(BackendToolCapabilityPolicy::isPluginToolName)
         if (invalidTools.isNotEmpty()) {
             throw invalidV1Request("enabledTools contains unsupported backend tools: ${invalidTools.joinToString(", ")}.")
         }
@@ -112,7 +114,7 @@ class BackendOnboardingService(
                 message = "Cannot complete onboarding until the user has usable model access.",
             )
         }
-        userSettingsService.patch(identity.userId, overrides)
+        userSettingsService.patch(identity.userId, overrides, availableToolNames = allowedTools)
         val current = userSettingsRepository.get(identity.userId) ?: error("Persisted user settings are unavailable.")
         val now = Instant.now()
         userSettingsRepository.save(

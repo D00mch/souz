@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
 import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.skills.SkillId
+import ru.souz.agent.skills.PLUGIN_SKILL_PREFIX
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -40,7 +41,8 @@ internal class NodesSkillInventory(
         val compiledIds = tools.values.flatMapTo(mutableSetOf()) { it.keys }
         val ids = discoveryOr(emptyList()) {
             skillBundleProvider.listSkillInventoryIds(ctx.toolInvocationMeta.userId)
-                .filterNot { it.value in compiledIds }.distinct().sortedBy { it.value }
+                .filterNot { it.value in compiledIds || it.value.startsWith(PLUGIN_SKILL_PREFIX) }
+                .distinct().sortedBy { it.value }
         }
         val descriptions = if (classifySkills && ids.isNotEmpty() && !isThanksOrGreeting(ctx.input)) {
             discoveryOr(emptyMap()) {

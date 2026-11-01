@@ -22,16 +22,17 @@ side effects; acquire resources in `initialize`, and release even partially acqu
 resources in `shutdown`.
 
 Capabilities use existing `LLMRequest.Function` schemas and the namespace
-`plugin.<plugin_id>.<tool_id>`. The provider returns existing `LLMRequest.Message`
+`plugin.<plugin_id>.<tool_id>` (at most 64 characters). The provider returns existing `LLMRequest.Message`
 results; data crossing the boundary must contain only host DTOs and ordinary JSON.
 Do not register plugin serializers or deserialize plugin DTOs with the host's
 `restJsonMapper`. Keep any plugin-specific reflection/serialization caches and
 resources within the loaded version's lifetime.
 
-The classloader delegates only platform classes and these shared package prefixes:
+The classloader delegates platform classes, the root `ru.souz.llms` contract package
+(excluding provider subpackages), and these shared package prefixes:
 
 - `ru.souz.plugins.api.`
-- `ru.souz.llms.`
+- `ru.souz.llms.json.`
 - `kotlin.`
 - `kotlinx.coroutines.`
 - `com.fasterxml.jackson.`

@@ -234,6 +234,7 @@ class BackendCompositionE2eTest {
         val schema = ru.souz.backend.storage.postgres.newPostgresSchema("e2e_restart")
         val userId = UUID.randomUUID().toString()
         lateinit var chatId: String
+        lateinit var explicitTools: Set<String>
 
         backendE2eTest(schemaPrefix = "e2e_restart_first", schema = schema) {
             val created = client.post(BackendHttpRoutes.CHATS) {
@@ -262,7 +263,11 @@ class BackendCompositionE2eTest {
             }
             assertEquals(2, persistedMessages.size())
             val allTools = client.get(BackendHttpRoutes.SETTINGS) { trusted("all-tools-user") }.jsonBody()["settings"]["enabledTools"]
-            client.patch(BackendHttpRoutes.SETTINGS) { trusted("all-tools-user"); jsonBody("""{"enabledTools":$allTools}""") }
+            explicitTools = allTools.mapTo(linkedSetOf()) { it.asText() } + "plugin.reference.report"
+            client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted("all-tools-user")
+                jsonBody(json.writeValueAsString(mapOf("enabledTools" to explicitTools)))
+            }
         }
 
         // Skill OAuth adds tools after settings were saved; users who never narrowed the default receive them.
@@ -270,10 +275,13 @@ class BackendCompositionE2eTest {
             val advertised = client.get(BackendHttpRoutes.BOOTSTRAP) { trusted(userId) }
                 .jsonBody()["capabilities"]["tools"].map { it["name"].asText() }
             assertTrue(advertised.containsAll(listOf("ConnectOAuthProvider", "SafeApiCall")))
-            for (user in listOf(userId, "all-tools-user")) {
-                val enabled = client.get(BackendHttpRoutes.SETTINGS) { trusted(user) }.jsonBody()["settings"]["enabledTools"]
-                assertEquals(advertised, enabled.map { it.asText() }, user)
-            }
+            val defaults = client.get(BackendHttpRoutes.SETTINGS) { trusted(userId) }.jsonBody()["settings"]["enabledTools"]
+            assertEquals(advertised.toSet(), defaults.map { it.asText() }.toSet())
+            val explicit = client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted("all-tools-user")
+                jsonBody("""{"narrateSteps":true}""")
+            }.jsonBody()["settings"]["enabledTools"]
+            assertEquals(explicitTools, explicit.map { it.asText() }.toSet())
             val list = client.get(BackendHttpRoutes.CHATS) {
                 trusted(userId)
             }

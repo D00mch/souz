@@ -24,4 +24,8 @@ Allowing the Client-Souz body identity outside creation and execute device metad
 
 ## Verification
 
+Explicit `enabledTools` selections stay explicit even when they include every currently advertised tool.
+Unavailable plugin IDs remain in the selection, so temporary absence or disablement does not erase the preference.
+Bootstrap and effective settings use one locally applied capability view per operation.
+
 Run `./gradlew :backend:test`. Cover proxy rejection and provisioning, public chat UUID validation and idempotency, WebSocket client-type and device-owner checks, OpenAPI security exceptions, and sandbox/tool user scoping.

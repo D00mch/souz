@@ -20,8 +20,9 @@ class ReferencePlugin : SkillPlugin {
         delay(1)
         val version = ServiceLoader.load(Supplier::class.java).single().get()
         val count = CSVFormat.DEFAULT.parse((call.arguments.getValue("text") as String).reader()).use { it.records.size }
-        val backendVisible = runCatching { javaClass.classLoader.loadClass("ru.souz.backend.app.BackendRuntime") }.isSuccess
-        return LLMRequest.Message(LLMMessageRole.function, "$version:$count:backend=$backendVisible",
+        val hostVisible = listOf("ru.souz.backend.app.BackendRuntime", "ru.souz.llms.http.ProviderHttpClients")
+            .any { name -> runCatching { javaClass.classLoader.loadClass(name) }.isSuccess }
+        return LLMRequest.Message(LLMMessageRole.function, "$version:$count:host=$hostVisible",
             name = call.name)
     }
 }

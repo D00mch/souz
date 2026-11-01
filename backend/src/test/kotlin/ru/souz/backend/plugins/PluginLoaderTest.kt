@@ -43,7 +43,7 @@ class PluginLoaderTest {
                 withContext(PluginClassLoaderContext(plugin.loader)) {
                     plugin.plugin.initialize()
                     val result = plugin.plugin.invoke(LLMResponse.FunctionCall("plugin.reference.report", mapOf("text" to "a,b\nc,d")), context())
-                    assertEquals("$version:2:backend=false", result.content)
+                    assertEquals("$version:2:host=false", result.content)
                     plugin.plugin.shutdown()
                 }
             }

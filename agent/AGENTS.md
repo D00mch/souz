@@ -23,6 +23,8 @@ Before changing this module, read the relevant pain-point topics below.
 
 ## Pain points
 
+The `plugin.` Skill namespace belongs to host-loaded capabilities. Exclude stored bundles under that prefix from inventory and never use them as fallback for unavailable plugin IDs.
+
 - [Execution lifecycle](docs/execution-lifecycle.md) — cancellation, session ownership, continuation, and request-scoped kernels.
 - [Subagent execution](docs/subagents.md) — parent suspension, capability isolation, and child lifecycle.
 - [Skill activation](docs/skill-activation.md) — turn ordering, bundle loading, validation caching, and command exposure.

@@ -63,6 +63,16 @@ class SkillRuntimeToolsTest {
     private val createdPaths = mutableListOf<Path>()
 
     @Test
+    fun `unavailable plugin IDs never fall through to stored bundles`() = runTest {
+        val id = "plugin.reference.report"
+        val repository = repository(bundle(id), bundle("ordinary"))
+        for (tool in listOf(getSkillByNameTool(repository), invokeSkillTool(repository))) {
+            assertEquals("skill_unavailable", tool.call(mapOf("skillId" to id))["error"]["code"].asText())
+        }
+        assertEquals("ordinary", getSkillByNameTool(repository).call(mapOf("skillId" to "ordinary"))["skill"]["skillId"].asText())
+    }
+
+    @Test
     fun `broken bundles remain discoverable and return actionable errors beside healthy skills`() = runTest {
         val home = createTempDirectory("skill-errors-")
         val state = home.resolve("state").createDirectories()

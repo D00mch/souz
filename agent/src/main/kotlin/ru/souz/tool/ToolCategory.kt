@@ -21,4 +21,5 @@ enum class ToolCategory {
     HELP,
     CHANNEL_MESSAGING,
     SCHEDULING,
+    PLUGINS,
 }

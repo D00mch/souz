@@ -20,9 +20,14 @@ internal class PluginClassLoader(url: URL) : URLClassLoader(arrayOf(url), SkillP
         else Collections.enumeration(findResources(name).asSequence().map { it.withoutJarCache() }.toList())
 
     companion object {
-        private val shared = listOf("ru.souz.plugins.api.", "ru.souz.llms.", "kotlin.", "kotlinx.coroutines.", "com.fasterxml.jackson.")
-        fun isSharedClass(name: String): Boolean = shared.any(name::startsWith)
-        fun isSharedResource(name: String): Boolean = isSharedClass(name.replace('/', '.'))
+        private val shared = listOf("ru.souz.plugins.api.", "ru.souz.llms.json.", "kotlin.", "kotlinx.coroutines.", "com.fasterxml.jackson.")
+        private val sharedResources = shared.map { it.replace('.', '/') }
+
+        fun isSharedClass(name: String): Boolean = shared.any(name::startsWith) ||
+            (name.startsWith("ru.souz.llms.") && '.' !in name.removePrefix("ru.souz.llms."))
+
+        fun isSharedResource(name: String): Boolean = sharedResources.any(name::startsWith) ||
+            (name.startsWith("ru/souz/llms/") && '/' !in name.removePrefix("ru/souz/llms/"))
     }
 }
 
