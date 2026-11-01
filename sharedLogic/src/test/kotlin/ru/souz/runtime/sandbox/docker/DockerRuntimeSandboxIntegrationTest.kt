@@ -12,7 +12,7 @@ import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.io.path.createSymbolicLinkPointingTo
+import ru.souz.test.createSymbolicLinkOrSkip
 import kotlin.io.path.readText
 import kotlin.concurrent.thread
 import kotlin.test.AfterTest
@@ -200,7 +200,7 @@ class DockerRuntimeSandboxIntegrationTest {
         val sandbox = createSandbox()
         val workspaceRoot = sandbox.hostRoot.resolve("home/workspace").also(Files::createDirectories)
         val target = workspaceRoot.resolve("real.txt").also { Files.writeString(it, "hello") }
-        workspaceRoot.resolve("link.txt").createSymbolicLinkPointingTo(target.fileName)
+        createSymbolicLinkOrSkip(workspaceRoot.resolve("link.txt"), target.fileName)
 
         val descendants = sandbox.fileSystem.listDescendants(
             root = sandbox.fileSystem.resolveExistingDirectory("~/workspace"),

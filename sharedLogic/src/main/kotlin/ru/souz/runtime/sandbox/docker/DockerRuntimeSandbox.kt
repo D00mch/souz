@@ -5,8 +5,12 @@ import ru.souz.runtime.sandbox.SandboxCommandExecutor
 import ru.souz.runtime.sandbox.SandboxFileSystem
 import ru.souz.runtime.sandbox.SandboxMode
 import ru.souz.runtime.sandbox.SandboxRuntimePaths
+import ru.souz.runtime.sandbox.SandboxCommandRequest
+import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxScope
 import java.nio.file.Path
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class DockerRuntimeSandbox(
     override val scope: SandboxScope,
@@ -21,23 +25,32 @@ class DockerRuntimeSandbox(
     private val dockerCli: DockerCli = DockerCli()
 
     internal val layout: DockerSandboxLayout = DockerSandboxLayout(hostRoot)
-    private val containerHandle = DockerContainerHandle(
-        dockerCli = dockerCli,
-        layout = layout,
-        containerName = containerName,
-        imageName = imageName,
-        userSpec = DockerHostUser.currentOrNull(dockerCli),
-    )
+    private val containerHandle by lazy {
+        DockerContainerHandle(
+            dockerCli = dockerCli,
+            layout = layout,
+            containerName = containerName,
+            imageName = imageName,
+            userSpec = DockerHostUser.currentOrNull(dockerCli),
+        )
+    }
+    private var started = false
+    private var startAttempted = false
 
     override val runtimePaths: SandboxRuntimePaths = layout.runtimePaths
     override val fileSystem: SandboxFileSystem = DockerSandboxFileSystem(
         layout = layout,
         blockedContainerPaths = blockedContainerPaths,
     )
-    override val commandExecutor: SandboxCommandExecutor = DockerSandboxCommandExecutor(
-        containerHandle = containerHandle,
-        fileSystem = fileSystem,
-    )
+    private val commands by lazy {
+        DockerSandboxCommandExecutor(containerHandle = containerHandle, fileSystem = fileSystem)
+    }
+    override val commandExecutor = object : SandboxCommandExecutor {
+        override suspend fun execute(request: SandboxCommandRequest): SandboxCommandResult {
+            withContext(Dispatchers.IO) { start() }
+            return commands.execute(request)
+        }
+    }
 
     init {
         if (autoStart) {
@@ -47,16 +60,21 @@ class DockerRuntimeSandbox(
 
     @Synchronized
     fun start() {
+        if (started) return
         layout.ensureHostDirectories()
         dockerCli.ensureAvailable()
         dockerCli.ensureImageAvailable(imageName)
+        startAttempted = true
         containerHandle.ensureStarted()
         containerHandle.verifyRuntimeExecutables()
+        started = true
     }
 
+    @Synchronized
     override fun close() {
-        if (removeContainerOnClose) {
+        if (removeContainerOnClose && startAttempted) {
             containerHandle.removeIfExists()
+            started = false
         }
     }
 

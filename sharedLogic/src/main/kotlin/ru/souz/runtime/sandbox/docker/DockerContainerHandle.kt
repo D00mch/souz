@@ -1,5 +1,7 @@
 package ru.souz.runtime.sandbox.docker
 
+import ru.souz.llms.restJsonMapper
+
 internal class DockerContainerHandle(
     private val dockerCli: DockerCli,
     private val layout: DockerSandboxLayout,
@@ -107,21 +109,19 @@ internal class DockerContainerHandle(
             listOf(
                 "container",
                 "inspect",
-                "--format",
-                "{{.State.Running}}\t{{range .Mounts}}{{if eq .Destination \"/souz\"}}{{.Source}}{{end}}{{end}}",
                 containerName,
             ),
         )
         if (inspection.exitCode != 0) {
             return null
         }
-        val output = inspection.stdout.trimEnd()
-        val running = output.substringBefore('\t').trim().equals("true", ignoreCase = true)
-        val mountedHostRoot = output.substringAfter('\t', missingDelimiterValue = "").trim()
-            .takeIf(String::isNotEmpty)
+        // JSON avoids Go-template quotes being reinterpreted by Windows ProcessBuilder/docker.exe.
+        val state = restJsonMapper.readTree(inspection.stdout).single()
+        val mountedHostRoot = state.path("Mounts").firstOrNull { it.path("Destination").asText() == layout.containerRoot }
+            ?.path("Source")?.asText()?.takeIf(String::isNotEmpty)
             ?.let { normalizeHostPath(java.nio.file.Path.of(it)) }
         return DockerContainerState(
-            running = running,
+            running = state.path("State").path("Running").asBoolean(),
             mountedHostRoot = mountedHostRoot,
         )
     }

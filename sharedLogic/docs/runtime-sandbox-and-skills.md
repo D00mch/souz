@@ -3,6 +3,7 @@
 ## Invariants
 
 - Filesystem tools resolve a `RuntimeSandbox` from the current `ToolInvocationMeta`. The resolver maps invocation metadata to `SandboxScope` and may cache sandboxes by scope; tools must not cache a resolved path or sandbox for later users or conversations.
+- The default Docker factory starts a container on the first command. Skill inventory and mounted-file reads/writes use the host filesystem without starting Docker, so JVM-only plugin executions need no per-user container.
 - `FileSystemSkillRegistryRepository` and `RunSkillCommand` must use the same single-user bundle layout.
 - Skill metadata, immutable hash-addressed bundles, and validation records stay behind `SandboxFileSystem`. Bundle loading rejects escaping paths, symlinks, non-regular files, binary content, and invalid UTF-8.
 - `RunSkillCommand` accepts only a skill activated for the current turn and keeps its script and working directory within that skill bundle.

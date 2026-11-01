@@ -45,6 +45,7 @@ class DefaultRuntimeSandboxFactory(
                 hostRoot = hostRoot,
                 imageName = imageName,
                 containerName = containerName,
+                autoStart = false,
             )
         },
 ) : RuntimeSandboxFactory {

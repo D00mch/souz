@@ -44,7 +44,7 @@ class RuntimeSandboxFactoryTest {
     }
 
     @Test
-    fun `docker mode fails fast with clear error when docker is unavailable`() {
+    fun `docker mode preserves a sandbox creation failure`() {
         val factory = DefaultRuntimeSandboxFactory(
             settingsProvider = settingsProvider,
             modeResolver = RuntimeSandboxModeResolver { "docker" },
