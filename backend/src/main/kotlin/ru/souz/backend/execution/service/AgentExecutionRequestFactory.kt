@@ -13,6 +13,7 @@ import ru.souz.backend.settings.model.EffectiveUserSettings
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.llms.findLLMModel
+import ru.souz.llms.FileContent
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.restJsonMapper
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
@@ -52,6 +53,7 @@ internal class AgentExecutionRequestFactory(
         userMessageMetadataExtras: Map<String, String> = emptyMap(),
         clientToolsEnabled: Boolean = false,
         trustedInteractive: Boolean = false,
+        attachments: List<FileContent> = emptyList(),
     ): PreparedChatTurn {
         val effectiveSettings = effectiveSettingsResolver.resolve(userId, requestOverrides)
         val provider = findLLMModel(effectiveSettings.defaultModel)?.provider ?: LlmProvider.OPENAI
@@ -112,6 +114,7 @@ internal class AgentExecutionRequestFactory(
             runtimeRequest = BackendConversationTurnRequest(
                 reasoningEffort = effectiveSettings.reasoningEffort,
                 prompt = content,
+                attachments = attachments,
                 model = effectiveSettings.defaultModel,
                 locale = effectiveSettings.locale.toLanguageTag(),
                 timeZone = effectiveSettings.timeZone.id,

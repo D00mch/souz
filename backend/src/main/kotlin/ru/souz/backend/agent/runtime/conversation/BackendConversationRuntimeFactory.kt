@@ -9,6 +9,7 @@ import kotlinx.coroutines.plus
 import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
+import ru.souz.agent.DEFAULT_ATTACHMENT_HISTORY_LIMIT
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.SkillClassifier
@@ -117,6 +118,7 @@ internal class BackendConversationRuntimeFactory(
     private val metrics: BackendMetrics? = null,
     private val llmConfig: NamedLlmConfig = NamedLlmConfig(),
     private val testLlmApiFactory: (suspend (SettingsProvider) -> LLMChatAPI)? = null,
+    private val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
 ) {
     private val modelFailures = ModelFailureMemory()
 
@@ -228,6 +230,7 @@ internal class BackendConversationRuntimeFactory(
             ),
             enabledCompiledToolNames = request.enabledTools,
             clientToolCatalog = clientToolCatalog,
+            replyAttachmentsEnabled = !request.clientToolsEnabled,
             includeFewShotExamples = settingsProvider.useFewShotExamples,
             metrics = metrics,
         )
@@ -264,6 +267,7 @@ internal class BackendConversationRuntimeFactory(
                     maxTurns = maxTurns,
                     logObjectMapper = logObjectMapper,
                     telemetry = toolTelemetry,
+                    attachmentHistoryLimit = attachmentHistoryLimit,
                 )
             },
             catalogProvider = { executionToolCatalog.filter { _, tool -> tool.fn.name != CLIENT_TOOL_DISCOVERY_NAME } },
@@ -275,6 +279,7 @@ internal class BackendConversationRuntimeFactory(
             commandInstructions = CLIENT_TOOL_ROUTING_INSTRUCTIONS,
         )
         val kernel = AgentExecutionKernelFactory(
+            attachmentHistoryLimit = attachmentHistoryLimit,
             logObjectMapper = logObjectMapper,
             settingsProvider = settingsProvider,
             desktopInfoRepository = BackendNoopAgentDesktopInfoRepository,
