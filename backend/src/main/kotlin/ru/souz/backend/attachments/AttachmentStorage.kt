@@ -23,12 +23,18 @@ class AttachmentStorage(
     // Limits active transfers, not total heap: callers can retain returned arrays.
     private val transfers = Semaphore(config.maxConcurrentUploads)
 
-    suspend fun save(userId: String, sourceKey: String, name: String, input: InputStream): StoredAttachment = transfers.withPermit {
-        require(userId.isNotBlank() && sourceKey.isNotBlank() && sourceKey.length <= 512)
+    suspend fun save(userId: String, sourceKey: String, name: String, input: InputStream): StoredAttachment =
+        save(userId, name, input) { sourceKey }
+
+    /** Reads and hashes [input] once under the transfer limit; [sourceKey] receives the content SHA-256. */
+    suspend fun save(userId: String, name: String, input: InputStream, sourceKey: (String) -> String): StoredAttachment = transfers.withPermit {
         val bytes = runInterruptible(Dispatchers.IO) { input.use { it.readAttachmentBytes(config.maxFileBytes) } }
+        val sha256 = bytes.sha256Hex()
+        val key = sourceKey(sha256)
+        require(userId.isNotBlank() && key.isNotBlank() && key.length <= 512)
         val safeName = attachmentName(name)
-        val file = repository.reserve(userId, sourceKey, safeName, attachmentMime(bytes, safeName),
-            bytes.size.toLong(), bytes.sha256Hex(), clock.instant())
+        val file = repository.reserve(userId, key, safeName, attachmentMime(bytes, safeName),
+            bytes.size.toLong(), sha256, clock.instant())
         if (file.state == "ready") return@withPermit available(file)
         // Failed/canceled uploads stay pending until their cleanup deadline; PUT is never resumed.
         objects.put(file, bytes)
@@ -41,9 +47,12 @@ class AttachmentStorage(
     suspend fun find(userId: String, sourceKey: String): StoredAttachment? =
         repository.find(userId, sourceKey)?.let(::available)
 
-    suspend fun read(userId: String, id: UUID): ByteArray = transfers.withPermit {
+    suspend fun read(userId: String, id: UUID): ByteArray = load(userId, id).second
+
+    /** Returns metadata and bytes from one row lookup, checking availability again after the transfer. */
+    suspend fun load(userId: String, id: UUID): Pair<StoredAttachment, ByteArray> = transfers.withPermit {
         val file = get(userId, id)
-        objects.read(file).also { available(file) }
+        file to objects.read(file).also { available(file) }
     }
 
     suspend fun cleanup(): Int {

@@ -7,6 +7,7 @@ import java.util.UUID
 import javax.sql.DataSource
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import org.slf4j.LoggerFactory
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.agent.spi.RoutedModel
@@ -119,11 +120,18 @@ class PostgresAgentExecutionRepository(
 
             val message = output?.let { content ->
                 val writer = PostgresMessageRepository(dataSource)
+                // A selected file may expire or be cleaned up before the commit; keep the answer without it.
+                val attachments = state.replyAttachments
+                val available = connection.availableAttachments(current.userId, attachments)
+                if (available.size != attachments.size) {
+                    logger.warn("Dropped {} unavailable reply attachments from execution {}", attachments.size - available.size, current.id)
+                }
                 current.assistantMessageId?.let { id ->
-                    checkNotNull(writer.updateContent(connection, current.userId, current.chatId, id, content))
+                    checkNotNull(writer.updateContent(connection, current.userId, current.chatId, id, content, available))
                 } ?: writer.append(
                     connection, current.userId, current.chatId, ChatRole.ASSISTANT, content,
                     emptyMap(), requireNotNull(assistantMessageId), Instant.now(),
+                    available,
                 )
             }
             val savedState = if (message?.seq == state.basedOnMessageSeq + 1L) {
@@ -400,4 +408,7 @@ class PostgresAgentExecutionRepository(
         statement.setInstant(20, execution.runtimeLeaseUntil)
     }
 
+    private companion object {
+        val logger = LoggerFactory.getLogger(PostgresAgentExecutionRepository::class.java)
+    }
 }

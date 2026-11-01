@@ -40,7 +40,7 @@ class JevClassifier(
     override suspend fun classifyTask(request: LLMRequest.Chat, capabilities: Map<String, String>): TaskClassification {
         val currentIndex = request.messages.indexOfLast { it.role == LLMMessageRole.user }
         val current = request.messages.getOrNull(currentIndex) ?: return TaskClassification(complex = true)
-        if (current.content.length > CLASSIFICATION_MESSAGE_LIMIT || current.attachments.orEmpty().isNotEmpty()) {
+        if (current.content.length > CLASSIFICATION_MESSAGE_LIMIT || current.attachments.orEmpty().isNotEmpty() || current.files.isNotEmpty()) {
             return TaskClassification(complex = true)
         }
         val previous = request.messages.filterIndexed { index, message ->

@@ -12,6 +12,8 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.spi.TaskClassification
+import ru.souz.llms.FileContent
+import ru.souz.llms.FilePresentation
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.http.providerHttpClientDefaults
@@ -171,9 +173,32 @@ class JevClassifierTest {
             assertEquals(listOf(true, false, false), listOf(0.89, 0.9, 1.0).map {
                 simple = it; classifier.classifyTask(bounded, capabilities).complex
             })
-            val attached = request.copy(messages = listOf(request.messages.last().copy(attachments = listOf("file-id"))))
-            assertTrue(classifier.classifyTask(attached, capabilities).complex)
             assertEquals(3, engine.requestHistory.size)
+        }
+    }
+
+    @Test
+    fun `current attachments require tools without consulting JEV for a text only verdict`() = runTest {
+        val engine = MockEngine { respond("""{"answers":{"simple":{"type":"noul","noul":1.0}}}""") }
+        val prompt = LLMRequest.Message(LLMMessageRole.user, "translate to English")
+        val file = FileContent("document-id", "report.txt", "text/plain", 12)
+        val attached = listOf(prompt.copy(attachments = listOf("https://files.test/image.png"))) +
+            FilePresentation.entries.map { prompt.copy(files = listOf(file.copy(presentation = it))) } +
+            prompt.copy(content = "", files = listOf(file))
+        HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
+            val client = JevClient(http, "test-token")
+            for (waiting in listOf(emptyMap(), mapOf("files" to "Read documents"))) {
+                val classifier = JevClassifier(client, waitCategories = waiting)
+                for (message in attached) {
+                    assertEquals(TaskClassification(complex = true), classifier.classifyTask(
+                        request.copy(messages = listOf(message)), emptyMap(),
+                    ))
+                    assertTrue(engine.requestHistory.isEmpty())
+                }
+            }
+            val textOnly = request.copy(messages = listOf(prompt))
+            assertFalse(JevClassifier(client).classifyTask(textOnly, emptyMap()).complex)
+            assertEquals(1, engine.requestHistory.size)
         }
     }
 

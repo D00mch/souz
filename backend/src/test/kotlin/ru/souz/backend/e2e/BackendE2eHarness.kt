@@ -2,6 +2,15 @@ package ru.souz.backend.e2e
 
 import ru.souz.agent.spi.TaskComplexityClassifier
 import ru.souz.agent.skills.SkillClassifier
+import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
+import ru.souz.backend.agent.session.AgentStateRepository
+import ru.souz.backend.attachments.AttachmentStorage
+import ru.souz.backend.attachments.AttachmentStorageConfig
+import ru.souz.backend.attachments.BackendAttachmentAccess
+import ru.souz.backend.chat.repository.MessageRepository
+import ru.souz.llms.ToolInvocationMeta
+import ru.souz.runtime.sandbox.SandboxFileSystem
+import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 
 import ru.souz.backend.execution.service.AgentExecutionLauncher
 import ru.souz.backend.hooks.HookConfig
@@ -155,6 +164,7 @@ internal fun backendE2eTest(
     llmLimits: BackendLlmLimits = BackendLlmLimits(),
     sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
     skillOAuth: Boolean = false,
+    attachments: AttachmentStorageConfig? = null,
     complexityClassifier: TaskComplexityClassifier? = null,
     block: suspend BackendE2eScope.() -> Unit,
 ) = testApplication {
@@ -177,6 +187,7 @@ internal fun backendE2eTest(
         llmLimits = llmLimits,
         sandboxFactory = sandboxFactory,
         complexityClassifier = complexityClassifier,
+        attachments = attachments,
     )
     application {
         backendApplication(backend.dependencies)
@@ -366,6 +377,7 @@ internal class BackendE2eBackend(
     private val scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     private val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     private val sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
+    private val attachments: AttachmentStorageConfig? = null,
     private val complexityClassifier: TaskComplexityClassifier? = null,
 ) : AutoCloseable {
     private val appConfig: BackendAppConfig = postgresAppConfig(
@@ -381,6 +393,7 @@ internal class BackendE2eBackend(
         scheduledTasks = scheduledTasks,
         llmLimits = llmLimits,
         policyPrompt = E2E_POLICY_PROMPT,
+        attachments = attachments,
     )
     private val localChatApi = localChatApiBackedBy(llm)
     private val localAvailability = localProviderAvailability(localModels)
@@ -485,6 +498,15 @@ internal class BackendE2eBackend(
 
     val jobService: JobService get() = di.direct.instance()
 
+    val attachmentStorage: AttachmentStorage get() = di.direct.instance()
+    val attachmentAccess: BackendAttachmentAccess get() = di.direct.instance()
+    fun sandboxFileSystem(userId: String): SandboxFileSystem =
+        di.direct.instance<ToolInvocationRuntimeSandboxResolver>().resolve(ToolInvocationMeta(userId)).fileSystem
+    val messageRepository: MessageRepository get() = di.direct.instance()
+    val agentStateRepository: AgentStateRepository get() = di.direct.instance()
+    val turnRunner: BackendConversationTurnRunner get() = di.direct.instance()
+    val conversationRuntimeFactory: BackendConversationRuntimeFactory get() = di.direct.instance()
+
     suspend fun startScheduledTaskWorker() {
         val runner = di.direct.instance<ScheduledTaskRunner>()
         di.direct.instance<PostgresJobService>().startWorker(applicationScope, runner::awaitCapacity, runner::run)
@@ -534,6 +556,7 @@ internal class BackendE2eBackend(
             scheduledTasks = scheduledTasks,
             llmLimits = llmLimits,
             sandboxFactory = sandboxFactory,
+            attachments = attachments,
         )
 
     override fun close() {

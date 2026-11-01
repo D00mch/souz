@@ -50,6 +50,7 @@ class AgentExecutionKernelFactory(
     private val skillClassifier: SkillClassifier? = null,
     private val fallbackSkillClassifier: SkillClassifier? = null,
     private val complexityClassifier: TaskComplexityClassifier? = null,
+    private val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
 ) {
     fun create(): AgentExecutionKernel {
         val agentToolExecutor = AgentToolExecutor(telemetry)
@@ -73,7 +74,7 @@ class AgentExecutionKernelFactory(
         val nodesMemory = NodesMemory(memoryRuntime, captureScope, automaticMemoryRecall)
         val nodesErrorHandling = NodesErrorHandling(errorMessages)
         val nodesLLM = NodesLLM(llmApi, settingsProvider, conversationInstructions, complexityClassifier,
-            routedTools = coreTools::skillsTools)
+            routedTools = coreTools::skillsTools, attachmentHistoryLimit = attachmentHistoryLimit)
         val availableAgents = listOf(AgentId.SKILLS_GRAPH)
         val contextFactory = AgentContextFactory(
             settingsProvider = settingsProvider,

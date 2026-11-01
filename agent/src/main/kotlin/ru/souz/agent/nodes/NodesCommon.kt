@@ -154,6 +154,20 @@ internal fun AgentContext<*>.toChatRequest(
     reasoningEffort = settings.reasoningEffort,
 )
 
+/** Providers receive message text only: list each non-tool message's files so the model can use their IDs. */
+internal fun LLMRequest.Chat.withFileReferences(): LLMRequest.Chat = copy(messages = messages.map { it.withFileReferences() })
+
+internal fun LLMRequest.Message.withFileReferences(): LLMRequest.Message {
+    // Tool results already carry their file metadata in the JSON content.
+    if (files.isEmpty() || role == LLMMessageRole.function) return this
+    val references = files.joinToString("\n") {
+        "- ${it.name} (fileId: ${it.fileId}, ${it.mimeType}, ${it.sizeBytes} bytes, ${it.presentation})"
+    }
+    return copy(content = "$content\n\n$FILE_REFERENCES_HEADER\n$references".trimStart())
+}
+
+private const val FILE_REFERENCES_HEADER = "[Files available by fileId]"
+
 /** Merge ephemeral host instructions without changing the stored conversation. */
 internal fun LLMRequest.Chat.withConversationInstructions(instructions: String): LLMRequest.Chat {
     if (instructions.isEmpty()) return this

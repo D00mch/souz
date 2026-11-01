@@ -1,6 +1,7 @@
 package ru.souz.backend.agent.model
 
 import ru.souz.agent.spi.ModelRouting
+import ru.souz.llms.FileContent
 
 /** Internal request model for one chat-oriented backend agent turn. */
 internal data class BackendConversationTurnRequest(
@@ -21,6 +22,7 @@ internal data class BackendConversationTurnRequest(
     /** Destructive owner-wide memory tools require an authenticated interactive owner message. */
     val memoryMutationAllowed: Boolean = false,
     val narrateSteps: Boolean = false,
+    val attachments: List<FileContent> = emptyList(),
     /** Set only for a new turn that may be routed by complexity. */
     val routing: ModelRouting? = null,
 )

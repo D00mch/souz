@@ -12,6 +12,8 @@ Backend [personality settings](backend/docs/personality-settings.md) are separat
 
 Backend [external memory](backend/docs/external-memory.md) exposes exact-fact forgetting and one-time confirmed bank deletion only on authenticated interactive owner turns when Hindsight is configured.
 
+Backend [attachment contracts](backend/docs/attachments.md) carry owner-scoped file references through messages, tools and sessions.
+
 - Read and maintain this file before changing the repository. Before editing a module, read its linked `AGENTS.md`, any applicable nested instructions, and relevant topics linked in its `Pain points` section.
 - Keep runtime documentation and `docs/public-souz-contract/` concise and current-state only. Do not write change-history phrases such as “now we do”.
 - Keep pre-implementation client agreements under `docs/proposals/`, explicitly marked as proposed and not implemented; exclude them from the implemented public API schemas.
