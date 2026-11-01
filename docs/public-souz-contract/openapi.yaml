@@ -112,8 +112,8 @@ components:
       maxItems: 256
       default: []
       description: >-
-        Immutable creation declarations, at most 1 MiB. Bundled client Skills are always
-        available; declarations override matching defaults. Omission and [] are equivalent.
+        Immutable channel declarations, at most 1 MiB. Only orion.tools.list is injected.
+        All conversations share their user's unarchived channel tools. Omission and [] are equivalent.
         Definitions are normalized for shared HTTP/WS creation idempotency; changed definitions conflict.
       items:
         $ref: "#/components/schemas/ClientToolDefinition"
@@ -122,10 +122,12 @@ components:
       additionalProperties: false
       required: [tools]
       description: >-
-        Successful orion.tools.list result. Replaces the source conversation's remembered
-        discovered tools, bound to the supplying channel, without changing creation declarations.
-        Discovered definitions override matching declarations and defaults; an empty list restores
-        that baseline. The discovery tool itself is excluded. The deadline is 30 seconds.
+        Successful orion.tools.list result. Replaces the supplying channel's discovered catalogue
+        without changing creation declarations. Discovery overrides matching declarations on that channel;
+        an empty list restores its declarations and records successful discovery. Catalogues persist across
+        restart and are shared by all conversations of the user. Equal definitions share provider lists;
+        conflicting names and server controls are hidden from the model. The discovery tool itself is
+        excluded from this result. The deadline is 30 seconds.
       properties:
         tools:
           type: array
@@ -423,14 +425,51 @@ components:
     MessageSubmitPayload:
       type: object
       additionalProperties: false
-      required: [device, content]
+      required: [device]
+      anyOf:
+        - required: [content]
+        - required: [attachments]
+          properties:
+            attachments:
+              minItems: 1
       properties:
         device:
           $ref: "#/components/schemas/Device"
         content:
           $ref: "#/components/schemas/RecognizedTextContent"
+        attachments:
+          type: array
+          maxItems: 10
+          description: Distinct object keys, at most 100 MB total; omitted and empty arrays are equivalent.
+          items:
+            $ref: "#/components/schemas/Attachment"
         meta:
           $ref: "#/components/schemas/RequestMeta"
+    Attachment:
+      type: object
+      additionalProperties: false
+      required: [objectKey, name]
+      properties:
+        objectKey:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: Opaque key in the configured S3 bucket, not a URL. Nonblank, no control characters, at most 1024 UTF-8 bytes. Independent of the internal file UUID.
+        name:
+          $ref: "#/components/schemas/NonEmptyString"
+        presentation:
+          type: string
+          enum: [document, image, voice, audio]
+          default: document
+    ReplyAttachments:
+      type: array
+      minItems: 1
+      maxItems: 10
+      description: Explicitly selected files; omitted when empty. Persisted descriptors survive replay without storage access.
+      items:
+        allOf:
+          - $ref: "#/components/schemas/Attachment"
+          - required: [presentation]
     HistoryAppendPayload:
       type: object
       additionalProperties: false
@@ -1089,6 +1128,10 @@ components:
         createdAt:
           $ref: "#/components/schemas/DateTime"
     PersonalitySetArguments:
+      description: >-
+        Server-driven snapshot for a channel declaring prompt.personality.set through creation or discovery.
+        Prefer the current eligible connected channel, otherwise another eligible receiver. The command is
+        hidden from model tools; supporting channels also receive the snapshot on subscription/reconnection.
       type: object
       additionalProperties: false
       required: [prompt, revision]
@@ -1182,6 +1225,8 @@ components:
           $ref: "#/components/schemas/NonEmptyString"
         deviceType:
           $ref: "#/components/schemas/DeviceType"
+        attachments:
+          $ref: "#/components/schemas/ReplyAttachments"
     ThreadFailedEvent:
       type: object
       additionalProperties: false
@@ -1289,6 +1334,8 @@ components:
           $ref: "#/components/schemas/DeviceType"
         clientMessageId:
           type: [string, "null"]
+        attachments:
+          $ref: "#/components/schemas/ReplyAttachments"
     ErrorCode:
       type: string
       enum:
