@@ -119,7 +119,7 @@ class BackendSubagentE2eTest {
             },
         ) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            val chatId = createPublicChat(userId, tools = clientToolsJson("user.ask"))
             client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId)
                 jsonBody("""{"streamingMessages":true,"narrateSteps":true,"systemPrompt":"custom base"}""")
@@ -154,6 +154,7 @@ class BackendSubagentE2eTest {
                     assertEquals(started, readJson(observer, includeProgress = true))
                     val payload = started["payload"]
                     assertEquals("tool.call.started", started["type"].asText())
+                    assertTrue(started["seq"].isNull)
                     assertEquals(chatId, started["chatId"].asText())
                     assertEquals(threadId, started["threadId"].asText())
                     assertEquals("user.ask", payload["name"].asText())
@@ -168,7 +169,6 @@ class BackendSubagentE2eTest {
                     assertEquals(threadId, terminal["threadId"].asText())
                     assertEquals(terminal, readJson(observer, includeProgress = true))
                     withPublicSocket(chatId) { replay ->
-                        assertEquals(started, readJson(replay, includeProgress = true))
                         assertEquals(terminal, readJson(replay, includeProgress = true))
                         replay.send(Frame.Text(historyFrame(chatId, "history", "user", "passive context")))
                         assertEquals("ack", readJson(replay, includeProgress = true)["kind"].asText())
@@ -194,7 +194,7 @@ class BackendSubagentE2eTest {
             val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
             assertEquals(listOf("delegate the question", "parent final answer", "passive context"), messages.map { it["content"].asText() })
             val events = client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(userId) }.jsonBody()["items"]
-            assertEquals(listOf("tool.call.started", "thread.completed"), events.map { it["type"].asText() })
+            assertEquals(listOf("thread.completed"), events.map { it["type"].asText() })
             assertEquals("parent final answer", events.last()["payload"]["response"].asText())
         }
     }
@@ -251,7 +251,7 @@ class BackendSubagentE2eTest {
             ))
         }) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            val chatId = createPublicChat(userId, tools = clientToolsJson("web.search"))
             val settings = client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId)
                 jsonBody("""{"defaultModel":"${E2E_MODEL.alias}","enabledTools":["InternetSearch"]}""")

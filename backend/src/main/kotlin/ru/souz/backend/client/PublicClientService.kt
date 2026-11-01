@@ -17,6 +17,8 @@ import kotlinx.coroutines.slf4j.MDCContext
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
+import ru.souz.backend.attachments.AttachmentStorage
+import ru.souz.backend.attachments.AttachmentException
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
@@ -32,12 +34,10 @@ import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.settings.service.UserSettingsOverrides
-import ru.souz.backend.toolcall.model.ToolCall
-import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.toolcall.repository.ToolCallContext
-import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.backend.http.parseModel
 import kotlin.time.Duration.Companion.milliseconds
+import ru.souz.llms.FileContent
 
 internal data class HandledClientFrame(
     val response: Any,
@@ -52,11 +52,11 @@ internal class PublicClientService(
     private val chatRepository: ChatRepository,
     private val executionRepository: AgentExecutionRepository,
     private val clientRequestRepository: ClientRequestRepository,
-    private val toolCallRepository: ToolCallRepository,
     private val executionService: AgentExecutionService,
     private val registry: ClientThreadRuntimeRegistry,
     private val applicationScope: CoroutineScope,
     private val namedModelNames: Set<String> = emptySet(),
+    private val attachmentStorage: AttachmentStorage? = null,
     private val mapper: ObjectMapper = jacksonObjectMapper().registerKotlinModule(),
 ) {
     private val logger = LoggerFactory.getLogger(PublicClientService::class.java)
@@ -79,7 +79,11 @@ internal class PublicClientService(
         val now = Instant.now()
         val requestId = frame.requestId.required("requestId")
         validateDevice(chat, frame.payload.device)
-        frame.payload.content.validatedText()
+        frame.payload.content?.validatedText()
+        frame.payload.attachments.validateReferences()
+        if (frame.payload.content == null && frame.payload.attachments.isEmpty()) {
+            throw ClientContractException("invalid_request", "content or non-empty attachments is required.")
+        }
         val requestedThreadId = frame.threadId?.uuid("threadId")
         val key = ClientRequestKey(
             chatId = chat.id,
@@ -92,7 +96,7 @@ internal class PublicClientService(
                     "device" to frame.payload.device.copy(capabilities = frame.payload.device.capabilities.toSortedSet()),
                     "content" to frame.payload.content,
                     "meta" to frame.payload.meta,
-                )
+                ).apply { if (frame.payload.attachments.isNotEmpty()) put("attachments", frame.payload.attachments) }
             ),
         )
         val result = clientRequestRepository.resolveMessage(
@@ -101,10 +105,16 @@ internal class PublicClientService(
             requestedThreadId = requestedThreadId,
             rejectedRequest = rejectedMessageRequest(key, now),
         )
-        return when (result) {
-            is ClientRequestResult.Continue -> continueThread(chat, frame, key, result.execution, now)
-            ClientRequestResult.CreateThread -> startThread(chat, frame, key, now)
-            else -> handledReceipt(result, key, now)
+        // Accepted retries must survive file expiry and storage outages.
+        if (result !is ClientRequestResult.Continue && result != ClientRequestResult.CreateThread) {
+            return handledReceipt(result, key, now)
+        }
+        return try {
+            val files = frame.payload.attachments.importFiles(chat.userId, attachmentStorage)
+            if (result is ClientRequestResult.Continue) continueThread(chat, frame, key, result.execution, now, files)
+            else startThread(chat, frame, key, now, files)
+        } catch (error: AttachmentException) {
+            throw ClientContractException("invalid_request", "Attachment rejected: ${error.code}.")
         }
     }
 
@@ -171,48 +181,7 @@ internal class PublicClientService(
                 )) },
             )
         }
-        val existing = toolCallRepository.get(context)
-            ?: return rejectedTool(chat.id, threadId, toolCallId, "tool_call_not_found", "Tool call not found.", now)
-        if (existing.target != "client") {
-            return rejectedTool(chat.id, threadId, toolCallId, "tool_call_not_found", "Client tool call not found.", now)
-        }
-        val payloadHash = PublicPayloadHash.ofJson(
-            mapper.valueToTree(linkedMapOf("status" to status, "result" to frame.result, "error" to frame.error))
-        )
-        if (existing.status != ToolCallStatus.RUNNING) {
-            return terminalToolResult(chat.id, threadId, toolCallId, existing, payloadHash, now)
-        }
-        if (status != "timed_out" && existing.deadlineAt?.let { !now.isBefore(it) } == true) {
-            return timeOutExpiredTool(chat.id, threadId, toolCallId, context, now)
-        }
-        val execution = executionRepository.getByChat(chat.userId, chat.id, threadId)
-        if (execution == null || !execution.status.acceptsInput()) {
-            return rejectedTool(chat.id, threadId, toolCallId, "thread_already_terminal", "Thread is not running.", now)
-        }
-        if (!registry.contains(threadId)) {
-            return rejectedTool(chat.id, threadId, toolCallId, "message_rejected", "Thread runtime is unavailable on this Souz instance.", now)
-        }
-        val completed = toolCallRepository.completeClientCall(
-            context = context,
-            status = status.toToolCallStatus(),
-            resultJson = frame.result?.let(mapper::writeValueAsString),
-            errorJson = frame.error?.let(mapper::writeValueAsString),
-            payloadHash = payloadHash,
-            receivedAt = now,
-        )
-        if (completed == null) {
-            val latest = toolCallRepository.get(context)
-            return if (latest != null && latest.status != ToolCallStatus.RUNNING) {
-                terminalToolResult(chat.id, threadId, toolCallId, latest, payloadHash, now)
-            } else {
-                rejectedTool(chat.id, threadId, toolCallId, "message_rejected", "Tool call is no longer pending.", now)
-            }
-        }
-        val outcome = ClientToolOutcome(completed.status.value, frame.result, frame.error)
-        return HandledClientFrame(
-            response = acceptedTool(chat.id, threadId, toolCallId, duplicate = false, now),
-            afterSend = { registry.finishTool(threadId, toolCallId, outcome) },
-        )
+        return rejectedTool(chat.id, threadId, toolCallId, "tool_call_not_found", "Tool call is not pending.", now)
     }
 
     suspend fun handleCancel(chat: Chat, frame: ThreadCancelFrame): HandledClientFrame {
@@ -265,18 +234,20 @@ internal class PublicClientService(
         frame: MessageSubmitFrame,
         key: ClientRequestKey,
         now: Instant,
+        attachments: List<FileContent>,
     ): HandledClientFrame {
         val deviceJson = mapper.writeValueAsString(frame.payload.device)
         val metadata = inputMetadata(frame)
         val prepared = executionService.prepareChatTurn(
             userId = chat.userId,
             chatId = chat.id,
-            content = frame.payload.content.text,
+            content = frame.payload.content?.text.orEmpty(),
             clientMessageId = key.requestId,
             requestOverrides = requestOverrides(frame.payload.meta),
             latestDeviceContextJson = deviceJson,
             userMessageMetadata = metadata,
             clientToolsEnabled = true,
+            attachments = attachments,
         )
         val threadId = prepared.execution.id
         val ack = acceptedMessage(chat.id, key.requestId, threadId, created = true, now = now)
@@ -313,7 +284,7 @@ internal class PublicClientService(
             }
         }.await()
         return if (result is ClientRequestResult.Continue) {
-            continueThread(chat, frame, key, result.execution, now)
+            continueThread(chat, frame, key, result.execution, now, attachments)
         } else {
             handledReceipt(result, key, now)
         }
@@ -325,12 +296,14 @@ internal class PublicClientService(
         key: ClientRequestKey,
         execution: AgentExecution,
         now: Instant,
+        attachments: List<FileContent>,
     ): HandledClientFrame {
         val threadId = execution.id
         val input = ClientFollowUpInput(
-            content = frame.payload.content.text,
+            content = frame.payload.content?.text.orEmpty(),
             metadata = inputMetadata(frame),
             latestDeviceContextJson = mapper.writeValueAsString(frame.payload.device),
+            attachments = attachments,
         )
         suspend fun commit(afterSeq: Long, input: ClientFollowUpInput?) = clientRequestRepository.commitFollowUp(
             userId = chat.userId,
@@ -376,7 +349,7 @@ internal class PublicClientService(
     )
 
     private fun inputMetadata(frame: MessageSubmitFrame): Map<String, String> = buildMap {
-        put("source", frame.payload.content.source)
+        frame.payload.content?.let { put("source", it.source) }
         put("device", mapper.writeValueAsString(frame.payload.device))
         put("requestId", frame.requestId)
         frame.payload.meta?.let { put("requestMeta", mapper.writeValueAsString(it)) }
@@ -388,31 +361,6 @@ internal class PublicClientService(
         timeZone = meta?.timeZone?.let { runCatching { ZoneId.of(it) }.getOrNull() },
         streamingMessages = true,
     )
-
-    private suspend fun timeOutExpiredTool(
-        chatId: UUID,
-        threadId: UUID,
-        toolCallId: String,
-        context: ToolCallContext,
-        now: Instant,
-    ): HandledClientFrame {
-        val error = ClientError("client_tool_timed_out", "Client tool result deadline expired.")
-        val outcome = ClientToolOutcome("timed_out", null, error)
-        val completed = toolCallRepository.completeClientCall(
-            context = context,
-            status = ToolCallStatus.TIMED_OUT,
-            resultJson = null,
-            errorJson = mapper.writeValueAsString(error),
-            payloadHash = PublicPayloadHash.ofValue(mapOf("status" to "timed_out", "error" to error)),
-            receivedAt = now,
-        )
-        return HandledClientFrame(
-            response = ToolResultAck.rejected(chatId.toString(), threadId.toString(), toolCallId, error, now),
-            afterSend = {
-                if (completed != null) registry.finishTool(threadId, toolCallId, outcome)
-            },
-        )
-    }
 
     private fun AgentExecution.toPublicThreadStatus(chatId: UUID, now: Instant): PublicThreadStatusResponse {
         val active = status.isActive()
@@ -431,29 +379,6 @@ internal class PublicClientService(
                 ClientError(code.toPublicClientErrorCode(), errorMessage ?: "Thread failed.")
             },
             observedAt = now.toString(),
-        )
-    }
-
-    private fun terminalToolResult(
-        chatId: UUID,
-        threadId: UUID,
-        toolCallId: String,
-        toolCall: ToolCall,
-        payloadHash: String,
-        now: Instant,
-    ): HandledClientFrame = if (toolCall.resultPayloadHash == payloadHash) {
-        val outcome = toolCall.toClientToolOutcome(mapper)
-        HandledClientFrame(acceptedTool(chatId, threadId, toolCallId, duplicate = true, now)) {
-            registry.finishTool(threadId, toolCallId, outcome)
-        }
-    } else {
-        rejectedTool(
-            chatId,
-            threadId,
-            toolCallId,
-            "idempotency_conflict",
-            "toolCallId already has a different terminal result.",
-            now,
         )
     }
 
@@ -611,14 +536,6 @@ private fun String.uuid(field: String): UUID = try {
     UUID.fromString(this)
 } catch (_: IllegalArgumentException) {
     throw ClientContractException("invalid_request", "$field must be a UUID.")
-}
-
-private fun String.toToolCallStatus(): ToolCallStatus = when (this) {
-    "succeeded" -> ToolCallStatus.SUCCEEDED
-    "failed" -> ToolCallStatus.FAILED
-    "cancelled" -> ToolCallStatus.CANCELLED
-    "timed_out" -> ToolCallStatus.TIMED_OUT
-    else -> error("Unsupported tool status: $this")
 }
 
 private fun String.toChatRole(): ChatRole = when (this) {

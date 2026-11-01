@@ -2,19 +2,21 @@
 
 Souz is a backend-only Kotlin/JVM AI assistant with a Ktor HTTP host, graph-based agent execution, and PostgreSQL persistence.
 
-Backend client Skills are bundled under `backend/src/main/resources/skills/client/`. Orion command tools come from chat declarations or discovery. Chat declarations override matching defaults; discovered Orion tools override both and remain bound to their supplying channel until refreshed in that conversation.
+Client Skill guidance is bundled under `backend/src/main/resources/skills/client/`. Only `orion.tools.list` is injected into every public WebSocket channel. Declarations and discovery describe that channel’s tools; all conversations can use their user’s unarchived channels. Discovery overrides matching declarations on its provider. Equal definitions share one Skill with provider metadata; conflicting names and server control commands are hidden from the model. `user.ask` is supported when declared or discovered. Local calls default to the current channel; explicit routing takes priority, and only model-callable `web.search` can automatically select another provider. Discovery is explicit and persists across backend restarts, including successful empty catalogues.
 
 Complexity routing admits only confident tool-free turns to the light model. Public-client executions attempt one best-effort live waiting phrase unless routed simple or `intermediateMessages` is off; progress or completion can overtake it. See [model routing](agent/docs/execution-lifecycle.md#model-routing).
 
 Backend uses one startup-validated `CONTEXT_SIZE` (minimum 24,000 tokens) for all models, including summaries. Compaction and input validation share an 80% limit independent of output limits; context size is not a user or execution setting.
 
-Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts and synchronize revisioned snapshots to Orion.
+Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts. Revisioned snapshots go to the current connected channel if it declares `prompt.personality.set`, otherwise to another declaring channel. Settings save independently of discovery; no known receiver means synchronization is skipped.
 
-Backend [attachment contracts](backend/docs/attachments.md) carry owner-scoped file references through messages, tools and sessions.
+Backend [attachment contracts](backend/docs/attachments.md) carry owner-scoped file references through messages, tools and sessions. Public WebSocket attachments use opaque bucket keys stored in `object_key`, independently of internal file UUIDs. Import completed uploads before acceptance, resolve accepted retries before storage access, and snapshot reply descriptors during the final transaction for terminal delivery and replay.
 
 - Read and maintain this file before changing the repository. Before editing a module, read its linked `AGENTS.md`, any applicable nested instructions, and relevant topics linked in its `Pain points` section.
 - Keep runtime documentation and `docs/public-souz-contract/` concise and current-state only. Do not write change-history phrases such as “now we do”.
 - Keep pre-implementation client agreements under `docs/proposals/`, explicitly marked as proposed and not implemented; exclude them from the implemented public API schemas.
+
+Client commands share one live-only dispatcher, permit concurrent correlated calls, and have no durable result receipts or command replay.
 
 ## Development principles
 

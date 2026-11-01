@@ -43,3 +43,5 @@ Automatic subscriptions from creation or accepted submits are live-only, includi
 `websocket / Client-Souz single-chat WebSocket (existing chat)` connects to `/v1/chats/{{chatId}}/ws` and replays from `0`. Set an existing `chatId` first; `chat.create`, `chat.subscribe` and `chat.unsubscribe` belong to the multi-chat endpoint. Its explicit continuation template requires the current `threadId` and `acceptsInput:true`; it also uses a fresh message UUID.
 
 See the [public contract](../README.md), [schemas](../openapi.yaml), and [example trace](../examples/happy-path.jsonl) for other operations.
+
+All client tool starts have `seq:null` and are never replayed. Correlate results by chat, thread and tool-call IDs; the first result wins, and retries are rejected. Concurrent calls are independent.

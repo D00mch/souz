@@ -6,6 +6,9 @@ import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import ru.souz.backend.events.model.AgentEvent
+import ru.souz.backend.events.model.AgentLiveEvent
+import ru.souz.backend.events.model.PublicToolCallStartedPayload
+import ru.souz.llms.restJsonMapper
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.MessageCreatedPayload
 import ru.souz.backend.events.model.MessageDeltaPayload
@@ -22,6 +25,15 @@ class EventRoutesPublicFilterTest {
         payload = MessageCreatedPayload(UUID.randomUUID(), 1, "assistant", "hello"),
         createdAt = Instant.now(),
     )
+
+    @Test
+    fun `commands are live only and stored commands cannot be replayed`() {
+        val old = messageCreatedEvent(UUID.randomUUID()).copy(type = AgentEventType.TOOL_CALL_STARTED,
+            payload = PublicToolCallStartedPayload("call", "user.ask", arguments = restJsonMapper.createObjectNode()))
+        assertFalse(old.isPublicClientEvent())
+        assertTrue(AgentLiveEvent(old.id, old.userId, old.chatId, old.executionId, old.type, old.payload, old.createdAt)
+            .isPublicClientEvent())
+    }
 
     @Test
     fun `message created without an execution id is admitted as an out-of-band channel push`() {

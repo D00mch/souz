@@ -18,7 +18,6 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import ru.souz.backend.channels.ChannelDeliveryService
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.events.bus.AgentEventBus
@@ -29,7 +28,6 @@ import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.personality.PERSONALITY_SYNC_COMMAND
 import ru.souz.backend.personality.PersonalitySync
 import ru.souz.backend.settings.model.PersonalitySnapshot
-import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
@@ -40,6 +38,7 @@ class BackendChannelToolsTest {
     @Test
     fun `channel publication is independent of source delivery and personality sync recovers from full queues`() = runTest {
         with(Fixture(backgroundScope)) {
+            val skill = skill()
             val subscription = bus.subscribe(target.userId, target.id)
             registry.register(source, ClientDevice(target.userId, "device", "tv_box", emptySet()))
             try {
@@ -56,12 +55,15 @@ class BackendChannelToolsTest {
                 assertTrue(skill.invoke(call, meta).content.contains("client_tool_busy"))
                 assertTrue(registry.isEmpty())
 
-                val sync = PersonalitySync(mockk(), ChannelDeliveryService(chats, mockk(), events), events,
+                val sync = PersonalitySync(mockk(), chats, events,
                     LiveClientToolDispatcher(registry, events))
                 for (hasFallback in listOf(true, false)) {
-                    val receivingChat = if (hasFallback) target.copy(id = UUID.randomUUID()) else target
+                    val receivingChat = if (hasFallback) target.copy(id = UUID.randomUUID(), clientType = "mobile_app") else target
                     val receiver = if (hasFallback) bus.subscribe(target.userId, receivingChat.id) else subscription
-                    coEvery { chats.getByIds(any()) } returns listOf(target, receivingChat).distinct()
+                    coEvery { chats.clientToolChannels(target.userId) } returns listOf(target, receivingChat).distinct().map {
+                        ClientToolChannel(it, listOf(ClientToolDefinition(PERSONALITY_SYNC_COMMAND,
+                            "Synchronize personality", ru.souz.llms.LLMRequest.Parameters("object"))), discoveryComplete = false)
+                    }
                     try {
                         val started = testScheduler.currentTime
                         val syncing = async(start = CoroutineStart.UNDISPATCHED) {
@@ -94,6 +96,7 @@ class BackendChannelToolsTest {
         for (finish in listOf("ack", "write failure", "cancellation", "timeout")) {
             BackendMetrics().use { metrics ->
                 with(Fixture(backgroundScope, metrics)) {
+                    val skill = skill()
                     val subscription = bus.subscribe(target.userId, target.id)
                     try {
                         val pending = async(start = CoroutineStart.UNDISPATCHED) { skill.invoke(call, meta) }
@@ -150,22 +153,55 @@ class BackendChannelToolsTest {
         }
     }
 
-    private class Fixture(scope: CoroutineScope, metrics: BackendMetrics? = null) {
+    @Test
+    fun `local concurrent calls retain device context and resolve independently out of order`() = runTest {
+        with(Fixture(backgroundScope)) {
+            val device = ClientDevice(target.userId, "speaker", "smart_speaker", emptySet())
+            registry.register(source, device)
+            val subscription = bus.subscribe(target.userId, target.id)
+            try {
+                val skill = skill()
+                val local = meta.copy(conversationId = target.id.toString())
+                val first = async(start = CoroutineStart.UNDISPATCHED) { skill.invoke(call, local) }
+                val second = async(start = CoroutineStart.UNDISPATCHED) { skill.invoke(call, local) }
+                val commands = List(2) { subscription.commands.receive() }
+                val payloads = commands.map { assertIs<PublicToolCallStartedPayload>(it.payload) }
+                assertEquals(2, payloads.map { it.toolCallId }.distinct().size)
+                assertTrue(commands.all { it.executionId == source && it.seq == null })
+                assertTrue(payloads.all { it.deviceId == "speaker" })
+                for (index in listOf(1, 0)) {
+                    val result = restJsonMapper.readTree("""{"index":$index}""")
+                    service.handleToolResult(target, ToolResultFrame("tool.result", target.id.toString(), source.toString(),
+                        payloads[index].toolCallId, "succeeded", result)).afterSend()
+                    assertEquals(result.toString(), (if (index == 0) first else second).await().content)
+                    if (index == 1) assertFalse(first.isCompleted)
+                }
+            } finally {
+                subscription.close()
+                registry.discard(source)
+            }
+            assertTrue(registry.isEmpty())
+        }
+    }
+
+    private class Fixture(scope: CoroutineScope, private val metrics: BackendMetrics? = null) {
         val source = UUID.randomUUID()
         val target = Chat(UUID.randomUUID(), "user", null, false, Instant.EPOCH, Instant.EPOCH)
         val chats = mockk<ChatRepository> {
             coEvery { get(target.userId, target.id) } returns target
+            coEvery { clientToolChannels(target.userId) } returns listOf(ClientToolChannel(target, listOf(
+                ClientToolDefinition("orion.call", "Control device", ru.souz.llms.LLMRequest.Parameters("object")),
+            ), discoveryComplete = false))
         }
-        val tools = mockk<ToolCallRepository> { coEvery { get(any<ToolCallContext>()) } returns null }
         val bus = AgentEventBus()
         val events = AgentEventService(chats, mockk(), bus)
         val registry = ClientThreadRuntimeRegistry()
         val startedAt = Instant.now()
-        val skill = BackendClientSkills(registry, tools, events, ChannelDeliveryService(chats, mockk(), events),
+        suspend fun skill() = BackendClientSkills(registry, events, chats,
             now = { startedAt }, metrics = metrics)
-            .catalog(listOf(ClientToolDefinition("orion.call", "Control device", ru.souz.llms.LLMRequest.Parameters("object"))))
+            .catalog(target.userId, emptySet()) {}
             .toolsByCategory.values.firstNotNullOf { it["orion.call"] }
-        val service = PublicClientService(chats, mockk(), mockk(), tools, mockk(), registry, scope)
+        val service = PublicClientService(chats, mockk(), mockk(), mockk(), registry, scope)
         val call = LLMResponse.FunctionCall("orion.call", mapOf("channelId" to target.id.toString(), "utterance" to "play"))
         val meta = ToolInvocationMeta(target.userId, requestId = source.toString())
     }

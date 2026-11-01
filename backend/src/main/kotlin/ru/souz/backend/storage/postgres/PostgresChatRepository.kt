@@ -1,6 +1,8 @@
 package ru.souz.backend.storage.postgres
 
 import com.fasterxml.jackson.module.kotlin.readValue
+import ru.souz.backend.client.ClientToolChannel
+import ru.souz.backend.client.supportedClientTypes
 import ru.souz.backend.client.ClientToolDefinition
 import ru.souz.backend.client.DiscoveredClientTools
 import ru.souz.llms.restJsonMapper
@@ -77,31 +79,43 @@ class PostgresChatRepository(
         }
     }
 
-    override suspend fun clientTools(userId: String, chatId: UUID): List<ClientToolDefinition> = dataSource.read { connection ->
-        connection.prepareStatement("select client_tools from chats where user_id = ? and id = ?").use { statement ->
+    override suspend fun listClientChannels(userId: String): List<Chat> = dataSource.read { connection ->
+        connection.prepareStatement(
+            "select $CHAT_COLUMNS from chats where user_id = ? and not archived and client_type = any(?)"
+        ).use { statement ->
             statement.setString(1, userId)
-            statement.setObject(2, chatId)
-            statement.executeQuery().use { result ->
-                if (result.next()) restJsonMapper.readValue(result.getString("client_tools")) else emptyList()
-            }
+            statement.setArray(2, connection.createArrayOf("text", supportedClientTypes.toTypedArray()))
+            statement.executeQuery().use { rows -> buildList { while (rows.next()) add(rows.toChat()) } }
         }
     }
 
-    override suspend fun discoveredClientTools(userId: String, chatId: UUID): DiscoveredClientTools? = dataSource.read { connection ->
-        connection.prepareStatement("select discovered_client_tools from chats where user_id = ? and id = ?").use { statement ->
+    override suspend fun clientToolChannels(userId: String): List<ClientToolChannel> = dataSource.read { connection ->
+        connection.prepareStatement(
+            "select $CHAT_COLUMNS, client_tools, discovered_client_tools from chats " +
+                "where user_id = ? and not archived and client_type = any(?)"
+        ).use { statement ->
             statement.setString(1, userId)
-            statement.setObject(2, chatId)
+            statement.setArray(2, connection.createArrayOf("text", supportedClientTypes.toTypedArray()))
             statement.executeQuery().use { result ->
-                if (result.next()) result.getString("discovered_client_tools")?.let {
-                    restJsonMapper.readValue<DiscoveredClientTools>(it)
-                } else null
+                buildList {
+                    while (result.next()) {
+                        val chat = result.toChat()
+                        val declared = restJsonMapper.readValue<List<ClientToolDefinition>>(result.getString("client_tools"))
+                        val discovered = result.getString("discovered_client_tools")?.let {
+                            restJsonMapper.readValue<DiscoveredClientTools>(it)
+                        }?.takeIf { it.channelId == chat.id }
+                        add(ClientToolChannel(chat, (discovered?.tools.orEmpty() + declared).distinctBy { it.name },
+                            discoveryComplete = discovered != null))
+                    }
+                }
             }
         }
     }
 
     override suspend fun replaceDiscoveredClientTools(userId: String, chatId: UUID, tools: DiscoveredClientTools) {
+        require(tools.channelId == chatId) { "Discovery must belong to its supplying channel." }
         dataSource.write { connection ->
-            connection.prepareStatement("update chats set discovered_client_tools = ?::jsonb where user_id = ? and id = ?").use { statement ->
+            connection.prepareStatement("update chats set discovered_client_tools = ?::jsonb where user_id = ? and id = ? and not archived").use { statement ->
                 statement.setString(1, restJsonMapper.writeValueAsString(tools))
                 statement.setString(2, userId)
                 statement.setObject(3, chatId)

@@ -407,7 +407,7 @@ class BackendPublicWebSocketE2eTest {
     }
 
     @Test
-    fun `client tool result is acknowledged idempotently before the thread completes`() =
+    fun `live client result is acknowledged before completion and commands are not replayed`() =
         backendE2eTest(
             schemaPrefix = "e2e_ws_client_tool",
             llm = E2eLlmApi().apply {
@@ -432,14 +432,13 @@ class BackendPublicWebSocketE2eTest {
                 assertEquals("Which genre?", started["payload"]["arguments"]["question"].asText())
                 assertEquals(2.0, metrics.get("souz.pending.tool.calls").gauge().value()) // Skill helper and client transport.
 
+                assertTrue(started["seq"].isNull)
                 withPublicSocket(chatId) { replay ->
-                    assertEquals(started, readJson(replay))
+                    replay.send(Frame.Text(historyFrame(chatId, "replay-barrier", "user", "context")))
+                    assertEquals("ack", readJson(replay)["kind"].asText())
                 }
-
-                val httpEvent = client.get(BackendHttpRoutes.chatEvents(chatId)) {
-                    trusted(userId)
-                }.jsonBody()["items"].single { it["seq"] == started["seq"] }
-                assertEquals("client", httpEvent["payload"]["target"]?.asText())
+                val events = client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(userId) }.jsonBody()["items"]
+                assertTrue(events.none { it["type"].asText() == "tool.call.started" })
 
                 val resultFrame =
                     """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"answer":"Horror"}}"""
@@ -452,8 +451,8 @@ class BackendPublicWebSocketE2eTest {
 
                 session.send(Frame.Text(resultFrame))
                 val duplicate = readJson(session)
-                assertEquals("accepted", duplicate["status"].asText())
-                assertTrue(duplicate["duplicate"].asBoolean())
+                assertEquals("rejected", duplicate["status"].asText())
+                assertEquals("tool_call_not_found", duplicate["error"]["code"].asText())
 
                 session.send(
                     Frame.Text(
@@ -462,7 +461,7 @@ class BackendPublicWebSocketE2eTest {
                 )
                 val conflict = readJson(session)
                 assertEquals("rejected", conflict["status"].asText())
-                assertEquals("idempotency_conflict", conflict["error"]["code"].asText())
+                assertEquals("tool_call_not_found", conflict["error"]["code"].asText())
                 assertEquals(0.0, metrics.get("souz.pending.tool.calls").gauge().value())
                 assertEquals(1.0, metrics.get("souz.tool.calls").tags("category", "chat", "outcome", "success").counter().count())
             }
@@ -513,7 +512,7 @@ class BackendPublicWebSocketE2eTest {
         }
 
     @Test
-    fun `client reported tool timeout completes once and accepts the same retry`() =
+    fun `client reported tool timeout completes once and rejects the same retry`() =
         backendE2eTest(
             schemaPrefix = "e2e_ws_client_tool_timeout",
             llm = E2eLlmApi().apply {
@@ -541,8 +540,8 @@ class BackendPublicWebSocketE2eTest {
 
                 session.send(Frame.Text(timeoutFrame))
                 val duplicate = readJson(session)
-                assertEquals("accepted", duplicate["status"].asText())
-                assertTrue(duplicate["duplicate"].asBoolean())
+                assertEquals("rejected", duplicate["status"].asText())
+                assertEquals("tool_call_not_found", duplicate["error"]["code"].asText())
                 val metrics = backend.dependencies.metrics.registry
                 assertEquals(0.0, metrics.get("souz.pending.tool.calls").gauge().value())
                 assertEquals(1.0, metrics.get("souz.tool.calls").tags("category", "chat", "outcome", "timeout").counter().count())
@@ -657,7 +656,7 @@ class BackendPublicWebSocketE2eTest {
                 )
                 val rejected = readJson(session)
                 assertEquals("rejected", rejected["status"].asText())
-                assertEquals("idempotency_conflict", rejected["error"]["code"].asText())
+                assertEquals("tool_call_not_found", rejected["error"]["code"].asText())
                 val metrics = backend.dependencies.metrics.registry
                 assertEquals(0.0, metrics.get("souz.pending.tool.calls").gauge().value())
                 assertEquals(1.0, metrics.get("souz.tool.calls").tags("category", "chat", "outcome", "cancelled").counter().count())

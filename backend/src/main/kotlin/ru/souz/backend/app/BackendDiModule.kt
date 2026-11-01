@@ -24,6 +24,7 @@ import ru.souz.backend.hooks.HookService
 import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.hooks.HookVerifier
 import ru.souz.backend.personality.PersonalitySync
+import ru.souz.backend.personality.PERSONALITY_SYNC_COMMAND
 import ru.souz.backend.storage.postgres.PostgresConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
@@ -308,9 +309,9 @@ fun backendDiModule(
         BackendClientSkills(
             liveTools = instance(),
             registry = instance(),
-            toolCallRepository = instance(),
             eventService = instance(),
-            channelDeliveryService = instance(),
+            chatRepository = instance(),
+            controlCommandNames = setOf(PERSONALITY_SYNC_COMMAND),
             metrics = instance(),
         )
     }
@@ -368,7 +369,6 @@ fun backendDiModule(
             policyPrompt = appConfig.policyPrompt,
             toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
             clientSkills = instance(),
-            chatRepository = instance(),
             skillBundleProvider = instance<SkillRegistryRepository>(),
             commandExecutor = instance<SkillCommandExecutor>(),
             filesToolUtil = instance<FilesToolUtil>(),
@@ -504,6 +504,7 @@ fun backendDiModule(
             chatRepository = instance(),
             messageRepository = instance(),
             eventService = instance(),
+            attachmentRepository = instanceOrNull(),
         )
     }
     bindSingleton {
@@ -512,6 +513,7 @@ fun backendDiModule(
         PublicClientChannelProvider(
             chatRepository = instance(),
             deliveryService = instance(),
+            attachmentStorage = instanceOrNull(),
             isClaimedByAnotherProvider = { chatId ->
                 // Gated on the same flags TelegramChannelProvider/VkChannelProvider's registration
                 // is gated on below — otherwise a leftover Telegram/VK binding would hide a chat
@@ -578,10 +580,10 @@ fun backendDiModule(
             chatRepository = instance(),
             executionRepository = instance(),
             clientRequestRepository = instance(),
-            toolCallRepository = instance(),
             executionService = instance(),
             registry = instance(),
             applicationScope = instance<BackendApplicationScope>(),
+            attachmentStorage = instanceOrNull(),
         )
     }
     bindSingleton {

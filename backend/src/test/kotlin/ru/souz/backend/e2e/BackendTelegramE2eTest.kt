@@ -180,11 +180,22 @@ class BackendTelegramE2eTest {
                 binding(userId, chatId).takeIf { it["linked"].asBoolean() }
             }
             assertEquals("linked_user", linked["telegramUsername"].asText())
-            assertTrue(telegramApi.sentMessages.any {
-                it.chatId == 701L && it.text == "Готово, этот Telegram-аккаунт привязан к чату Souz."
-            })
+            eventually("Telegram link confirmation") {
+                telegramApi.sentMessages.firstOrNull {
+                    it.chatId == 701L && it.text == "Готово, этот Telegram-аккаунт привязан к чату Souz."
+                }
+            }
 
-            val discoveryChatId = createPublicChat(userId, "create-discovery")
+            // Channel discovery must include destinations beyond the first page of chat history.
+            val publicChatIds = List(60) { index ->
+                val clientType = if (index % 2 == 0) "backend" else "mobile_app"
+                val created = client.post(BackendHttpRoutes.CHATS) {
+                    jsonBody("""{"userId":"$userId","requestId":"discover-$index","clientType":"$clientType"}""")
+                }
+                assertEquals(HttpStatusCode.Created, created.status)
+                created.jsonBody()["chat"]["id"].asText()
+            }
+            val discoveryChatId = publicChatIds.first()
             val archivedChatId = createPublicChat(userId, "create-archived")
             val foreignChatId = createPublicChat(UUID.randomUUID().toString(), "create-foreign")
             assertEquals(
@@ -209,10 +220,7 @@ class BackendTelegramE2eTest {
             }
             val channels = json.readTree(channelResult.content)["channels"]
             assertEquals(
-                setOf(
-                    "telegram:$chatId",
-                    "public_client:$discoveryChatId",
-                ),
+                setOf("telegram:$chatId") + publicChatIds.map { "public_client:$it" },
                 channels.map { "${it["channelType"].asText()}:${it["channelId"].asText()}" }.toSet(),
             )
             assertTrue(channels.none { it["channelId"].asText() in setOf(archivedChatId, foreignChatId) })
@@ -444,7 +452,7 @@ class BackendTelegramE2eTest {
     )
 }
 
-private class FakeTelegramBotApi : TelegramBotApi {
+internal class FakeTelegramBotApi : TelegramBotApi {
     data class SentMessage(val chatId: Long, val text: String)
     data class ChatAction(val chatId: Long, val action: String)
 
@@ -515,7 +523,7 @@ private class FakeTelegramBotApi : TelegramBotApi {
     override suspend fun deleteWebhook(token: String, dropPendingUpdates: Boolean) = Unit
 }
 
-private class PausedTelegramPoll {
+internal class PausedTelegramPoll {
     val entered = CompletableDeferred<Unit>()
     val release = CompletableDeferred<Unit>()
     private val response = AtomicReference<List<TelegramUpdate>>(emptyList())
