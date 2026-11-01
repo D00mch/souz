@@ -47,6 +47,22 @@ Streaming usage adds only positive deltas above each attempt's high-water mark, 
 
 Live-event losses cover command queue rejection, queue eviction, abandoned queues/receives, disconnects, failed sends and progress overtaken by durable replay. Each full command queue counts a `queue_full` loss even if another subscriber accepts the command. Durable replay signals and live-only bot observers are excluded. A scrape may contain zero outcome/wait/drop series before use; provider/tool series register on first use.
 
+## JVM Skill plugins
+
+| Name | Type | Labels | Meaning |
+| --- | --- | --- | --- |
+| `souz_plugin_registry_available` | Gauge | — | This replica's latest registry poll succeeded. |
+| `souz_plugin_versions_loaded` | Gauge | `plugin` | Live versions, including preparation, draining and failed cleanup. |
+| `souz_plugin_applied_revision` | Gauge | `plugin` | Locally applied desired revision; zero when none. |
+| `souz_plugin_application_error` | Gauge | `plugin` | Failed/stalled application or cleanup requires attention. |
+| `souz_plugin_calls_total` | Counter | `plugin`, `outcome` | Actual handler exits: `success`, `error`, `cancelled`. |
+| `souz_plugin_call_duration_seconds` | Timer | `plugin`, `outcome` | Actual handler lifetime, including work continuing after a caller timeout. |
+| `souz_plugin_timeouts_total` | Counter | `plugin` | Caller deadlines; a timed-out handler may still be running. |
+
+These meters describe one replica; inspect applied revisions/errors per instance during rollout.
+The plugin label is a trusted installed logical ID, never an owner, digest or arbitrary argument.
+General tool timers measure caller-visible completion; plugin timers measure actual work exit.
+
 ## Host meters
 
 Ktor exports `ktor_http_server_requests_seconds` (histogram/count/sum) with `method`, `route`, `status`, `address`, `throwable`, and `ktor_http_server_requests_active` (gauge). Routes use templates; unknown routes share one series, `address="backend"`, and exceptions use `none`/`error`. `/health` and `/metrics` are excluded.

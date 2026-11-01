@@ -8,6 +8,7 @@ Before changing this module, read the relevant pain-point topics below.
 
 - Treat proxy-provided identity as the authority for proxy routes. The public Client-Souz boundary accepts trusted UUID user identity in `POST /v1/chats`, `chat.create.payload.userId`, and `message.submit.payload.device.userId` and must keep those values equal for chat ownership.
 - Expose only the tools `BackendToolCapabilityPolicy` allows. Change that policy, not its callers, when backend tool exposure changes.
+- Use the JVM plugin runtime's immutable applied catalog for settings/bootstrap and acquire its version binding once per root execution. Retire only after root bindings and actual calls exit; a caller timeout does not establish resource release. See [plugin lifecycle](docs/jvm-skill-plugin-registry.md#replica-lifecycle).
 - Build immutable catalog snapshots by applying each execution's enabled-tool snapshot to policy-hostable compiled tools before adding Client-Souz tool-backed Skills. The backend excludes compiled web tools; its `WEB_SEARCH` category contains only client `web.search`. Executions without a current client can target a connected client channel with `channelId`.
 - Persist creation declarations atomically with the chat and retain their original idempotency hash. Always include bundled client Skills; declarations override matching defaults. Store one discovered catalogue separately per owned conversation, with precedence over declarations/defaults and binding to its supplying channel. Validate and persist a complete replacement before exposing it to the running execution. Exclude both catalogues from metadata reads. Only the parent discovers; children receive selected immutable snapshots behind `RunSkillCommand`.
 - Enrich declared known client tools with bundled `skills/client` instructions, categories, and deadlines. Preserve their exact names, persisted descriptions, and input schemas. Custom client tools use a one-minute deadline.
@@ -27,7 +28,8 @@ Before changing this module, read the relevant pain-point topics below.
 ## Pain points
 
 - [Personality settings](docs/personality-settings.md) — validated user style, conversational scope and Orion snapshots.
-- [JVM Skill plugin registry](docs/jvm-skill-plugin-registry.md) — trusted operator publication, immutable artifacts, owner state and SDK packaging.
+- [JVM Skill plugins](docs/jvm-skill-plugin-registry.md) — operator publication, root version binding, owner state, cleanup, replica rollout and reference evidence.
+- [Plugin reference evidence](docs/jvm-skill-plugin-reference.md) — real artifact/request tests, repeatable workload measurements and cost assumptions for comparison.
 - [User file storage](docs/s3-storage.md) — private S3 bucket, owner-scoped metadata, expiry and retryable cleanup.
 - [Named LLM connections](docs/named-llm-connections.md) — server model names, independent endpoints and keys, subagents and summarization.
 - [Metrics accounting](docs/metrics-accounting.md) — commit boundaries, bounded labels, waiting time and replica ownership; see the [metric reference](docs/metrics.md).

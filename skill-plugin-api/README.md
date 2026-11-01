@@ -21,6 +21,11 @@ are forbidden. Register exactly one public no-argument `SkillPlugin` provider in
 side effects; acquire resources in `initialize`, and release even partially acquired
 resources in `shutdown`.
 
+Work is invocation-scoped: await structured child coroutines before returning. Do not
+retain invocation contexts or launch persistent tasks from handlers or lifecycle hooks.
+The host may call one version concurrently for multiple users; synchronize shared mutable
+resources appropriately and keep user data in the bound state API.
+
 Capabilities use existing `LLMRequest.Function` schemas and the namespace
 `plugin.<plugin_id>.<tool_id>` (at most 64 characters). The provider returns existing `LLMRequest.Message`
 results; data crossing the boundary must contain only host DTOs and ordinary JSON.
@@ -53,6 +58,11 @@ The basic HTTP facility has no backend authentication, cookies, redirects or ret
 Requests and responses are bounded to 1 MiB, with a 30-second request deadline.
 Plugins remain responsible for validating their network destinations. This helper
 does not restrict arbitrary networking by trusted JVM code.
+
+Inputs and result content are bounded to 1 MiB. Cancellation and deadlines are cooperative:
+blocking foreign code may continue after the caller receives a timeout. There are no automatic
+invocation retries. The host retains the version until actual work and all root executions
+using it have exited; a timeout is not permission to close resources still in use.
 
 Authors preserve the meaning of old inputs under a capability ID, or publish a
 new ID for a breaking interface. Data changes must support versions coexisting

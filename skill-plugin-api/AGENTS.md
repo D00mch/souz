@@ -6,7 +6,7 @@ coroutines and Jackson versions. Do not expose backend DI, storage or implementa
 
 ## Pain points
 
-The SDK is compile-only in plugin artifacts. Private dependencies and service resources belong
+The [SDK guide](README.md) defines packaging and invocation-scoped work. The SDK is compile-only in plugin artifacts. Private dependencies and service resources belong
 to the plugin JAR; shared ABI classes must not be shaded into it.
 
 ## Verification
