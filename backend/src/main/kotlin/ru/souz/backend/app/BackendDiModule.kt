@@ -16,6 +16,8 @@ import ru.souz.backend.attachments.S3AttachmentObjects
 import ru.souz.backend.client.LiveClientToolDispatcher
 import ru.souz.backend.storage.postgres.PostgresAttachmentRepository
 import ru.souz.backend.metrics.BackendMetrics
+import ru.souz.backend.plugins.BackendPluginRuntime
+import ru.souz.backend.plugins.PostgresPluginRepository
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.backend.hooks.HookDefinitions
 import ru.souz.backend.hooks.HookService
@@ -167,6 +169,8 @@ fun backendDiModule(
     import(skillOAuthBackendModule(skillOAuthConfig))
 
     bindSingleton { BackendApplicationScope() }
+    bindSingleton { PostgresPluginRepository(instance<HikariDataSource>()) }
+    bindSingleton { BackendPluginRuntime(instance(), appConfig.plugins, registry = instance<BackendMetrics>().registry) }
     bindSingleton<Clock> { Clock.systemUTC() }
     appConfig.attachments?.let { config ->
         bindSingleton { S3AttachmentObjects(config) }
@@ -222,6 +226,7 @@ fun backendDiModule(
         // past backend shutdown.
         BackendRuntimeResources(
             cancelAndJoinApplicationWork = { instance<BackendApplicationScope>().cancelAndJoin() },
+            closePlugins = { instance<BackendPluginRuntime>().shutdown() },
             closeProviderClients = {
                 instance<ProviderHttpClients>().close()
                 (instanceOrNull<VkBotApi>() as? AutoCloseable)?.close()
@@ -264,7 +269,9 @@ fun backendDiModule(
         )
     }
     bindSingleton {
+        val plugins = instance<BackendPluginRuntime>()
         EffectiveSettingsResolver(
+            pluginToolCatalog = { plugins.snapshot.catalog },
             namedModelNames = instance<NamedLlmConfig>().models.keys,
             baseSettingsProvider = instance(),
             userSettingsRepository = instance(),
@@ -381,7 +388,7 @@ fun backendDiModule(
         )
     }
     bindSingleton<BackendConversationTurnRunner> {
-        BackendConversationRuntimeTurnRunner(instance(), instance())
+        BackendConversationRuntimeTurnRunner(instance(), instance(), instance())
     }
     bindSingleton {
         AgentExecutionFinalizer(

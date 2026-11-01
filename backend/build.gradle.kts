@@ -75,8 +75,23 @@ application {
     applicationDefaultJvmArgs = listOf("-Djava.awt.headless=true")
 }
 
+val probeClasspath = sourceSets["test"].runtimeClasspath
+val probeClasspathFile = layout.buildDirectory.file("tmp/plugin-probe-classpath.txt").get().asFile
+val writePluginProbeClasspath = tasks.register("writePluginProbeClasspath") {
+    val files = probeClasspath
+    val destination = probeClasspathFile
+    inputs.files(files)
+    outputs.file(destination)
+    doLast {
+        destination.parentFile.mkdirs()
+        destination.writeText(files.asPath, Charsets.UTF_8)
+    }
+}
+
 tasks.test {
     useJUnitPlatform()
+    dependsOn(writePluginProbeClasspath)
+    systemProperty("plugin.host.classpath.file", probeClasspathFile.absolutePath)
 }
 
 tasks.withType<Sync>().configureEach {

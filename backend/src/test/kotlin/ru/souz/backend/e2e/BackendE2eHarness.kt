@@ -61,6 +61,8 @@ import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.backend.app.BackendApplicationScope
 import ru.souz.backend.app.BackendRuntimeResources
+import ru.souz.backend.plugins.BackendPluginRuntime
+import ru.souz.backend.plugins.PostgresPluginRepository
 import ru.souz.backend.app.backendDiModule
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.ClientThreadRecoveryService
@@ -451,6 +453,7 @@ internal class BackendE2eBackend(
         }
         if (startBackgroundServices) {
             val applicationScope: BackendApplicationScope = di.direct.instance()
+            runBlocking { di.direct.instance<BackendPluginRuntime>().start(applicationScope) }
             if (featureFlags.wsEvents) {
                 val recoveryService: ClientThreadRecoveryService = di.direct.instance()
                 runBlocking { recoveryService.recover() }
@@ -510,6 +513,9 @@ internal class BackendE2eBackend(
     suspend fun recoverClientThreads() = di.direct.instance<ClientThreadRecoveryService>().recover()
 
     val applicationScope: BackendApplicationScope get() = di.direct.instance()
+    val pluginRuntime: BackendPluginRuntime get() = di.direct.instance()
+    val pluginRepository: PostgresPluginRepository get() = di.direct.instance()
+    val skillRegistry: ru.souz.agent.skills.registry.SkillRegistryRepository get() = di.direct.instance()
 
     val clientThreadRegistry: ClientThreadRuntimeRegistry get() = di.direct.instance()
 

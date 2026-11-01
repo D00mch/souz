@@ -10,6 +10,8 @@ import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.llms.LLMResponse
+import ru.souz.backend.plugins.BackendPluginRuntime
+import ru.souz.backend.plugins.PluginExecutionBinding
 
 internal sealed interface BackendConversationTurnOutcome {
     val usage: LLMResponse.Usage
@@ -47,6 +49,7 @@ internal interface BackendConversationTurnRunner {
 internal class BackendConversationRuntimeTurnRunner(
     private val runtimeFactory: BackendConversationRuntimeFactory,
     private val clientThreadRegistry: ClientThreadRuntimeRegistry? = null,
+    private val plugins: BackendPluginRuntime,
 ) : BackendConversationTurnRunner {
     override suspend fun run(
         conversationKey: AgentConversationKey,
@@ -54,10 +57,25 @@ internal class BackendConversationRuntimeTurnRunner(
         eventSink: AgentRuntimeEventSink,
         initialUsage: LLMResponse.Usage,
     ): BackendConversationTurnOutcome {
-        val runtime = runtimeFactory.create(conversationKey, request, initialUsage)
-        val threadId = request.executionId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
-        if (threadId != null) clientThreadRegistry?.attach(threadId, runtime)
+        val binding = plugins.acquire(conversationKey.userId, request.enabledTools)
         return try {
+            runBound(conversationKey, request, eventSink, initialUsage, binding)
+        } finally {
+            binding.release()
+        }
+    }
+
+    private suspend fun runBound(
+        conversationKey: AgentConversationKey,
+        request: BackendConversationTurnRequest,
+        eventSink: AgentRuntimeEventSink,
+        initialUsage: LLMResponse.Usage,
+        binding: PluginExecutionBinding,
+    ): BackendConversationTurnOutcome {
+        val runtime = runtimeFactory.create(conversationKey, request, initialUsage, plugins = binding)
+        val threadId = request.executionId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
+        return try {
+            if (threadId != null) clientThreadRegistry?.attach(threadId, runtime)
             val execution = runtime.execute(
                 request = request,
                 eventSink = eventSink,

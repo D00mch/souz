@@ -50,7 +50,7 @@ class PluginRepositoryTest {
     }
 
     @Test
-    fun `state partitions and compare-and-set stay isolated under concurrency`() = runBlocking {
+    fun `state partitions and compare-and-set stay isolated under concurrency`(): Unit = runBlocking {
         PostgresDataSourceFactory.create(postgresAppConfig(newPostgresSchema("plugin_state")).postgres).use { source ->
             source.connection.use { connection -> connection.createStatement().use {
                 it.execute("insert into users(id) values ('alice'), ('bob')")

@@ -46,6 +46,7 @@ import ru.souz.backend.llm.ModelFailureMemory
 import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.metrics.BackendMetrics
+import ru.souz.backend.plugins.PluginExecutionBinding
 import ru.souz.backend.personality.personalityInstructions
 import ru.souz.backend.personality.PersonalitySync
 import ru.souz.backend.personality.PersonalityTool
@@ -121,6 +122,7 @@ internal class BackendConversationRuntimeFactory(
         key: AgentConversationKey,
         request: BackendConversationTurnRequest,
         initialUsage: LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0),
+        plugins: PluginExecutionBinding,
     ): BackendConversationRuntime {
         val persistedSession = agentStateRepository.get(key.userId, key.chatId())?.toConversationSession()
         val settingsProvider = BackendConversationSettingsProvider(
@@ -184,9 +186,12 @@ internal class BackendConversationRuntimeFactory(
         )
         val clientTools = chatRepository.clientTools(key.userId, key.chatId()).filter { it.name != PersonalityTool.NAME }
         val serverNames = toolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet() +
-            BackendToolCapabilityPolicy.executionBoundToolNames
+            BackendToolCapabilityPolicy.executionBoundToolNames + plugins.catalog.toolsByCategory.values.flatMap { it.keys }
         lateinit var baseCatalog: AgentToolCatalog
         lateinit var executionToolCatalog: AgentToolCatalog
+        fun availableCatalog(): AgentToolCatalog = executionToolCatalog.filter { _, tool ->
+            !tool.fn.name.startsWith(PLUGIN_SKILL_PREFIX) || plugins.isEnabled(tool.fn.name)
+        }
         fun withDiscovered(discovered: DiscoveredClientTools?): AgentToolCatalog {
             if (discovered == null) return baseCatalog
             val tools = discovered.tools.filter { it.name != PersonalityTool.NAME }
@@ -222,19 +227,20 @@ internal class BackendConversationRuntimeFactory(
             clientToolCatalog = clientToolCatalog,
             includeFewShotExamples = settingsProvider.useFewShotExamples,
             metrics = metrics,
+            pluginToolCatalog = plugins.catalog,
         )
         executionToolCatalog = withDiscovered(chatRepository.discoveredClientTools(key.userId, key.chatId()))
         val toolTelemetry = metrics?.toolTelemetry(executionToolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet())
             ?: AgentTelemetry.NONE
         val requestToolsFilter = RuntimePassThroughToolsFilter
         val getSkillByNameTool = ToolGetSkillByName(
-            catalogProvider = { executionToolCatalog },
+            catalogProvider = { availableCatalog() },
             toolsFilter = requestToolsFilter,
             skillBundleProvider = skillBundleProvider,
             approvalGate = null,
         )
         val getSkillsNamesByCategoryTool = ToolGetSkillsNamesByCategory(
-            catalogProvider = { executionToolCatalog },
+            catalogProvider = { availableCatalog() },
             toolsFilter = requestToolsFilter,
         )
         val getSkillsByCategoryTool = ToolGetSkillsByCategory(
@@ -242,7 +248,7 @@ internal class BackendConversationRuntimeFactory(
             getSkillsNamesByCategory = getSkillsNamesByCategoryTool,
         )
         val runtimeCommandTool = ToolInvokeSkill(
-            catalogProvider = { executionToolCatalog },
+            catalogProvider = { availableCatalog() },
             toolsFilter = requestToolsFilter,
             loadBundle = skillBundleProvider::loadSkillBundle,
             commandExecutor = commandExecutor,
@@ -258,7 +264,7 @@ internal class BackendConversationRuntimeFactory(
                     telemetry = toolTelemetry,
                 )
             },
-            catalogProvider = { executionToolCatalog.filter { _, tool -> tool.fn.name != CLIENT_TOOL_DISCOVERY_NAME } },
+            catalogProvider = { availableCatalog().filter { _, tool -> tool.fn.name != CLIENT_TOOL_DISCOVERY_NAME } },
             toolsFilter = requestToolsFilter,
             skillBundleProvider = skillBundleProvider,
             commandExecutor = commandExecutor,

@@ -13,6 +13,7 @@ import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
 import ru.souz.backend.scheduler.ScheduledTaskRunner
 import ru.souz.jobs.impl.PostgresJobService
+import ru.souz.backend.plugins.BackendPluginRuntime
 
 /** Process-wide backend runtime container with shared services and LLM resources. */
 class BackendRuntime private constructor(
@@ -30,6 +31,7 @@ class BackendRuntime private constructor(
     private val clientThreadRecoveryService: ClientThreadRecoveryService by lazy { di.direct.instance() }
 
     fun startBackgroundServices() {
+        runBlocking { di.direct.instance<BackendPluginRuntime>().start(applicationScope) }
         runBlocking { httpDependencies.hookService.start(applicationScope) }
         // The worker keeps its first handler, so this is the only job dispatch path.
         runBlocking {

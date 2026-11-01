@@ -1,6 +1,7 @@
 package ru.souz.backend.plugins
 
 import java.sql.Connection
+import java.sql.PreparedStatement
 import java.sql.ResultSet
 import javax.sql.DataSource
 import ru.souz.backend.storage.postgres.read
@@ -17,7 +18,7 @@ internal class PostgresPluginRepository(private val dataSource: DataSource) {
     suspend fun install(bytes: ByteArray): PluginArtifact {
         val artifact = PluginArtifact.inspect(bytes)
         dataSource.write { connection ->
-            connection.prepareStatement("""
+            connection.pluginStatement("""
                 insert into skill_plugin_artifacts(plugin_id, version, digest, artifact) values (?, ?, ?, ?)
                 on conflict (plugin_id, version) do nothing
             """.trimIndent()).use { statement ->
@@ -44,7 +45,7 @@ internal class PostgresPluginRepository(private val dataSource: DataSource) {
             update skill_plugin_desired set digest = ?, enabled = true, revision = revision + 1, updated_at = now()
             where plugin_id = ? and revision = ? returning plugin_id, digest, enabled, revision
         """
-        connection.prepareStatement(sql.trimIndent()).use { statement ->
+        connection.pluginStatement(sql.trimIndent()).use { statement ->
             statement.setString(1, digest)
             statement.setString(2, id)
             if (expectedRevision > 0) statement.setLong(3, expectedRevision)
@@ -56,7 +57,7 @@ internal class PostgresPluginRepository(private val dataSource: DataSource) {
     }
 
     suspend fun disable(id: String, expectedRevision: Long): DesiredPlugin = dataSource.write { connection ->
-        connection.prepareStatement("""
+        connection.pluginStatement("""
             update skill_plugin_desired set enabled = false, revision = revision + 1, updated_at = now()
             where plugin_id = ? and revision = ? returning plugin_id, digest, enabled, revision
         """.trimIndent()).use { statement ->
@@ -70,13 +71,13 @@ internal class PostgresPluginRepository(private val dataSource: DataSource) {
     }
 
     suspend fun desired(): List<DesiredPlugin> = dataSource.read { connection ->
-        connection.prepareStatement("select plugin_id, digest, enabled, revision from skill_plugin_desired order by plugin_id").use {
+        connection.pluginStatement("select plugin_id, digest, enabled, revision from skill_plugin_desired order by plugin_id").use {
             it.executeQuery().use { rows -> buildList { while (rows.next()) add(rows.desired()) } }
         }
     }
 
     suspend fun artifact(id: String, digest: String): ByteArray = dataSource.read { connection ->
-        connection.prepareStatement("select artifact from skill_plugin_artifacts where plugin_id = ? and digest = ?").use {
+        connection.pluginStatement("select artifact from skill_plugin_artifacts where plugin_id = ? and digest = ?").use {
             it.setString(1, id)
             it.setString(2, digest)
             it.executeQuery().use { rows ->
@@ -93,7 +94,7 @@ internal class PostgresPluginRepository(private val dataSource: DataSource) {
             override suspend fun get(key: String): PluginStateValue? {
                 validateKey(key)
                 return dataSource.read { connection ->
-                    connection.prepareStatement("""
+                    connection.pluginStatement("""
                         select value::text, data_schema_version, revision from skill_plugin_state
                         where plugin_id = ? and owner_id = ? and state_key = ?
                     """.trimIndent()).use {
@@ -124,7 +125,7 @@ internal class PostgresPluginRepository(private val dataSource: DataSource) {
                             revision = skill_plugin_state.revision + 1
                         where ? returning value::text, data_schema_version, revision
                     """
-                    connection.prepareStatement(sql.trimIndent()).use {
+                    connection.pluginStatement(sql.trimIndent()).use {
                         it.setJson(1, json)
                         it.setInt(2, dataSchemaVersion)
                         it.setString(3, pluginId)
@@ -143,12 +144,14 @@ internal class PostgresPluginRepository(private val dataSource: DataSource) {
     }
 
     private fun findDigest(connection: Connection, id: String, version: String): String? =
-        connection.prepareStatement("select digest from skill_plugin_artifacts where plugin_id = ? and version = ?").use {
+        connection.pluginStatement("select digest from skill_plugin_artifacts where plugin_id = ? and version = ?").use {
             it.setString(1, id)
             it.setString(2, version)
             it.executeQuery().use { rows -> if (rows.next()) rows.getString("digest") else null }
         }
 }
+
+private fun Connection.pluginStatement(sql: String): PreparedStatement = prepareStatement(sql).apply { queryTimeout = 30 }
 
 private fun ResultSet.desired() = DesiredPlugin(getString("plugin_id"), getString("digest"), getBoolean("enabled"), getLong("revision"))
 private fun ResultSet.stateValue() = PluginStateValue(getString("value"), getInt("data_schema_version"), getLong("revision"))

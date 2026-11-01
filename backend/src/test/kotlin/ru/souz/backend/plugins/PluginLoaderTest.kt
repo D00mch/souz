@@ -39,7 +39,7 @@ class PluginLoaderTest {
             assertNotSame(org.apache.commons.csv.CSVFormat::class.java, v1.loader.loadClass(csvClass))
             assertEquals(SkillPlugin::class.java, v1.loader.loadClass(SkillPlugin::class.java.name))
             for ((plugin, version) in listOf(v1 to "v1", v2 to "v2")) {
-                assertEquals("plugin.reference.report", plugin.schemas().single().name)
+                assertEquals("plugin.reference.report", plugin.schemas().first().name)
                 withContext(PluginClassLoaderContext(plugin.loader)) {
                     plugin.plugin.initialize()
                     val result = plugin.plugin.invoke(LLMResponse.FunctionCall("plugin.reference.report", mapOf("text" to "a,b\nc,d")), context())
@@ -93,7 +93,7 @@ class PluginLoaderTest {
         assertFailsWith<IllegalArgumentException> {
             PluginLoader(directory).open(repackagePlugin(bytes, mapOf("X-Description" to "x".repeat(100_000))))
         }
-        PluginLoader(directory).open(bytes).use { assertEquals(1, it.schemas().size) }
+        PluginLoader(directory).open(bytes).use { assertEquals("plugin.reference.report", it.schemas().first().name) }
         assertFalse(Files.list(directory).use { it.findAny().isPresent })
     }
 

@@ -10,10 +10,12 @@ class BackendRuntimeResources(
     closeSkillOAuthClients: () -> Unit = {},
     closeDataSource: () -> Unit = {},
     closeAttachmentStorage: () -> Unit = {},
+    closePlugins: suspend () -> Unit = {},
 ) : AutoCloseable {
     private val shutdown = OrderedShutdown(
         steps = listOf(
             shutdownStep("application work", cancelAndJoinApplicationWork),
+            shutdownStep("JVM Skill plugins", closePlugins),
             shutdownStep("provider HTTP clients") { closeProviderClients() },
             shutdownStep("skill OAuth clients") { closeSkillOAuthClients() },
             shutdownStep("attachment storage") { closeAttachmentStorage() },

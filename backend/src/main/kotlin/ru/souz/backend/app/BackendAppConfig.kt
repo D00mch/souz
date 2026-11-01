@@ -10,6 +10,7 @@ import ru.souz.backend.config.booleanValue
 import ru.souz.backend.hooks.HookConfig
 import ru.souz.backend.scheduler.ScheduledTaskConfig
 import ru.souz.skilloauth.impl.OAuthProviderCatalog
+import ru.souz.backend.plugins.PluginRuntimeConfig
 
 /**
  * Credentials for one [OAuthProviderCatalog] entry — read from `<NAME>_OAUTH_CLIENT_ID` /
@@ -155,6 +156,7 @@ data class BackendAppConfig(
     val scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     val attachments: AttachmentStorageConfig? = null,
     val policyPrompt: String? = null,
+    val plugins: PluginRuntimeConfig = PluginRuntimeConfig(),
 ) {
     fun validate(): BackendAppConfig {
         server.validate()
@@ -203,6 +205,7 @@ data class BackendAppConfig(
         fun load(source: BackendConfigSource = SystemBackendConfigSource): BackendAppConfig =
             BackendAppConfig(
                 featureFlags = BackendFeatureFlags.load(source),
+                plugins = PluginRuntimeConfig.load(source),
                 attachments = AttachmentStorageConfig.load(source),
                 hooks = HookConfig(
                     owners = source.value("SOUZ_HOOK_OWNERS", "souz.hooks.owners")

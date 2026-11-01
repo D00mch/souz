@@ -41,11 +41,7 @@ internal fun List<ClientToolDefinition>.normalizeClientTools(
             "channelId" !in tool.parameters.properties,
             "$path: channelId is reserved for channel routing."
         )
-        val schema = normalizeSchema(tool.parameters.asProperty(), 0, path)
-        val params = tool.parameters.copy(
-            properties = schema.properties.orEmpty(),
-            required = schema.required.orEmpty(),
-        )
+        val params = normalizeToolParameters(tool.parameters, path)
         tool.copy(parameters = params)
     }
 }
@@ -64,6 +60,12 @@ private fun requireCatalogue(valid: Boolean, message: String) {
 private fun LLMRequest.Parameters.asProperty() = LLMRequest.Property(
     type = type, properties = properties, required = required, additionalProperties = additionalProperties,
 )
+
+/** The same structural contract validates client declarations and host plugin schemas. */
+internal fun normalizeToolParameters(parameters: LLMRequest.Parameters, path: String = "/parameters"): LLMRequest.Parameters {
+    val schema = normalizeSchema(parameters.asProperty(), 0, path)
+    return parameters.copy(properties = schema.properties.orEmpty(), required = schema.required.orEmpty())
+}
 
 private fun normalizeSchema(schema: LLMRequest.Property, depth: Int, path: String): LLMRequest.Property {
     requireCatalogue(depth <= 16, "$path: Tool schema nesting exceeds 16 levels.")

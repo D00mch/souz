@@ -28,7 +28,7 @@ class PluginHttpTest {
     @TempDir lateinit var directory: Path
 
     @Test
-    fun `Java awaits and cancels a real bounded host HTTP call without leaking backend headers`() = runBlocking {
+    fun `Java awaits and cancels a real bounded host HTTP call without leaking backend headers`(): Unit = runBlocking {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         val executor = Executors.newFixedThreadPool(2)
         server.executor = executor

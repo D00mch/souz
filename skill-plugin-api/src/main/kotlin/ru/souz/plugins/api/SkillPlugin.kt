@@ -13,6 +13,8 @@ object SkillPluginApi {
  * One side-effect-free public no-argument SPI provider per flat JAR.
  * initialize may acquire resources; shutdown must release even partially initialized resources.
  * All returned schemas and messages contain host DTOs and plain JSON values only.
+ * Work is invocation-scoped: await structured children before returning. Do not retain invocation
+ * contexts or start persistent/background tasks. initialize/shutdown acquire and release resources.
  */
 interface SkillPlugin {
     val tools: List<LLMRequest.Function>

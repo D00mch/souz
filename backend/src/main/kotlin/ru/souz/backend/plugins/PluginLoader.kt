@@ -7,13 +7,15 @@ import java.util.ServiceLoader
 import ru.souz.llms.LLMRequest
 import ru.souz.agent.skills.PLUGIN_SKILL_PREFIX
 import ru.souz.backend.common.BackendToolCapabilityPolicy
+import ru.souz.backend.client.normalizeToolParameters
 import ru.souz.plugins.api.SkillPlugin
 
 /** Opening is synchronous and side-effect-free by SDK contract; initialization belongs to the runtime. */
 internal class PluginLoader(private val directory: Path) {
-    fun open(bytes: ByteArray, expected: PluginArtifact? = null): OpenPlugin {
+    fun open(bytes: ByteArray, requiredId: String? = null, requiredDigest: String? = null): OpenPlugin {
         val artifact = PluginArtifact.inspect(bytes)
-        require(expected == null || artifact == expected) { "Artifact identity or digest mismatch." }
+        require((requiredId == null || artifact.id == requiredId) &&
+            (requiredDigest == null || artifact.digest == requiredDigest)) { "Artifact identity or digest mismatch." }
         Files.createDirectories(directory)
         val temporary = Files.createTempFile(directory, "${artifact.digest}-", ".part")
         val path = temporary.resolveSibling(temporary.fileName.toString().removeSuffix(".part") + ".jar")
@@ -107,12 +109,12 @@ internal fun copyPluginJson(value: Any, depth: Int = 0): Any {
 private fun copyParameters(value: LLMRequest.Parameters): LLMRequest.Parameters {
     require(value.type == "object" && value.properties.size <= 128) { "Invalid plugin parameters." }
     require(value.required.all { it in value.properties }) { "Unknown required parameter." }
-    return LLMRequest.Parameters(
+    return normalizeToolParameters(LLMRequest.Parameters(
         type = value.type,
         properties = value.properties.mapValues { copyProperty(it.value, 0) },
         required = value.required.toList(),
         additionalProperties = value.additionalProperties,
-    )
+    ))
 }
 
 private fun copyProperty(value: LLMRequest.Property, depth: Int): LLMRequest.Property {
