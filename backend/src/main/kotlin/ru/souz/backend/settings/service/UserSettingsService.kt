@@ -45,6 +45,7 @@ class UserSettingsService(
                 showToolEvents = overrides.showToolEvents ?: existing.showToolEvents,
                 streamingMessages = overrides.streamingMessages ?: existing.streamingMessages,
                 narrateSteps = overrides.narrateSteps ?: existing.narrateSteps,
+                intermediateMessages = overrides.intermediateMessages ?: existing.intermediateMessages,
                 schemaVersion = UserSettings.CURRENT_SCHEMA_VERSION,
                 interfaceLanguage = overrides.interfaceLanguage ?: existing.interfaceLanguage,
                 requestTimeoutMillis = overrides.requestTimeoutMillis ?: existing.requestTimeoutMillis,

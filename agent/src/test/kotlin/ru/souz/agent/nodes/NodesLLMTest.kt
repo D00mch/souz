@@ -30,6 +30,7 @@ import ru.souz.agent.runtime.ActiveRunInputController
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.spi.ModelRouting
 import ru.souz.agent.spi.RoutedModel
+import ru.souz.agent.spi.TaskClassification
 import ru.souz.agent.spi.TaskComplexityClassifier
 import ru.souz.agent.state.AgentSettings
 import ru.souz.testTool
@@ -218,7 +219,7 @@ class NodesLLMTest {
             runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
         )
 
-        assertEquals<List<AgentRuntimeEvent>>(listOf(AgentRuntimeEvent.InitialWait) + chunks.map { AgentRuntimeEvent.LlmMessageDelta(it) }, runtimeEvents)
+        assertEquals<List<AgentRuntimeEvent>>(listOf(AgentRuntimeEvent.InitialWait()) + chunks.map { AgentRuntimeEvent.LlmMessageDelta(it) }, runtimeEvents)
         assertEquals(AgentStreamChunk("Hello streaming world", 7L), sideEffect.await())
         val response = result.input as LLMResponse.Chat.Ok
         assertEquals("Hello streaming world", response.choices.single().message.content)
@@ -297,7 +298,7 @@ class NodesLLMTest {
                 assertEquals(emptyList(), request.functions)
                 simpleStreamed.await()
                 assertEquals(emptyList(), events)
-                verdict()
+                TaskClassification(complex = verdict(), waitCategory = "travel")
             }
             val nodes = NodesLLM(api, mockk { every { useStreaming } returns true }, conversationInstructions = { "Be brief." },
                 complexityClassifier = classifier, routedTools = { listOf(testTool(it.model)) })
@@ -306,7 +307,8 @@ class NodesLLMTest {
                 routingCapabilities = mapOf("application.action" to "Perform a saved action")), runtime())
 
             assertEquals("$chosen answer", (result.input as LLMResponse.Chat.Ok).choices.single().message.content)
-            assertEquals<List<AgentRuntimeEvent>>(listOfNotNull(AgentRuntimeEvent.InitialWait.takeIf { chosen != "simple" },
+            assertEquals<List<AgentRuntimeEvent>>(listOfNotNull(
+                AgentRuntimeEvent.InitialWait("travel".takeIf { chosen == "complex" }).takeIf { chosen != "simple" },
                 AgentRuntimeEvent.LlmMessageDelta("$chosen answer")), events)
             assertEquals(listOf("simple", chosen).distinct(), requests.map { it.model })
             // The simple model retains context but has no tool capabilities.
@@ -328,7 +330,7 @@ class NodesLLMTest {
             val api = mockk<LLMChatAPI> {
                 coEvery { message(capture(calls)) } returnsMany listOf(block(0, "short summary"), block(0, "answer"))
             }
-            val nodes = NodesLLM(api, mockk { every { useStreaming } returns false }, complexityClassifier = { _, _ -> complex })
+            val nodes = NodesLLM(api, mockk { every { useStreaming } returns false }, complexityClassifier = { _, _ -> TaskClassification(complex) })
             val completed = exchange("old ".repeat(18000))
             val ctx = context(completed + activeTurn("result ".repeat(1000)), activeExchangeStartIndex = 2)
             val result = nodes.chat().execute(ctx.copy(settings = ctx.settings.copy(routing = ROUTING)), runtime())

@@ -34,6 +34,7 @@ internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(namedModels: 
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
         narrateSteps = narrateSteps,
+        intermediateMessages = intermediateMessages,
         interfaceLanguage = interfaceLanguage?.let { parseInterfaceLanguage(it, fieldName = "interfaceLanguage") },
         requestTimeoutMillis = requestTimeoutMillis?.let {
             parseRequestTimeoutMillis(it, fieldName = "requestTimeoutMillis")

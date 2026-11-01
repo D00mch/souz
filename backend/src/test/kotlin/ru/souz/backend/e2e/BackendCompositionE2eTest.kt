@@ -145,9 +145,11 @@ class BackendCompositionE2eTest {
     @Test
     fun `settings and provider keys go through production services and encrypted Postgres`() =
         backendE2eTest("e2e_settings_keys") {
-            assertFalse(client.get(BackendHttpRoutes.SETTINGS) {
+            val defaults = client.get(BackendHttpRoutes.SETTINGS) {
                 trusted("settings-user")
-            }.jsonBody()["settings"]["narrateSteps"].asBoolean())
+            }.jsonBody()["settings"]
+            assertFalse(defaults["narrateSteps"].asBoolean())
+            assertTrue(defaults["intermediateMessages"].asBoolean())
             val patch = client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted("settings-user")
                 jsonBody(
@@ -155,6 +157,7 @@ class BackendCompositionE2eTest {
                     {
                       "defaultModel": "${E2E_LOCAL_MODEL.alias}",
                       "narrateSteps": true,
+                      "intermediateMessages": false,
                       "locale": "iw-IL",
                       "timeZone": "Europe/Amsterdam",
                       "streamingMessages": true,
@@ -177,16 +180,23 @@ class BackendCompositionE2eTest {
             assertEquals(E2E_LOCAL_MODEL.alias, settings["defaultModel"].asText())
             assertEquals("he-IL", settings["locale"].asText())
             assertTrue(settings["narrateSteps"].asBoolean())
+            assertFalse(settings["intermediateMessages"].asBoolean())
             val preserved = client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted("settings-user"); jsonBody("""{"temperature":0.4}""")
             }.jsonBody()["settings"]
             assertTrue(preserved["narrateSteps"].asBoolean())
+            assertFalse(preserved["intermediateMessages"].asBoolean())
+            assertTrue(client.get(BackendHttpRoutes.SETTINGS) {
+                trusted("other-settings-user")
+            }.jsonBody()["settings"]["intermediateMessages"].asBoolean())
             client.patch(BackendHttpRoutes.SETTINGS) {
-                trusted("settings-user"); jsonBody("""{"narrateSteps":false}""")
+                trusted("settings-user"); jsonBody("""{"narrateSteps":false,"intermediateMessages":true}""")
             }
-            assertFalse(client.get(BackendHttpRoutes.SETTINGS) {
+            val reverted = client.get(BackendHttpRoutes.SETTINGS) {
                 trusted("settings-user")
-            }.jsonBody()["settings"]["narrateSteps"].asBoolean())
+            }.jsonBody()["settings"]
+            assertFalse(reverted["narrateSteps"].asBoolean())
+            assertTrue(reverted["intermediateMessages"].asBoolean())
             assertEquals("Europe/Amsterdam", settings["timeZone"].asText())
             assertEquals(HttpStatusCode.OK, putKey.status)
             assertEquals("qwen", putKey.jsonBody()["providerKey"]["provider"].asText())

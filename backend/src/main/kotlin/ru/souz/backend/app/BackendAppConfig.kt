@@ -149,6 +149,7 @@ data class BackendAppConfig(
     val hindsightApiUrl: String? = null,
     val hindsightApiToken: String? = null,
     val hindsightRetainAsync: Boolean = true,
+    val jevWaitCategoryThreshold: Double = 0.5,
     val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     val providerRetryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(),
     val hooks: HookConfig = HookConfig(),
@@ -196,6 +197,9 @@ data class BackendAppConfig(
         // provider credentials.
         llmLimits.validate()
         providerRetryPolicy.validate()
+        if (jevWaitCategoryThreshold !in 0.0..1.0) {
+            throw BackendConfigurationException("JEV_WAIT_CATEGORY_THRESHOLD must be a finite number within [0, 1].")
+        }
         return this
     }
 
@@ -203,6 +207,10 @@ data class BackendAppConfig(
         fun load(source: BackendConfigSource = SystemBackendConfigSource): BackendAppConfig =
             BackendAppConfig(
                 featureFlags = BackendFeatureFlags.load(source),
+                jevWaitCategoryThreshold = source.env("JEV_WAIT_CATEGORY_THRESHOLD")?.let {
+                    it.trim().toDoubleOrNull()
+                        ?: throw BackendConfigurationException("JEV_WAIT_CATEGORY_THRESHOLD must be a number within [0, 1].")
+                } ?: 0.5,
                 attachments = AttachmentStorageConfig.load(source),
                 hooks = HookConfig(
                     owners = source.value("SOUZ_HOOK_OWNERS", "souz.hooks.owners")

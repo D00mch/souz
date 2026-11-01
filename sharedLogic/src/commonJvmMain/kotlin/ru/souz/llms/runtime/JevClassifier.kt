@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory
 import ru.souz.jev.JevClient
 import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.skills.SkillId
+import ru.souz.agent.spi.TaskClassification
 import ru.souz.agent.spi.TaskComplexityClassifier
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -13,13 +14,17 @@ import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.UserMessageClassifier
 
+/** [waitCategories] maps waiting-phrase categories to descriptions; complexity requests then also choose one of them. */
 class JevClassifier(
     private val client: JevClient,
     private val threshold: Double = 0.5,
+    private val waitCategories: Map<String, String> = emptyMap(),
+    private val waitCategoryThreshold: Double = 0.5,
 ) : UserMessageClassifier, SkillClassifier, TaskComplexityClassifier {
     private val logger = LoggerFactory.getLogger(JevClassifier::class.java)
     init {
         require(threshold in 0.0..1.0) { "JEV_THRESHOLD must be a number within [0, 1]" }
+        require(waitCategoryThreshold in 0.0..1.0) { "JEV_WAIT_CATEGORY_THRESHOLD must be a number within [0, 1]" }
     }
 
     override suspend fun classify(body: LLMRequest.Chat, categories: Map<ToolCategory, String>): UserMessageClassifier.Reply {
@@ -32,10 +37,12 @@ class JevClassifier(
         return descriptions.keys.filterTo(mutableSetOf()) { it.value in selected }
     }
 
-    override suspend fun isComplex(request: LLMRequest.Chat, capabilities: Map<String, String>): Boolean {
+    override suspend fun classifyTask(request: LLMRequest.Chat, capabilities: Map<String, String>): TaskClassification {
         val currentIndex = request.messages.indexOfLast { it.role == LLMMessageRole.user }
-        val current = request.messages.getOrNull(currentIndex) ?: return true
-        if (current.content.length > CLASSIFICATION_MESSAGE_LIMIT || current.attachments.orEmpty().isNotEmpty()) return true
+        val current = request.messages.getOrNull(currentIndex) ?: return TaskClassification(complex = true)
+        if (current.content.length > CLASSIFICATION_MESSAGE_LIMIT || current.attachments.orEmpty().isNotEmpty()) {
+            return TaskClassification(complex = true)
+        }
         val previous = request.messages.filterIndexed { index, message ->
             index != currentIndex && (message.role == LLMMessageRole.user || message.role == LLMMessageRole.assistant) &&
                 (message.content.isNotBlank() || message.functionCall != null)
@@ -45,10 +52,18 @@ class JevClassifier(
             "previous_dialogue" to previous.joinToString("\n") { it.classificationText() },
             "available_capabilities" to capabilities,
         ))
-        val simple = client.evaluate(state, COMPLEXITY_QUESTIONS, COMPLEXITY_CRITERIA).getValue("simple")
-        logger.info("Jev complexity simpleProbability={} threshold=0.9 capabilities={} contextMessages={}",
-            simple, capabilities.size, previous.size)
-        return simple < 0.9
+        val (noul, waits) = if (waitCategories.isEmpty()) {
+            client.evaluate(state, COMPLEXITY_QUESTIONS, COMPLEXITY_CRITERIA) to emptyMap()
+        } else {
+            client.evaluateAndChoose(state, COMPLEXITY_QUESTIONS, COMPLEXITY_CRITERIA, WAIT_QUESTION,
+                waitCategories + (OTHER_WAIT to OTHER_WAIT_DESCRIPTION))
+        }
+        val simple = noul.getValue("simple")
+        val waitCategory = waits.maxByOrNull { it.value }
+            ?.takeIf { it.key != OTHER_WAIT && it.value >= waitCategoryThreshold }?.key
+        logger.info("Jev complexity simpleProbability={} threshold=0.9 waitCategory={} capabilities={} contextMessages={}",
+            simple, waitCategory, capabilities.size, previous.size)
+        return TaskClassification(complex = simple < 0.9, waitCategory = waitCategory)
     }
 
     private fun LLMRequest.Message.classificationText(): String =
@@ -93,6 +108,10 @@ class JevClassifier(
                     "complex calculations, or uncertainty that a light model can fully answer.",
             ),
         )
+        const val WAIT_QUESTION = CLASSIFY_DIALOGUE + "Which kind of work does fulfilling current_request involve? " +
+            "Choose the closest option."
+        const val OTHER_WAIT = "other"
+        const val OTHER_WAIT_DESCRIPTION = "None of the other options fits."
         val SIDES = mapOf(
             "true" to "the request or at least one of its steps needs it",
             "false" to "no step of the request needs this; a mentioned topic alone does not count",

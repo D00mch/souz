@@ -121,7 +121,8 @@ class BackendSubagentE2eTest {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
             client.patch(BackendHttpRoutes.SETTINGS) {
-                trusted(userId); jsonBody("""{"streamingMessages":true,"narrateSteps":true,"systemPrompt":"custom base"}""")
+                trusted(userId)
+                jsonBody("""{"streamingMessages":true,"narrateSteps":true,"systemPrompt":"custom base"}""")
             }
             withPublicSocket(chatId) { session -> withMultiChatSocket { observer ->
                 try {
@@ -134,12 +135,14 @@ class BackendSubagentE2eTest {
                     val threadId = ack["thread"]["id"].asText()
                     // The tool has started before either subscriber reads or acknowledges progress.
                     llm.awaitPrompt(task)
-                    val wait = readJson(session, includeProgress = true)
-                    assertEquals("assistant.message", wait["type"].asText())
-                    assertTrue(wait["payload"]["content"].asText().isNotBlank())
-                    assertEquals(wait, readJson(observer, includeProgress = true))
-                    for (socket in listOf(session, observer)) for (content in blocks) {
-                        val event = readJson(socket, includeProgress = true)
+                    for (socket in listOf(session, observer)) for ((index, content) in blocks.withIndex()) {
+                        var event = readJson(socket, includeProgress = true)
+                        // A waiting phrase may have won the race against the first narration block.
+                        if (index == 0 && event["payload"]["content"].asText() != content) {
+                            assertEquals("assistant.message", event["type"].asText())
+                            assertTrue(event["payload"]["content"].asText().isNotBlank())
+                            event = readJson(socket, includeProgress = true)
+                        }
                         assertEquals("assistant.message", event["type"].asText())
                         assertEquals(chatId, event["chatId"].asText())
                         assertEquals(threadId, event["threadId"].asText())

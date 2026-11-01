@@ -4,6 +4,7 @@ import io.ktor.http.HttpStatusCode
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -37,14 +38,19 @@ internal class AgentExecutionFinalizer(
         conversationKey: AgentConversationKey,
         turnRequest: BackendConversationTurnRequest,
         eventSink: BackendAgentRuntimeEventSink,
-    ): AgentExecution {
+    ): AgentExecution = coroutineScope {
+        eventSink.attachWaitingScope(this)
         try {
-            val executionOutcome = turnRunner.run(
-                conversationKey = conversationKey,
-                request = turnRequest,
-                eventSink = eventSink,
-                initialUsage = execution.usage?.toLlmUsage() ?: LLMResponse.Usage(0, 0, 0, 0),
-            )
+            val executionOutcome = try {
+                turnRunner.run(
+                    conversationKey = conversationKey,
+                    request = turnRequest,
+                    eventSink = eventSink,
+                    initialUsage = execution.usage?.toLlmUsage() ?: LLMResponse.Usage(0, 0, 0, 0),
+                )
+            } finally {
+                eventSink.stopInitialWait()
+            }
             if (eventSink.hasRequestedOption && executionOutcome is BackendConversationTurnOutcome.Completed) {
                 throw BackendV1Exception(
                     status = HttpStatusCode.InternalServerError,
@@ -53,7 +59,7 @@ internal class AgentExecutionFinalizer(
                 )
             }
             currentCoroutineContext().ensureActive()
-            return if (executionOutcome is BackendConversationTurnOutcome.Completed) {
+            if (executionOutcome is BackendConversationTurnOutcome.Completed) {
                 withContext(NonCancellable) {
                     val persisted = clientThreadRegistry.withTerminalTransition(execution.id) {
                         persistTurn(execution, executionOutcome, conversationKey, eventSink)
@@ -73,6 +79,7 @@ internal class AgentExecutionFinalizer(
         execution: AgentExecution,
         eventSink: BackendAgentRuntimeEventSink,
     ): AgentExecution? = withContext(NonCancellable) {
+        eventSink.stopInitialWait()
         val current = executionRepository.getByChat(execution.userId, execution.chatId, execution.id)
             ?: return@withContext null
         val persisted = transition(execution, AgentExecutionStatus.CANCELLED, usage = current.usage)
