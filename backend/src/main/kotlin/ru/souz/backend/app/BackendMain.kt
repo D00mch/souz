@@ -7,11 +7,23 @@ import org.slf4j.LoggerFactory
 import ru.souz.backend.http.BackendHttpServer
 import ru.souz.runtime.OrderedShutdown
 import ru.souz.runtime.shutdownStep
+import ru.souz.backend.plugins.PluginOperator
+import ru.souz.backend.plugins.PostgresPluginRepository
+import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
 
 private val log = LoggerFactory.getLogger("SouzBackend")
 
 /** Starts the embedded Souz backend HTTP server. */
-fun main() {
+fun main(args: Array<String>) {
+    if (args.firstOrNull() == "plugins") {
+        runBlocking {
+            PostgresDataSourceFactory.create(BackendAppConfig.load().postgres).use { dataSource ->
+                println(PluginOperator(PostgresPluginRepository(dataSource)).execute(args.drop(1)))
+            }
+        }
+        return
+    }
+    require(args.isEmpty()) { PluginOperator.USAGE }
     val appConfig = BackendAppConfig.load().validate()
     if (appConfig.server.proxyToken.isNullOrBlank()) {
         log.warn("SOUZ_BACKEND_PROXY_TOKEN is not configured; /v1 routes will reject all requests.")
