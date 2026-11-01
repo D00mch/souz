@@ -119,16 +119,22 @@ internal class NodesLLM(
             val decided = CompletableDeferred<Unit>()
             val speculative = async { call(simple, instructions, streamRevision, decided) }
             val started = TimeSource.Monotonic.markNow()
-            val (verdict, target) = try {
-                if (classifier.isComplex(ctx.classificationRequest(), ctx.routingCapabilities)) "complex" to complex else "simple" to simple
+            val classification = try {
+                classifier.classifyTask(ctx.classificationRequest(), ctx.routingCapabilities)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 l.warn("Model routing classifier failed: {}", error.message)
-                "unknown" to ctx.on(normal)
+                null
             }
-            l.info("Model routing class={} model={} durationMs={}", verdict, target.settings.model, started.elapsedNow().inWholeMilliseconds)
-            decideInitialWait(ctx, send = target !== simple)
+            val (verdict, target) = when (classification?.complex) {
+                true -> "complex" to complex
+                false -> "simple" to simple
+                null -> "unknown" to ctx.on(normal)
+            }
+            l.info("Model routing class={} model={} waitCategory={} durationMs={}", verdict, target.settings.model,
+                classification?.waitCategory, started.elapsedNow().inWholeMilliseconds)
+            decideInitialWait(ctx, send = target !== simple, classification?.waitCategory)
             if (target === simple) {
                 decided.complete(Unit)
                 speculative.await()
@@ -142,10 +148,10 @@ internal class NodesLLM(
     private fun AgentSettings.routedTo(target: RoutedModel): AgentSettings =
         copy(model = target.model, provider = target.provider, routing = null)
 
-    private suspend fun decideInitialWait(ctx: AgentContext<*>, send: Boolean) {
+    private suspend fun decideInitialWait(ctx: AgentContext<*>, send: Boolean, category: String? = null) {
         if (initialWaitDecided) return
         initialWaitDecided = true
-        if (send) ctx.runtimeEventSink.emit(AgentRuntimeEvent.InitialWait)
+        if (send) ctx.runtimeEventSink.emit(AgentRuntimeEvent.InitialWait(category))
     }
 
     private fun AgentContext<String>.on(settings: AgentSettings): AgentContext<String> =

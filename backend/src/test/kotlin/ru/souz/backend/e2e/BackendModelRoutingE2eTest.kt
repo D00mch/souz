@@ -15,9 +15,11 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import io.ktor.websocket.Frame
 import kotlin.test.assertTrue
+import ru.souz.backend.agent.runtime.WaitingPhrases
 import ru.souz.backend.config.BackendFeatureFlags
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import ru.souz.agent.spi.TaskClassification
 import ru.souz.agent.spi.TaskComplexityClassifier
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.llm.withNamedLlmConfig
@@ -54,7 +56,7 @@ class BackendModelRoutingE2eTest {
         backendE2eTest(
             "e2e_model_routing", settingsSource = source, localModels = emptyList(),
             providerClients = ProviderHttpClients(standard = http, openAi = http),
-            complexityClassifier = TaskComplexityClassifier { _, _ -> classified.incrementAndGet(); verdict() },
+            complexityClassifier = TaskComplexityClassifier { _, _ -> classified.incrementAndGet(); TaskClassification(verdict()) },
         ) {
             val userId = UUID.randomUUID().toString()
             client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) { trusted(userId); jsonBody("{}") }
@@ -87,16 +89,23 @@ class BackendModelRoutingE2eTest {
     }
 
     @Test
-    fun `initial wait is live only and independent of narration`() = withNamedLlmConfig("""{
+    fun `initial wait uses the classified category and is live only and independent of narration`() = withNamedLlmConfig("""{
         "routing":{"simple":{"model":"${E2E_LOCAL_MODEL.alias}"},"complex":{"model":"${E2E_LOCAL_MODEL.alias}"}}
     }""") { source ->
         var decision: Boolean? = null
+        val phrases = WaitingPhrases.load()
         backendE2eTest("e2e_initial_wait", settingsSource = source, featureFlags = BackendFeatureFlags(wsEvents = true),
-            complexityClassifier = TaskComplexityClassifier { _, _ -> decision ?: error("Jev unavailable") }) {
+            complexityClassifier = TaskComplexityClassifier { _, _ ->
+                TaskClassification(decision ?: error("Jev unavailable"), waitCategory = "travel_planning")
+            }) {
             val user = UUID.randomUUID().toString()
-            val decisions = listOf(false, true, null)
-            for ((index, next) in decisions.withIndex()) {
+            val decisions = listOf(false to true, true to true, null to true, true to false)
+            for ((index, scenario) in decisions.withIndex()) {
+                val (next, enabled) = scenario
                 decision = next
+                client.patch(BackendHttpRoutes.SETTINGS) {
+                    trusted(user); jsonBody("""{"intermediateMessages":$enabled}""")
+                }
                 val prompt = "turn-$index"
                 val chat = createPublicChat(user, requestId = prompt)
                 llm.pausePromptUntilReleased(prompt)
@@ -106,11 +115,12 @@ class BackendModelRoutingE2eTest {
                         socket.send(Frame.Text(frame))
                         assertEquals("accepted", readJson(socket, includeProgress = true)["status"].asText())
                         assertEquals("thread.status", readJson(socket, includeProgress = true)["type"].asText())
-                        if (next != false) {
+                        if (next != false && enabled) {
                             val wait = readJson(socket, includeProgress = true)
                             assertEquals("assistant.message", wait["type"].asText())
                             assertTrue(wait["seq"].isNull)
-                            assertTrue(wait["payload"]["content"].asText().isNotBlank())
+                            val pool = if (next == true) phrases.categories.getValue("travel_planning").phrases else phrases.generic
+                            assertTrue(wait["payload"]["content"].asText() in pool)
                         }
                         llm.awaitPrompt(prompt)
                         socket.send(Frame.Text(frame))

@@ -28,6 +28,7 @@ and fragments such as "тебе" are still classified, since they may approve an
 | `JEV_TOKEN` | Required, nonblank Bearer credential for Jev and its live tests. |
 | `JEV_MODEL` | Hosted model ID or alias; defaults to `jev-latest`. |
 | `JEV_THRESHOLD` | Finite probability in `[0, 1]`; defaults to `0.5`. Categories and Skills must score strictly above it. |
+| `JEV_WAIT_CATEGORY_THRESHOLD` | Backend waiting-category confidence: finite probability in `[0, 1]`, default `0.5`. The winning category must score at least this value; invalid configuration fails startup. |
 | `FRIDA_URL` | Optional FRIDA-Decisions `POST /pooling` endpoint of its vLLM server; enables the FRIDA fallback. |
 | `FRIDA_TOKEN` | Optional Bearer credential for `FRIDA_URL`. |
 | `FRIDA_MODEL` | Optional served model name sent with each FRIDA request. |
@@ -63,8 +64,8 @@ suspend fun needsCalendar(jev: JevClient, message: String): Double {
 }
 ```
 
-`JevClient.choose(state, instructions, options)` asks one choice question and returns every option's probability.
-`JevClassifier.isComplex` asks one Noul question: a `simple` probability of at least `0.9` admits a confident text-only answer requiring no tools. Attachments and current requests longer than 4,000 characters select complex without calling JEV. Requests of exactly 4,000 characters can still be classified in full; only reference history is truncated. Its structured state separates `current_request`, up to nine user and assistant messages in `previous_dialogue` (4,000 characters each), and `available_capabilities` from prepared inventory. Tool calls include only their names; system messages, tool arguments and tool results are excluded. Past tasks supply references, not pending work. Uncertainty and missing facts select complex. Logs contain probabilities and counts, not dialogue. When Jev fails, the turn keeps its own model without asking FRIDA.
+`JevClient.evaluateAndChoose` combines Noul questions and one choice question in one HTTP request. Invalid choice data does not discard valid Noul answers.
+`JevClassifier.classifyTask` uses a `simple` probability of at least `0.9` to admit a confident text-only answer requiring no tools. With waiting categories supplied, the same request also chooses an activity; `other`, a missing/invalid choice or confidence below `JEV_WAIT_CATEGORY_THRESHOLD` selects generic waiting. Attachments and current requests longer than 4,000 characters select complex without calling JEV. Requests of exactly 4,000 characters can still be classified in full; only reference history is truncated. Its structured state separates `current_request`, up to nine user and assistant messages in `previous_dialogue` (4,000 characters each), and `available_capabilities` from prepared inventory. Tool calls include only their names; system messages, tool arguments and tool results are excluded. Past tasks supply references, not pending work. Uncertainty and missing facts select complex. Logs contain probabilities and counts, not dialogue. When Jev fails, the turn keeps its own model without asking FRIDA.
 
 Optional `criteria` describe a question's `true` and `false` sides. Callers can pass
 credentials and a model to `JevClient(http, token, model)`. The client validates probabilities

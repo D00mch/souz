@@ -120,20 +120,34 @@ class AgentEventService(
         payload: AgentEventPayload,
         id: UUID = UUID.randomUUID(),
         createdAt: Instant = Instant.now(),
-    ): AgentLiveEvent {
-        val event = AgentLiveEvent(
-            id = id,
-            userId = userId,
-            chatId = chatId,
-            executionId = executionId,
-            type = type,
-            payload = payload,
-            createdAt = createdAt,
-            discardAfterSeq = if (type == AgentEventType.ASSISTANT_MESSAGE) eventRepository.latestSeq(userId, chatId) else null,
-        )
+    ): AgentLiveEvent = prepareLive(userId, chatId, executionId, type, payload, id, createdAt).also {
+        publishPreparedLive(it)
+    }
+
+    /** Preparation can wait for PostgreSQL; a caller may discard the result before publication. */
+    internal suspend fun prepareLive(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID?,
+        type: AgentEventType,
+        payload: AgentEventPayload,
+        id: UUID = UUID.randomUUID(),
+        createdAt: Instant = Instant.now(),
+    ): AgentLiveEvent = AgentLiveEvent(
+        id = id,
+        userId = userId,
+        chatId = chatId,
+        executionId = executionId,
+        type = type,
+        payload = payload,
+        createdAt = createdAt,
+        discardAfterSeq = if (type == AgentEventType.ASSISTANT_MESSAGE) eventRepository.latestSeq(userId, chatId) else null,
+    )
+
+    /** No IO or suspension between the cancellation check and the bus's nonblocking offers. */
+    internal suspend fun publishPreparedLive(event: AgentLiveEvent) {
         currentCoroutineContext().ensureActive()
         eventBus.publish(event)
-        return event
     }
 
     suspend fun listByChat(
