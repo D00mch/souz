@@ -28,6 +28,7 @@ Backend [personality settings](backend/docs/personality-settings.md) are separat
 - [`:agent`](agent/AGENTS.md) — graph-based agent and subagent execution, sessions, Skill discovery/approval, and host SPIs.
 - [`:sharedLogic`](sharedLogic/AGENTS.md) — shared JVM runtime logic, providers, classifiers, tools, skills, memory, and sandboxes.
 - [`:skill-oauth-api`](skill-oauth-api/AGENTS.md) — provider-neutral Skill OAuth contracts (`SkillOAuthGateway`) with no host or persistence dependencies.
+- [`:skill-plugin-api`](skill-plugin-api/AGENTS.md) — Java/Kotlin SDK for trusted runtime-loaded JVM Skills.
 - [`:skill-oauth-impl`](skill-oauth-impl/AGENTS.md) — Postgres-backed `SkillOAuthGateway` implementation, provider token exchange, and the OAuth callback route, consumed only by `:backend`.
 - [`:job-api`](job-api/AGENTS.md) — owner-scoped job management and execution contracts.
 - [`:job-impl`](job-impl/AGENTS.md) — PostgreSQL job persistence, scheduling, leased workers, and retries, composed by `:backend`.
@@ -42,11 +43,12 @@ Only these direct production project dependencies are allowed. Standard test-sou
 - `:llms` `main` → none.
 - `:agent` `main` → `:graph-engine`, `:llms`.
 - `:skill-oauth-api` `main` → none.
+- `:skill-plugin-api` `main` → `:llms`.
 - `:skill-oauth-impl` `main` → `:skill-oauth-api`.
 - `:job-api` `main` → none.
 - `:job-impl` `main` → `:job-api`.
 - `:sharedLogic` `main` → `:agent`, `:llms`, `:skill-oauth-api`.
-- `:backend` `main` → `:agent`, `:llms`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`, `:job-api`, `:job-impl`.
+- `:backend` `main` → `:agent`, `:llms`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`, `:skill-plugin-api`, `:job-api`, `:job-impl`.
 
 ## Verification
 

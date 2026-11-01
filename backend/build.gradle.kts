@@ -23,6 +23,7 @@ dependencies {
     implementation(project(":llms"))
     implementation(project(":sharedLogic"))
     implementation(project(":skill-oauth-api"))
+    implementation(project(":skill-plugin-api"))
     implementation(project(":skill-oauth-impl"))
     implementation(project(":job-api"))
     implementation(project(":job-impl"))
@@ -40,6 +41,7 @@ dependencies {
     implementation("io.micrometer:micrometer-registry-prometheus:1.16.3")
     implementation(libs.ktor.openapiSchemaReflect)
     implementation(libs.ktor.clientCore)
+    implementation(libs.ktor.clientCio)
     implementation(libs.ktor.serializationJackson)
     implementation(libs.ktor.serverRoutingOpenapi)
     implementation(libs.ktor.serverSwagger)
@@ -60,6 +62,7 @@ dependencies {
     testImplementation(libs.kotlin.testJunit5)
     testImplementation(libs.kotlinx.coroutinesTest)
     testImplementation(libs.mockk)
+    testImplementation(libs.commons.csv)
     testImplementation("io.ktor:ktor-client-mock:${libs.versions.ktor.get()}")
     testImplementation("io.ktor:ktor-client-websockets:${libs.versions.ktor.get()}")
     testImplementation("io.ktor:ktor-server-test-host:${libs.versions.ktor.get()}")
@@ -87,3 +90,42 @@ tasks.withType<AbstractArchiveTask>().configureEach {
 tasks.named<Jar>("shadowJar") {
     isZip64 = true
 }
+
+// Real plugin artifacts stay off the host test runtime classpath.
+val pluginSdkAbi = "1;kotlin=${libs.versions.kotlin.get()};coroutines=${libs.versions.kotlinx.coroutines.get()};jackson=${libs.versions.jackson.get()}"
+
+fun pluginFixture(name: String, directory: String, id: String, version: String, csv: String? = null) {
+    val fixture = sourceSets.create("${name}PluginTestFixtures") {
+        java.setSrcDirs(listOf("src/$directory/java"))
+        resources.setSrcDirs(listOf("src/$directory/resources"))
+    }
+    kotlin.sourceSets.getByName(fixture.name).kotlin.srcDir("src/$directory/kotlin")
+    dependencies.add(fixture.compileOnlyConfigurationName, project(":skill-plugin-api"))
+    configurations[fixture.runtimeClasspathConfigurationName].exclude(group = "org.jetbrains.kotlin")
+    if (csv != null) dependencies.add(fixture.implementationConfigurationName, "org.apache.commons:commons-csv:$csv")
+    val artifact = tasks.register<Jar>("${name}PluginJar") {
+        archiveBaseName.set("plugin-$name")
+        from(fixture.output)
+        if (csv != null) from(configurations[fixture.runtimeClasspathConfigurationName].map { zipTree(it) })
+        manifest.attributes(
+            "Souz-Plugin-Id" to id,
+            "Souz-Plugin-Version" to version,
+            "Souz-Plugin-Api" to pluginSdkAbi,
+            "Souz-Plugin-Jvm" to "21",
+        )
+        if (csv != null) from(resources.text.fromString(version)) { rename { "fixture-version.txt" } }
+        exclude("META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "META-INF/MANIFEST.MF")
+    }
+    tasks.test {
+        dependsOn(artifact)
+        systemProperty("plugin.fixture." + when (name) {
+            "kotlinV1" -> "kotlin-v1"
+            "kotlinV2" -> "kotlin-v2"
+            else -> name
+        }, artifact.flatMap { it.archiveFile }.get().asFile.absolutePath)
+    }
+}
+
+pluginFixture("java", "javaPluginTestFixtures", "java_reference", "v1")
+pluginFixture("kotlinV1", "kotlinPluginTestFixtures", "reference", "v1", "1.10.0")
+pluginFixture("kotlinV2", "kotlinPluginTestFixtures", "reference", "v2", "1.9.0")
