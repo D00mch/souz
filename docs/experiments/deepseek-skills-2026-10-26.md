@@ -3,6 +3,8 @@
 Инструкция для ветки `codex/deepseek-chat-503-retry`, основанной на `kmp`.
 Ветка содержит фикс повторов HTTP 503 и эту инструкцию. Поддержка прямого DeepSeek API в ней не дорабатывалась.
 
+Зафиксированный ниже результат относится к каталогу, ограниченному моками конкретного сценария, без файловых Skills. Текущая обвязка использует полный каталог и 30 закреплённых Skills; правила и команды находятся в [описании сценариев](../../desktopApp/docs/agent-scenario-tests.md) и [общем runbook](live-agent-scenarios.md). Сохраняй commit и состав каталога; результаты разных версий фикстур — отдельные измерения.
+
 ## Что запускается
 
 `agent.GraphAgentToolScenariosIntegrationTest` — 94 проверки с реальной LLM и замоканными инструментами.
@@ -98,54 +100,9 @@ Alias может измениться: записывай дату, запрош
 
 ## 4. Полный прогон с сохранением результата
 
-Этот блок сохраняет exit code даже при падениях тестов. Путь результата выводится перед запуском.
-Файл `progress.init.gradle` добавляет строки `LIVE_CASE` в консольный лог.
+Используй [общий runbook](live-agent-scenarios.md#preserve-an-independent-full-run): он изолирует JUnit, HTML, binary results и runtime-логи до запуска. Конфигурацию DeepSeek возьми из раздела 2; каталог результата пометь провайдером и моделью. Для повторения одного сценария измени фильтр `--tests`, сохранив отдельный каталог.
 
-```bash
-run_dir="$(pwd)/build/reports/deepseek-direct-$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$run_dir"
-printf 'Results: %s\n' "$run_dir"
-
-git rev-parse HEAD > "$run_dir/commit.txt"
-git diff > "$run_dir/source.patch"
-printf 'model=%s\nbase_url=%s\nagent=skills\nreasoning_effort=high\n' \
-  "$OPENAI_MODEL" "$OPENAI_BASE_URL" > "$run_dir/config.txt"
-
-cat > "$run_dir/progress.init.gradle" <<'GRADLE'
-allprojects {
-    tasks.withType(Test).configureEach {
-        afterTest { descriptor, result ->
-            println("LIVE_CASE " + result.resultType + " " + descriptor.name + " durationMs=" + (result.endTime - result.startTime))
-        }
-    }
-}
-GRADLE
-
-if ./gradlew :desktopApp:test --rerun \
-  --tests agent.GraphAgentToolScenariosIntegrationTest \
-  --no-parallel --console=plain \
-  -I "$run_dir/progress.init.gradle" > "$run_dir/gradle.log" 2>&1
-then
-  run_status=0
-else
-  run_status=$?
-fi
-
-printf '%s\n' "$run_status" > "$run_dir/exit-code.txt"
-cp -R desktopApp/build/test-results/test "$run_dir/junit"
-cp -R desktopApp/build/reports/tests/test "$run_dir/junit-html"
-printf 'Gradle exit code: %s\nResults: %s\n' "$run_status" "$run_dir"
-```
-
-Открой `junit-html/index.html` в каталоге результата. Исходный stdout тестов и `Scenario metrics` находятся также в JUnit XML.
-При ошибке сборки до выполнения тестов старые JUnit-файлы не подтверждают новый запуск; проверь дату и число случаев.
-Ожидаются 94 случая, без skipped. Exit code 1 при упавших сценариях — сохранённый результат проверки, а не обязательно ошибка сборки.
-
-Сохраняй отчёты перед любым следующим `:desktopApp:test`: Gradle перезаписывает их.
-Не сохраняй полный вывод `env`: там находится токен. Ветка и инструкция токенов не содержат.
-
-Для точечного повторения замени фильтр `--tests` на нужный метод с `*` в конце, как в коротком прогоне.
-Чтобы отдельно сравнить реализации, выбери `SOUZ_AGENT_INTEGRATION_TEST_AGENT=graph` и сохрани новый каталог результата.
+Проверяй 94 случая без skipped и сумму `Scenario metrics`. Сохраняй исходные статусы и причины; ошибки API и тайм-ауты не подтверждают ошибку выбора инструмента. Инструкция по записи метрик и результата в таблицу находится в том же runbook.
 
 ## Условия предыдущего полного запуска
 

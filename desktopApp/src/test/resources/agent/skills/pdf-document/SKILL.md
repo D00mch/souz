@@ -1,0 +1,21 @@
+---
+name: pdf-document
+description: Create a PDF document from model-authored HTML in the user's sandbox, inspect its pages, and attach the finished file to a Telegram or VK reply. Use when the user explicitly wants PDF output.
+---
+
+# PDF document
+
+1. Reuse the user's existing HTML when converting a saved document. For a new document, write complete UTF-8 HTML with `NewFile` in the user's workspace; use `EditFile` for corrections. Use inline CSS, readable margins and fonts, and page-break rules for tables and headings. External resources are forbidden; embed PNG/JPEG/WebP images as data URLs. HTML and Markdown requested as files need no PDF conversion.
+2. Invoke this Skill with `RunSkillCommand`: `runtime=PROCESS`, `command=["/opt/souz/pdf-venv/bin/python", "scripts/render_pdf.py", absolute_html_path, absolute_new_pdf_path]`, `timeoutMillis=60000`. Use a new output filename; existing files are not overwritten.
+3. Check content and layout before selecting the attachment. A successful conversion or readable extracted text does not establish visual quality.
+   - Use `ReadPdfPages` to check the expected content and page count, in batches of at most 10 pages.
+   - For PDFs of up to 10 pages, visually inspect every page. For longer PDFs, inspect the first and last pages, a middle page, and every distinct layout type, including wide tables, dense sections, images and page breaks around them. Record which page numbers were actually checked; inspecting only the final page is insufficient for a multi-page document.
+   - Use `RenderPdfPages` in batches of at most five pages, then pass the selected PNG paths together to one `ViewImage` call using `imagePaths=[path1, ...]`. Preserve their order and identify the corresponding PDF page numbers in `question`. A five-page PDF needs one batch review, not five separate model calls. Use `imagePath` only for a single page.
+   - Ask for a concise result per page: `OK` or concrete defects with their locations. Check clipped or missing text, overlap, unreadable glyphs, font size, text/background contrast (including colored labels), table boundaries, and awkward page breaks. Request no page transcription or general design essay; distinguish defects affecting readability/content from optional aesthetic suggestions. Rendered PNGs alone are not a visual check: read the `ViewImage` findings.
+4. Resolve concrete readability or layout defects before delivery. Feedback such as "no clipping, but low contrast" requires a correction; it is not a pass. Optional aesthetic suggestions alone do not require another correction cycle. Correct print CSS or layout in a working HTML copy, preserving the original unless the user requested editing it. Render to a new PDF filename and check the updated content and page count.
+   - For a local change with unchanged pagination and layout elsewhere, render and batch-review only affected pages, plus adjacent pages if a page boundary could be affected. Retain prior checks for unchanged pages; do not claim they were reviewed again.
+   - Changes to shared styles, fonts, margins, layout or pagination require renewed review using the initial coverage rule. If the affected range is uncertain, use that full coverage. Always use PNGs from the latest PDF for rechecks, not earlier renders.
+   - Allow at most three correction cycles and stop once concrete defects are resolved. If defects remain or a required inspection tool is unavailable, explain the specific limitation instead of marking the PDF ready; do not attach a known-defective or unreviewed result as finished. A draft explicitly requested by the user must be labeled with its remaining limitations. Never claim checks that were not performed.
+5. Only after these checks pass, select the latest verified PDF with `AttachFileToReply(path=absolute_pdf_path, presentation=document)`. Do not select an earlier render that still has defects. The returned file reference is the attachment; a path mentioned in prose does not attach anything.
+
+The renderer runs in the existing sandbox. It does not upload, send messages, fetch URLs, execute JavaScript, or receive S3/media credentials. Report a missing renderer or resource-limit error; do not install packages during a user turn.

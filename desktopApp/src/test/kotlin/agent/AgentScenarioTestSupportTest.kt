@@ -13,6 +13,8 @@ import ru.souz.agent.skills.SkillId
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.AgentRuntimeEnvironment
+import ru.souz.agent.spi.AgentErrorMessages
+import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.llms.LLMMessageRole
@@ -27,6 +29,7 @@ import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.ToolCategory
+import ru.souz.tool.ToolsFactory
 import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
@@ -44,9 +47,9 @@ import java.time.ZonedDateTime
 
 class AgentScenarioTestSupportTest {
     @Test
-    fun `scenario catalog exposes only declared mocks and delegates invocation`() = runTest {
+    fun `scenario catalog exposes every tool and delegates only configured invocations`() = runTest {
         val productionFileTool = RecordingTool("FindFilesByName", "production metadata")
-        val productionBrowserTool = RecordingTool("CreateNewBrowserTab", "must stay unavailable")
+        val productionBrowserTool = RecordingTool("CreateNewBrowserTab", "production browser metadata")
         val mockedFileTool = RecordingTool("FindFilesByName", "mock metadata")
         val productionCatalog = catalog(
             ToolCategory.FILES to listOf(productionFileTool),
@@ -58,13 +61,15 @@ class AgentScenarioTestSupportTest {
             mockedTools = listOf(mockedFileTool),
         )
 
-        assertEquals(setOf(ToolCategory.FILES), scenarioCatalog.toolsByCategory.filterValues { it.isNotEmpty() }.keys)
+        assertEquals(setOf(ToolCategory.BROWSER, ToolCategory.FILES), scenarioCatalog.toolsByCategory.filterValues { it.isNotEmpty() }.keys)
         val exposedTool = scenarioCatalog.toolsByCategory.getValue(ToolCategory.FILES).getValue("FindFilesByName")
         assertEquals(productionFileTool.fn, exposedTool.fn)
-        assertFalse(
-            scenarioCatalog.toolsByCategory.values.any { "CreateNewBrowserTab" in it },
-            "Undeclared browser tools must not be discoverable or executable.",
-        )
+        val browser = scenarioCatalog.toolsByCategory.getValue(ToolCategory.BROWSER).getValue("CreateNewBrowserTab")
+        assertEquals(productionBrowserTool.fn, browser.fn)
+        val browserCall = LLMResponse.FunctionCall("CreateNewBrowserTab", emptyMap())
+        for (blocked in listOf(browser.invoke(browserCall), browser.invoke(browserCall, ToolInvocationMeta(userId = "test")))) {
+            assertEquals("scenario_tool_not_configured", restJsonMapper.readTree(blocked.content).path("error").path("code").asText())
+        }
 
         val meta = ToolInvocationMeta(userId = "scenario-test")
         val result = exposedTool.invoke(
@@ -117,12 +122,13 @@ class AgentScenarioTestSupportTest {
             .createScenarioDi(listOf(mockedFileTool))
 
         val catalog: AgentToolCatalog = di.direct.instance()
-        assertEquals(setOf(ToolCategory.FILES), catalog.toolsByCategory.filterValues { it.isNotEmpty() }.keys)
-        val exposedNames = catalog.toolsByCategory.values.flatMap { it.keys }
-        assertEquals(listOf("FindFilesByName"), exposedNames)
+        val production = di.direct.instance<ToolsFactory>().catalog
+        val exposedNames = catalog.toolsByCategory.values.flatMap { it.keys }.toSet()
+        assertEquals(production.toolsByCategory.values.flatMap { it.keys }.toSet(), exposedNames)
+        assertTrue("CreateNewBrowserTab" in exposedNames)
         val contextFactory: AgentContextFactory = di.direct.instance()
         assertEquals(
-            setOf("FindFilesByName"),
+            exposedNames,
             contextFactory.create(AgentId.GRAPH).settings.tools.byName.keys,
         )
 
@@ -138,7 +144,7 @@ class AgentScenarioTestSupportTest {
         val skillIds = restJsonMapper.readTree(getSkillsNamesResult.content)
             .path("skillNames")
             .map { it.asText() }
-        assertEquals(listOf("FindFilesByName"), skillIds)
+        assertEquals(production.toolsByCategory.getValue(ToolCategory.FILES).keys.sorted(), skillIds)
 
         val getSkillByName = di.direct.instance<ToolGetSkillByName>()
         val getSkillResult = getSkillByName.invoke(
@@ -168,9 +174,25 @@ class AgentScenarioTestSupportTest {
         assertEquals(1, mockedFileTool.invocations)
 
         val repository: SkillRegistryRepository = di.direct.instance()
-        assertTrue(repository.listSkills(meta.userId).isEmpty())
-        assertTrue(repository.listSkillInventoryIds(meta.userId).isEmpty())
+        assertEquals(ScenarioSkillFixtures.ids, repository.listSkills(meta.userId).map { it.skillId })
+        assertEquals(ScenarioSkillFixtures.ids, repository.listSkillInventoryIds(meta.userId))
         assertNull(repository.loadSkillBundle(meta.userId, SkillId("installed-browser-skill")))
+        val bundleDetail = getSkillByName.invoke(
+            LLMResponse.FunctionCall(getSkillByName.fn.name, mapOf("skillId" to "aij-help")), meta,
+        )
+        val detail = restJsonMapper.readTree(bundleDetail.content).path("skill")
+        assertEquals("aij-help", detail.path("skillId").asText())
+        assertTrue(detail.path("skillMarkdownBody").asText().isNotBlank())
+        assertTrue(detail.path("supportingFiles").map { it.asText() }.contains("scripts/help.sh"))
+        val commandResult = runSkill.invoke(
+            LLMResponse.FunctionCall(runSkill.fn.name, mapOf(
+                "skillId" to "aij-help", "arguments" to mapOf("scriptPath" to "scripts/help.sh"),
+            )), meta,
+        )
+        val command = restJsonMapper.readTree(commandResult.content)
+        assertEquals(1, command.path("exitCode").asInt())
+        assertTrue(command.path("stderr").asText().contains("scenario_skill_not_configured"))
+        assertEquals("Scenario model request timed out.", di.direct.instance<AgentErrorMessages>().timeout())
         assertTrue(di.direct.instance<McpToolProvider>().tools().isEmpty())
         assertSame(NoopConversationMemoryRuntime, di.direct.instance<ConversationMemoryRuntime>())
         val environment: AgentRuntimeEnvironment = di.direct.instance()
@@ -184,6 +206,17 @@ class AgentScenarioTestSupportTest {
         val toolsFilter: AgentToolsFilter = di.direct.instance()
         assertSame(RuntimePassThroughToolsFilter, toolsFilter)
         assertSame(catalog.toolsByCategory, toolsFilter.applyFilter(catalog.toolsByCategory))
+    }
+
+    @Test
+    fun `all pinned Skills load once per ID with verified contents and matching bundle hashes`() {
+        assertEquals(30, ScenarioSkillFixtures.ids.size)
+        assertEquals(ScenarioSkillFixtures.ids.size, ScenarioSkillFixtures.ids.distinct().size)
+        for (id in ScenarioSkillFixtures.ids) {
+            val bundle = checkNotNull(ScenarioSkillFixtures.load(id))
+            assertEquals(id, bundle.skillId)
+            assertEquals(ScenarioSkillFixtures.hash(id), SkillBundleHasher.hash(bundle))
+        }
     }
 
     @Test

@@ -40,7 +40,9 @@ import ru.souz.tool.textReplace.ToolGetClipboard
 
 /**
  * Integration tests for tool invocation scenarios across graph agent implementations.
- * Tools are mocked; checks cover completed answers, arguments, and resulting state.
+ * Every scenario discovers the full compiled-tool catalog and pinned file-backed Skills.
+ * Scenario mocks implement operations; other tools and Skill commands return explicit fixture errors.
+ * Checks cover completed answers, arguments, and resulting state.
  * Excel discovery/cell/lookup cases exercise the named operation; query/sort allow any correct read-only solution.
  * Set [SOUZ_AGENT_INTEGRATION_TESTS_ON] to `true` before running these integration tests.
  * Select `graph` (default) or `skills` with [SOUZ_AGENT_INTEGRATION_TEST_AGENT].

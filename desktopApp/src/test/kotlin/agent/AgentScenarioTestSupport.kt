@@ -23,6 +23,7 @@ import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.AgentRuntimeEnvironment
+import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.db.ConfigStore
 import ru.souz.db.DesktopInfoRepository
@@ -64,6 +65,7 @@ import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolsFactory
 import ru.souz.runtime.files.FilesToolUtil
+import ru.souz.tool.skills.SkillCommandExecutor
 import java.util.concurrent.atomic.AtomicLong
 import java.time.Clock
 import java.time.LocalDate
@@ -124,7 +126,9 @@ class AgentScenarioTestSupport(
                 }
             }
             bindSingleton<AgentToolsFilter>(overrides = true) { RuntimePassThroughToolsFilter }
-            bindSingleton<SkillRegistryRepository>(overrides = true) { emptySkillRegistryRepository() }
+            bindSingleton<SkillRegistryRepository>(overrides = true) { scenarioSkillRegistryRepository() }
+            bindSingleton<SkillCommandExecutor>(overrides = true) { scenarioSkillCommandExecutor() }
+            bindSingleton<AgentErrorMessages>(overrides = true) { ScenarioAgentErrorMessages }
             bindSingleton<McpToolProvider>(overrides = true) { EmptyMcpToolProvider }
             bindSingleton<ConversationMemoryRuntime>(overrides = true) { NoopConversationMemoryRuntime }
             bindSingleton<AgentRuntimeEnvironment>(overrides = true) { ScenarioRuntimeEnvironment }
@@ -425,34 +429,41 @@ internal fun ScenarioAgentToolCatalog(
 ): AgentToolCatalog {
     val mockedByName = mockedTools.associateBy { it.fn.name }
     require(mockedByName.size == mockedTools.size) { "Scenario mocks contain duplicate tool names." }
-    val selected = productionCatalog.filter { _, tool -> tool.fn.name in mockedByName }
-    val unknownNames = mockedByName.keys - selected.toolsByCategory.values.flatMap { it.keys }.toSet()
+    val unknownNames = mockedByName.keys - productionCatalog.toolsByCategory.values.flatMap { it.keys }.toSet()
     require(unknownNames.isEmpty()) {
         "Scenario mocks are not present in the production tool catalog: ${unknownNames.sorted().joinToString()}"
     }
-    return selected.mapTools { _, tool -> tool.withMockInvocation(mockedByName.getValue(tool.fn.name)) }
+    return productionCatalog.mapTools { _, tool -> tool.withMockInvocation(mockedByName[tool.fn.name]) }
 }
 
-private fun LLMToolSetup.withMockInvocation(mockedTool: LLMToolSetup): LLMToolSetup {
+private fun LLMToolSetup.withMockInvocation(mockedTool: LLMToolSetup?): LLMToolSetup {
     val productionTool = this
     return object : LLMToolSetup {
         override val fn: LLMRequest.Function = productionTool.fn
 
         override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
-            mockedTool.invoke(functionCall)
+            mockedTool?.invoke(functionCall) ?: unconfiguredScenarioTool(functionCall.name)
 
         override suspend fun invoke(
             functionCall: LLMResponse.FunctionCall,
             meta: ToolInvocationMeta,
-        ): LLMRequest.Message = mockedTool.invoke(functionCall, meta)
+        ): LLMRequest.Message = mockedTool?.invoke(functionCall, meta) ?: unconfiguredScenarioTool(functionCall.name)
     }
 }
 
-internal fun emptySkillRegistryRepository(): SkillRegistryRepository = mockk {
-    coEvery { listSkills(any()) } returns emptyList()
-    coEvery { listSkillInventoryIds(any()) } returns emptyList()
-    coEvery { loadSkillBundle(any(), any()) } returns null
-    coEvery { getValidation(any(), any(), any(), any()) } returns null
+private fun unconfiguredScenarioTool(name: String) = LLMRequest.Message(
+    role = LLMMessageRole.function,
+    name = name,
+    content = restJsonMapper.writeValueAsString(mapOf("error" to mapOf(
+        "code" to "scenario_tool_not_configured",
+        "message" to "No fixture is configured for $name in this scenario. No operation was performed.",
+    ))),
+)
+
+private object ScenarioAgentErrorMessages : AgentErrorMessages {
+    override suspend fun contextReset(): String = "Scenario context limit exceeded."
+    override suspend fun timeout(): String = "Scenario model request timed out."
+    override suspend fun noMoney(): String = "Scenario provider balance is exhausted."
 }
 
 internal object EmptyMcpToolProvider : McpToolProvider {

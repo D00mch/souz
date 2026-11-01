@@ -67,6 +67,7 @@ Only these direct production project dependencies are allowed. Standard test-sou
 - Run `./gradlew test :sharedLogic:allTests :sharedUI:allTests :koverXmlReport :koverHtmlReport koverLog -Psouz.coverage --no-parallel` for the CI JVM test-and-coverage graph.
 - When changing quality tooling, run `./gradlew :build-logic:check`.
 - Run the affected module's command from its `AGENTS.md`; use `./gradlew check` for repository-wide verification when the change warrants it.
+- For live model evaluations, follow [agent scenario tests](desktopApp/docs/agent-scenario-tests.md): pin the provider and fixture revision, use isolated reports, and distinguish provider failures from scenario assertions.
 - Desktop entry point: `./gradlew :desktopApp:run`.
 - Backend entry point: `./gradlew :backend:run`.
 - For documentation-only changes, validate local links and run `git diff --check`; runtime tests are unnecessary unless source behavior also changes.

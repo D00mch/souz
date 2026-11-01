@@ -1,0 +1,757 @@
+{
+  "source": "https://disk.yandex.ru/d/2r6zoI_x33TFaA",
+  "snapshot": "2026-10-29",
+  "selection": "One variant per skill ID: most deployments, then lexicographically smallest SHA-256. User identities and deployments are omitted.",
+  "skills": [
+    {
+      "id": "afisha-where-to-go-cinema-theatre-concerts-tickets",
+      "variant": "v-92c756612ad4",
+      "sha256": "92c756612ad4ebd88607e8f95dcbae3a50a4f452ba975d7dd965e4d68987dd8c",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "a9785a088e0a5aeb79720b781c3d2ccff77cd80bfbf29592a00025fdfdf9fdcf",
+          "bytes": 14770
+        },
+        {
+          "path": "scripts/afisha.py",
+          "sha256": "db1609b31778458bdb75e5edf456f3561c93130c9c8ba0d15428f1c354c433dd",
+          "bytes": 62620
+        },
+        {
+          "path": "scripts/afisha.sh",
+          "sha256": "508c65af76534dff86912ceed241b79a1004c68f14bc52ed1c2fc895d1b71bbc",
+          "bytes": 902
+        }
+      ]
+    },
+    {
+      "id": "aij-help",
+      "variant": "v-697d4d6282f5",
+      "sha256": "697d4d6282f5cd464cc6118e1139326d0d3e64c1bfec7753a9fcdfb57acbdd55",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "3d4af1119ab2450b1794b0adfb81f683f61c0c7361fb85128b4eb219283c78b2",
+          "bytes": 3914
+        },
+        {
+          "path": "scripts/help.sh",
+          "sha256": "60b4016c131abade0c698c6f1ceaa0b5040f8e7185f5bb42151f557959c83c6c",
+          "bytes": 489
+        },
+        {
+          "path": "scripts/lookup.py",
+          "sha256": "d3e57531e18a04bccf8d2a3e9022223453e700f78034434bc2d8dc91196198ee",
+          "bytes": 5237
+        }
+      ]
+    },
+    {
+      "id": "avia-tickets",
+      "variant": "v-32353f59b918",
+      "sha256": "32353f59b91886cc6fb7d7a9195531b859b657381185c90ff5a35bc0639b324f",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "7b4797be26f1da4692fd5eed6913e4ee38d8b6aa7062d3b4a51e0032af4a57cd",
+          "bytes": 9514
+        },
+        {
+          "path": "scripts/avia.py",
+          "sha256": "b1adf439b4654a71fc2691d3feb5d4c7e99b8206c17c4379a8502c938f2e0185",
+          "bytes": 8753
+        },
+        {
+          "path": "scripts/avia.sh",
+          "sha256": "c14f4e7f629ce41d3b1f5ebbf149d75445f0be1bb040a93528bf8f24a313d3e0",
+          "bytes": 491
+        }
+      ]
+    },
+    {
+      "id": "book-search-download",
+      "variant": "v-e300a6319197",
+      "sha256": "e300a631919795f8456a9b7bb4f9818659e9b010abb27a0361d1b3be18725a1d",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "8c9d8909dbcc9b415f842134230388391e7d9452801174975741090a04eb63ec",
+          "bytes": 20755
+        },
+        {
+          "path": "references/advanced.md",
+          "sha256": "4ff2169b464396d2606402189d13d172026e1d72e3e0f9c957ae127161a5cf8b",
+          "bytes": 2599
+        },
+        {
+          "path": "scripts/catalog.py",
+          "sha256": "e367e34c9f246b0b9a365742566ae8c68aec283545578aeb8e0caf45fe5379e0",
+          "bytes": 11815
+        },
+        {
+          "path": "scripts/download_book.py",
+          "sha256": "535aedc2a84b91c0e81a247ebc2a8e9b794bf8bf152faf427764ea8ecc92f2f7",
+          "bytes": 13947
+        },
+        {
+          "path": "scripts/http_state.py",
+          "sha256": "60473f5f06008c9ea1ed51fdf51c5f0552961ed70a6d61d1da20d0695a2c9d2d",
+          "bytes": 4939
+        },
+        {
+          "path": "scripts/prepare_text.py",
+          "sha256": "074118868702c361adc223be9f533464743afdf5d9ab49967cd95d33781700fe",
+          "bytes": 3602
+        },
+        {
+          "path": "scripts/s3_delivery.py",
+          "sha256": "18f2d2811dcf8805758b3e6a1d1553839f8ff045a8549cc827759b940ff4871e",
+          "bytes": 9417
+        }
+      ]
+    },
+    {
+      "id": "brave-image-search",
+      "variant": "v-46c852108353",
+      "sha256": "46c852108353cb74dd8412ddd4061bb94f2668d5d5683f1ee03e5e1d9591bc57",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "bea5417fa4efd16e44df55636dbd4d770e9111e7510ca0c165b581293ced82be",
+          "bytes": 6893
+        },
+        {
+          "path": "scripts/fast.py",
+          "sha256": "2bde3055a7f4db7065f9b32eb854eb267ba0c07337c94ba4e0e77900d68c3125",
+          "bytes": 10842
+        },
+        {
+          "path": "scripts/images.py",
+          "sha256": "c4316716f4fed7a7f0cbee82cdd6b4800818285694f38a13eb22e31d29d9d24d",
+          "bytes": 11984
+        }
+      ]
+    },
+    {
+      "id": "calendar",
+      "variant": "v-2afeca2ebfb4",
+      "sha256": "2afeca2ebfb4d8902296ae1261339b13c18662c0a680358843739e1b5263943e",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "608ae3a8f09359135ced18e6e824574dc7b4ba3c38eea7e840386a922e4310a5",
+          "bytes": 8448
+        },
+        {
+          "path": "scripts/format.py",
+          "sha256": "87ba255937454e5cc3a2b83212350edfc9395edbaeb19f7465b8e189b2fd85d3",
+          "bytes": 4893
+        }
+      ]
+    },
+    {
+      "id": "device-help",
+      "variant": "v-875ff03c267d",
+      "sha256": "875ff03c267df3456106069f8eeb7f55b80255c2ac4329aeb33c4f0793d6a1e6",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "c192d76c1e42aac6034fb5ee8885417a8d21e8c4303d8d1d89bb3a117f99d6ed",
+          "bytes": 3619
+        },
+        {
+          "path": "scripts/help.sh",
+          "sha256": "dc8beabf9e72378fa959c0e3da6c1a864ded90d1d208a73fa6f3e51535adfc57",
+          "bytes": 466
+        },
+        {
+          "path": "scripts/lookup.py",
+          "sha256": "13c695bd5b36d7c416703155bb13c0c59d8d34fcf7654eb429cfcc815d8d54bb",
+          "bytes": 4090
+        }
+      ]
+    },
+    {
+      "id": "doctor-appointment",
+      "variant": "v-5df3f03980a4",
+      "sha256": "5df3f03980a4e6cec37b838345b5c781aec11dc33bbbe2920b4fce3554f70894",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "f07a6e97d690a9150c7241d19754eedaffb5254dea9f9083b60ee92d466343f0",
+          "bytes": 12613
+        },
+        {
+          "path": "scripts/doctor.py",
+          "sha256": "203a8ecd3207752d8834273acf40c422fdea4e020c20e82f545bdda2dd11c2ee",
+          "bytes": 15783
+        },
+        {
+          "path": "scripts/doctor.sh",
+          "sha256": "0fe63fde7f40440b2d0a735478c72492f637ac7333b159c7e2421317bc88c883",
+          "bytes": 577
+        }
+      ]
+    },
+    {
+      "id": "gigaconf",
+      "variant": "v-4f816cd7b0a3",
+      "sha256": "4f816cd7b0a39053ccfce3e047f346fbe2b0b6398289bffe34c8e481f197dcda",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "48e516815e6c7f678ab4b74a17911924d1a16fa8e101512c71a3421ae6d9768b",
+          "bytes": 4535
+        },
+        {
+          "path": "scripts/help.sh",
+          "sha256": "c30fe5e568e0caeda3ac6b01bee2507214596d475ad0d2ca204688004f217e08",
+          "bytes": 362
+        },
+        {
+          "path": "scripts/lookup.py",
+          "sha256": "1a43b337aceb87cde194763c945fb2cb8c1f7b2e650bd0ec3177ae6f7409eba2",
+          "bytes": 5429
+        }
+      ]
+    },
+    {
+      "id": "gmail",
+      "variant": "v-29907d319b7a",
+      "sha256": "29907d319b7af47d489b9b3d23481a7c01191d0850b4a978301d12bfc1f358b3",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "ec02e761484b63cacaf520be435b9edc8bd1a937269ae32203d115cb86a1cce9",
+          "bytes": 17042
+        },
+        {
+          "path": "scripts/attachment.py",
+          "sha256": "f891d92a0d69114ff9f702f533dabc3896ee89949277794eb4337b6f6ac2569f",
+          "bytes": 4133
+        },
+        {
+          "path": "scripts/flow.py",
+          "sha256": "fc25f8515955e4b1fa40deef7586c0e0ff1f91e5fab83306d947d0aee6c1917c",
+          "bytes": 4393
+        },
+        {
+          "path": "scripts/mail_content.py",
+          "sha256": "34a9bcfd4adbc7f5f084bef5c4e64abafc01829093215f09f139d135230c0fde",
+          "bytes": 3182
+        },
+        {
+          "path": "scripts/state.py",
+          "sha256": "e3600a427247ca687534958e86add0e6780602101037d89df86b587198bc8d24",
+          "bytes": 8899
+        }
+      ]
+    },
+    {
+      "id": "hotel-search",
+      "variant": "v-e3fb2a78ce48",
+      "sha256": "e3fb2a78ce4894f6528e2bae07ef2183e71f449b4d2f5b00866357ce7e7cff7d",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "f1f54ce2c7e8fba840eddfd9f48ab8301386e957905069b0c1ec150b0c17851f",
+          "bytes": 14090
+        },
+        {
+          "path": "scripts/ostrovok.py",
+          "sha256": "1387dbffeba078f3814d0c0706f0ee4512b151a33cb7d7667796a243963b7ff8",
+          "bytes": 20082
+        },
+        {
+          "path": "scripts/ostrovok.sh",
+          "sha256": "df8e1a2305da4cd0d6b1e08c2bd7115c4fcaab3e877a90d3db53777e3e2a4e72",
+          "bytes": 813
+        }
+      ]
+    },
+    {
+      "id": "how-to-get-there",
+      "variant": "v-51daf743d5af",
+      "sha256": "51daf743d5afee506d5fc55389eecbd3731fc1e851d87e7d916bc8a09888f79c",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "ff4c947207d1a689227ee0cb991717497f09bddd539ba3b1e887258798ae7f2d",
+          "bytes": 5847
+        },
+        {
+          "path": "scripts/route.py",
+          "sha256": "12a771c7deeac823b28aa1b44388a12ac959869455f2d87cb39a22d327c7d7b8",
+          "bytes": 1820
+        },
+        {
+          "path": "scripts/route.sh",
+          "sha256": "1a0ee742f2eb199485c50bb5012a48066b85c4b67e3b1ffe840e63aa99f1542b",
+          "bytes": 461
+        }
+      ]
+    },
+    {
+      "id": "huawei-health",
+      "variant": "v-e3a9e3ddb619",
+      "sha256": "e3a9e3ddb6199097e8b05228820bfdd2d3e109eaa1bb86c8ebbd556795e563e7",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "7e67fd7664b45818405f3a25ffa344a0d821069447d7df7e76692749b6baea55",
+          "bytes": 8936
+        },
+        {
+          "path": "scripts/hh_api.sh",
+          "sha256": "ba57d74466a92263fd3f6a56a8614fd65528eba7094b8e7e28dde0675e838c12",
+          "bytes": 11948
+        }
+      ]
+    },
+    {
+      "id": "kinopub-search",
+      "variant": "v-ea99c7565801",
+      "sha256": "ea99c756580136091d760b4a3dfb916bf1ecce25a779eb2db2207bc427c2faa8",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "c2e5bd89976cf2d2124a25055c4b0fa7c32a3886f3e0673e5bdadd79695b5a15",
+          "bytes": 11732
+        },
+        {
+          "path": "scripts/confirm_play.py",
+          "sha256": "31c3a5147751f4d55cbfe1761a67dc43546c89ef77b67a374a2ca88ef128ff08",
+          "bytes": 4286
+        },
+        {
+          "path": "scripts/playback.py",
+          "sha256": "185278926d7c206f699674146095d09174d3fcf175a03be7120255acd04625d7",
+          "bytes": 1379
+        },
+        {
+          "path": "scripts/search.py",
+          "sha256": "8910d9d063675b71361a3925708ac2349ce6d74f871e7a4f40eda4b4e9a2e8a3",
+          "bytes": 9933
+        }
+      ]
+    },
+    {
+      "id": "map-places-and-routes",
+      "variant": "v-6619acdc9fbc",
+      "sha256": "6619acdc9fbc087f17484f9c43f1fb902d85f0f87d269b4f698c393f8b0b380e",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "8c8a4fbcd25a599a3ba76386890a766d95c2603a6cde1d9f68ae8b2a3052244b",
+          "bytes": 14789
+        },
+        {
+          "path": "scripts/maps.py",
+          "sha256": "64b2ebc91b7e2a59187d2672910f74dbcfddc89cc752cefefb71170135ab0f2a",
+          "bytes": 35163
+        },
+        {
+          "path": "scripts/maps.sh",
+          "sha256": "a907db2ebe4f8b126aa6e438f62ca954d6c9ee65980e34e8a39ee56729a29044",
+          "bytes": 491
+        }
+      ]
+    },
+    {
+      "id": "news",
+      "variant": "v-f0979fa12ac8",
+      "sha256": "f0979fa12ac8ff48c21400f8d51a3010ac5470ae924b691d7fb168bf11d06550",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "5663b86990aafc0dd7e50f7e051380eaf32edfa6af5dda20d7e3bb6c2dfac0ba",
+          "bytes": 10192
+        },
+        {
+          "path": "scripts/news.py",
+          "sha256": "543758a62b4ca6e28e49bb2b232b7e34894cd674f9fb447493af4fc049cc107c",
+          "bytes": 13260
+        },
+        {
+          "path": "scripts/news.sh",
+          "sha256": "62970766e24aab15c5eb0057dd7f62948b8ac5fcb45cbe9637e4852f3650304f",
+          "bytes": 400
+        }
+      ]
+    },
+    {
+      "id": "paper-summarize-academic",
+      "variant": "v-b2e153cf14c9",
+      "sha256": "b2e153cf14c9b59b5c039a563b338bbf3ed74825b75c746b0a8cfd4042df57fe",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "b0eb794a7417ec02fdc1cd6e541e3807ea93bc18f18028dde3f81e228b827360",
+          "bytes": 1556
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "d124129a73f750d98a3ad1ea571d1db59939ef0dd0d791975a0fd01112bee1b7",
+          "bytes": 3743
+        },
+        {
+          "path": "USAGE_EXAMPLE.md",
+          "sha256": "d8e2cd09bd106450974637eb2932158f6ec57e9ea09c3eaa0c9f492b28ea596b",
+          "bytes": 3341
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "3bf04178a124a2b945410b975c6de0fb08ee53471a60beb63d898144c66c2686",
+          "bytes": 143
+        },
+        {
+          "path": "templates/sop_templates.ts",
+          "sha256": "7ab73f32e8189fcfe55d88b47fcf1ad9753832c92415078932fbc19d147110b5",
+          "bytes": 3722
+        }
+      ]
+    },
+    {
+      "id": "pdf-document",
+      "variant": "v-883e7badcf73",
+      "sha256": "883e7badcf737037ad1705e25c3fb4e0a53cf6d375488ef6f7720137a88c6144",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "f38f26e66dc37a11788b8c6b52e76c87971182af8f9279812114a772c25804b4",
+          "bytes": 4237
+        },
+        {
+          "path": "scripts/render_pdf.py",
+          "sha256": "7dc37f9080a6df643fb123efc605dd4874030abe25b1938c632d0dc5c21c73ff",
+          "bytes": 2291
+        }
+      ]
+    },
+    {
+      "id": "ring-health",
+      "variant": "v-aa635d5aa1d2",
+      "sha256": "aa635d5aa1d288486748e12c93626c70e5ac0ae30f01de6038c892f29c35d34e",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "7eed46781907abe23d5facf6fbcc0ee57b76904bc8de5ff186cb5816907e6755",
+          "bytes": 25929
+        },
+        {
+          "path": "scripts/auth.py",
+          "sha256": "b43eae362d37b1ae5b20b4cdc6e1b7d90fbf21ecc907f96e23fc5113d522afd4",
+          "bytes": 4422
+        },
+        {
+          "path": "scripts/errors.py",
+          "sha256": "506f85a121f02df523ad8a5bc94e3d965aa359d00387081e5bd9bc28aca96768",
+          "bytes": 1860
+        },
+        {
+          "path": "scripts/report.py",
+          "sha256": "40b54caadb4ae8910392c211de424f98f6c43bcec82c6e82c8ceabcbf8bdff19",
+          "bytes": 9002
+        },
+        {
+          "path": "scripts/ring.sh",
+          "sha256": "f0239816eecda815aa77c49997ffc1b4f9594daa8669934946175dd4fae0cfeb",
+          "bytes": 3073
+        },
+        {
+          "path": "scripts/save_client_token.py",
+          "sha256": "289b2724ad1dd10703f3812ea09e267793857d0b1c14a618b5060c89417d74d8",
+          "bytes": 2026
+        }
+      ]
+    },
+    {
+      "id": "ring-help",
+      "variant": "v-8b0dce444858",
+      "sha256": "8b0dce4448588f5f75b03c2a0c37196af5363cd69458ef7e671a3ea0e1083ab9",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "e668036c728ab04ec1a3a24e92ec41e1cb91b31c2d59c5ba26a846693ab994bf",
+          "bytes": 3143
+        },
+        {
+          "path": "scripts/help.sh",
+          "sha256": "469e107bec7e1e498340462814bb4d720928358f4c5391366484c50033bcb631",
+          "bytes": 464
+        },
+        {
+          "path": "scripts/lookup.py",
+          "sha256": "fe6224193f8d0b02021edf83749b74f01dffa91a2caa437f55358acd218d8e7c",
+          "bytes": 4226
+        }
+      ]
+    },
+    {
+      "id": "salute-volume-control",
+      "variant": "v-b0f5c03d3fea",
+      "sha256": "b0f5c03d3fea5961bfa90c8b2fcc0b1b5c01b3b568cf3a7dca79014487c82725",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "87692ced128c69a2df1de89dea472791fdccfd4d717a8bf8e3d24ea80247b98e",
+          "bytes": 3218
+        }
+      ]
+    },
+    {
+      "id": "salute-wifi-info",
+      "variant": "v-63b9a29811a9",
+      "sha256": "63b9a29811a94ec290f30092ca5b5f3c4b93d5b5ac23e298e5c13a3a1b110490",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "09ff6ed828f63edb1152dcc8603b38f20cfd01d9c3bb8c7f9c1056817c74d7c6",
+          "bytes": 5543
+        }
+      ]
+    },
+    {
+      "id": "skill-authoring",
+      "variant": "v-119916ded8a7",
+      "sha256": "119916ded8a7bfde48be00c45d5becb78871dbc1e7cc46c2b09c2a4d919e9f5b",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "8bbdd6b8db8decb4b710d8dcf67176844acd334f4b53e6be5a42ffb9d2127b93",
+          "bytes": 12158
+        },
+        {
+          "path": "references/quickstart.md",
+          "sha256": "b4819ffdbc191fcb7a98459f2b7cd5ea7c9836f0af7c13820d6bca5553cde49d",
+          "bytes": 4387
+        }
+      ]
+    },
+    {
+      "id": "train-tickets",
+      "variant": "v-1a6798489128",
+      "sha256": "1a6798489128e223511ef9ceec06e8c3ced147f6ea1cb1d72f61c61c7017d03e",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "49cb57fef991fbf06bec3930f96eacd4bf3fd52fcf83793449da84bd43d95c90",
+          "bytes": 10940
+        },
+        {
+          "path": "scripts/stations.json",
+          "sha256": "bcf5c847a5bf8d436a7be6b3cee333a6413ec5688dcd1d5363be5862f21232bd",
+          "bytes": 72293
+        },
+        {
+          "path": "scripts/trains.py",
+          "sha256": "5b4ce3d2bb63e90933f9574ddfddd6fdb184625b1c6b25a0db6878642dab580f",
+          "bytes": 9797
+        },
+        {
+          "path": "scripts/trains.sh",
+          "sha256": "33d68b4ca3d22c567473bbc948d04dab0104d7dfbd2c291f08b211e98a08a607",
+          "bytes": 614
+        }
+      ]
+    },
+    {
+      "id": "tv-control",
+      "variant": "v-0515126f913d",
+      "sha256": "0515126f913dcce053f461e602e96e9ff4a180018201d0b8b091655651c607ba",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "4f10ae94a8ed30e077b5983a1321502736291121be1874a44883b548ca59ba1a",
+          "bytes": 27584
+        }
+      ]
+    },
+    {
+      "id": "usage-log-analysis",
+      "variant": "v-0f105100fd78",
+      "sha256": "0f105100fd78bd109532c45b7b61b19f556233d5653cad157f524b8fc25e875a",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "9c4495c4636e3d69819f1e76ba9b9e06b632c8a27081c053d5f50516adc79157",
+          "bytes": 9938
+        },
+        {
+          "path": "scripts/log_archive.py",
+          "sha256": "2920a9b794298458b31f6dade75bf1d3cf28975c0eeac47f47ea389728656918",
+          "bytes": 7680
+        }
+      ]
+    },
+    {
+      "id": "video-search",
+      "variant": "v-c44dc2150000",
+      "sha256": "c44dc2150000babefa885f41f0a66a644c97ed715112f6161c3b23ed26d614ec",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "3b753e707385332bbc6587e4cd13051107cbe8f2f573a9820a31bc9e5a4a7a4c",
+          "bytes": 28890
+        },
+        {
+          "path": "scripts/cinema_dom.js",
+          "sha256": "a342372b40936f8ad29eb89fec429f263aa66405a58202d30d8b89e1c41a075e",
+          "bytes": 2298
+        },
+        {
+          "path": "scripts/cinema_playback.py",
+          "sha256": "838288c64397c0a55343f3e4c70aa8a2f0965dc052edeb286f13c48246a37419",
+          "bytes": 26845
+        },
+        {
+          "path": "scripts/cinemas.py",
+          "sha256": "ce5193eb66236b46c53864feaf4340f4e54451c1b869b65fd5a64fae7f863f41",
+          "bytes": 15976
+        },
+        {
+          "path": "scripts/kinopoisk_playback.js",
+          "sha256": "b103f26dd97b3d09e54ec0c9a7d7a02b90f058ae3a346751ff4a281b05c540c2",
+          "bytes": 2868
+        },
+        {
+          "path": "scripts/rutube.py",
+          "sha256": "143b2665a5279486df30fdcfd779c8cf6f78977dc3fe59f20df8d2a1152fed71",
+          "bytes": 3499
+        },
+        {
+          "path": "scripts/search.py",
+          "sha256": "2564e727920de8bec13c1ddd9fa996993634f51f94aecaff41c2b983c054c238",
+          "bytes": 5205
+        },
+        {
+          "path": "scripts/vk.py",
+          "sha256": "6cb1d469772d0f206e4d83e437f24cfa9cc166876b1feee62a20265fa105367d",
+          "bytes": 9623
+        }
+      ]
+    },
+    {
+      "id": "vkusno-i-tochka",
+      "variant": "v-2da0e303300f",
+      "sha256": "2da0e303300f29c7914c5851dabf5519a02069a11983a3942f4198ef8341c844",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "80960efa24c01357476cb72083ff1c0d3e614543f9b23b4e6ee810182b4a8169",
+          "bytes": 20198
+        },
+        {
+          "path": "references/tools.md",
+          "sha256": "28adf1146af2ed1e197e2c64cd7d459666d41fefbbc95a83dd6774cbe8a22d22",
+          "bytes": 25986
+        },
+        {
+          "path": "scripts/vit.py",
+          "sha256": "a05d3c5f043eda6b8a8e4951d28161d72de55db00bc6fd48d4698696b9497e91",
+          "bytes": 13348
+        },
+        {
+          "path": "scripts/vit_auth.py",
+          "sha256": "a7bcdc120f2437ecc22099761035f24d8437a07ac84113eaa5a26d4c83251166",
+          "bytes": 8570
+        },
+        {
+          "path": "scripts/vit_client.py",
+          "sha256": "d3db5927f6df761215d8908d0b14a995670257be775e602cbe4b3f94530f6580",
+          "bytes": 9199
+        },
+        {
+          "path": "scripts/vit_common.py",
+          "sha256": "48ee434cbe0b7a4f7b81102bae0b966a70ceeef1b55eeaa1d128c3a4b678f28b",
+          "bytes": 1477
+        },
+        {
+          "path": "scripts/vit_deals.py",
+          "sha256": "530d0e63cd1eed9f3d3b922684a58e20a77b69caedb82a127c3a76efa3d99c0a",
+          "bytes": 20395
+        },
+        {
+          "path": "scripts/vit_menu.py",
+          "sha256": "aa3c86fcd7c676c42ff705a7e3ec663322c76dc45c82c334539e4d09a3ecfb1f",
+          "bytes": 21070
+        },
+        {
+          "path": "scripts/vit_orders.py",
+          "sha256": "e5ef83213ff0f5ba166da997ca23db6c5aeb3c2ca0c30a5109328c93f8a1f561",
+          "bytes": 15794
+        },
+        {
+          "path": "scripts/vit_storage.py",
+          "sha256": "833d92cd801c065290aa5d89662f3d904b0cf7cc8cad1a564c452a3648e9d4f5",
+          "bytes": 4618
+        }
+      ]
+    },
+    {
+      "id": "vkusvill",
+      "variant": "v-29a1b85ff89c",
+      "sha256": "29a1b85ff89cf38b31ff50399ccb851e1c5e1a537b2fcb4d047032501c87e47d",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "7b7b66d33eec04eba3635fd92e3212324168a260af43cdf2a014d17e6adea78b",
+          "bytes": 8432
+        },
+        {
+          "path": "references/tools.md",
+          "sha256": "c1a347a3da9d284bcd69fd998f91552249126cbd486588f41f5aafb666596473",
+          "bytes": 8690
+        },
+        {
+          "path": "scripts/vkusvill.py",
+          "sha256": "ea89286955249bfdf8af5492d76e111be526c6de28a6a6eb040a51f2793dfa39",
+          "bytes": 10866
+        },
+        {
+          "path": "scripts/vv_auth.py",
+          "sha256": "3b92d57dc0af915d024617ec0dcf27ab2f7b84ba2ce8f3a34bdb9bda5b011272",
+          "bytes": 9760
+        },
+        {
+          "path": "scripts/vv_client.py",
+          "sha256": "58b2e2e92fc78ad812f67f105bb03619ddd446eda8b3e9288883375cde2c5523",
+          "bytes": 3428
+        },
+        {
+          "path": "scripts/vv_common.py",
+          "sha256": "b881ce71aff571e6f01f04fb340f09552e5c88c0f997def534c6cbb10c4d5394",
+          "bytes": 1773
+        },
+        {
+          "path": "scripts/vv_shop.py",
+          "sha256": "2d36cd7089809177ee93b53fffdd6eea8935e3886597c7aa2265e5c4824ed330",
+          "bytes": 10038
+        },
+        {
+          "path": "scripts/vv_storage.py",
+          "sha256": "409734f098930fadf4b6dd50e95237aed44d5c9bfe9cc437f8698e3b918a6ade",
+          "bytes": 4580
+        }
+      ]
+    },
+    {
+      "id": "yandex-smart-home",
+      "variant": "v-e0ccb53d4a31",
+      "sha256": "e0ccb53d4a3143bc87cb42a357f9d35e56ff8ffdd9fd94cc33b9aba1c1e8a411",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "80abcf56f2b86b4b8455063ac39c07dad4edd00ae40a8f036417d9646e67b679",
+          "bytes": 9917
+        },
+        {
+          "path": "scripts/ysh_api.py",
+          "sha256": "7faa99a3530b2a2defaf55a738ca2b1c4fe09f2d480e8cc4bd636382cad06d49",
+          "bytes": 6616
+        }
+      ]
+    }
+  ]
+}
