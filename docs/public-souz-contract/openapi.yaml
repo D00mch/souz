@@ -875,6 +875,7 @@ components:
           enum: [accepted]
         duplicate:
           type: boolean
+          const: false
         error:
           type: "null"
         receivedAt:
@@ -898,6 +899,7 @@ components:
           enum: [rejected]
         duplicate:
           type: boolean
+          const: false
         error:
           $ref: "#/components/schemas/Error"
         receivedAt:
@@ -1103,6 +1105,7 @@ components:
         deviceType:
           $ref: "#/components/schemas/DeviceType"
     ToolCallStartedEvent:
+      description: Live-only command with an independent deadline; no replay or durable result receipt.
       type: object
       additionalProperties: false
       required: [kind, seq, type, chatId, threadId, payload, createdAt]
@@ -1111,10 +1114,8 @@ components:
           type: string
           enum: [event]
         seq:
-          description: Null for cross-channel commands and personality snapshots; never use null as a replay cursor.
-          anyOf:
-            - $ref: "#/components/schemas/EventSeq"
-            - type: "null"
+          type: "null"
+          description: All client commands are live-only and never advance the replay cursor.
         type:
           type: string
           enum: [tool.call.started]
@@ -1122,7 +1123,7 @@ components:
           $ref: "#/components/schemas/UUID"
         threadId:
           $ref: "#/components/schemas/UUID"
-          description: For seq-null calls, echo this correlation ID in tool.result. It may identify the source execution or be a technical UUID without a stored thread.
+          description: Echo this correlation ID in tool.result. It may identify the source execution or be a technical UUID without a stored thread.
         payload:
           $ref: "#/components/schemas/ToolCallStartedPayload"
         createdAt:

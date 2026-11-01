@@ -5,7 +5,7 @@ Draft contract for Souz Cloud. Exact fields are in [OpenAPI](openapi.yaml); [hap
 Channels supporting server-driven [`prompt.personality.set`](../../backend/docs/personality-settings.md)
 declare it through chat creation or discovery. The command remains hidden from model tools. Style changes
 prefer the current eligible connected channel, otherwise another eligible receiver; no receiver means
-synchronization is skipped. Supporting channels also receive the saved snapshot on subscription/reconnection.
+synchronization is skipped without delaying saving or requesting discovery. Supporting channels also receive the saved snapshot on subscription/reconnection.
 These live commands use `seq:null` and the normal `tool.result` acknowledgement.
 
 ## Connection
@@ -85,7 +85,8 @@ unarchived device channel with a live subscription on the caller's backend proce
 replayed. Their `threadId` is a correlation UUID, not a persisted target thread: echo it in `tool.result`,
 but do not query or cancel it as a thread. The target can run its own thread concurrently.
 
-Cross-channel results resume the caller after the ACK is sent. They have no durable idempotency
+All client commands are live-only, including current-channel commands, and may be in flight concurrently.
+Current-channel commands retain the source thread ID and current device metadata. Results resume the caller after the ACK is sent. They have no durable idempotency
 receipt: the first result reserved before `deadlineAt` wins and waits for its ACK even beyond that
 deadline. Further results, including those after timeout or caller cancellation, are rejected as
 `tool_call_not_found`. A failed ACK write releases the caller with `client_tool_failed`. Disconnect
@@ -125,7 +126,7 @@ Progress is live-only and best-effort. Current subscribers may receive it; disco
 
 ## Subscriptions and reconnect
 
-Durable public events are stored in the database independently of subscriptions. Live-only assistant messages and cross-channel tool starts are not stored. A subscription keeps a temporary durable cursor; **Souz does not persist which events the client received or processed**.
+Durable public events are stored in the database independently of subscriptions. Live-only assistant messages and all client tool starts are not stored. A subscription keeps a temporary durable cursor; **Souz does not persist which events the client received or processed**.
 
 A new socket has no subscriptions. Successful creation or an accepted submit automatically subscribes an unsubscribed chat to **live events only**, including retries. Events caused by that submit are included; earlier events require explicit replay:
 
@@ -160,21 +161,28 @@ Events saved during disconnection or recovery remain available. Reopening the so
 
 ## Delivery and retries
 
-On the connection processing a command, Souz sends its `ack` and any submit/cancel `thread.status` feedback before subsequent events. An explicit subscription ACK precedes its replay. Other connections, cross-channel commands, and reconnect replay proceed independently and may precede a retried ACK. Execution and durable event storage continue after disconnect without waiting for an ACK retry. Retries return the stored receipt with `duplicate:true`; ACKs and status are not replayed.
+On the connection processing a command, Souz sends its `ack` and any submit/cancel `thread.status` feedback before subsequent events. An explicit subscription ACK precedes its replay. Other connections, cross-channel commands, and reconnect replay proceed independently and may precede a retried ACK. Execution and durable event storage continue after disconnect without waiting for an ACK retry. Durable-operation retries return the stored receipt with `duplicate:true`; tool results have no stored receipt. ACKs and status are not replayed.
 
-Durable public events are same-thread `tool.call.started`, `thread.completed|failed|cancelled`, and out-of-band `message.created` with `threadId:null`. Ordinary in-thread transcript events are excluded. Durable events are sequenced within each chat; chats may interleave, and filtered internal events leave valid sequence gaps. Live-only assistant blocks preserve their relative order when delivered, but stale blocks may be dropped during durable catch-up.
+Durable public events are `thread.completed|failed|cancelled`, and out-of-band `message.created` with `threadId:null`. Ordinary in-thread transcript events are excluded. Durable events are sequenced within each chat; chats may interleave, and filtered internal events leave valid sequence gaps. Live-only assistant blocks preserve their relative order when delivered, but stale blocks may be dropped during durable catch-up.
 
 | Operation | Idempotency key |
 | --- | --- |
 | HTTP creation / `chat.create` | Shared `(userId, requestId)` |
 | `message.submit`, `history.append`, `thread.cancel` | Shared `(chatId, requestId)` |
-| `tool.result` | `(chatId, threadId, toolCallId)` |
 
-For durable operations, the same key, operation and normalized payload return the original result with `duplicate:true`, without repeating execution. Changes conflict with `idempotency_conflict`. Creation compares `clientType`, `title`, and normalized `tools` (omitted tools and `[]` are equivalent); tool results compare terminal status and payload. For `chat.subscribe` and `chat.unsubscribe`, `requestId` is only for correlation; each request applies to the current connection state.
+
+For durable operations, the same key, operation and normalized payload return the original result with `duplicate:true`, without repeating execution. Changes conflict with `idempotency_conflict`. Creation compares `clientType`, `title`, and normalized `tools` (omitted tools and `[]` are equivalent). Tool results use `(chatId, threadId, toolCallId)` only for live correlation; accepted ACKs have `duplicate:false`, and further results are rejected with `tool_call_not_found`. For `chat.subscribe` and `chat.unsubscribe`, `requestId` is only for correlation; each request applies to the current connection state.
 
 Frame envelopes reject unknown fields; tool arguments/results are generic JSON. Malformed JSON and unsupported kinds close the socket; recoverable errors receive correlated rejection ACKs.
 
 JSON decoding rejection ACKs include `error.details` with a JSON Pointer `path` (empty for the root), `reason`, and optional `actual` and `expected`. Reasons distinguish unknown fields/types, missing fields, forbidden nulls, type mismatches, and invalid values. For example, an unsupported history content type produces `{"path":"/payload/content/type","reason":"unknown_type","actual":"tool_exchange","expected":["text","tool_call"]}`. Field names and type discriminators are bounded and sanitized; other submitted values are represented only by JSON type.
+
+## Deployment
+
+The live-only command contract requires a coordinated cutover: drain active executions and stop old
+instances before deploying compatible clients and server. Stored command events are excluded from
+public replay and legacy result retries are rejected. Commands are not retransmitted automatically;
+a disconnect can leave the device action's outcome unknown.
 
 ## Other endpoints
 

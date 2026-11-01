@@ -159,7 +159,7 @@ class BackendPersonalityE2eTest {
         }
 
     @Test
-    fun `unknown support requires discovery before saving and survives restart without rediscovery`() {
+    fun `unknown support saves immediately and discovered support synchronizes on reconnect`() {
         val schema = newPostgresSchema("personality_discovery")
         var source = ""
         backendE2eTest("personality_discovery_seed", schema = schema, llm = personalityApi()) {
@@ -168,26 +168,16 @@ class BackendPersonalityE2eTest {
                 socket.send(Frame.Text(historyFrame(source, "ready", "user", "Connection ready")))
                 assertEquals("ack", readRawJson(socket)["kind"].asText())
                 turn(source, "brief")
-                val rejected = toolResult()
-                assertFalse(rejected["saved"].asBoolean())
-                assertEquals("client_tool_discovery_required", rejected["error"]["code"].asText())
-                val instruction = rejected["error"]["message"].asText()
-                assertTrue(source in instruction)
-                assertTrue("retry personality.update with the same arguments" in instruction)
-                assertTrue("hidden from discovery output" in instruction)
-                assertEquals(1, settings()["personalityRevision"].asLong())
-                assertTrue(settings()["personalityPrompt"].isNull)
-                assertTrue(llm.requests.none { it.messages.first().content == PERSONALITY_VALIDATION_PROMPT })
+                assertTrue(toolResult()["saved"].asBoolean())
+                assertEquals("skipped", toolResult()["sync"].asText())
+                assertEquals(2, settings()["personalityRevision"].asLong())
+                assertEquals("brief", settings()["personalityPrompt"].asText())
+                assertEquals(1, llm.requests.count { it.messages.first().content == PERSONALITY_VALIDATION_PROMPT })
                 discover(socket, source, clientToolsJson(PERSONALITY_SYNC_COMMAND))
                 assertEquals(0, toolResult()["tools"].size())
-                coroutineScope {
-                    val changing = async { turn(source, "brief") }
-                    acknowledge(socket, snapshot(socket), "brief", 2)
-                    changing.await()
-                }
-                assertEquals("synced", toolResult()["sync"].asText())
-                assertEquals(2, settings()["personalityRevision"].asLong())
-                assertEquals(1, llm.requests.count { it.messages.first().content == PERSONALITY_VALIDATION_PROMPT })
+                // Discovery does not resend the saved style or consume another revision.
+                socket.send(Frame.Text(historyFrame(source, "after-discovery", "user", "Still connected")))
+                assertEquals("ack", readRawJson(socket)["kind"].asText())
             }
         }
         backendE2eTest("personality_discovery_restart", schema = schema, llm = personalityApi()) {

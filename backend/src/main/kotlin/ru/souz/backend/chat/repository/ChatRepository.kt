@@ -18,6 +18,8 @@ interface ChatRepository {
     suspend fun getOrCreate(chat: Chat): Chat
     /** Deletes a scheduled-task chat with no execution or message, after a concurrent admission commits. */
     suspend fun deleteEmptyScheduledChat(userId: String, chatId: UUID): Boolean
+    /** All owned, unarchived public channels; excludes tool catalogue columns. */
+    suspend fun listClientChannels(userId: String): List<Chat>
     suspend fun clientToolChannels(userId: String): List<ClientToolChannel>
     suspend fun replaceDiscoveredClientTools(userId: String, chatId: UUID, tools: DiscoveredClientTools)
     suspend fun get(userId: String, chatId: UUID): Chat?

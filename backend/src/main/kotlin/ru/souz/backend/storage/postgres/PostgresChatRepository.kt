@@ -79,6 +79,16 @@ class PostgresChatRepository(
         }
     }
 
+    override suspend fun listClientChannels(userId: String): List<Chat> = dataSource.read { connection ->
+        connection.prepareStatement(
+            "select $CHAT_COLUMNS from chats where user_id = ? and not archived and client_type = any(?)"
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.setArray(2, connection.createArrayOf("text", supportedClientTypes.toTypedArray()))
+            statement.executeQuery().use { rows -> buildList { while (rows.next()) add(rows.toChat()) } }
+        }
+    }
+
     override suspend fun clientToolChannels(userId: String): List<ClientToolChannel> = dataSource.read { connection ->
         connection.prepareStatement(
             "select $CHAT_COLUMNS, client_tools, discovered_client_tools from chats " +

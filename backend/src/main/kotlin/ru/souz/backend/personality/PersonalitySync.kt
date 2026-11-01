@@ -7,10 +7,8 @@ import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRepository
-import ru.souz.backend.client.ClientError
 import ru.souz.backend.client.ClientToolChannel
 import ru.souz.backend.client.LiveClientToolDispatcher
-import ru.souz.backend.client.clientToolDiscoveryRequired
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.settings.model.PersonalitySnapshot
 import ru.souz.backend.settings.repository.UserSettingsRepository
@@ -23,16 +21,6 @@ internal class PersonalitySync(
     private val events: AgentEventService,
     private val dispatcher: LiveClientToolDispatcher,
 ) {
-    /** Discovery must precede mutation: retrying this result cannot save the style twice. */
-    suspend fun discoveryRequired(userId: String, preferred: UUID?): ClientError? {
-        val connected = connectedChannels(userId, preferred)
-        if (connected.any { it.supportsPersonality() }) return null
-        val unknown = connected.firstOrNull { !it.discoveryComplete } ?: return null
-        return clientToolDiscoveryRequired(unknown.chat.id,
-            "then retry personality.update with the same arguments. Nothing has been saved. " +
-                "prompt.personality.set is hidden from discovery output; retry even when it is absent from the returned tools.")
-    }
-
     suspend fun connected(chat: Chat) {
         try {
             if (connectedChannels(chat.userId, chat.id).none { it.chat.id == chat.id && it.supportsPersonality() }) return

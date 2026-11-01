@@ -12,6 +12,7 @@ import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.runtime.sandbox.RuntimeSandboxModeResolver
 import ru.souz.runtime.sandbox.docker.DockerRuntimeSandbox
 import java.util.UUID
+import kotlinx.coroutines.CompletableDeferred
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -44,12 +45,18 @@ class BackendPublicAttachmentsE2eTest {
         val root = Files.createTempDirectory(Path.of("build"), "ws-attachments-").toAbsolutePath()
         val clock = AttachmentClock(Instant.now())
         var fileId = ""
+        val replyReady = CompletableDeferred<Unit>()
+        val finishReply = CompletableDeferred<Unit>()
         try {
             backendE2eTest("ws_file_roundtrip", attachments = config, clock = clock, sandboxFactory = { settings ->
                 DefaultRuntimeSandboxFactory(settings, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = root,
                     dockerSandboxCreator = { scope, hostRoot, image, name -> DockerRuntimeSandbox(scope, hostRoot, image, name, autoStart = false) })
             }, llm = E2eLlmApi { request ->
-                if (request.messages.last().role == LLMMessageRole.function) reply(request, "")
+                if (request.messages.last().role == LLMMessageRole.function) {
+                    replyReady.complete(Unit)
+                    finishReply.await()
+                    reply(request, "")
+                }
                 else {
                     fileId = request.messages.last { it.role == LLMMessageRole.user }.files.single().fileId
                     toolCallReply(request, "RunSkillCommand", mapOf("skillId" to "AttachFileToReply",
@@ -70,6 +77,15 @@ class BackendPublicAttachmentsE2eTest {
                     val ack = readJson(session)
                     assertEquals("accepted", ack["status"].asText(), ack.toString())
                     assertEquals("thread.status", readJson(session)["type"].asText())
+                    replyReady.await()
+                    withTableLocked("agent_events", "share") {
+                        finishReply.complete(Unit)
+                        awaitLockWait("agent_events")
+                        // commitTurn finished; the event sink is blocked writing message.created.
+                        val execution = backend.executionRepository.get(user, UUID.fromString(ack["thread"]["id"].asText()))!!
+                        assertEquals("completed", execution.status.value)
+                        sql { connection -> connection.createStatement().use { it.executeUpdate("delete from stored_attachments") } }
+                    }
                     terminal = readJson(session)
                     assertEquals("thread.completed", terminal["type"].asText(), terminal.toString())
                     assertEquals("", terminal["payload"]["response"].asText())
@@ -140,6 +156,55 @@ class BackendPublicAttachmentsE2eTest {
             val inputs = llm.requests.last().messages.filter { it.role == LLMMessageRole.user && it.files.size == 2 }
             assertEquals(2, inputs.size)
             assertEquals(inputs[0].files.reversed(), inputs[1].files)
+        }
+    }
+
+    @Test
+    fun `follow up rejects files that expire during import without committing input or device changes`() {
+        val config = AttachmentMinio.config()
+        backendE2eTest("ws_expiring_followup", attachments = config, llm = E2eLlmApi().apply { pauseUntilReleased() }) {
+            val user = UUID.randomUUID().toString()
+            val chat = createPublicChat(user)
+            val keys = List(2) { AttachmentMinio.upload(config, user, "report.md", "file $it".toByteArray()).objectKey }
+            sql { connection -> connection.createStatement().use { statement ->
+                statement.execute("""
+                    create function expire_first_import() returns trigger language plpgsql as ${'$'}${'$'}
+                    begin
+                        if new.object_key = '${keys[1]}' then
+                            update stored_attachments set expires_at = now() - interval '1 second'
+                            where object_key = '${keys[0]}';
+                        end if;
+                        return new;
+                    end ${'$'}${'$'};
+                    create trigger expire_first_import after insert on stored_attachments
+                    for each row execute function expire_first_import();
+                """.trimIndent())
+            } }
+            withPublicSocket(chat) { session ->
+                session.send(Frame.Text(messageFrame(chat, user, "initial", text = "wait", deviceId = "original")))
+                val accepted = readJson(session)
+                readJson(session)
+                llm.awaitPrompt("wait")
+                val thread = UUID.fromString(accepted["thread"]["id"].asText())
+                session.send(Frame.Text(attachmentFrame(chat, user, "expired", keys, "do not accept")))
+                val rejected = readJson(session)
+                assertEquals("rejected", rejected["status"].asText())
+                assertTrue(rejected["error"]["message"].asText().contains("attachment_unavailable"))
+                assertEquals("original", backend.clientThreadRegistry.currentDevice(thread)?.deviceId)
+                val stored = backend.executionRepository.get(user, thread)!!
+                assertEquals("original", json.readTree(stored.latestDeviceContextJson)["deviceId"].asText())
+                sql { connection -> connection.prepareStatement(
+                    "select count(*) from client_requests where chat_id = ? and request_id = 'expired'"
+                ).use { statement ->
+                    statement.setObject(1, UUID.fromString(chat))
+                    statement.executeQuery().use { rows -> rows.next(); assertEquals(0, rows.getInt(1)) }
+                } }
+                llm.release()
+                assertEquals("thread.completed", readJson(session)["type"].asText())
+            }
+            val messages = client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(user) }.jsonBody()["items"]
+            assertEquals(listOf("wait"), messages.filter { it["role"].asText() == "user" }.map { it["content"].asText() })
+            assertTrue(llm.requests.flatMap { it.messages }.none { it.files.isNotEmpty() || it.content == "do not accept" })
         }
     }
 

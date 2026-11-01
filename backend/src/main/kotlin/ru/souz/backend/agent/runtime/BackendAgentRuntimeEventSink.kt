@@ -2,7 +2,7 @@ package ru.souz.backend.agent.runtime
 
 import java.time.Instant
 import java.util.UUID
-import ru.souz.backend.client.toClientAttachment
+import ru.souz.backend.client.clientReplyAttachments
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -44,7 +44,6 @@ import ru.souz.backend.options.model.OptionKind
 import ru.souz.backend.options.model.OptionItem
 import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.options.repository.OptionRepository
-import ru.souz.backend.storage.postgres.PostgresAttachmentRepository
 import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 
@@ -70,7 +69,6 @@ internal class BackendAgentRuntimeEventSink(
     private val narrateSteps: Boolean = false,
     private val intermediateMessages: Boolean = true,
     private val waitingPhrases: WaitingPhrases,
-    private val attachmentRepository: PostgresAttachmentRepository? = null,
 ) : AgentRuntimeEventSink {
     private val emitMutex = Mutex()
     private var waitingScope: CoroutineScope? = null
@@ -255,7 +253,7 @@ internal class BackendAgentRuntimeEventSink(
                 type = AgentEventType.THREAD_COMPLETED,
                 payload = ThreadCompletedPayload(
                     response = message?.content.orEmpty(),
-                    attachments = message?.attachments.orEmpty().map { it.toClientAttachment(userId, attachmentRepository) },
+                    attachments = message?.clientReplyAttachments().orEmpty(),
                 ),
             )
         } else {

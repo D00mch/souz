@@ -1,5 +1,6 @@
 package ru.souz.backend.client
 
+import com.fasterxml.jackson.module.kotlin.readValue
 import ru.souz.backend.attachments.AttachmentException
 import ru.souz.backend.attachments.AttachmentStorage
 import ru.souz.backend.attachments.attachmentId
@@ -10,6 +11,13 @@ import ru.souz.llms.FileContent
 import ru.souz.llms.MAX_MESSAGE_FILES
 import ru.souz.llms.MAX_MESSAGE_FILE_BYTES
 import ru.souz.llms.FilePresentation
+import ru.souz.backend.chat.model.ChatMessage
+import ru.souz.llms.restJsonMapper
+
+internal const val CLIENT_REPLY_ATTACHMENTS_METADATA_KEY = "clientReplyAttachments"
+
+internal fun ChatMessage.clientReplyAttachments(): List<ClientAttachment> =
+    metadata[CLIENT_REPLY_ATTACHMENTS_METADATA_KEY]?.let { restJsonMapper.readValue<List<ClientAttachment>>(it) }.orEmpty()
 
 /** Opaque key to an immutable object inside the configured private bucket. */
 data class ClientAttachment(

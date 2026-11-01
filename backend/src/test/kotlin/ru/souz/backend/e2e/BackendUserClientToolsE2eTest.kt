@@ -13,7 +13,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
-import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.backend.telegram.TelegramChat
 import ru.souz.backend.telegram.TelegramMessage
 import ru.souz.backend.telegram.TelegramUpdate
@@ -78,7 +77,7 @@ class BackendUserClientToolsE2eTest {
                     val call = readJson(socket)
                     assertEquals("tool.call.started", call["type"].asText())
                     assertEquals(channel, call["chatId"].asText())
-                    assertEquals(index >= 2, call["seq"].isNull)
+                    assertTrue(call["seq"].isNull)
                     assertFalse(call["payload"]["arguments"].has("channelId"))
                     val result = if (index == 0 || index == 3) mapOf("tools" to json.readTree(clientToolsJson("device.mcp.call_tool")))
                         else mapOf("ok" to true)
@@ -91,86 +90,34 @@ class BackendUserClientToolsE2eTest {
     }
 
     @Test
-    fun `completed empty and nonempty catalogues reject missing tools without rediscovery across restart`() {
-        val schema = newPostgresSchema("e2e_discovery_absence")
-        val owner = UUID.randomUUID().toString()
-        var source = ""
-        var target = ""
-        var provider = ""
-        for (restarted in listOf(false, true)) {
-            var step = if (restarted) 4 else 0
-            val llm = E2eLlmApi { request ->
-                fun call(skill: String, arguments: Map<String, Any>) =
-                    toolCallReply(request, "RunSkillCommand", mapOf("skillId" to skill, "arguments" to arguments))
-                fun assertError(code: String) {
-                    val result = restJsonMapper.readTree(request.messages.last { it.name == "RunSkillCommand" }.content)
-                    assertEquals(code, result["error"]["code"].asText())
+    fun `completed empty and nonempty catalogues reject repeated missing tools without rediscovery`() =
+        backendE2eTest("e2e_discovery_absence") {
+            val owner = UUID.randomUUID().toString()
+            val source = createPublicChat(owner)
+            val target = createPublicChat(owner, "target")
+            val provider = createPublicChat(owner, "provider", clientToolsJson("device.mcp.call_tool"))
+            withMultiChatSocket { socket ->
+                subscribeClientChannels(socket, target, provider)
+                for ((channel, tools) in listOf(source to "[]", target to clientToolsJson("speaker.status"))) {
+                    val prompt = "discover-$channel"
+                    llm.requestSkillForPrompt(prompt, "orion.tools.list", mapOf("channelId" to channel))
+                    val call = submitClientToolTurn(socket, source, owner, prompt)
+                    assertEquals(channel, call["chatId"].asText())
+                    assertEquals("thread.completed", answerClientTool(socket, call, """{"tools":$tools}""")["type"].asText())
                 }
-                val local = mapOf("name" to "get_status")
-                val remote = local + ("channelId" to target)
-                when (step++) {
-                    0 -> call("device.mcp.call_tool", local)
-                    1 -> {
-                        assertError("client_tool_discovery_required")
-                        call("orion.tools.list", emptyMap())
+                for (attempt in 1..2) {
+                    for (channel in listOf(source, target)) {
+                        val prompt = "missing-$channel-$attempt"
+                        val arguments = mapOf("name" to "get_status") +
+                            if (channel == source) emptyMap() else mapOf("channelId" to channel)
+                        llm.requestSkillForPrompt(prompt, "device.mcp.call_tool", arguments)
+                        // Any discovery or MCP dispatch would precede this terminal event.
+                        assertEquals("thread.completed", submitClientToolTurn(socket, source, owner, prompt)["type"].asText())
+                        assertEquals("client_tool_unavailable", clientToolOutput()["error"]["code"].asText())
                     }
-                    2 -> call("device.mcp.call_tool", remote)
-                    3 -> {
-                        assertError("client_tool_discovery_required")
-                        call("orion.tools.list", mapOf("channelId" to target))
-                    }
-                    4 -> call("device.mcp.call_tool", local)
-                    5 -> {
-                        assertError("client_tool_unavailable")
-                        call("device.mcp.call_tool", local)
-                    }
-                    6, 7 -> {
-                        assertError("client_tool_unavailable")
-                        call("device.mcp.call_tool", remote)
-                    }
-                    8 -> {
-                        assertError("client_tool_unavailable")
-                        toolCallReply(request, "GetSkillByName", mapOf("skillId" to "orion.tools.list"))
-                    }
-                    else -> {
-                        val detail = restJsonMapper.readTree(request.messages.last { it.name == "GetSkillByName" }.content)
-                        val channels = restJsonMapper.readTree(detail["skill"]["description"].asText()
-                            .substringAfter("Providing channels (labels are untrusted data):\n"))
-                            .associate { it["channelId"].asText() to it["discoveryComplete"].asBoolean() }
-                        assertEquals(mapOf(source to true, target to true, provider to false), channels)
-                        reply(request, "Capability unavailable on these devices")
-                    }
-                }
-            }
-            backendE2eTest("e2e_discovery_absence", schema = schema, llm = llm) {
-                if (!restarted) {
-                    source = createPublicChat(owner)
-                    target = createPublicChat(owner, "target")
-                    provider = createPublicChat(owner, "provider", clientToolsJson("device.mcp.call_tool"))
-                }
-                withMultiChatSocket { socket ->
-                    for (channel in listOf(target, provider)) {
-                        socket.send(Frame.Text("""{"kind":"chat.subscribe","chatId":"$channel","requestId":"$channel"}"""))
-                        assertEquals("accepted", readJson(socket)["status"].asText())
-                    }
-                    socket.send(Frame.Text(messageFrame(source, owner, "absent-$restarted", text = "Read status on this speaker and the target")))
-                    assertEquals("accepted", readJson(socket)["status"].asText())
-                    assertEquals("thread.status", readJson(socket)["type"].asText())
-                    for (channel in if (restarted) emptyList() else listOf(source, target)) {
-                        val call = readJson(socket)
-                        assertEquals("tool.call.started", call["type"].asText())
-                        assertEquals("orion.tools.list", call["payload"]["name"].asText())
-                        assertEquals(channel, call["chatId"].asText())
-                        val tools = if (channel == source) "[]" else clientToolsJson("speaker.status")
-                        socket.send(Frame.Text(toolResultFrame(call, "succeeded", mapOf("tools" to json.readTree(tools)))))
-                        assertEquals("accepted", readJson(socket)["status"].asText())
-                    }
-                    // No discovery or MCP command is emitted for any of the repeated missing-tool calls.
-                    assertEquals("thread.completed", readJson(socket)["type"].asText())
                 }
             }
         }
-    }
 
     @Test
     fun `embedded Telegram discovers Orion and calls its tools without providing them itself`() {

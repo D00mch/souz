@@ -78,7 +78,7 @@ class AgentEventBusTest {
             val dropped = mutableListOf<String>()
             val forwarding = async {
                 stream.forwardPublicEvents(onReplayComplete = {
-                    assertEquals<List<AgentEventEnvelope>>(stored, sent)
+                    assertEquals<List<AgentEventEnvelope>>(if (tool) emptyList() else stored, sent)
                     ready.complete(Unit)
                 }, onDrop = dropped::add) {
                     if (it == durable) {
@@ -88,7 +88,7 @@ class AgentEventBusTest {
                     sent += it
                 }
             }
-            if (phase != "live") {
+            if (phase != "live" && !tool) {
                 writing.await()
                 assertFalse(ready.isCompleted)
             }
@@ -98,7 +98,7 @@ class AgentEventBusTest {
             listOf(progress, durable, current, command).forEach { live.send(it) }
             live.close()
             forwarding.await()
-            assertEquals(listOf(durable, current, command), sent)
+            assertEquals(if (tool) listOf(current, command) else listOf(durable, current, command), sent)
             assertEquals(listOf("overtaken"), dropped)
         }
     }

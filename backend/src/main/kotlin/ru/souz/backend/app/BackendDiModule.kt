@@ -309,7 +309,6 @@ fun backendDiModule(
         BackendClientSkills(
             liveTools = instance(),
             registry = instance(),
-            toolCallRepository = instance(),
             eventService = instance(),
             chatRepository = instance(),
             controlCommandNames = setOf(PERSONALITY_SYNC_COMMAND),
@@ -426,7 +425,6 @@ fun backendDiModule(
             hookStore = instance(),
             hookConfig = appConfig.hooks,
             waitingPhrases = instance(),
-            attachmentRepository = instanceOrNull(),
         )
     }
     if (appConfig.featureFlags.telegramBot) {
@@ -582,7 +580,6 @@ fun backendDiModule(
             chatRepository = instance(),
             executionRepository = instance(),
             clientRequestRepository = instance(),
-            toolCallRepository = instance(),
             executionService = instance(),
             registry = instance(),
             applicationScope = instance<BackendApplicationScope>(),

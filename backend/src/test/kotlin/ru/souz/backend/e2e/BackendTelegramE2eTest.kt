@@ -180,9 +180,11 @@ class BackendTelegramE2eTest {
                 binding(userId, chatId).takeIf { it["linked"].asBoolean() }
             }
             assertEquals("linked_user", linked["telegramUsername"].asText())
-            assertTrue(telegramApi.sentMessages.any {
-                it.chatId == 701L && it.text == "Готово, этот Telegram-аккаунт привязан к чату Souz."
-            })
+            eventually("Telegram link confirmation") {
+                telegramApi.sentMessages.firstOrNull {
+                    it.chatId == 701L && it.text == "Готово, этот Telegram-аккаунт привязан к чату Souz."
+                }
+            }
 
             // Channel discovery must include destinations beyond the first page of chat history.
             val publicChatIds = List(60) { index ->

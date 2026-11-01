@@ -78,6 +78,7 @@ class PostgresClientRequestRepository(
         } else {
             acceptedRequest.requireKey(key)
             require(acceptedRequest.threadId == threadId)
+            validateAttachments(userId, input.attachments)
             val updatedExecution = executionWriter.updateDeviceContext(this, execution, input.latestDeviceContextJson)
             val message = messageWriter.append(
                 connection = this,

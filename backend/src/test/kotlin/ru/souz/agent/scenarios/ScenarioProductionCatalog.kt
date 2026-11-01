@@ -78,7 +78,7 @@ internal suspend fun scenarioProductionCatalog(
     val chats = mockk<ChatRepository> {
         coEvery { clientToolChannels(channel.userId) } returns listOf(ClientToolChannel(channel, declarations, false))
     }
-    val clientSkills = BackendClientSkills(mockk(), mockk(), mockk(relaxed = true), chats)
+    val clientSkills = BackendClientSkills(mockk(), mockk(relaxed = true), chats)
         .catalog(channel.userId, emptySet()) {}
     return backendExecutionToolCatalog(
         compiledToolCatalog = di.direct.instance(tag = BackendDiTags.MERGED_TOOL_CATALOG),

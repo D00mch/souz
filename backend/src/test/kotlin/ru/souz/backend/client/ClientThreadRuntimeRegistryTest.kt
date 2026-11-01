@@ -7,7 +7,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -16,19 +15,16 @@ import ru.souz.backend.client.repository.ClientRequestResult
 
 class ClientThreadRuntimeRegistryTest {
     @Test
-    fun `terminal state is retained for a pending tool and then released`() = runBlocking {
+    fun `terminal state without a runtime is released`() = runBlocking {
         val registry = ClientThreadRuntimeRegistry()
         val threadId = UUID.randomUUID()
         registry.register(
             threadId,
             device("device-1"),
         )
-        registry.beginTool(threadId, PendingClientTool("tool-1"))
 
         registry.withTerminalTransition(threadId) { Unit }
 
-        assertTrue(registry.contains(threadId))
-        registry.clearTool(threadId, "tool-1")
         assertFalse(registry.contains(threadId))
     }
 
@@ -75,12 +71,8 @@ class ClientThreadRuntimeRegistryTest {
             )
         }
 
-        val started = assertIs<BeginClientToolResult.Started>(
-            registry.beginTool(threadId, PendingClientTool("tool-1"))
-        )
-        assertEquals(latestDevice, started.device)
+        assertEquals(latestDevice, registry.currentDevice(threadId))
 
-        registry.clearTool(threadId, "tool-1")
     }
 
     private fun device(id: String) = ClientDevice(

@@ -5,23 +5,15 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.chat.repository.ChatRepository
-import ru.souz.backend.events.model.AgentEventType
-import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.http.clientFrameMapper
 import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.metrics.metricOutcome
-import ru.souz.backend.toolcall.model.ToolCallStatus
-import ru.souz.backend.toolcall.repository.ToolCallContext
-import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -32,7 +24,6 @@ import ru.souz.tool.ToolCategory
 
 internal class BackendClientSkills(
     private val registry: ClientThreadRuntimeRegistry,
-    private val toolCallRepository: ToolCallRepository,
     private val eventService: AgentEventService,
     private val chatRepository: ChatRepository,
     private val controlCommandNames: Set<String> = emptySet(),
@@ -49,33 +40,41 @@ internal class BackendClientSkills(
     ): AgentToolCatalog {
         val excludedNames = serverNames + controlCommandNames
         val selected = chatRepository.clientToolChannels(userId).userClientTools(excludedNames)
-        return AgentToolCatalog(
-            selected.groupBy { bundledGuidance[it.definition.name]?.category ?: ToolCategory.APPLICATIONS }
-                .mapValues { (category, tools) -> tools.map { tool ->
-                    ClientWebSocketSkill(
-                        describe(tool), category, registry, toolCallRepository, eventService, chatRepository, tool, excludedNames, now, metrics,
-                        timeout = bundledGuidance[tool.definition.name]?.timeout ?: Duration.ofMinutes(1),
-                        liveTools = liveTools,
-                        onDiscovery = if (tool.definition.name != CLIENT_TOOL_DISCOVERY_NAME) null else discovery@ { result, channelId ->
-                            val definitions = try {
-                                clientFrameMapper.treeToValue(result, ClientToolDiscoveryResult::class.java).tools
-                                    .normalizeClientTools(serverNames + CLIENT_TOOL_DISCOVERY_NAME)
-                            } catch (cancelled: CancellationException) {
-                                throw cancelled
-                            } catch (_: Exception) {
-                                return@discovery ClientToolOutcome("failed", null,
-                                    ClientError("invalid_client_tool_catalogue", "The channel returned an invalid catalogue; the previous tools remain available."))
-                            }
-                            chatRepository.replaceDiscoveredClientTools(userId, channelId, DiscoveredClientTools(channelId, definitions))
-                            onCatalogueChanged()
-                            val names = definitions.map { it.name }.toSet()
-                            val visible = chatRepository.clientToolChannels(userId).userClientTools(excludedNames)
-                                .filter { it.definition.name in names }.map(::describe)
-                            ClientToolOutcome("succeeded", restJsonMapper.valueToTree(ClientToolDiscoveryResult(visible)), null)
-                        },
-                    )
-                } },
-        )
+        return AgentToolCatalog(selected.groupBy { category(it) }.mapValues { (category, tools) ->
+            tools.map { tool ->
+                ClientWebSocketSkill(
+                    definition = describe(tool), category = category, registry = registry,
+                    eventService = eventService, chatRepository = chatRepository, registered = tool,
+                    excludedNames = excludedNames, metrics = metrics, liveTools = liveTools,
+                    timeout = bundledGuidance[tool.definition.name]?.timeout ?: Duration.ofMinutes(1),
+                    onDiscovery = if (tool.definition.name != CLIENT_TOOL_DISCOVERY_NAME) null else { result, channelId ->
+                        discover(userId, channelId, result, serverNames, onCatalogueChanged)
+                    },
+                )
+            }
+        })
+    }
+
+    private fun category(tool: UserClientTool) = bundledGuidance[tool.definition.name]?.category ?: ToolCategory.APPLICATIONS
+
+    private suspend fun discover(
+        userId: String, channelId: UUID, result: JsonNode, serverNames: Set<String>, onCatalogueChanged: suspend () -> Unit,
+    ): ClientToolOutcome {
+        val definitions = try {
+            clientFrameMapper.treeToValue(result, ClientToolDiscoveryResult::class.java).tools
+                .normalizeClientTools(serverNames + CLIENT_TOOL_DISCOVERY_NAME)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return ClientToolOutcome("failed", null, ClientError("invalid_client_tool_catalogue",
+                "The channel returned an invalid catalogue; the previous tools remain available."))
+        }
+        chatRepository.replaceDiscoveredClientTools(userId, channelId, DiscoveredClientTools(channelId, definitions))
+        onCatalogueChanged()
+        val names = definitions.map { it.name }.toSet()
+        val visible = chatRepository.clientToolChannels(userId).userClientTools(serverNames + controlCommandNames)
+            .filter { it.definition.name in names }.map(::describe)
+        return ClientToolOutcome("succeeded", restJsonMapper.valueToTree(ClientToolDiscoveryResult(visible)), null)
     }
 
     private fun describe(tool: UserClientTool): ClientToolDefinition = tool.definition.copy(description = buildString {
@@ -127,12 +126,10 @@ private class ClientWebSocketSkill(
     definition: ClientToolDefinition,
     category: ToolCategory,
     private val registry: ClientThreadRuntimeRegistry,
-    private val toolCallRepository: ToolCallRepository,
     private val eventService: AgentEventService,
     private val chatRepository: ChatRepository,
     private val registered: UserClientTool,
     private val excludedNames: Set<String>,
-    private val now: () -> Instant,
     private val metrics: BackendMetrics?,
     private val timeout: Duration,
     private val liveTools: LiveClientToolDispatcher,
@@ -219,65 +216,12 @@ private class ClientWebSocketSkill(
         }
         val arguments = restJsonMapper.valueToTree<JsonNode>(functionCall.arguments - "channelId")
         clientArgumentsError(fn.parameters, arguments)?.let { return failed("mcp_invalid_arguments", it) }
-        suspend fun callLive() = liveTools.call(chat, fn.name, functionCall.arguments - "channelId", timeout,
-            meta.requestId?.let { runCatching { UUID.fromString(it) }.getOrNull() })
-        if (meta.conversationId != chat.id.toString()) return callLive()
-        val threadId = meta.requestId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
-            ?: return failed("client_context_missing", "Thread ID is unavailable.")
-        val chatId = chat.id
-        val toolCallId = UUID.randomUUID().toString()
-        val pending = PendingClientTool(toolCallId)
-        val device = when (val beginTool = registry.beginTool(threadId, pending)) {
-            BeginClientToolResult.Missing -> return callLive()
-            BeginClientToolResult.Busy ->
-                return failed("client_tool_busy", "Another client tool call is already pending.")
-            is BeginClientToolResult.Started -> beginTool.device
-        }
-        val startedAt = now()
-        val deadlineAt = startedAt.plus(timeout)
-        val context = ToolCallContext(meta.userId, chatId.toString(), threadId.toString(), toolCallId)
-        var clientCallStarted = false
-        try {
-            toolCallRepository.startClientCall(
-                context = context,
-                name = fn.name,
-                deviceId = device.deviceId,
-                argumentsJson = restJsonMapper.writeValueAsString(arguments),
-                deadlineAt = deadlineAt,
-                startedAt = startedAt,
-            )
-            clientCallStarted = true
-            eventService.appendDurable(
-                userId = meta.userId,
-                chatId = chatId,
-                executionId = threadId,
-                type = AgentEventType.TOOL_CALL_STARTED,
-                payload = PublicToolCallStartedPayload(
-                    toolCallId = toolCallId,
-                    name = fn.name,
-                    deviceId = device.deviceId,
-                    arguments = arguments,
-                    deadlineAt = deadlineAt.toString(),
-                ),
-            )
-            return metrics?.executions?.beginClientWait(threadId).use {
-                awaitResultUntilDeadline(context, threadId, toolCallId, pending, deadlineAt)
-            }
-        } catch (cancelled: CancellationException) {
-            withContext(NonCancellable) {
-                cancel(context)
-            }
-            throw cancelled
-        } catch (error: Exception) {
-            if (clientCallStarted) {
-                withContext(NonCancellable) {
-                    failStartedCall(context, error)
-                }
-            }
-            return failed("client_tool_failed", error.message ?: "Client tool failed.")
-        } finally {
-            withContext(NonCancellable) { registry.clearTool(threadId, toolCallId) }
-        }
+        val sourceExecution = meta.requestId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+        val local = meta.conversationId == chat.id.toString()
+        val threadId = sourceExecution?.takeIf { local } ?: UUID.randomUUID()
+        return liveTools.call(chat, fn.name, functionCall.arguments - "channelId", timeout,
+            sourceExecution = sourceExecution, threadId = threadId,
+            deviceId = if (local) registry.currentDevice(threadId)?.deviceId else null)
     }
 
     private fun missingProvider(channel: ClientToolChannel): ClientToolOutcome {
@@ -301,69 +245,6 @@ private class ClientWebSocketSkill(
             }),
             name = functionName,
         )
-
-    private suspend fun awaitResultUntilDeadline(
-        context: ToolCallContext,
-        threadId: UUID,
-        toolCallId: String,
-        pending: PendingClientTool,
-        deadlineAt: Instant,
-    ): ClientToolOutcome {
-        val remainingMillis = Duration.between(now(), deadlineAt).toMillis()
-        val completed = if (remainingMillis > 0) {
-            withTimeoutOrNull(remainingMillis) { pending.result.await() }
-        } else {
-            null
-        }
-        return completed ?: timeOut(context, threadId, toolCallId)
-    }
-
-    private suspend fun failStartedCall(context: ToolCallContext, cause: Exception) {
-        val error = ClientError("client_tool_failed", cause.message ?: "Client tool failed.")
-        toolCallRepository.completeClientCall(
-            context = context,
-            status = ToolCallStatus.FAILED,
-            resultJson = null,
-            errorJson = restJsonMapper.writeValueAsString(error),
-            payloadHash = PublicPayloadHash.ofValue(mapOf("status" to "failed", "error" to error)),
-        )
-    }
-
-    private suspend fun timeOut(
-        context: ToolCallContext,
-        threadId: UUID,
-        toolCallId: String,
-    ): ClientToolOutcome {
-        val error = ClientError("client_tool_timed_out", "Client tool result deadline expired.")
-        val payloadHash = PublicPayloadHash.ofValue(mapOf("status" to "timed_out", "error" to error))
-        val completed = toolCallRepository.completeClientCall(
-            context = context,
-            status = ToolCallStatus.TIMED_OUT,
-            resultJson = null,
-            errorJson = restJsonMapper.writeValueAsString(error),
-            payloadHash = payloadHash,
-            receivedAt = now(),
-        )
-        val storedOutcome = if (completed == null) {
-            toolCallRepository.get(context)
-                ?.takeIf { it.target == "client" && it.status != ToolCallStatus.RUNNING }
-                ?.toClientToolOutcome(restJsonMapper)
-        } else null
-        val outcome = storedOutcome ?: ClientToolOutcome("timed_out", null, error)
-        registry.finishTool(threadId, toolCallId, outcome)
-        return outcome
-    }
-
-    private suspend fun cancel(context: ToolCallContext) {
-        val error = ClientError("client_tool_cancelled", "Client tool call was cancelled with its thread.")
-        toolCallRepository.completeClientCall(
-            context = context,
-            status = ToolCallStatus.CANCELLED,
-            resultJson = null,
-            errorJson = restJsonMapper.writeValueAsString(error),
-            payloadHash = PublicPayloadHash.ofValue(mapOf("status" to "cancelled", "error" to error)),
-        )
-    }
 
     private fun failed(code: String, message: String) = ClientToolOutcome("failed", null, ClientError(code, message))
 }

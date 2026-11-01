@@ -8,13 +8,15 @@ Complexity routing admits only confident tool-free turns to the light model. Pub
 
 Backend uses one startup-validated `CONTEXT_SIZE` (minimum 24,000 tokens) for all models, including summaries. Compaction and input validation share an 80% limit independent of output limits; context size is not a user or execution setting.
 
-Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts. Revisioned snapshots go to the current connected channel if it declares `prompt.personality.set`, otherwise to another declaring channel. With no known receiver, unknown connected catalogues require parent discovery before mutation; known absence saves with synchronization skipped.
+Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts. Revisioned snapshots go to the current connected channel if it declares `prompt.personality.set`, otherwise to another declaring channel. Settings save independently of discovery; no known receiver means synchronization is skipped.
 
-Backend [attachment contracts](backend/docs/attachments.md) carry owner-scoped file references through messages, tools and sessions. Public WebSocket attachments use opaque bucket keys stored in `object_key`, independently of internal file UUIDs. Import completed uploads before acceptance, resolve accepted retries before storage access, and persist reply descriptors for replay.
+Backend [attachment contracts](backend/docs/attachments.md) carry owner-scoped file references through messages, tools and sessions. Public WebSocket attachments use opaque bucket keys stored in `object_key`, independently of internal file UUIDs. Import completed uploads before acceptance, resolve accepted retries before storage access, and snapshot reply descriptors during the final transaction for terminal delivery and replay.
 
 - Read and maintain this file before changing the repository. Before editing a module, read its linked `AGENTS.md`, any applicable nested instructions, and relevant topics linked in its `Pain points` section.
 - Keep runtime documentation and `docs/public-souz-contract/` concise and current-state only. Do not write change-history phrases such as “now we do”.
 - Keep pre-implementation client agreements under `docs/proposals/`, explicitly marked as proposed and not implemented; exclude them from the implemented public API schemas.
+
+Client commands share one live-only dispatcher, permit concurrent correlated calls, and have no durable result receipts or command replay.
 
 ## Development principles
 

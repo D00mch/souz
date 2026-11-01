@@ -292,10 +292,9 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     assertEquals(chats[0], ack["chatId"].asText())
                     assertTrue(ack["error"].isNull)
                     request(first, unsubscribeFrame(chats[0]), duplicate = true)
-                    // Replay retains the pending tool and its original deadline, without restarting the task.
+                    // Resubscription never replays commands or restarts their deadlines.
                     val callsBefore = llm.requests.size
                     request(first, subscribeFrame(chats[0], 0), duplicate = false)
-                    assertEquals(tools[0], readJson(first))
                     assertEquals(callsBefore, llm.requests.size)
                     request(first, unsubscribeFrame(chats[0]), duplicate = false)
                     request(first, historyFrame(chats[0], "history", "user", "saved while unsubscribed"))
@@ -359,15 +358,13 @@ class BackendPublicMultiChatWebSocketE2eTest {
             val callsBefore = llm.requests.size
             withMultiChatSocket { socket ->
                 request(socket, subscribeFrame(chats[0]), duplicate = false)
-                assertEquals(tools[0], readJson(socket))
                 request(socket, subscribeFrame(chats[1], tools[1]["seq"].asLong()), duplicate = false)
                 chats.forEach { chat ->
                     request(socket, subscribeFrame(chat), duplicate = true)
                 }
                 repeat(2) {
                     request(socket, subscribeFrame(chats[0], 0), duplicate = false)
-                    assertEquals(tools[0], readJson(socket))
-                }
+                    }
                 assertEquals(callsBefore, llm.requests.size)
                 request(socket, toolResult(tools[1]))
                 readTerminal(socket, tools[1])
@@ -381,7 +378,6 @@ class BackendPublicMultiChatWebSocketE2eTest {
 
                 val callsAfter = llm.requests.size
                 request(socket, subscribeFrame(chats[0], 0), duplicate = false)
-                assertEquals(tools[0], readJson(socket))
                 assertEquals(terminal, readJson(socket))
                 assertEquals(callsAfter, llm.requests.size)
             }
@@ -521,7 +517,6 @@ class BackendPublicMultiChatWebSocketE2eTest {
                 request(socket, toolResult(local))
                 val localCompleted = readTerminal(socket, local)
                 request(socket, subscribeFrame(target, 0), duplicate = false)
-                assertEquals(local, readJson(socket))
                 assertEquals(localCompleted, readJson(socket))
                 // A subsequent ACK also proves there were no replayed cross-channel calls.
                 request(socket, unsubscribeFrame(target))

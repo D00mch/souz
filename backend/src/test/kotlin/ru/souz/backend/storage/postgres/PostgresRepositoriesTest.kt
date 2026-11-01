@@ -33,6 +33,8 @@ import ru.souz.backend.agent.session.toState
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
+import ru.souz.backend.client.CLIENT_REPLY_ATTACHMENTS_METADATA_KEY
+import ru.souz.backend.client.clientReplyAttachments
 import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.client.repository.ClientFollowUpInput
 import ru.souz.backend.client.repository.ClientHistoryInput
@@ -318,6 +320,24 @@ class PostgresRepositoriesTest {
     }
 
     @Test
+    fun `public channel metadata does not depend on stored catalogue decoding`() = runTest {
+        postgresRepositories(newPostgresSchema("channel_metadata")).use { repositories ->
+            val owner = UUID.randomUUID().toString()
+            repositories.userRepository.ensureUser(owner)
+            val channel = repositories.chatRepository.create(chat(owner, Instant.now()))
+            // A legacy/malformed catalogue must not break metadata-only reads.
+            repositories.dataSource.connection.use { connection ->
+                connection.prepareStatement("update chats set client_tools = '{}'::jsonb, discovered_client_tools = '[]'::jsonb where id = ?").use {
+                    it.setObject(1, channel.id)
+                    it.executeUpdate()
+                }
+            }
+            assertEquals(listOf(channel), repositories.chatRepository.listClientChannels(owner))
+            assertTrue(repositories.chatRepository.listClientChannels("foreign").isEmpty())
+        }
+    }
+
+    @Test
     fun `public client state round trips through canonical tables`() = runTest {
         val schema = newPostgresSchema("postgres_public_client")
 
@@ -368,31 +388,6 @@ class PostgresRepositoriesTest {
             assertEquals("client context", storedHistory.content)
             assertEquals(mapOf(CLIENT_HISTORY_MESSAGE_METADATA_KEY to "true"), storedHistory.metadata)
             assertEquals(storedExecution, repositories.executionRepository.getByChat(userId, chat.id, execution.id))
-
-            val toolContext = ToolCallContext(userId, chat.id.toString(), execution.id.toString(), "tool-1")
-            val deadline = Instant.parse("2026-05-01T10:06:00Z")
-            repositories.toolCallRepository.startClientCall(
-                context = toolContext,
-                name = "user.ask",
-                deviceId = "phone-1",
-                argumentsJson = """{"question":"Continue?"}""",
-                deadlineAt = deadline,
-                startedAt = Instant.parse("2026-05-01T10:01:02Z"),
-            )
-            repositories.toolCallRepository.completeClientCall(
-                context = toolContext,
-                status = ToolCallStatus.SUCCEEDED,
-                resultJson = """{"answer":"yes"}""",
-                errorJson = null,
-                payloadHash = "result-hash",
-                receivedAt = Instant.parse("2026-05-01T10:01:03Z"),
-            )
-            val storedTool = repositories.toolCallRepository.get(toolContext)
-            assertEquals("client", storedTool?.target)
-            assertEquals("phone-1", storedTool?.deviceId)
-            assertEquals(deadline, storedTool?.deadlineAt)
-            assertEquals("result-hash", storedTool?.resultPayloadHash)
-            assertEquals("yes", storedTool?.resultJson?.let { restJsonMapper.readTree(it) }?.path("answer")?.asText())
 
             val eventService = AgentEventService(chatRepository = repositories.chatRepository, eventRepository = repositories.eventRepository, eventBus = AgentEventBus())
             val firstTerminal = eventService.appendDurable(
@@ -915,6 +910,28 @@ class PostgresRepositoriesTest {
             assertEquals(expected, r.executionRepository.transitionIfCurrent(stale, AgentExecutionStatus.CANCELLING))
             assertEquals(expected, r.executionRepository.get(chat.userId, stale.id))
             assertNull(r.executionRepository.transitionIfCurrent(stale, AgentExecutionStatus.COMPLETED))
+        }
+    }
+
+    @Test
+    fun `commitTurn replaces stale reply descriptors while preserving other message metadata`() = runTest {
+        postgresRepositories(newPostgresSchema("postgres_reply_metadata")).use { r ->
+            val chat = chat("user-reply-metadata", Instant.parse("2026-05-01T10:00:00Z"))
+            r.userRepository.ensureUser(chat.userId)
+            r.chatRepository.create(chat)
+            val placeholder = r.messageRepository.append(chat.userId, chat.id, ChatRole.ASSISTANT, "pending",
+                metadata = mapOf("source" to "preserved", CLIENT_REPLY_ATTACHMENTS_METADATA_KEY to
+                    """[{"objectKey":"expired-key","name":"old.txt","presentation":"document"}]"""))
+            val execution = r.executionRepository.create(execution(
+                chat.userId, chat.id, placeholder.id, AgentExecutionStatus.RUNNING, chat.updatedAt,
+            ))
+            assertNotNull(r.executionRepository.commitTurn(execution,
+                agentState(chat.userId, chat.id, placeholder.seq, emptyList()), AgentExecutionUsage(10, 5, 15, 1),
+                output = "reply", assistantMessageId = placeholder.id))
+            val saved = assertNotNull(r.messageRepository.get(chat.userId, chat.id, placeholder.seq))
+            assertEquals("reply", saved.content)
+            assertEquals(mapOf("source" to "preserved", CLIENT_REPLY_ATTACHMENTS_METADATA_KEY to "[]"), saved.metadata)
+            assertTrue(saved.clientReplyAttachments().isEmpty())
         }
     }
 
