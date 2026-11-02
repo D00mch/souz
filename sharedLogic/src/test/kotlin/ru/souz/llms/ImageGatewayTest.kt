@@ -55,7 +55,7 @@ class ImageGatewayTest {
         assertTrue(multipart.contains("source-0.png") && multipart.contains("source-1.png"))
     }
 
-    @Test fun `Codex requires one image and completed stream without retrying ambiguous outcomes`() = runTest {
+    @Test fun `Codex requires one output image and completed stream without retrying ambiguous outcomes`() = runTest {
         val oauth = mockk<CodexOAuthService>()
         coEvery { oauth.refreshTokenIfNeeded() } returns "key"
         val image = "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"image_generation_call\",\"result\":\"$base64\"}}\n\n"
@@ -128,7 +128,10 @@ class ImageGatewayTest {
                 output.writeInt(data.size)
                 output.write(name)
                 output.write(data)
-                output.writeInt(CRC32().apply { update(name); update(data) }.value.toInt())
+                output.writeInt(CRC32().apply {
+                    update(name)
+                    update(data)
+                }.value.toInt())
             }
             output.writeLong(0x89504e470d0a1a0aUL.toLong())
             val header = ByteArrayOutputStream()

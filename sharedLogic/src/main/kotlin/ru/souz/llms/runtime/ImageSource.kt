@@ -115,7 +115,10 @@ class ImageSource private constructor(
             try {
                 val graphics = resized.createGraphics()
                 try {
-                    graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+                    graphics.setRenderingHint(
+                        RenderingHints.KEY_INTERPOLATION,
+                        RenderingHints.VALUE_INTERPOLATION_BICUBIC,
+                    )
                     graphics.drawImage(this, 0, 0, resized.width, resized.height, null)
                 } finally {
                     graphics.dispose()

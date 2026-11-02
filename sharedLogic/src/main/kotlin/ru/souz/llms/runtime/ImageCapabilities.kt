@@ -4,12 +4,16 @@ import com.fasterxml.jackson.core.StreamReadConstraints
 import ru.souz.llms.restJsonMapper
 
 internal val imageResponseMapper = restJsonMapper.copy().apply {
-    factory.setStreamReadConstraints(StreamReadConstraints.builder().maxStringLength(ImageSource.MAX_ENCODED_BYTES).build())
+    factory.setStreamReadConstraints(
+        StreamReadConstraints.builder().maxStringLength(ImageSource.MAX_ENCODED_BYTES).build(),
+    )
 }
 
 /** Validated request-local images, in the order supplied by the caller. */
 data class VisionInput(val images: List<ImageSource>, val question: String) {
-    init { require(images.size in 1..ImageSource.MAX_IMAGES) { "image_count_exceeded" } }
+    init {
+        require(images.size in 1..ImageSource.MAX_IMAGES) { "image_count_exceeded" }
+    }
 }
 
 fun interface VisionGateway {
@@ -24,7 +28,9 @@ data class ImageGenerationInput(
     val outputFormat: String? = null,
     val images: List<ImageSource> = emptyList(),
 ) {
-    init { require(images.size <= ImageSource.MAX_IMAGES) { "image_count_exceeded" } }
+    init {
+        require(images.size <= ImageSource.MAX_IMAGES) { "image_count_exceeded" }
+    }
 }
 
 /**

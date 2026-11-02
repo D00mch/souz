@@ -52,7 +52,7 @@ Only these direct production project dependencies are allowed. Standard test-sou
 
 ## Images
 
-[Image support](backend/docs/images.md) projects owned references into request-local pixels, normalizes client tool images, and shares model selection between sandbox and S3 generation/editing. Keep pixels out of persisted history and do not retry uncertain paid attachment generations.
+For [image support](backend/docs/images.md), keep pixels out of persisted history and do not retry uncertain paid attachment generations.
 
 ## Verification
 
