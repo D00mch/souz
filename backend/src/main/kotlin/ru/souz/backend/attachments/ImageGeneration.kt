@@ -12,7 +12,7 @@ import ru.souz.llms.runtime.*
 internal class ImageGeneration(private val storage: AttachmentStorage, private val dataSource: DataSource) {
     suspend fun generate(meta: ToolInvocationMeta, prompt: String, fileIds: List<String>, route: String,
         gateway: ImageGenerationGateway): FileContent {
-        require(prompt.isNotBlank() && prompt.length <= 32_000) { "image_prompt_invalid" }
+        require(prompt.isNotBlank() && prompt.length <= MAX_IMAGE_PROMPT_LENGTH) { "image_prompt_invalid" }
         require(fileIds.size <= ImageSource.MAX_IMAGES) { "image_count_exceeded" }
         val execution = meta.requestId ?: throw AttachmentException("attachment_execution_required")
         // Source access is checked even for a cached result.

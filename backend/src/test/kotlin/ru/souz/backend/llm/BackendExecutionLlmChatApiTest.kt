@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.app.BackendLlmLimits
+import ru.souz.backend.common.BackendConfigurationException
 import ru.souz.backend.settings.service.BackendSettingsProvider
 import ru.souz.backend.settings.service.MapBackendServerPreferenceStore
 import ru.souz.backend.config.NamedLlmConfig
@@ -65,6 +66,7 @@ import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.restJsonMapper
+import ru.souz.llms.runtime.DEFAULT_IMAGE_MODEL
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.TestTimeSource
@@ -94,16 +96,24 @@ class BackendExecutionLlmChatApiTest {
         val models = NamedLlmConfig(mapOf("named-image" to NamedLlmModel("image-model", "https://images.test/v1", "named-key")))
         facadeFixture(client = http, settingsProvider = settings).use { fixture ->
             val clients = ProviderHttpClients(http, http)
-            for (selection in listOf("gpt-image-1", "named-image", "CodexGpt61Sol")) {
-                val gateway = imageGateway(selection, models, settings, clients, CodexOAuthService(settings, http), fixture.api, null)
+            val selections = listOf(DEFAULT_IMAGE_MODEL, "gpt-image-2", "gpt-image-2.5-flare-2026-09-08", "named-image", "CodexGpt61Sol")
+            for (selection in selections) {
+                val gateway = ImageModelRoute(selection, models).gateway(
+                    settings, clients, CodexOAuthService(settings, http), fixture.api, null,
+                )
                 kotlin.test.assertContentEquals(pixels, gateway.generate(ru.souz.llms.runtime.ImageGenerationInput("draw")).bytes)
             }
-            assertEquals(listOf("gpt-image-1", "image-model", "gpt-6.1-sol"), requests.map { it.body["model"].asText() })
-            assertEquals("https://images.test/v1/images/generations", requests[1].url)
-            assertEquals(listOf("Bearer test-key", "Bearer named-key", "Bearer codex-test-token"), requests.map { it.authorization })
-            assertFailsWith<IllegalArgumentException> {
-                imageGateway("unknown", models, settings, clients, CodexOAuthService(settings, http), fixture.api, null)
+            assertEquals(selections.take(3) + listOf("image-model", "gpt-6.1-sol"), requests.map { it.body["model"].asText() })
+            assertEquals("https://images.test/v1/images/generations", requests[3].url)
+            assertEquals(List(3) { "Bearer test-key" } + listOf("Bearer named-key", "Bearer codex-test-token"),
+                requests.map { it.authorization })
+            for (request in requests) {
+                val options = request.body["tools"]?.get(0) ?: request.body
+                assertEquals("1024x1024", options["size"].asText())
+                assertEquals("medium", options["quality"].asText())
+                assertEquals("png", options["output_format"].asText())
             }
+            assertFailsWith<BackendConfigurationException> { ImageModelRoute("unknown", models) }
         }
     }
 

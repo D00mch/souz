@@ -10,7 +10,9 @@ Vision uses decoder subsampling followed by resizing to a maximum 2,048-pixel ed
 
 ## Generation and editing
 
-`SOUZ_IMAGE_MODEL` / `souz.image.model` selects the shared image model for both tools; the default is `gpt-image-1`. A Codex model identity such as `CodexGpt61Sol` selects the Codex OAuth connection. `gpt-image-1` uses the existing OpenAI credentials; a name from [named connections](named-llm-connections.md) uses that connection's endpoint, API key and model ID. It must implement the OpenAI images API. There is no separate provider switch. The output request uses PNG, 1024×1024 and medium quality.
+`SOUZ_IMAGE_MODEL` / `souz.image.model` selects the shared image model for both tools; the default is `gpt-image-2.5-sunburst`. Direct OpenAI image IDs from the adapter's [supported model set](../../sharedLogic/src/main/kotlin/ru/souz/llms/openai/OpenAIImageGenerationGateway.kt), including supported dated snapshots, use the existing OpenAI credentials. A Codex model identity such as `CodexGpt61Sol` selects the Codex OAuth connection. A name from [named connections](named-llm-connections.md) uses that connection's endpoint, API key and exact model ID; compatible deployments can use IDs outside the built-in set. The endpoint must implement the OpenAI images API. There is no separate provider switch.
+
+The image route is resolved once before HTTP startup. Unknown, blank or retired built-in selections (including `gpt-image-1`) reject startup with a configuration error. Validation does not call a provider: account access and credentials are checked when generation is requested. The model, PNG/1024×1024/medium output defaults and prompt-length limit have one owner in [image contracts](../../sharedLogic/src/main/kotlin/ru/souz/llms/runtime/ImageCapabilities.kt).
 
 - `GenerateImage(prompt, outputPath?, imagePaths?)` saves its result in the caller's sandbox.
 - `GenerateAttachmentImage(prompt, fileIds?)` requires S3 and saves an owned image reference. It does not select a reply attachment; `AttachFileToReply` performs that separate action.

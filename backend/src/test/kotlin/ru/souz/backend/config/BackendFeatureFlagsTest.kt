@@ -12,6 +12,7 @@ import ru.souz.backend.app.BackendPostgresConfig
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.app.BackendServerConfig
 import ru.souz.backend.common.BackendConfigurationException
+import ru.souz.llms.runtime.DEFAULT_IMAGE_MODEL
 
 class BackendFeatureFlagsTest {
     @Test
@@ -101,6 +102,7 @@ class BackendAppConfigTest {
                     "SOUZ_ATTACHMENTS_HISTORY_LIMIT" to "7",
                     "SOUZ_BACKEND_PROXY_TOKEN" to " proxy-secret ",
                     "SOUZ_MASTER_KEY" to "test-master-key",
+                    "SOUZ_IMAGE_MODEL" to "  CodexGpt61Sol  ",
                 ),
             )
         ).validate()
@@ -112,6 +114,7 @@ class BackendAppConfigTest {
                     "souz.attachments.historyLimit" to "3",
                     "souz.backend.proxyToken" to " property-secret ",
                     "souz.masterKey" to "test-master-key",
+                    "souz.image.model" to "gpt-image-2",
                 ),
             )
         ).validate()
@@ -128,6 +131,9 @@ class BackendAppConfigTest {
             BackendServerConfig(host = "127.0.0.1", port = 8080, proxyToken = null),
             defaultConfig.server,
         )
+        assertEquals(DEFAULT_IMAGE_MODEL, defaultConfig.imageModel)
+        assertEquals("CodexGpt61Sol", envConfig.imageModel)
+        assertEquals("gpt-image-2", propertyConfig.imageModel)
         assertEquals(
             BackendServerConfig(host = "0.0.0.0", port = 9090, proxyToken = "proxy-secret"),
             envConfig.server,

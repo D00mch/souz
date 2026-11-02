@@ -40,11 +40,15 @@ data class GeneratedImage(
 /**
  * Abstraction over provider-specific image-generation implementations.
  *
- * Generation is selected by capability availability rather than by the currently active chat model,
- * so tools can request a new image without being coupled to a specific provider client.
+ * Generation and editing use the configured image route, independently of the active chat model.
  */
 fun interface ImageGenerationGateway {
     suspend fun generate(input: ImageGenerationInput): GeneratedImage
 }
 
 const val DEFAULT_MAX_VISION_IMAGE_BYTES: Long = ImageSource.MAX_BYTES * 1L
+const val DEFAULT_IMAGE_MODEL = "gpt-image-2.5-sunburst"
+const val DEFAULT_IMAGE_SIZE = "1024x1024"
+const val DEFAULT_IMAGE_QUALITY = "medium"
+const val DEFAULT_IMAGE_OUTPUT_FORMAT = "png"
+const val MAX_IMAGE_PROMPT_LENGTH = 32_000

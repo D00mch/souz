@@ -23,10 +23,10 @@ class OpenAIImageGenerationGateway(
     private val baseUrl: String? = null,
 ) : ImageGenerationGateway {
     fun buildRequestPayload(input: ImageGenerationInput): Map<String, Any> =
-        OpenAIImageGenerationRequestBuilder.build(input, "gpt-image-1")
+        OpenAIImageGenerationRequestBuilder.build(input)
 
     override suspend fun generate(input: ImageGenerationInput): GeneratedImage {
-        require(input.prompt.isNotBlank() && input.prompt.length <= 32_000) { "image_prompt_invalid" }
+        require(input.prompt.isNotBlank() && input.prompt.length <= MAX_IMAGE_PROMPT_LENGTH) { "image_prompt_invalid" }
         val payload = buildRequestPayload(input)
         val path = if (input.images.isEmpty()) "images/generations" else "images/edits"
         val url = baseUrl?.trimEnd('/')?.let { "$it/$path" } ?: settingsProvider.openAIEndpoint().endpoint(path)
@@ -57,7 +57,22 @@ class OpenAIImageGenerationGateway(
             check(data != null && data.size() == 1) { "image_result_count_invalid" }
             val encoded = data[0]["b64_json"]?.asText() ?: error("image_result_missing")
             val image = ImageSource.read(Base64.getDecoder().decode(encoded))
-            GeneratedImage(image.bytes, image.mimeType, "OPENAI", input.model ?: "gpt-image-1")
+            GeneratedImage(image.bytes, image.mimeType, "OPENAI", input.model ?: DEFAULT_IMAGE_MODEL)
         }
+    }
+
+    companion object {
+        // Official Image API IDs. Named compatible connections may use other deployment IDs.
+        val SUPPORTED_MODELS: Set<String> = setOf(
+            DEFAULT_IMAGE_MODEL,
+            "gpt-image-2.5-sunburst-2026-09-08",
+            "gpt-image-2.5-flare",
+            "gpt-image-2.5-flare-2026-09-08",
+            "gpt-image-2",
+            "gpt-image-2-2026-04-21",
+            "gpt-image-1.5",
+            "gpt-image-1-mini",
+            "chatgpt-image-latest",
+        )
     }
 }

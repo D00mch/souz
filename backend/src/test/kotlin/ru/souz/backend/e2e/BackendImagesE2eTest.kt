@@ -20,6 +20,7 @@ import ru.souz.backend.client.ClientToolOutcome
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.llms.*
+import ru.souz.llms.runtime.DEFAULT_IMAGE_MODEL
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
@@ -49,9 +50,9 @@ class BackendImagesE2eTest {
             if (failProvider) return@MockEngine respond("unavailable", HttpStatusCode.ServiceUnavailable)
             if (request.url.encodedPath.endsWith("/edits")) {
                 val multipart = request.body.toByteArray().toString(Charsets.ISO_8859_1)
-                assertTrue("gpt-image-1" in multipart && "source-1.png" in multipart)
+                assertTrue(DEFAULT_IMAGE_MODEL in multipart && "source-1.png" in multipart)
                 assertTrue(png.toString(Charsets.ISO_8859_1) in multipart)
-            } else assertEquals("gpt-image-1", restJsonMapper.readTree(request.body.toByteArray())["model"].asText())
+            } else assertEquals(DEFAULT_IMAGE_MODEL, restJsonMapper.readTree(request.body.toByteArray())["model"].asText())
             respond("""{"data":[{"b64_json":"$base64"}]}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
         }) { providerHttpClientDefaults() }
         val llm = E2eLlmApi { request ->

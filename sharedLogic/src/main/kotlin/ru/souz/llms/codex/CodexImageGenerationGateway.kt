@@ -18,8 +18,8 @@ class CodexImageGenerationGateway(
     private val client: HttpClient,
 ) : ImageGenerationGateway {
     override suspend fun generate(input: ImageGenerationInput): GeneratedImage {
-        require(input.prompt.isNotBlank() && input.prompt.length <= 32_000) { "image_prompt_invalid" }
-        require(input.outputFormat == null || input.outputFormat == "png") { "image_format_unsupported" }
+        require(input.prompt.isNotBlank() && input.prompt.length <= MAX_IMAGE_PROMPT_LENGTH) { "image_prompt_invalid" }
+        require(input.outputFormat == null || input.outputFormat == DEFAULT_IMAGE_OUTPUT_FORMAT) { "image_format_unsupported" }
         val model = requireNotNull(input.model)
         val token = oauth.refreshTokenIfNeeded()
         return client.preparePost("https://chatgpt.com/backend-api/codex/responses") {
@@ -38,9 +38,9 @@ class CodexImageGenerationGateway(
                 })),
                 "tools" to listOf(buildMap {
                     put("type", "image_generation")
-                    put("output_format", "png")
-                    put("size", input.size ?: "1024x1024")
-                    put("quality", input.quality ?: "medium")
+                    put("output_format", DEFAULT_IMAGE_OUTPUT_FORMAT)
+                    put("size", input.size ?: DEFAULT_IMAGE_SIZE)
+                    put("quality", input.quality ?: DEFAULT_IMAGE_QUALITY)
                     if (input.images.isNotEmpty()) put("action", "edit")
                 }),
                 "tool_choice" to mapOf("type" to "image_generation"), "store" to false, "stream" to true,

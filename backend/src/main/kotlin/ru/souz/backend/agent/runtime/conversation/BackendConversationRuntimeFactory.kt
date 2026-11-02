@@ -1,6 +1,6 @@
 package ru.souz.backend.agent.runtime.conversation
 
-import ru.souz.backend.llm.imageGateway
+import ru.souz.backend.llm.ImageModelRoute
 import ru.souz.backend.attachments.ToolGenerateAttachmentImage
 import ru.souz.backend.attachments.AttachmentStorage
 import ru.souz.backend.attachments.ImageGeneration
@@ -114,7 +114,7 @@ internal class BackendConversationRuntimeFactory(
     private val llmConfig: NamedLlmConfig = NamedLlmConfig(),
     private val providerApiOverride: ((LlmProvider) -> LLMChatAPI?)? = null,
     private val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
-    private val imageModel: String = "gpt-image-1",
+    private val imageModel: ImageModelRoute,
     private val imageGeneration: ImageGeneration? = null,
     private val attachmentStorage: AttachmentStorage? = null,
 ) {
@@ -167,13 +167,12 @@ internal class BackendConversationRuntimeFactory(
             attachmentStorage = attachmentStorage,
         )
         val visionGateway = ChatVisionGateway(settingsProvider, executionApi)
-        val imageGenerationGateway = imageGateway(imageModel, llmConfig, settingsProvider,
-            providerHttpClients, codexOAuthService, executionApi, hookBudget)
+        val imageGenerationGateway = imageModel.gateway(
+            settingsProvider, providerHttpClients, codexOAuthService, executionApi, hookBudget,
+        )
         val attachmentImages = imageGeneration?.let { service ->
             ToolGenerateAttachmentImage { meta, prompt, ids ->
-                // A named connection's endpoint is part of the operation identity, never its credential.
-                val route = imageModel + ":" + llmConfig.models[imageModel]?.let { it.baseUrl + ":" + it.modelId }.orEmpty()
-                service.generate(meta, prompt, ids, route, imageGenerationGateway)
+                service.generate(meta, prompt, ids, imageModel.identity, imageGenerationGateway)
             }
         }
         val executionLlmToolCatalog = LlmBackedToolCatalog(
