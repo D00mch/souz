@@ -1,7 +1,6 @@
 package ru.souz.backend.client
 
 import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.ObjectMapper
 import java.net.InetAddress
 import java.time.Duration
 import java.time.Instant
@@ -15,27 +14,11 @@ import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntime
 import ru.souz.backend.client.repository.ClientRequestResult
 import ru.souz.backend.toolcall.repository.ToolCallContext
-import ru.souz.backend.toolcall.model.ToolCall
 
 internal data class ClientToolOutcome(
     val status: String,
     val result: JsonNode?,
     val error: ClientError?,
-)
-
-internal fun ToolCall.toClientToolOutcome(mapper: ObjectMapper): ClientToolOutcome =
-    ClientToolOutcome(
-        status = status.value,
-        result = resultJson?.let { mapper.readTree(it) },
-        error = errorJson?.let { stored ->
-            runCatching { mapper.readValue(stored, ClientError::class.java) }
-                .getOrElse { ClientError("client_tool_failed", "Client tool failed.") }
-        },
-    )
-
-internal data class PendingClientTool(
-    val toolCallId: String,
-    val result: CompletableDeferred<ClientToolOutcome> = CompletableDeferred(),
 )
 
 internal class PendingChannelTool(private val deadlineAt: Instant) {
@@ -55,12 +38,6 @@ internal class PendingChannelTool(private val deadlineAt: Instant) {
     }
 }
 
-internal sealed interface BeginClientToolResult {
-    data class Started(val device: ClientDevice) : BeginClientToolResult
-    data object Busy : BeginClientToolResult
-    data object Missing : BeginClientToolResult
-}
-
 /**
  * Tracks process-local thread runtimes and tool waiters.
  * [runtimeOwner] identifies this backend instance in PostgreSQL so lease renewals and turn commits
@@ -73,7 +50,6 @@ internal class ClientThreadRuntimeRegistry(
         val runtimeReady: CompletableDeferred<Unit> = CompletableDeferred(),
         val runtime: BackendConversationRuntime? = null,
         val latestDevice: ClientDevice,
-        val pendingTool: PendingClientTool? = null,
         val terminal: Boolean = false,
         val removed: CompletableDeferred<Unit> = CompletableDeferred(),
     )
@@ -82,7 +58,7 @@ internal class ClientThreadRuntimeRegistry(
     private val states = linkedMapOf<UUID, State>()
     private val channelTools = mutableMapOf<ToolCallContext, PendingChannelTool>()
 
-    // Live-only calls use a correlation ID, never a target-chat execution or durable replay.
+    // Local calls keep their source thread ID; remote calls use a technical correlation ID.
     suspend fun <T> withChannelTool(
         context: ToolCallContext,
         deadlineAt: Instant,
@@ -124,7 +100,6 @@ internal class ClientThreadRuntimeRegistry(
     suspend fun discard(threadId: UUID) {
         val discarded = mutex.withLock { states.remove(threadId) } ?: return
         discarded.runtimeReady.complete(Unit)
-        discarded.pendingTool?.result?.cancel()
         discarded.removed.complete(Unit)
     }
 
@@ -205,36 +180,12 @@ internal class ClientThreadRuntimeRegistry(
             result
         }
 
-    suspend fun beginTool(threadId: UUID, pending: PendingClientTool): BeginClientToolResult = mutex.withLock {
-        val state = states[threadId]?.takeUnless { it.terminal }
-            ?: return@withLock BeginClientToolResult.Missing
-        if (state.pendingTool != null) return@withLock BeginClientToolResult.Busy
-        states[threadId] = state.copy(pendingTool = pending)
-        BeginClientToolResult.Started(state.latestDevice)
-    }
-
-    suspend fun finishTool(threadId: UUID, toolCallId: String, outcome: ClientToolOutcome): Boolean {
-        val pending = mutex.withLock {
-            val state = states[threadId] ?: return@withLock null
-            state.pendingTool
-                ?.takeIf { it.toolCallId == toolCallId }
-                ?.also {
-                    storeOrRemove(threadId, state.copy(pendingTool = null))
-                }
-        } ?: return false
-        return pending.result.complete(outcome)
-    }
-
-    suspend fun clearTool(threadId: UUID, toolCallId: String) {
-        mutex.withLock {
-            val state = states[threadId] ?: return@withLock
-            val cleared = if (state.pendingTool?.toolCallId == toolCallId) state.copy(pendingTool = null) else state
-            storeOrRemove(threadId, cleared)
-        }
+    suspend fun currentDevice(threadId: UUID): ClientDevice? = mutex.withLock {
+        states[threadId]?.takeUnless { it.terminal }?.latestDevice
     }
 
     private fun storeOrRemove(threadId: UUID, state: State) {
-        if (state.terminal && state.runtime == null && state.pendingTool == null) {
+        if (state.terminal && state.runtime == null) {
             states.remove(threadId)
             state.removed.complete(Unit)
         } else {

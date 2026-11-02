@@ -292,10 +292,9 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     assertEquals(chats[0], ack["chatId"].asText())
                     assertTrue(ack["error"].isNull)
                     request(first, unsubscribeFrame(chats[0]), duplicate = true)
-                    // Replay retains the pending tool and its original deadline, without restarting the task.
+                    // Resubscription never replays commands or restarts their deadlines.
                     val callsBefore = llm.requests.size
                     request(first, subscribeFrame(chats[0], 0), duplicate = false)
-                    assertEquals(tools[0], readJson(first))
                     assertEquals(callsBefore, llm.requests.size)
                     request(first, unsubscribeFrame(chats[0]), duplicate = false)
                     request(first, historyFrame(chats[0], "history", "user", "saved while unsubscribed"))
@@ -359,15 +358,13 @@ class BackendPublicMultiChatWebSocketE2eTest {
             val callsBefore = llm.requests.size
             withMultiChatSocket { socket ->
                 request(socket, subscribeFrame(chats[0]), duplicate = false)
-                assertEquals(tools[0], readJson(socket))
                 request(socket, subscribeFrame(chats[1], tools[1]["seq"].asLong()), duplicate = false)
                 chats.forEach { chat ->
                     request(socket, subscribeFrame(chat), duplicate = true)
                 }
                 repeat(2) {
                     request(socket, subscribeFrame(chats[0], 0), duplicate = false)
-                    assertEquals(tools[0], readJson(socket))
-                }
+                    }
                 assertEquals(callsBefore, llm.requests.size)
                 request(socket, toolResult(tools[1]))
                 readTerminal(socket, tools[1])
@@ -381,7 +378,6 @@ class BackendPublicMultiChatWebSocketE2eTest {
 
                 val callsAfter = llm.requests.size
                 request(socket, subscribeFrame(chats[0], 0), duplicate = false)
-                assertEquals(tools[0], readJson(socket))
                 assertEquals(terminal, readJson(socket))
                 assertEquals(callsAfter, llm.requests.size)
             }
@@ -465,14 +461,14 @@ class BackendPublicMultiChatWebSocketE2eTest {
         backendE2eTest("e2e_channel_tools") {
             val user = UUID.randomUUID().toString()
             withMultiChatSocket { socket ->
-                val target = request(socket, createFrame(user, "target", tools = clientToolsJson("user.ask")))["chatId"].asText()
+                val target = request(socket, createFrame(user, "target", tools = clientToolsJson("user.ask", "orion.call")))["chatId"].asText()
                 val foreign = request(socket, createFrame(UUID.randomUUID().toString()))["chatId"].asText()
                 llm.requestSkillForPrompt("local", "user.ask", mapOf("question" to "Continue?"))
                 val local = submit(socket, target, user, "local", "local")
                 for (http in listOf(false, true)) {
                     val prompt = "remote-$http"
-                    val source = if (http) createPublicChat(user, prompt, tools = clientToolsJson("orion.call"))
-                        else request(socket, createFrame(user, prompt, tools = clientToolsJson("orion.call")))["chatId"].asText()
+                    val source = if (http) createPublicChat(user, prompt)
+                        else request(socket, createFrame(user, prompt))["chatId"].asText()
                     llm.requestSkillForPrompt(prompt, "orion.call", mapOf("channelId" to target, "utterance" to "включи Pink Floyd"))
                     val sourceThread = if (http) {
                         client.post(BackendHttpRoutes.chatMessages(source)) {
@@ -521,7 +517,6 @@ class BackendPublicMultiChatWebSocketE2eTest {
                 request(socket, toolResult(local))
                 val localCompleted = readTerminal(socket, local)
                 request(socket, subscribeFrame(target, 0), duplicate = false)
-                assertEquals(local, readJson(socket))
                 assertEquals(localCompleted, readJson(socket))
                 // A subsequent ACK also proves there were no replayed cross-channel calls.
                 request(socket, unsubscribeFrame(target))
@@ -532,7 +527,7 @@ class BackendPublicMultiChatWebSocketE2eTest {
     fun `invalid unavailable and unowned channel targets fail and cancellation discards pending calls`() =
         backendE2eTest("e2e_channel_tool_failures") {
             val user = UUID.randomUUID().toString()
-            val offline = createPublicChat(user, "offline")
+            val offline = createPublicChat(user, "offline", tools = clientToolsJson("orion.call"))
             val archived = createPublicChat(user, "archived")
             client.post(BackendHttpRoutes.archiveChat(archived)) { trusted(user) }
             val mobile = client.post(BackendHttpRoutes.CHATS) {
@@ -546,7 +541,8 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     val prompt = "invalid-$index"
                     llm.requestSkillForPrompt(prompt, "orion.call", mapOf("channelId" to target, "utterance" to "тише"))
                     assertEquals("thread.completed", submit(socket, source, user, prompt, prompt)["type"].asText())
-                    assertTrue(llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content.contains("client_context_missing"))
+                    assertEquals(if (index < 3 || target == offline) "client_context_missing" else "client_tool_unavailable",
+                        json.readTree(llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content)["error"]["code"].asText())
                 }
                 request(socket, subscribeFrame(offline))
                 llm.requestSkillForPrompt("cancel", "orion.call", mapOf("channelId" to offline, "utterance" to "тише"))

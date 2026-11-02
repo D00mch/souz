@@ -28,19 +28,15 @@ import ru.souz.tool.web.ToolWebImageSearch
 
 class BackendExecutionToolCatalogTest {
     @Test
-    fun `text-only client executions exclude reply selection but retain file preparation`() {
-        for (replyAttachmentsEnabled in listOf(true, false)) {
-            for (enabled in listOf(null, emptySet(), setOf("PrepareAttachment", "AttachFileToReply", "DetachFileFromReply"))) {
-                val catalog = backendExecutionToolCatalog(
-                    compiledToolCatalog = TestToolCatalog(ToolCategory.FILES to listOf("PrepareAttachment", "AttachFileToReply", "DetachFileFromReply")),
-                    executionLlmToolCatalog = TestToolCatalog(), enabledCompiledToolNames = enabled,
-                    clientToolCatalog = TestToolCatalog(), includeFewShotExamples = false,
-                    replyAttachmentsEnabled = replyAttachmentsEnabled,
-                )
-                val expected = if (enabled == emptySet<String>()) emptySet() else
-                    if (replyAttachmentsEnabled) setOf("PrepareAttachment", "AttachFileToReply", "DetachFileFromReply") else setOf("PrepareAttachment")
-                assertEquals(expected, toolNames(catalog))
-            }
+    fun `attachment preparation and reply selection respect enabled tools`() {
+        val names = setOf("PrepareAttachment", "AttachFileToReply", "DetachFileFromReply")
+        for (enabled in listOf(null, emptySet(), names)) {
+            val catalog = backendExecutionToolCatalog(
+                compiledToolCatalog = TestToolCatalog(ToolCategory.FILES to names.toList()),
+                executionLlmToolCatalog = TestToolCatalog(), enabledCompiledToolNames = enabled,
+                clientToolCatalog = TestToolCatalog(), includeFewShotExamples = false,
+            )
+            assertEquals(enabled ?: names, toolNames(catalog))
         }
     }
 

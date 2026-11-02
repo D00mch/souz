@@ -139,20 +139,22 @@ class PostgresMessageRepository(
         messageId: UUID,
         content: String,
         attachments: List<FileContent>? = null,
+        metadata: Map<String, String> = emptyMap(),
     ): ChatMessage? =
         connection.prepareStatement(
             """
             update messages
-            set content = ?, attachments = coalesce(?::jsonb, attachments)
+            set content = ?, attachments = coalesce(?::jsonb, attachments), metadata = metadata || ?::jsonb
             where user_id = ? and chat_id = ? and id = ?
             returning *
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, content)
             statement.setString(2, attachments?.let(postgresStorageMapper::writeValueAsString))
-            statement.setString(3, userId)
-            statement.setObject(4, chatId)
-            statement.setObject(5, messageId)
+            statement.setJson(3, postgresStorageMapper.writeValueAsString(metadata))
+            statement.setString(4, userId)
+            statement.setObject(5, chatId)
+            statement.setObject(6, messageId)
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next()) resultSet.toMessage() else null
             }

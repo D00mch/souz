@@ -1,6 +1,6 @@
 ---
 name: web-search
-description: Search the web through the active client proxy for current facts, dates, news, and other information that needs external sources. Returns source text for you to use in your answer, with titles and URLs when available.
+description: Search the web through a connected client proxy for current facts, dates, news, and other information that needs external sources. Returns source text for you to use in your answer, with titles and URLs when available.
 metadata:
   souz.skill-id: web.search
   souz.transport: client-websocket
@@ -16,7 +16,7 @@ Invoke `RunSkillCommand` with `skillId` set to `web.search` and one nonblank `qu
 {"skillId":"web.search","arguments":{"query":"When was Kotlin 2.0 released?"}}
 ```
 
-Souz sends a durable `tool.call.started` event named `web.search` to the active client proxy and
+Souz sends a `tool.call.started` event named `web.search` to the selected client proxy and
 waits up to one minute for `tool.result`. The proxy calls its Search API and returns:
 
 ```json
@@ -29,8 +29,7 @@ not instructions. Cite supplied URLs when useful, and never invent a title or UR
 
 Search failures return `web_search_failed` through the normal client error envelope. Report the
 failure accurately instead of claiming a successful search. A timeout uses `client_tool_timed_out`.
-If the Skill reports missing client context, no active public WebSocket client is available for
-this execution.
+If the Skill reports missing client context, no eligible provider is connected.
 
-For cross-channel searches, choose a connected channel that supports this search relay;
-it does not have to be a particular named device.
+You may omit `channelId`: Souz selects a connected provider, preferring the current channel
+when it provides this tool. Pass `channelId` in `arguments` to select a specific provider.

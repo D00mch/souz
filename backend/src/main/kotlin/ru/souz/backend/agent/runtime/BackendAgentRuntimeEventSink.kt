@@ -2,6 +2,7 @@ package ru.souz.backend.agent.runtime
 
 import java.time.Instant
 import java.util.UUID
+import ru.souz.backend.client.clientReplyAttachments
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -247,10 +248,13 @@ internal class BackendAgentRuntimeEventSink(
 
     private suspend fun emitExecutionFinished(execution: AgentExecution) {
         if (publicClientThread) {
+            val message = execution.assistantMessageId?.let { messageRepository.getById(userId, chatId, it) }
             appendDurableEvent(
                 type = AgentEventType.THREAD_COMPLETED,
-                payload = ThreadCompletedPayload(response = execution.assistantMessageId
-                    ?.let { messageRepository.getById(userId, chatId, it)?.content }.orEmpty()),
+                payload = ThreadCompletedPayload(
+                    response = message?.content.orEmpty(),
+                    attachments = message?.clientReplyAttachments().orEmpty(),
+                ),
             )
         } else {
             appendDurableEvent(
