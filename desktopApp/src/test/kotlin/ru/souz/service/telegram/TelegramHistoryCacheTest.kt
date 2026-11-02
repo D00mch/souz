@@ -78,18 +78,81 @@ class TelegramHistoryCacheTest {
     }
 
     @Test
-    fun `edits and both kinds of deletion update idle cached history in callback order`() = runTest {
+    fun `edits and provider deletions update idle cached history in callback order`() = runTest {
         val f = Fixture(this)
         f.read(limit = 3) { listOf(message(1, 12), message(1, 11), message(1, 10)) }
         f.emit(TdApi.UpdateMessageContent(1, 12, text("edited")))
         f.emit(TdApi.UpdateMessageContent(1, 12, text("edited again")))
         f.emit(TdApi.UpdateDeleteMessages(1, longArrayOf(11), true, false))
-        f.emit(TdApi.UpdateDeleteMessages(1, longArrayOf(10), false, true))
+        f.emit(TdApi.UpdateDeleteMessages(1, longArrayOf(10), false, false))
         runCurrent()
         val history = f.read()
         assertEquals(listOf(12L), history.map { it.messageId })
         assertEquals("edited again", history.single().text)
         assertEquals(1, f.fetchCount)
+    }
+
+    @Test
+    fun `cache-only removal refills ordinary history despite enough older cached messages`() = runTest {
+        val f = Fixture(this)
+        f.read(limit = 3) { listOf(message(1, 12), message(1, 11), message(1, 10)) }
+        f.emit(TdApi.UpdateDeleteMessages(1, longArrayOf(12), false, true))
+        runCurrent()
+        val history = f.read(limit = 2) { listOf(message(1, 12, "refetched"), message(1, 11)) }
+        assertEquals(listOf(12L, 11L), history.map { it.messageId })
+        assertEquals("refetched", history.first().text)
+        assertEquals(history, f.read(limit = 2))
+        assertEquals(2, f.fetchCount)
+        assertEquals(listOf(1L), f.opened)
+        assertTrue(f.closed.isEmpty())
+        verify(exactly = 0) { f.client.send(ofType<TdApi.ViewMessages>()) }
+    }
+
+    @Test
+    fun `cache-only removals during ordinary and forced fetches do not tombstone refetched messages`() = runTest {
+        for (force in listOf(false, true)) {
+            val f = Fixture(this)
+            f.read(limit = 3) { listOf(message(1, 12), message(1, 11), message(1, 10)) }
+            val fetched = CompletableDeferred<List<TdApi.Message>>()
+            val request = async { f.read(limit = 4, force = force) { fetched.await() } }
+            runCurrent()
+            f.emit(TdApi.UpdateDeleteMessages(1, longArrayOf(12), false, true))
+            f.emit(TdApi.UpdateDeleteMessages(1, longArrayOf(11), true, false))
+            f.emit(TdApi.UpdateNewMessage(message(1, 13)))
+            f.emit(TdApi.UpdateMessageContent(1, 10, text("concurrent edit")))
+            runCurrent()
+            fetched.complete(listOf(message(1, 12), message(1, 11), message(1, 10), message(1, 9)))
+            val history = request.await()
+            assertEquals(listOf(13L, 12L, 10L, 9L), history.map { it.messageId })
+            assertEquals("concurrent edit", history[2].text)
+            // The racing eviction may postdate the snapshot, so the next read must refill too.
+            val next = f.read(limit = 2) { listOf(message(1, 14), message(1, 13)) }
+            assertEquals(listOf(14L, 13L), next.map { it.messageId })
+            assertEquals(next, f.read(limit = 2))
+            assertEquals(3, f.fetchCount)
+            assertTrue(f.closed.isEmpty())
+        }
+    }
+
+    @Test
+    fun `failed and cancelled cache-only refills retain the subscription and require retry`() = runTest {
+        val f = Fixture(this)
+        f.read(limit = 3) { listOf(message(1, 12), message(1, 11), message(1, 10)) }
+        f.emit(TdApi.UpdateDeleteMessages(1, longArrayOf(12), false, true))
+        runCurrent()
+        assertFailsWith<IllegalStateException> { f.read { error("refill fixture error") } }
+        val fetched = CompletableDeferred<List<TdApi.Message>>()
+        val request = async { f.read { fetched.await() } }
+        runCurrent()
+        f.emit(TdApi.UpdateNewMessage(message(1, 13)))
+        runCurrent()
+        request.cancelAndJoin()
+        val history = f.read(limit = 2) { listOf(message(1, 13), message(1, 12)) }
+        assertEquals(listOf(13L, 12L), history.map { it.messageId })
+        assertEquals(history, f.read(limit = 2))
+        assertEquals(4, f.fetchCount)
+        assertEquals(listOf(1L), f.opened)
+        assertTrue(f.closed.isEmpty())
     }
 
     @Test

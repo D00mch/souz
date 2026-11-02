@@ -30,6 +30,7 @@ internal class TelegramHistoryCache(
         var users = 0
         var opened = false
         var loaded = false
+        var needsRefetch = false
         var messages = emptyList<CachedMessage>()
         // Only retained during a fetch: replay events over its potentially older snapshot.
         var updatesDuringFetch: MutableList<TdApi.Update>? = null
@@ -67,7 +68,7 @@ internal class TelegramHistoryCache(
             return entry.fetchMutex.withLock fetchLock@{
                 mutex.withLock cacheLock@{
                     checkCurrent(chatId, entry)
-                    if (!forceRefresh && entry.loaded && entry.messages.size >= limit) {
+                    if (!forceRefresh && entry.loaded && !entry.needsRefetch && entry.messages.size >= limit) {
                         return@cacheLock entry.messages.take(limit).map { it.view }
                     }
                     entry.updatesDuringFetch = mutableListOf()
@@ -84,6 +85,10 @@ internal class TelegramHistoryCache(
                         entry.updatesDuringFetch.orEmpty().forEach { applyUpdate(merged, it) }
                         entry.messages = boundedMessages(merged)
                         entry.loaded = true
+                        // A cache eviction racing this snapshot may require another refill.
+                        entry.needsRefetch = entry.updatesDuringFetch.orEmpty().any {
+                            it is TdApi.UpdateDeleteMessages && it.fromCache
+                        }
                         entry.messages.take(limit).map { it.view }
                     }
                 } finally {
@@ -152,6 +157,7 @@ internal class TelegramHistoryCache(
             // Background updates must neither populate the LRU nor promote an idle chat.
             val entry = entries.entries.firstOrNull { it.key == chatId }?.value ?: return
             if (entry.client !== client) return
+            if (update is TdApi.UpdateDeleteMessages && update.fromCache) entry.needsRefetch = true
             val messages = entry.messages.associateByTo(LinkedHashMap()) { it.view.messageId }
             applyUpdate(messages, update)
             entry.messages = boundedMessages(messages)
@@ -225,7 +231,11 @@ internal class TelegramHistoryCache(
                 }
                 messages[update.messageId] = old.copy(view = old.view.copy(text = messageToView(edited).text))
             }
-            is TdApi.UpdateDeleteMessages -> update.messageIds?.forEach { messages.remove(it) }
+            is TdApi.UpdateDeleteMessages -> {
+                // TDLib cache eviction is not a provider deletion. Keep views until refilling,
+                // and never replay the eviction as a tombstone over refetched messages.
+                if (!update.fromCache) update.messageIds?.forEach { messages.remove(it) }
+            }
             is TdApi.UpdateMessageSendSucceeded -> {
                 messages.remove(update.oldMessageId)
                 update.message?.let { messages[it.id] = cacheMessage(it) }
