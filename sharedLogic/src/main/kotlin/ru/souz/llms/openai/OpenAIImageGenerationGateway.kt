@@ -56,7 +56,7 @@ class OpenAIImageGenerationGateway(
             val data = root["data"]
             check(data != null && data.size() == 1) { "image_result_count_invalid" }
             val encoded = data[0]["b64_json"]?.asText() ?: error("image_result_missing")
-            val image = ImageSource(Base64.getDecoder().decode(encoded))
+            val image = ImageSource.read(Base64.getDecoder().decode(encoded))
             GeneratedImage(image.bytes, image.mimeType, "OPENAI", input.model ?: "gpt-image-1")
         }
     }

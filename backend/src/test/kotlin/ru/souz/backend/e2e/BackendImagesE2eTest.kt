@@ -40,6 +40,7 @@ class BackendImagesE2eTest {
         var generated = ""
         var edited = ""
         var foreign = ""
+        var damaged = ""
         var outputPath = ""
         var providerCalls = 0
         var failProvider = false
@@ -86,10 +87,21 @@ class BackendImagesE2eTest {
                     reply(request, "Could not generate")
                 }
                 9 -> generate("foreign", listOf(foreign))
-                else -> {
+                10 -> {
                     assertTrue("attachment_not_found" in request.messages.last().content)
                     reply(request, "File unavailable")
                 }
+                11 -> generate("damaged", listOf(damaged))
+                12 -> {
+                    assertTrue("image_arguments_invalid" in request.messages.last().content)
+                    generate("damaged", listOf(damaged))
+                }
+                13 -> {
+                    assertTrue("image_arguments_invalid" in request.messages.last().content,
+                        "Invalid pixels must not consume a paid-operation receipt")
+                    reply(request, "Please supply a valid image")
+                }
+                else -> error("Unexpected model call at phase ${phase - 1}")
             }
         }
         val root = Files.createTempDirectory("image-workflow-")
@@ -103,6 +115,7 @@ class BackendImagesE2eTest {
                 val chat = createPublicChat(user)
                 original = backend.attachmentStorage.save(user, "original", "original.png", png.inputStream()).id.toString()
                 foreign = backend.attachmentStorage.save("foreign", "foreign", "secret.png", png.inputStream()).id.toString()
+                damaged = backend.attachmentStorage.save(user, "damaged", "damaged.png", png.copyOf(33).inputStream()).id.toString()
                 val fs = backend.sandboxFileSystem(user)
                 outputPath = fs.resolvePath("sandbox.png").path
                 client.patch(BackendHttpRoutes.SETTINGS) {
@@ -125,6 +138,9 @@ class BackendImagesE2eTest {
                 assertEquals(4, providerCalls, "An uncertain paid operation must not be repeated")
                 turn("try another owner's source")
                 assertEquals(4, providerCalls)
+                turn("try a truncated source twice")
+                assertEquals(4, providerCalls, "Invalid pixels must not reach a paid provider")
+                assertEquals(14, phase)
                 val state = restJsonMapper.writeValueAsString(backend.agentStateRepository.get(user, UUID.fromString(chat))!!.history)
                 assertFalse(base64 in state)
             }
@@ -142,10 +158,20 @@ class BackendImagesE2eTest {
             } else {
                 val supplied = body["messages"].flatMap { it["content"]?.takeIf { content -> content.isArray }?.toList().orEmpty() }
                     .count { it["type"]?.asText() == "image_url" }
-                assertEquals(if (call == 2) 1 else 5, supplied)
-                assertTrue(body["messages"].any { m -> m["content"]?.takeIf { it.isArray }?.any {
-                    it["type"]?.asText() == "image_url" && it["image_url"]["url"].asText() == "data:image/png;base64,$base64"
-                } == true })
+                val expected = when (call) {
+                    2 -> 1
+                    3 -> 5
+                    4, 5 -> 0
+                    else -> error("Unexpected provider call $call")
+                }
+                assertEquals(expected, supplied)
+                if (expected > 0) {
+                    assertTrue(body["messages"].any { m -> m["content"]?.takeIf { it.isArray }?.any {
+                        it["type"]?.asText() == "image_url" && it["image_url"]["url"].asText() == "data:image/png;base64,$base64"
+                    } == true })
+                } else {
+                    assertTrue("unavailable; unsupported, damaged or too large to decode safely" in body.toString())
+                }
                 mapOf("role" to "assistant", "content" to "I see the screenshot")
             }
             respond(restJsonMapper.writeValueAsString(mapOf("choices" to listOf(mapOf("index" to 0,
@@ -189,19 +215,44 @@ class BackendImagesE2eTest {
             assertEquals(AgentExecutionStatus.COMPLETED, backend.executionRepository.get(user, next.id)!!.status)
             assertEquals(3, call)
 
+            val broken = backend.attachmentStorage.save(user, "broken", "broken.png", png.copyOf(33).inputStream())
             ClientImages(backend.attachmentStorage).use { images ->
                 for (content in listOf(
                     listOf(mapOf("type" to "resource_link", "uri" to "http://127.0.0.1/private.png", "mimeType" to "image/png")),
                     listOf(mapOf("type" to "resource_link", "uri" to "http://[64:ff9b::7f00:1]/private.png", "mimeType" to "image/png")),
                     listOf(mapOf("type" to "image", "mimeType" to "image/jpeg", "data" to base64)),
+                    listOf(mapOf("type" to "image", "mimeType" to "image/png", "data" to Base64.getEncoder().encodeToString(png.copyOf(33)))),
                     List(6) { mapOf("type" to "image", "mimeType" to "image/png", "data" to base64) },
                     listOf(mapOf("type" to "resource_link", "uri" to "attachment:${saved.fileId}")),
                 )) {
                     val outcome = images.store("foreign", "invalid", ClientToolOutcome("succeeded",
                         restJsonMapper.valueToTree(mapOf("content" to content)), null))
                     assertEquals("tool_image_unavailable", outcome.error?.code)
+                    assertNull(backend.attachmentStorage.find("foreign", "invalid:0"), "Rejected screenshots must not be stored")
                 }
+                val outcome = images.store(user, "broken-link", ClientToolOutcome("succeeded",
+                    restJsonMapper.valueToTree(mapOf("content" to listOf(
+                        mapOf("type" to "resource_link", "uri" to "attachment:${broken.id}")))), null))
+                assertEquals("tool_image_unavailable", outcome.error?.code, "Owned links also require decodable pixels")
             }
+
+            // Unsupported and damaged historical images must not poison subsequent text-only turns.
+            val gif = ByteArrayOutputStream().also { ImageIO.write(BufferedImage(2, 3, BufferedImage.TYPE_INT_RGB), "gif", it) }.toByteArray()
+            val unsupported = backend.attachmentStorage.save(user, "gif", "image.gif", gif.inputStream())
+            assertEquals("image/gif", unsupported.mimeType)
+            val invalidChat = UUID.fromString(createPublicChat(user, requestId = "invalid-images"))
+            val files = listOf(unsupported.toContent(), broken.toContent())
+            for (attachments in listOf(files, emptyList())) {
+                val execution = backend.dependencies.executionService.executeChatTurn(user, invalidChat, "continue in text",
+                    requestOverrides = ru.souz.backend.settings.service.UserSettingsOverrides(defaultModel = LLMModel.OpenAIGpt52.alias),
+                    attachments = attachments).execution
+                backend.awaitExecution(execution.id)
+                assertEquals(AgentExecutionStatus.COMPLETED, backend.executionRepository.get(user, execution.id)!!.status)
+            }
+            assertEquals(5, call)
+            val invalidHistory = backend.agentStateRepository.get(user, invalidChat)!!.history
+            assertTrue(invalidHistory.flatMap { it.files }.containsAll(files))
+            assertFalse("unavailable; unsupported" in restJsonMapper.writeValueAsString(invalidHistory))
         }
     }
 

@@ -65,7 +65,7 @@ class ToolViewImage(
             val file = filesToolUtil.resolveSafeExistingFile(path, meta)
             filesToolUtil.withReadableLocalPathSuspend(file, meta) { local ->
                 requireSizeWithinLimit(Files.size(local))
-                Files.newInputStream(local).use(ImageSource::read)
+                Files.newInputStream(local).use { ImageSource.read(it) }
             }
         }
         return visionGateway.analyze(VisionInput(images, input.question.trim()))

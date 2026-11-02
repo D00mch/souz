@@ -39,7 +39,11 @@ internal class ClientImages(private val storage: AttachmentStorage) : AutoClosea
                 }
                 val uri = item["uri"]?.asText().orEmpty()
                 val saved = if (uri.startsWith("attachment:")) {
-                    storage.get(userId, attachmentId(uri.removePrefix("attachment:")))
+                    val existing = storage.get(userId, attachmentId(uri.removePrefix("attachment:")))
+                    require(existing.sizeBytes <= remaining && existing.mimeType in ImageSource.MIME_TYPES)
+                    val source = ImageSource.read(storage.read(userId, existing.id))
+                    require(source.mimeType == existing.mimeType)
+                    existing
                 } else {
                     val bytes = if (item["type"]?.asText() == "image") {
                         val data = requireNotNull(item["data"]?.takeIf { it.isTextual }?.asText())
@@ -47,7 +51,7 @@ internal class ClientImages(private val storage: AttachmentStorage) : AutoClosea
                         Base64.getDecoder().decode(data)
                     } else download(uri, remaining)
                     require(bytes.size <= remaining)
-                    val source = ImageSource(bytes)
+                    val source = ImageSource.read(bytes)
                     item["mimeType"]?.asText()?.let { require(it == source.mimeType) }
                     storage.save(userId, "$key:$index", "tool-image.${source.mimeType.substringAfter('/')}", bytes.inputStream())
                 }

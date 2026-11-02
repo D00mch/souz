@@ -1,12 +1,11 @@
 package ru.souz.backend.llm
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import ru.souz.backend.attachments.AttachmentException
 import ru.souz.backend.attachments.AttachmentStorage
 import ru.souz.backend.attachments.attachmentId
 import ru.souz.llms.*
 import ru.souz.llms.runtime.ImageSource
+import ru.souz.llms.runtime.InvalidImageException
 import ru.souz.llms.runtime.supportsImageInput
 
 /** Request-only projection of durable references; neither pixels nor synthetic messages enter history. */
@@ -29,8 +28,12 @@ internal suspend fun LLMRequest.Chat.withAttachmentImages(userId: String, storag
             continue
         }
         try {
-            val bytes = storage.read(userId, attachmentId(id))
-            val data = withContext(Dispatchers.Default) { ImageSource(bytes).forVision() }
+            val file = storage.get(userId, attachmentId(id))
+            if (file.mimeType !in ImageSource.MIME_TYPES || file.sizeBytes > ImageSource.MAX_BYTES) {
+                throw InvalidImageException("image_source_unsupported")
+            }
+            val bytes = storage.read(userId, file.id)
+            val data = ImageSource.read(bytes).forVision()
             if (message.role == LLMMessageRole.function) toolImages += id to data
             else projected[index] = message.copy(
                 content = message.content + "\nVisible image ${message.attachments.orEmpty().size + 1}: fileId=$id. Other file references alone do not supply pixels.",
@@ -39,6 +42,8 @@ internal suspend fun LLMRequest.Chat.withAttachmentImages(userId: String, storag
         } catch (error: AttachmentException) {
             if (error.code != "attachment_not_found" && error.code != "attachment_expired") throw error
             projected[index] = message.copy(content = message.content + "\nImage $id unavailable; request it again.")
+        } catch (_: InvalidImageException) {
+            projected[index] = message.copy(content = message.content + "\nImage $id unavailable; unsupported, damaged or too large to decode safely. Request a PNG, JPEG or WebP replacement.")
         }
     }
     if (toolImages.isNotEmpty()) projected += LLMRequest.Message(LLMMessageRole.user,

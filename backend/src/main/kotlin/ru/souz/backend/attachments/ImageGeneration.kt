@@ -24,7 +24,7 @@ internal class ImageGeneration(private val storage: AttachmentStorage, private v
         val key = "image:$execution:$fingerprint"
         storage.find(meta.userId, key)?.let { return it.toContent(FilePresentation.image) }
         // Validate pixels before consuming the attempt, and preserve source order and original bytes.
-        val images = sources.map { ImageSource(storage.read(meta.userId, it.id)) }
+        val images = sources.map { ImageSource.read(storage.read(meta.userId, it.id)) }
         val claimed = dataSource.write { connection ->
             connection.prepareStatement("""
                 insert into image_generation_attempts(user_id, execution_id, fingerprint) values (?, ?, ?)
@@ -36,7 +36,7 @@ internal class ImageGeneration(private val storage: AttachmentStorage, private v
         }
         if (!claimed) throw AttachmentException("image_previously_attempted")
         val result = gateway.generate(ImageGenerationInput(prompt.trim(), images = images))
-        val image = ImageSource(result.bytes)
+        val image = ImageSource.read(result.bytes)
         return storage.save(meta.userId, key, "image.${image.mimeType.substringAfter('/')}", image.bytes.inputStream())
             .toContent(FilePresentation.image)
     }

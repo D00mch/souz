@@ -66,7 +66,7 @@ class CodexImageGenerationGateway(
                         check(result == null) { "image_result_count_invalid" }
                         val encoded = event["item"]["result"]?.asText() ?: error("image_result_missing")
                         check(encoded.length <= encodedLimit) { "image_response_too_large" }
-                        result = ImageSource(Base64.getDecoder().decode(encoded))
+                        result = ImageSource.read(Base64.getDecoder().decode(encoded))
                     }
                     "response.completed" -> {
                         check(event["response"]?.get("status")?.asText() == "completed") { "image_generation_incomplete" }
