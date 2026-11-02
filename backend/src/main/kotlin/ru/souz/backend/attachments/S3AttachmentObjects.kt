@@ -45,6 +45,15 @@ class S3AttachmentObjects(config: AttachmentStorageConfig) : AutoCloseable {
         }
     }
 
+    internal suspend fun readUpload(objectKey: String, limit: Int): ByteArray = runInterruptible(Dispatchers.IO) {
+        client.getObject { it.bucket(bucket).key(objectKey) }.use { response ->
+            if (response.response().contentLength() > limit) throw AttachmentException("attachment_too_large")
+            response.readAttachmentBytes(limit).also {
+                if (it.size.toLong() != response.response().contentLength()) throw AttachmentException("attachment_corrupt")
+            }
+        }
+    }
+
     suspend fun delete(file: StoredAttachment): Unit = runInterruptible(Dispatchers.IO) {
         client.deleteObject { it.bucket(bucket).key(file.objectKey) }
     }

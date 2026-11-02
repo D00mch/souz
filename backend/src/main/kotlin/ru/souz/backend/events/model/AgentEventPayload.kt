@@ -1,5 +1,7 @@
 package ru.souz.backend.events.model
 
+import com.fasterxml.jackson.annotation.JsonInclude
+import ru.souz.backend.client.ClientAttachment
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -20,6 +22,8 @@ data class PublicToolCallStartedPayload(
 
 data class ThreadCompletedPayload(
     val response: String,
+    @get:JsonInclude(JsonInclude.Include.NON_EMPTY)
+    val attachments: List<ClientAttachment> = emptyList(),
 ) : AgentEventPayload
 
 data class PublicErrorPayload(
@@ -41,6 +45,8 @@ data class MessageCreatedPayload(
     val role: String,
     val content: String,
     val clientMessageId: String? = null,
+    @get:JsonInclude(JsonInclude.Include.NON_EMPTY)
+    val attachments: List<ClientAttachment> = emptyList(),
 ) : AgentEventPayload
 
 data class MessageDeltaPayload(

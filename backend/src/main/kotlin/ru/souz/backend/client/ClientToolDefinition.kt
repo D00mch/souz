@@ -137,10 +137,20 @@ private fun propertyError(schema: LLMRequest.Property, value: JsonNode): String?
 }
 
 internal const val CLIENT_TOOL_ROUTING_INSTRUCTIONS =
-    "Client Skills run on the current device by default. To target another connected device, or when there is no " +
-        "current client, use ListActiveChannels and add the selected channelId to RunSkillCommand.arguments. " +
+    "Client Skills are provided by channels of this user, independently of the source conversation. " +
+        "The current conversation channel is the default for local commands when it provides the tool; " +
+        "omit channelId to use it. The user's explicitly named other device takes priority: read the Skill's " +
+        "providing channels and pass that channelId to RunSkillCommand.arguments. " +
+        "A missing provider registration alone does not require rediscovery. The orion.tools.list Skill description " +
+        "lists every channel with discoveryComplete: false means no successful catalogue for that channel, " +
+        "true includes a successful empty catalogue. If the intended connected channel is undiscovered, " +
+        "discover it before clarification or rejection; client_tool_discovery_required identifies that channel. " +
+        "If its catalogue is already complete and the tool is absent, report that capability as unavailable " +
+        "without another discovery. Refresh a completed catalogue only for a requested refresh or changed capabilities. " +
+        "Do not ask which device when the request means this device. " +
+        "Clarify only a genuinely ambiguous other destination; do not choose an arbitrary other device. " +
+        "Only web.search may automatically use another connected provider when channelId is omitted. " +
         "channelId is reserved routing metadata, omitted from the registered schema and removed before dispatch. " +
-        "To discover additional Orion capabilities, invoke orion.tools.list on the selected channel. " +
-        "Discovered Skills remain bound to that channel and are remembered in this conversation until the next discovery. " +
-        "If the channel is unavailable, select a live channel and rediscover. Discover before delegating selected Skills. " +
-        "When delegating, include the target channelId in the task or select ListActiveChannels for the child."
+        "Complete any needed discovery on the selected channel before delegating. " +
+        "Discovery replaces that channel's discovered catalogue for this user. Conflicting definitions are unavailable. " +
+        "When delegating, include the selected channelId in the task."
