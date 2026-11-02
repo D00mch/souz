@@ -2,7 +2,6 @@ package ru.souz.backend.toolcall.repository
 
 import java.time.Instant
 import ru.souz.backend.toolcall.model.ToolCall
-import ru.souz.backend.toolcall.model.ToolCallStatus
 
 data class ToolCallContext(
     val userId: String,
@@ -41,24 +40,6 @@ interface ToolCallRepository {
         context: ToolCallContext,
         limit: Int = DEFAULT_LIMIT,
     ): List<ToolCall>
-
-    suspend fun startClientCall(
-        context: ToolCallContext,
-        name: String,
-        deviceId: String?,
-        argumentsJson: String,
-        deadlineAt: Instant,
-        startedAt: Instant = Instant.now(),
-    ): ToolCall = error("Client tool calls are not supported by this repository.")
-
-    suspend fun completeClientCall(
-        context: ToolCallContext,
-        status: ToolCallStatus,
-        resultJson: String?,
-        errorJson: String?,
-        payloadHash: String,
-        receivedAt: Instant = Instant.now(),
-    ): ToolCall? = error("Client tool calls are not supported by this repository.")
 
     companion object {
         const val DEFAULT_LIMIT: Int = 100
