@@ -272,7 +272,6 @@ class BackendClientToolRegistrationE2eTest {
                     "[${definition.replace("speaker.say", "ConnectOAuthProvider")}]",
                     "[${definition.replace("speaker.say", "SafeApiCall")}]",
                     "[${definition.replace("speaker.say", "SpawnSubagent")}]",
-                    "[${definition.replace("speaker.say", "GetSubagentStatus")}]",
                     "[${definition.replace("speaker.say", "WaitSubagent")}]",
                     "[${definition.replace("speaker.say", "CancelSubagent")}]",
                     "[${definition.replace("speaker.say", "RunSkillCommand")}]",

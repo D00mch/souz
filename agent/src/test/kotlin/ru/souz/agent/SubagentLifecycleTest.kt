@@ -38,13 +38,15 @@ class SubagentLifecycleTest {
         withSubagentTasks {
             val id = tool.spawn()
             for (timeout in listOf(0, 5, 30000)) {
+                val started = testScheduler.currentTime
                 assertEquals("running", tool.call(SubagentTool.WAIT, id, timeout)["status"].asText())
+                assertEquals(timeout.toLong(), testScheduler.currentTime - started)
             }
             backgroundScope.launch { delay(15_000); release.complete(Unit) }
             val done = tool.call(SubagentTool.WAIT, id)
             assertEquals("completed", done["status"].asText())
             assertEquals("answer", done["result"].asText())
-            assertEquals(done, tool.call(SubagentTool.STATUS, id))
+            assertEquals(done, tool.call(SubagentTool.WAIT, id, 0))
             assertEquals(done, tool.call(SubagentTool.CANCEL, id))
             assertEquals(done, tool.call(SubagentTool.WAIT, id))
         }
@@ -83,7 +85,7 @@ class SubagentLifecycleTest {
                 val status = result["status"].asText()
                 assertTrue(status == "completed" || status == "cancelled")
                 assertEquals(result, tool.call(SubagentTool.CANCEL, id))
-                assertEquals(result, tool.call(SubagentTool.STATUS, id))
+                assertEquals(result, tool.call(SubagentTool.WAIT, id, 0))
             }
         }
     }
@@ -137,7 +139,7 @@ class SubagentLifecycleTest {
                 assertTrue(result["resultBytes"].asInt() > 64 * 1024)
                 assertTrue(restJsonMapper.writeValueAsBytes(result).size < 64 * 1024)
                 assertFalse(result.has("result"))
-                assertEquals(result, tool.call(SubagentTool.STATUS, id))
+                assertEquals(result, tool.call(SubagentTool.WAIT, id, 0))
                 assertEquals(result, tool.call(SubagentTool.CANCEL, id))
             }
         }
@@ -163,7 +165,7 @@ class SubagentLifecycleTest {
             release.complete(Unit)
             val result = tool.call(SubagentTool.WAIT, id)
             assertEquals("cancelled", result["status"].asText())
-            assertEquals(result, tool.call(SubagentTool.STATUS, id))
+            assertEquals(result, tool.call(SubagentTool.WAIT, id, 0))
         }
     }
 
@@ -198,7 +200,7 @@ class SubagentLifecycleTest {
             }
             assertEquals("subagent_task_limit", tool.call(SubagentTool.NAME, task = "overflow")["error"]["code"].asText())
             for (id in listOf(ids.first(), ids.last())) {
-                assertEquals("answer", tool.call(SubagentTool.STATUS, id)["result"].asText())
+                assertEquals("answer", tool.call(SubagentTool.WAIT, id, 0)["result"].asText())
             }
         }
     }
@@ -222,7 +224,7 @@ class SubagentLifecycleTest {
                 id = tool.spawn()
                 started.await()
                 withSubagentTasks {
-                    assertEquals("subagent_not_found", tool.call(SubagentTool.STATUS, id)["error"]["code"].asText())
+                    assertEquals("subagent_not_found", tool.call(SubagentTool.WAIT, id, 0)["error"]["code"].asText())
                 }
             }
         }

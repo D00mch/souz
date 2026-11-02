@@ -347,7 +347,7 @@ class SubagentToolTest {
             firstStarted.await()
             val second = invoke(SubagentTool.NAME, mapOf("task" to "second"))["subagentId"].asText()
             assertEquals("second", invoke(SubagentTool.WAIT, mapOf("subagentId" to second))["result"].asText())
-            assertEquals("running", invoke(SubagentTool.STATUS, mapOf("subagentId" to first))["status"].asText())
+            assertEquals("running", invoke(SubagentTool.WAIT, mapOf("subagentId" to first, "timeoutMs" to 0))["status"].asText())
             releaseFirst.complete(Unit)
             assertEquals("first", invoke(SubagentTool.WAIT, mapOf("subagentId" to first))["result"].asText())
         } }

@@ -95,7 +95,7 @@ class ParentSubagentExecutionTest {
                     parentResponse(call(SubagentTool.WAIT, "subagentId" to oldId))
                 }
                 2 -> { assertEquals("completed", body(ctx.history.last())["status"].asText()); parentResponse() }
-                3 -> parentResponse(call(SubagentTool.STATUS, "subagentId" to oldId))
+                3 -> parentResponse(call(SubagentTool.WAIT, "subagentId" to oldId, "timeoutMs" to 0))
                 else -> { assertEquals("subagent_not_found", body(ctx.history.last())["error"]["code"].asText()); parentResponse() }
             }
         }

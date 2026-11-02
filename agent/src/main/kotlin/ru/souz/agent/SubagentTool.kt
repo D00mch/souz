@@ -38,7 +38,7 @@ class SubagentTool(
     override val fn = LLMRequest.Function(
         name = NAME,
         description = "Start a self-contained child task and return its subagentId immediately. " +
-            "Continue working, inspect with GetSubagentStatus, wait with WaitSubagent, or stop it with CancelSubagent. " +
+            "Continue working, collect results with WaitSubagent (timeoutMs: 0 polls), or stop it with CancelSubagent. " +
             "Unfinished children are cancelled when you finish; collect needed results before your final answer. " +
             "At most 8 children may be active, 32 may be started per execution, and each has a 10-minute deadline. " +
             "Include all needed context in task. The child sees only selected enabled tools or file-backed Skills, " +
@@ -62,7 +62,7 @@ class SubagentTool(
         ),
     )
 
-    val tools: List<LLMToolSetup> = listOf(this) + listOf(STATUS, WAIT, CANCEL).map(::SubagentLifecycleTool)
+    val tools: List<LLMToolSetup> = listOf(this) + listOf(WAIT, CANCEL).map(::SubagentLifecycleTool)
 
     override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
         invoke(functionCall, ToolInvocationMeta.localDefault())
@@ -129,10 +129,9 @@ class SubagentTool(
 
     companion object {
         const val NAME = "SpawnSubagent"
-        const val STATUS = "GetSubagentStatus"
         const val WAIT = "WaitSubagent"
         const val CANCEL = "CancelSubagent"
-        val NAMES = setOf(NAME, STATUS, WAIT, CANCEL)
+        val NAMES = setOf(NAME, WAIT, CANCEL)
         private val REASONING_EFFORTS = listOf("minimal", "low", "medium", "high")
         private const val MAX_REPORTED_TOOL_CALLS = 8
         private const val MAX_TOOL_RESULT_CHARS = 1024
@@ -145,10 +144,10 @@ private class SubagentLifecycleTool(private val name: String) : LLMToolSetup {
 
     override val fn = LLMRequest.Function(
         name = name,
-        description = when (name) {
-            SubagentTool.CANCEL -> "Request cancellation of one child without stopping the parent or siblings. cancelling means cleanup is still running; wait for cancelled before depending on released resources. Cancellation is cooperative and does not undo side effects."
-            SubagentTool.WAIT -> "Wait up to timeoutMs for a child; default 30000. Use the full wait when you have no other work to avoid repeated model calls. Timeout returns the current status without cancelling it."
-            else -> "Read a child's status and final result or error without waiting. Results remain readable until this parent execution ends."
+        description = if (name == SubagentTool.CANCEL) {
+            "Request cancellation of one child without stopping the parent or siblings. cancelling means cleanup is still running; wait for cancelled before depending on released resources. Cancellation is cooperative and does not undo side effects."
+        } else {
+            "Wait up to timeoutMs for a child's status and final result or error; default 30000. Zero polls without waiting. Use the full wait when you have no other work to avoid repeated model calls. Timeout does not cancel the child. Results remain readable until this parent execution ends."
         },
         parameters = LLMRequest.Parameters(
             "object",

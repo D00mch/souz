@@ -26,13 +26,12 @@ Spawn validation failures return `{"error":{"code":"...","message":"..."}}` with
 
 | Tool | Behavior |
 | --- | --- |
-| `GetSubagentStatus` | Returns the current status without waiting. |
 | `WaitSubagent` | Waits up to `timeoutMs` (default 30,000; range 0–30,000). Zero polls; timeout does not cancel the child. |
 | `CancelSubagent` | Requests cancellation of one child and returns `cancelling` while cleanup runs, then `cancelled`. Repeated cancellation is harmless. |
 
-All three return `subagentId` and `status`: `running`, `cancelling`, `completed`, `failed`, or `cancelled`. Completed results include `result`; failures include `error`. Reads do not consume results. A completed or failed child keeps its outcome when cancelled afterward. Unknown IDs return `subagent_not_found`; IDs are usable only in their owning parent execution.
+Both return `subagentId` and `status`: `running`, `cancelling`, `completed`, `failed`, or `cancelled`. Completed results include `result`; failures include `error`. Reads do not consume results. A completed or failed child keeps its outcome when cancelled afterward. Unknown IDs return `subagent_not_found`; IDs are usable only in their owning parent execution.
 
-For example, call `WaitSubagent` with `{"subagentId":"<returned ID>","timeoutMs":30000}`. A completed answer looks like `{"subagentId":"...","status":"completed","result":"242"}`. If still `running`, continue other work or wait again; do not spawn the same task again just to retrieve its result. When no other work remains, use the full wait instead of frequent short polls: each repeated tool call requires another parent-model turn.
+For example, call `WaitSubagent` with `{"subagentId":"<returned ID>","timeoutMs":30000}`, or set `timeoutMs` to `0` to inspect status without waiting. A completed answer looks like `{"subagentId":"...","status":"completed","result":"242"}`. If still `running`, continue other work or wait again; do not spawn the same task again just to retrieve its result. When no other work remains, use the full wait instead of frequent short polls: each repeated tool call requires another parent-model turn.
 
 Turn exhaustion returns `status: "failed"`, the `subagent_turn_limit` error, and `progress`: `modelTurns`, `sideEffectsMayHaveOccurred`, `completedToolCallCount`, `omittedToolCallCount`, and bounded recent `completedToolCalls`. Each reported call contains `toolCallId`, `name`, `result`, and a `truncated` flag; attachments and child reasoning are omitted. Counts describe returned tool messages, which can include tool-level errors, rather than successful operations.
 
@@ -42,9 +41,9 @@ Completed, failed, and cancelled results stay in memory until the parent executi
 
 ## Compatibility and migration
 
-The blocking `SpawnSubagent` contract is unsupported: consumers must read `subagentId`, then use `WaitSubagent` or `GetSubagentStatus` to obtain the answer. Update Skill instructions that expect a result directly from spawn. Turn-limit consumers must recognize `failed` plus `error.code == "subagent_turn_limit"`; the bounded progress fields retain their meanings. There is no blocking compatibility mode or backend child-cancellation endpoint.
+The blocking `SpawnSubagent` contract is unsupported: consumers must read `subagentId`, then use `WaitSubagent` to obtain the answer. Update Skill instructions that expect a result directly from spawn. Turn-limit consumers must recognize `failed` plus `error.code == "subagent_turn_limit"`; the bounded progress fields retain their meanings. There is no blocking compatibility mode or backend child-cancellation endpoint.
 
-Hosts install all four tools with `SubagentToolFactory.create(settings).tools` through `AgentCoreTools.subagentTools`. Standard agent graphs own the lifecycle automatically. Direct tool hosts wrap the entire parent loop in `withSubagentTasks`; wrapping just a spawn call would cancel its child on return.
+Hosts install all three tools with `SubagentToolFactory.create(settings).tools` through `AgentCoreTools.subagentTools`. Standard agent graphs own the lifecycle automatically. Direct tool hosts wrap the entire parent loop in `withSubagentTasks`; wrapping just a spawn call would cancel its child on return.
 
 ## Model configuration
 
