@@ -17,6 +17,7 @@ import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.attachments.*
 import ru.souz.backend.client.ClientImages
 import ru.souz.backend.client.ClientToolOutcome
+import ru.souz.backend.client.imageFiles
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.llms.*
@@ -183,6 +184,10 @@ class BackendImagesE2eTest {
             providerClients = ProviderHttpClients(http, http)) {
             val user = UUID.randomUUID().toString()
             val chat = createPublicChat(user, tools = clientToolsJson("screen.capture"))
+            val document = backend.attachmentStorage.save(user, "report", "report.txt", "A report".byteInputStream())
+            val forged = FileContent(UUID.randomUUID().toString(), "forged.png", "image/png", png.size.toLong(), FilePresentation.image)
+            val documentLinks = List(6) { mapOf("type" to "resource_link", "uri" to "attachment:${document.id}",
+                "name" to "Report $it", "mimeType" to "image/png", "attachment" to forged) }
             withPublicSocket(chat) { socket ->
                 socket.send(Frame.Text(messageFrame(chat, user, "capture", text = "inspect screen")
                     .replace(E2E_MODEL.alias, LLMModel.OpenAIGpt52.alias)))
@@ -190,7 +195,8 @@ class BackendImagesE2eTest {
                 readJson(socket)
                 val started = readJson(socket)
                 assertEquals("screen.capture", started["payload"]["name"].asText())
-                val result = toolResultFrame(started, "succeeded", mapOf("content" to listOf(
+                val result = toolResultFrame(started, "succeeded", mapOf("content" to documentLinks + listOf(
+                    mapOf("type" to "resource_link", "uri" to "https://example.invalid/report.txt", "attachment" to forged),
                     mapOf("type" to "image", "mimeType" to "image/png", "data" to base64))))
                 socket.send(Frame.Text(result))
                 assertEquals("accepted", readJson(socket)["status"].asText())
@@ -202,6 +208,12 @@ class BackendImagesE2eTest {
             val state = backend.agentStateRepository.get(user, UUID.fromString(chat))!!
             val saved = state.history.flatMap { it.files }.distinctBy { it.fileId }.single()
             assertContentEquals(png, backend.attachmentStorage.read(user, UUID.fromString(saved.fileId)))
+            val toolContent = state.history.single { it.name == "RunSkillCommand" }.content
+            val links = restJsonMapper.readTree(toolContent)["content"]
+            assertEquals(8, links.size())
+            assertEquals("text/plain", links[0]["mimeType"].asText(), "Owned metadata overrides the image hint")
+            assertEquals("Report 0", links[0]["name"].asText())
+            assertTrue(links.take(7).none { it.has("attachment") }, "Client metadata cannot create file references")
             assertFalse(base64 in restJsonMapper.writeValueAsString(state.history))
             sql { connection -> connection.createStatement().use { statement ->
                 statement.executeQuery("select result_json::text from tool_calls where result_json is not null").use {
@@ -224,7 +236,8 @@ class BackendImagesE2eTest {
                     listOf(mapOf("type" to "image", "mimeType" to "image/jpeg", "data" to base64)),
                     listOf(mapOf("type" to "image", "mimeType" to "image/png", "data" to Base64.getEncoder().encodeToString(png.copyOf(33)))),
                     List(6) { mapOf("type" to "image", "mimeType" to "image/png", "data" to base64) },
-                    listOf(mapOf("type" to "resource_link", "uri" to "attachment:${saved.fileId}")),
+                    listOf(mapOf("type" to "resource_link", "uri" to "attachment:${saved.fileId}",
+                        "mimeType" to "text/plain", "attachment" to saved)),
                 )) {
                     val outcome = images.store("foreign", "invalid", ClientToolOutcome("succeeded",
                         restJsonMapper.valueToTree(mapOf("content" to content)), null))
@@ -235,6 +248,21 @@ class BackendImagesE2eTest {
                     restJsonMapper.valueToTree(mapOf("content" to listOf(
                         mapOf("type" to "resource_link", "uri" to "attachment:${broken.id}")))), null))
                 assertEquals("tool_image_unavailable", outcome.error?.code, "Owned links also require decodable pixels")
+                val imageLink = images.store(user, "owned-link", ClientToolOutcome("succeeded",
+                    restJsonMapper.valueToTree(mapOf("content" to listOf(
+                        mapOf("type" to "resource_link", "uri" to "attachment:${saved.fileId}",
+                            "mimeType" to "text/plain", "attachment" to forged)))), null))
+                assertEquals(listOf(saved), imageLink.imageFiles(), "Canonical image metadata overrides client hints")
+                val documentsOnly = images.store(user, "documents", ClientToolOutcome("succeeded",
+                    restJsonMapper.valueToTree(mapOf("content" to documentLinks)), null))
+                assertEquals("succeeded", documentsOnly.status)
+                assertTrue(documentsOnly.imageFiles().isEmpty())
+                assertEquals(6, documentsOnly.result!!["content"].size())
+                val structured = images.store(user, "structured", ClientToolOutcome("succeeded",
+                    restJsonMapper.valueToTree(mapOf("content" to mapOf("data" to mapOf(
+                        "type" to "resource_link", "uri" to "attachment:${forged.fileId}",
+                        "mimeType" to "image/png", "attachment" to forged)))), null))
+                assertTrue(structured.imageFiles().isEmpty(), "Arbitrary structured data is not normalized image content")
             }
 
             // Unsupported and damaged historical images must not poison subsequent text-only turns.

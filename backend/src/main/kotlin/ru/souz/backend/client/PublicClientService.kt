@@ -220,9 +220,9 @@ internal class PublicClientService(
 
     private suspend fun normalizeImages(userId: String, key: String, outcome: ClientToolOutcome): ClientToolOutcome {
         clientImages?.let { return it.store(userId, key, outcome) }
-        if (outcome.result?.get("content")?.any { it["type"]?.asText() == "image" || isImageLink(it) } == true)
+        if (outcome.result?.get("content")?.any(::isImageContent) == true)
             return ClientToolOutcome("failed", null, ClientError("tool_image_unavailable", "Image storage is not configured."))
-        return outcome
+        return outcome.withoutClientAttachments()
     }
 
     suspend fun handleCancel(chat: Chat, frame: ThreadCancelFrame): HandledClientFrame {

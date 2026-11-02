@@ -1,7 +1,8 @@
 package ru.souz.backend.client
 
-import com.fasterxml.jackson.databind.node.ObjectNode
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ArrayNode
+import com.fasterxml.jackson.databind.node.ObjectNode
 import java.net.InetAddress
 import java.net.Proxy
 import java.util.Base64
@@ -24,22 +25,28 @@ internal class ClientImages(private val storage: AttachmentStorage) : AutoClosea
         .followSslRedirects(false).retryOnConnectionFailure(false).callTimeout(10, TimeUnit.SECONDS).build()
 
     suspend fun store(userId: String, key: String, outcome: ClientToolOutcome): ClientToolOutcome {
-        val content = outcome.result?.get("content")?.takeIf { it.isArray } ?: return outcome
-        if (content.none { it["type"]?.asText() == "image" || isImageLink(it) }) return outcome
+        val normalized = outcome.withoutClientAttachments()
+        val items = normalized.result?.get("content") as? ArrayNode ?: return normalized
         return try {
-            require(content.count { it["type"]?.asText() == "image" || isImageLink(it) } <= ImageSource.MAX_IMAGES)
-            val result = outcome.result.deepCopy<ObjectNode>()
-            val items = result["content"] as ArrayNode
-            var remaining = ImageSource.MAX_BYTES
-            content.forEachIndexed { index, item ->
-                if (item["type"]?.asText() != "image" && !isImageLink(item)) return@forEachIndexed
-                if (outcome.status != "succeeded" || result["isError"]?.asBoolean() == true) {
-                    items.set(index, restJsonMapper.createObjectNode().put("type", "text").put("text", "Image omitted: tool failed."))
-                    return@forEachIndexed
-                }
+            val images = items.mapIndexedNotNull { index, item ->
                 val uri = item["uri"]?.asText().orEmpty()
-                val saved = if (uri.startsWith("attachment:")) {
-                    val existing = storage.get(userId, attachmentId(uri.removePrefix("attachment:")))
+                val existing = if (item["type"]?.asText() == "resource_link" && uri.startsWith("attachment:")) {
+                    storage.get(userId, attachmentId(uri.removePrefix("attachment:"))).also {
+                        (item as ObjectNode).put("mimeType", it.mimeType)
+                    }
+                } else null
+                val isImage = existing?.mimeType?.startsWith("image/") ?: isImageContent(item)
+                if (isImage) index to existing else null
+            }
+            require(images.size <= ImageSource.MAX_IMAGES)
+            var remaining = ImageSource.MAX_BYTES
+            for ((index, existing) in images) {
+                val item = items[index]
+                if (outcome.status != "succeeded" || normalized.result["isError"]?.asBoolean() == true) {
+                    items.set(index, restJsonMapper.createObjectNode().put("type", "text").put("text", "Image omitted: tool failed."))
+                    continue
+                }
+                val saved = if (existing != null) {
                     require(existing.sizeBytes <= remaining && existing.mimeType in ImageSource.MIME_TYPES)
                     val source = ImageSource.read(storage.read(userId, existing.id))
                     require(source.mimeType == existing.mimeType)
@@ -49,7 +56,7 @@ internal class ClientImages(private val storage: AttachmentStorage) : AutoClosea
                         val data = requireNotNull(item["data"]?.takeIf { it.isTextual }?.asText())
                         require(data.length <= 4 * ((remaining + 2) / 3))
                         Base64.getDecoder().decode(data)
-                    } else download(uri, remaining)
+                    } else download(item["uri"]?.asText().orEmpty(), remaining)
                     require(bytes.size <= remaining)
                     val source = ImageSource.read(bytes)
                     item["mimeType"]?.asText()?.let { require(it == source.mimeType) }
@@ -61,7 +68,7 @@ internal class ClientImages(private val storage: AttachmentStorage) : AutoClosea
                     .put("uri", "attachment:${saved.id}").put("name", saved.name).put("mimeType", saved.mimeType)
                     .set<ObjectNode>("attachment", restJsonMapper.valueToTree(saved.toContent(FilePresentation.image))))
             }
-            outcome.copy(result = result)
+            normalized
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -98,14 +105,35 @@ internal class ClientImages(private val storage: AttachmentStorage) : AutoClosea
     }
 }
 
-internal fun isImageLink(item: com.fasterxml.jackson.databind.JsonNode): Boolean =
-    item["type"]?.asText() == "resource_link" && (item["uri"]?.asText()?.startsWith("attachment:") == true ||
-        item["mimeType"]?.asText()?.startsWith("image/") == true ||
-        item["uri"]?.asText()?.substringBefore('?')?.lowercase()?.let { uri ->
-            listOf(".png", ".jpg", ".jpeg", ".webp").any(uri::endsWith)
-        } == true)
+/** Recognizes untrusted image content; attachment links require an owner-scoped metadata lookup. */
+internal fun isImageContent(item: JsonNode): Boolean =
+    when (item["type"]?.asText()) {
+        "image" -> true
+        "resource_link" -> item["mimeType"]?.asText()?.startsWith("image/") == true ||
+            item["uri"]?.asText()?.substringBefore('?')?.lowercase()?.let { uri ->
+                listOf(".png", ".jpg", ".jpeg", ".webp").any(uri::endsWith)
+            } == true
+        else -> false
+    }
 
-internal fun ClientToolOutcome.imageFiles(): List<FileContent> = if (status != "succeeded") emptyList() else
-    result?.get("content")?.filter(::isImageLink)?.mapNotNull { item ->
-        item["attachment"]?.let { restJsonMapper.treeToValue(it, FileContent::class.java) }
+/** Drops client-supplied internal file references even when image storage is disabled. */
+internal fun ClientToolOutcome.withoutClientAttachments(): ClientToolOutcome {
+    if (result?.get("content")?.isArray != true) return this
+    val sanitized = result.deepCopy<ObjectNode>()
+    sanitized["content"].forEach { (it as? ObjectNode)?.remove("attachment") }
+    return copy(result = sanitized)
+}
+
+/** Extracts canonical references from a normalized result, never from untrusted image hints. */
+internal fun ClientToolOutcome.imageFiles(): List<FileContent> {
+    if (status != "succeeded" || result?.get("isError")?.asBoolean() == true) return emptyList()
+    return result?.get("content")?.takeIf { it.isArray }?.mapNotNull { item ->
+        if (item["type"]?.asText() != "resource_link" || item["mimeType"]?.asText() !in ImageSource.MIME_TYPES) {
+            return@mapNotNull null
+        }
+        item["attachment"]?.let { restJsonMapper.treeToValue(it, FileContent::class.java) }?.takeIf {
+            item["uri"]?.asText() == "attachment:${it.fileId}" && item["mimeType"]?.asText() == it.mimeType &&
+                it.presentation == FilePresentation.image
+        }
     }.orEmpty()
+}
