@@ -36,8 +36,6 @@ private const val TELEGRAM_CHAT_CACHE_WARMUP_LIMIT = 100
 private const val TELEGRAM_CHAT_FETCH_CONCURRENCY = 12
 private const val TELEGRAM_SERVER_CHAT_SEARCH_LIMIT = 50
 private const val TELEGRAM_HISTORY_PAGE_LIMIT = 100
-private const val TELEGRAM_MAX_HISTORY_LIMIT = 500
-private const val TELEGRAM_MAX_HISTORY_CHATS_CACHE = 200
 private const val TELEGRAM_DEFAULT_API_ID = 34456605
 private const val TELEGRAM_DEFAULT_API_HASH = "04779e90346d857b3f0f313ff8d2aa39"
 private const val TELEGRAM_CFG_DEBUG_LOGS = "TELEGRAM_DEBUG_LOGS"
@@ -66,11 +64,9 @@ class TelegramService(
     private val usersById = ConcurrentHashMap<Long, TdApi.User>()
     private val chatsById = ConcurrentHashMap<Long, TelegramCachedChat>()
     private val privateChatByUserId = ConcurrentHashMap<Long, Long>()
-    private val historyCacheMutex = Mutex()
-    private val historyByChatId = LinkedHashMap<Long, List<TelegramMessageView>>(
-        TELEGRAM_MAX_HISTORY_CHATS_CACHE,
-        0.75f,
-        true,
+    private val historyCache = TelegramHistoryCache(
+        isCurrentClient = { clientRef.get() === it },
+        messageToView = ::messageToView,
     )
     private val orderedChatIdsRef = AtomicReference<List<Long>>(emptyList())
     private val meUserIdRef = AtomicReference<Long?>(null)
@@ -273,15 +269,10 @@ class TelegramService(
         forceRefresh: Boolean = false,
     ): List<TelegramMessageView> {
         val cappedLimit = limit.coerceIn(1, TELEGRAM_MAX_HISTORY_LIMIT)
-        if (!forceRefresh) {
-            readHistoryCache(chatId)
-                ?.takeIf { it.size >= cappedLimit }
-                ?.let { return it.take(cappedLimit) }
+        val tdClient = requireClient()
+        return historyCache.get(tdClient, chatId, cappedLimit, forceRefresh) {
+            fetchHistoryPageChain(tdClient, chatId, cappedLimit)
         }
-
-        val fetched = fetchHistoryPageChain(chatId, cappedLimit)
-        writeHistoryCache(chatId, fetched, replace = forceRefresh)
-        return readHistoryCache(chatId).orEmpty().take(cappedLimit)
     }
 
     suspend fun getHistory(
@@ -329,7 +320,7 @@ class TelegramService(
 
             TelegramChatAction.Delete -> {
                 tdClient.send(TdApi.DeleteChatHistory(chat.chatId, true, false)).awaitResult()
-                removeHistoryCache(chat.chatId)
+                historyCache.remove(chat.chatId)
             }
         }
 
@@ -403,7 +394,7 @@ class TelegramService(
             }
         }
 
-        updateChatFromMessage(sentMessage)
+        updateChatFromMessage(tdClient, sentMessage)
         return messageToView(sentMessage)
     }
 
@@ -451,7 +442,8 @@ class TelegramService(
             messageId.toLongOrNull() ?: throw IllegalArgumentException("messageId must be numeric or 'last'")
         }
 
-        val result = requireClient().send(
+        val tdClient = requireClient()
+        val result = tdClient.send(
             TdApi.ForwardMessages(
                 targetChat.chatId,
                 0L,
@@ -466,7 +458,7 @@ class TelegramService(
         val forwarded = result.messages.orEmpty().firstOrNull()
             ?: throw IllegalStateException("Forward was not completed")
 
-        updateChatFromMessage(forwarded)
+        updateChatFromMessage(tdClient, forwarded)
         return messageToView(forwarded)
     }
 
@@ -560,7 +552,7 @@ class TelegramService(
             }
         }
 
-        updateChatFromMessage(sent)
+        updateChatFromMessage(tdClient, sent)
         return messageToView(sent)
     }
 
@@ -608,6 +600,8 @@ class TelegramService(
                 resolveClientFactory().builder(settings)
             }.onFailure(::onUnhandledError).getOrElse { throw it }
 
+            val updateClientRef = AtomicReference<SimpleTelegramClient?>(null)
+            historyCache.registerUpdates(builder, scope, updateClientRef::get)
             builder.setClientInteraction(authBridge)
             builder.addUpdateHandler(TdApi.UpdateAuthorizationState::class.java, ::onAuthorizationStateUpdate)
             builder.addUpdateHandler(TdApi.UpdateNewChat::class.java) { update ->
@@ -647,7 +641,7 @@ class TelegramService(
             }
 
             clientRef.set(runCatching {
-                builder.build(authBridge)
+                builder.build(authBridge).also(updateClientRef::set)
             }.onFailure(::onUnhandledError).getOrElse { throw it })
 
             authStateFlow.update {
@@ -692,9 +686,7 @@ class TelegramService(
         usersById.clear()
         chatsById.clear()
         privateChatByUserId.clear()
-        historyCacheMutex.withLock {
-            historyByChatId.clear()
-        }
+        historyCache.clear()
         orderedChatIdsRef.set(emptyList())
         meUserIdRef.set(null)
     }
@@ -900,9 +892,12 @@ class TelegramService(
         rebuildOrderedChats()
     }
 
-    private suspend fun fetchHistoryPageChain(chatId: Long, limit: Int): List<TelegramMessageView> {
-        val tdClient = requireClient()
-        val collected = ArrayList<TelegramMessageView>(limit)
+    private suspend fun fetchHistoryPageChain(
+        tdClient: SimpleTelegramClient,
+        chatId: Long,
+        limit: Int,
+    ): List<TdApi.Message> {
+        val collected = ArrayList<TdApi.Message>(limit)
         val seenMessageIds = HashSet<Long>(limit)
         var fromMessageId = 0L
 
@@ -922,7 +917,7 @@ class TelegramService(
             var addedInPage = 0
             for (message in page) {
                 if (seenMessageIds.add(message.id)) {
-                    collected += messageToView(message)
+                    collected += message
                     addedInPage += 1
                     if (collected.size >= limit) {
                         break
@@ -993,7 +988,8 @@ class TelegramService(
         )
     }
 
-    private suspend fun updateChatFromMessage(message: TdApi.Message) {
+    private fun updateChatFromMessage(tdClient: SimpleTelegramClient, message: TdApi.Message) {
+        if (clientRef.get() !== tdClient) return
         chatsById.compute(message.chatId) { _, old ->
             val title = old?.title ?: "Chat ${message.chatId}"
             val unread = old?.unreadCount ?: 0
@@ -1009,51 +1005,8 @@ class TelegramService(
                 linkedUserId = linkedUserId,
             )
         }
-        writeHistoryCache(message.chatId, listOf(messageToView(message)))
-    }
-
-    private suspend fun readHistoryCache(chatId: Long): List<TelegramMessageView>? {
-        return historyCacheMutex.withLock {
-            historyByChatId[chatId]
-        }
-    }
-
-    private suspend fun writeHistoryCache(
-        chatId: Long,
-        fetched: List<TelegramMessageView>,
-        replace: Boolean = false,
-    ) {
-        historyCacheMutex.withLock {
-            if (fetched.isEmpty()) {
-                if (replace) {
-                    historyByChatId.remove(chatId)
-                }
-                return
-            }
-
-            val merged = LinkedHashMap<Long, TelegramMessageView>()
-            fetched.forEach { merged[it.messageId] = it }
-            if (!replace) {
-                historyByChatId[chatId].orEmpty().forEach { cached ->
-                    merged.putIfAbsent(cached.messageId, cached)
-                }
-            }
-
-            historyByChatId[chatId] = merged.values
-                .sortedByDescending { it.messageId }
-                .take(TELEGRAM_MAX_HISTORY_LIMIT)
-
-            while (historyByChatId.size > TELEGRAM_MAX_HISTORY_CHATS_CACHE) {
-                val eldestChatId = historyByChatId.entries.firstOrNull()?.key ?: break
-                historyByChatId.remove(eldestChatId)
-            }
-        }
-    }
-
-    private suspend fun removeHistoryCache(chatId: Long) {
-        historyCacheMutex.withLock {
-            historyByChatId.remove(chatId)
-        }
+        // History follows TDLib callbacks in delivery order. A send response can resume after
+        // UpdateMessageSendSucceeded and must not reinsert the old temporary message ID.
     }
 
     private fun lookupSnapshot(): TelegramLookupSnapshot {
