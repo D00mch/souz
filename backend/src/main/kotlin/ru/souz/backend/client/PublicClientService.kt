@@ -263,6 +263,7 @@ internal class PublicClientService(
                         requestedThreadId = null,
                         newExecution = prepared.execution,
                         acceptedRequest = key.request(threadId, ack, now),
+                        attachments = attachments,
                         rejectedRequest = rejectedMessageRequest(key, now),
                     )
                     if (resolution is ClientRequestResult.Accepted) {

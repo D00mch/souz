@@ -18,6 +18,7 @@ import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.model.acceptsInput
 import ru.souz.backend.metrics.BackendMetrics
+import ru.souz.llms.FileContent
 
 class PostgresClientRequestRepository(
     private val dataSource: DataSource,
@@ -39,6 +40,7 @@ class PostgresClientRequestRepository(
         requestedThreadId: UUID?,
         newExecution: AgentExecution?,
         acceptedRequest: ClientRequest?,
+        attachments: List<FileContent>,
         rejectedRequest: (AgentExecution?) -> ClientRequest,
     ): ClientRequestResult = serialize(userId, key) {
         val execution = if (requestedThreadId != null) {
@@ -56,6 +58,7 @@ class PostgresClientRequestRepository(
                 require(newExecution.userId == userId && newExecution.chatId == key.chatId)
                 require(request.threadId == newExecution.id)
                 request.requireKey(key)
+                validateAttachments(userId, attachments)
                 executionWriter.insert(this, newExecution)
                 insertClientRequest(this, request)
                 ClientRequestResult.Accepted(request, newExecution)

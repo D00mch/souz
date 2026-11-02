@@ -160,26 +160,54 @@ class BackendPublicAttachmentsE2eTest {
     }
 
     @Test
+    fun `initial submit rejects files that expire during import without acceptance and permits retry`() {
+        val config = AttachmentMinio.config()
+        backendE2eTest("ws_expiring_initial", attachments = config) {
+            val user = UUID.randomUUID().toString()
+            val chat = createPublicChat(user)
+            val keys = List(2) { AttachmentMinio.upload(config, user, "report.md", "file $it".toByteArray()).objectKey }
+            expireFirstFileDuringImport(keys)
+            val frame = attachmentFrame(chat, user, "initial", keys)
+            withPublicSocket(chat) { session ->
+                session.send(Frame.Text(frame))
+                val rejected = readJson(session)
+                assertEquals("rejected", rejected["status"].asText(), rejected.toString())
+                assertEquals("invalid_request", rejected["error"]["code"].asText())
+                assertTrue(rejected["error"]["message"].asText().contains("attachment_unavailable"))
+                for (table in listOf("agent_executions", "client_requests", "messages", "agent_events")) {
+                    sql { connection -> connection.prepareStatement("select count(*) from $table where chat_id = ?").use { statement ->
+                        statement.setObject(1, UUID.fromString(chat))
+                        statement.executeQuery().use { rows -> rows.next(); assertEquals(0, rows.getInt(1), table) }
+                    } }
+                }
+                assertTrue(llm.requests.isEmpty())
+
+                sql { connection -> connection.prepareStatement(
+                    "update stored_attachments set expires_at = now() + interval '1 day' where object_key = ?"
+                ).use { statement -> statement.setString(1, keys[0]); assertEquals(1, statement.executeUpdate()) } }
+                session.send(Frame.Text(frame))
+                val accepted = readJson(session)
+                assertEquals("accepted", accepted["status"].asText())
+                assertFalse(accepted["duplicate"].asBoolean())
+                assertTrue(accepted["thread"]["created"].asBoolean())
+                assertEquals("thread.status", readJson(session)["type"].asText())
+                assertEquals("thread.completed", readJson(session)["type"].asText())
+            }
+            val messages = client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(user) }.jsonBody()["items"]
+            val input = messages.single { it["role"].asText() == "user" }
+            assertEquals("", input["content"].asText())
+            assertEquals(2, input["attachments"].size())
+        }
+    }
+
+    @Test
     fun `follow up rejects files that expire during import without committing input or device changes`() {
         val config = AttachmentMinio.config()
         backendE2eTest("ws_expiring_followup", attachments = config, llm = E2eLlmApi().apply { pauseUntilReleased() }) {
             val user = UUID.randomUUID().toString()
             val chat = createPublicChat(user)
             val keys = List(2) { AttachmentMinio.upload(config, user, "report.md", "file $it".toByteArray()).objectKey }
-            sql { connection -> connection.createStatement().use { statement ->
-                statement.execute("""
-                    create function expire_first_import() returns trigger language plpgsql as ${'$'}${'$'}
-                    begin
-                        if new.object_key = '${keys[1]}' then
-                            update stored_attachments set expires_at = now() - interval '1 second'
-                            where object_key = '${keys[0]}';
-                        end if;
-                        return new;
-                    end ${'$'}${'$'};
-                    create trigger expire_first_import after insert on stored_attachments
-                    for each row execute function expire_first_import();
-                """.trimIndent())
-            } }
+            expireFirstFileDuringImport(keys)
             withPublicSocket(chat) { session ->
                 session.send(Frame.Text(messageFrame(chat, user, "initial", text = "wait", deviceId = "original")))
                 val accepted = readJson(session)
@@ -298,6 +326,23 @@ class BackendPublicAttachmentsE2eTest {
             assertEquals(1, messages.count { it["role"].asText() == "user" })
         }
     }
+}
+
+private fun BackendE2eScope.expireFirstFileDuringImport(keys: List<String>) {
+    sql { connection -> connection.createStatement().use { statement ->
+        statement.execute("""
+            create function expire_first_import() returns trigger language plpgsql as ${'$'}${'$'}
+            begin
+                if new.object_key = '${keys[1]}' then
+                    update stored_attachments set expires_at = now() - interval '1 second'
+                    where object_key = '${keys[0]}';
+                end if;
+                return new;
+            end ${'$'}${'$'};
+            create trigger expire_first_import after insert on stored_attachments
+            for each row execute function expire_first_import();
+        """.trimIndent())
+    } }
 }
 
 private fun attachmentFrame(chat: String, user: String, request: String, keys: List<String>, text: String? = null,

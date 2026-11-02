@@ -56,6 +56,7 @@ interface ClientRequestRepository {
         requestedThreadId: UUID?,
         newExecution: AgentExecution? = null,
         acceptedRequest: ClientRequest? = null,
+        attachments: List<FileContent> = emptyList(),
         rejectedRequest: (AgentExecution?) -> ClientRequest,
     ): ClientRequestResult
 
