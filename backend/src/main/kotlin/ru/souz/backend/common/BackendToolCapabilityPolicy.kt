@@ -42,7 +42,9 @@ object BackendToolCapabilityPolicy {
         executionLlmToolCatalog: AgentToolCatalog,
         enabledToolNames: Set<String>?,
     ): AgentToolCatalog {
-        val isEnabled = { toolName: String -> enabledToolNames == null || toolName in enabledToolNames }
+        val isEnabled = { toolName: String ->
+            enabledToolNames == null || toolName in enabledToolNames
+        }
         return AgentToolCatalog.compose(
             hostableTools(processToolCatalog, isEnabled),
             hostableTools(executionLlmToolCatalog) { it in executionBoundToolNames && isEnabled(it) },

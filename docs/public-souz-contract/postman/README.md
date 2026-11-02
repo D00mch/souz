@@ -39,3 +39,5 @@ Use `GET {{baseUrl}}/v1/chats/{{chatId}}/threads/{{threadId}}?clientType={{clien
 For local backend testing, use the default `baseUrl` and `wsBaseUrl` values. The WebSocket route requires `SOUZ_FEATURE_WS_EVENTS=true`.
 
 Postman exports HTTP collections in the standard collection format. WebSocket requests are configured separately in Postman, so the WebSocket request URL and messages are stored here as portable JSON snippets rather than mixed into the HTTP collection.
+
+All client tool starts have `seq:null` and are never replayed. Correlate results by chat, thread and tool-call IDs; the first result wins, and retries are rejected. Concurrent calls are independent.

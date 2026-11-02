@@ -3,6 +3,7 @@ package ru.souz.agent.state
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.spi.ModelRouting
 import ru.souz.llms.DEFAULT_MAX_TOKENS
+import ru.souz.llms.FileContent
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LlmProvider
@@ -17,6 +18,8 @@ data class AgentContext<I>(
     val systemPrompt: String,
     val toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     val runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
+    val inputAttachments: List<FileContent> = emptyList(),
+    val replyAttachments: List<FileContent> = emptyList(),
     /** Execution-local boundary; messages from here onward must survive compaction unchanged. */
     val activeExchangeStartIndex: Int = 0,
     /** Execution-local discovery hints, separate from advertised and executable tools. */
@@ -51,6 +54,8 @@ data class AgentContext<I>(
         systemPrompt = systemPrompt,
         toolInvocationMeta = toolInvocationMeta,
         runtimeEventSink = runtimeEventSink,
+        inputAttachments = inputAttachments,
+        replyAttachments = replyAttachments,
         activeExchangeStartIndex = activeExchangeStartIndex,
         routingCapabilities = routingCapabilities,
     )

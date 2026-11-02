@@ -29,6 +29,107 @@ import ru.souz.llms.http.providerHttpClientDefaults
 
 class BackendSubagentE2eTest {
     @Test
+    fun `parent and children share a channel with independent calls and selective cancellation`() {
+        for (cancelFirst in listOf(false, true)) {
+            val bothStarted = CompletableDeferred<Unit>()
+            var step = 0
+            var firstId = ""
+            var secondId = ""
+            val survivor = if (cancelFirst) "second" else "first"
+            backendE2eTest(
+                schemaPrefix = "e2e_subagent_parallel",
+                llm = E2eLlmApi { request ->
+                    val result = request.messages.lastOrNull { it.role == LLMMessageRole.function }
+                    if (request.functions.map { it.name } == listOf("RunSkillCommand")) {
+                        val child = request.conversationPrompt()
+                        if (result == null) {
+                            toolCallReply(request, "RunSkillCommand", mapOf(
+                                "skillId" to "user.ask", "arguments" to mapOf("question" to child),
+                            ))
+                        } else {
+                            assertEquals(child, restJsonMapper.readTree(result.content)["answer"].asText())
+                            reply(request, "$child done")
+                        }
+                    } else when (step++) {
+                        0 -> reply(request, "").copy(choices = listOf("first", "second").mapIndexed { index, task ->
+                            val choice = toolCallReply(request, "SpawnSubagent", mapOf(
+                                "task" to task, "skillIds" to listOf("user.ask"),
+                            )).choices.single()
+                            choice.copy(index = index, message = choice.message.copy(functionsStateId = "spawn-$index"))
+                        })
+                        1 -> {
+                            val ids = request.messages.filter { it.name == "SpawnSubagent" }
+                                .map { restJsonMapper.readTree(it.content)["subagentId"].asText() }
+                            assertEquals(2, ids.distinct().size)
+                            firstId = ids[0]
+                            secondId = ids[1]
+                            bothStarted.await()
+                            toolCallReply(request, "CancelSubagent", mapOf("subagentId" to if (cancelFirst) firstId else secondId))
+                        }
+                        2 -> {
+                            val status = restJsonMapper.readTree(result!!.content)["status"].asText()
+                            assertTrue(status == "cancelling" || status == "cancelled")
+                            toolCallReply(request, "WaitSubagent", mapOf("subagentId" to if (cancelFirst) firstId else secondId))
+                        }
+                        3 -> {
+                            assertEquals("cancelled", restJsonMapper.readTree(result!!.content)["status"].asText())
+                            toolCallReply(request, "RunSkillCommand", mapOf("skillId" to "user.ask", "arguments" to mapOf("question" to "parent")))
+                        }
+                        4 -> {
+                            assertEquals("parent", restJsonMapper.readTree(result!!.content)["answer"].asText())
+                            toolCallReply(request, "WaitSubagent", mapOf("subagentId" to if (cancelFirst) secondId else firstId))
+                        }
+                        else -> {
+                            val done = restJsonMapper.readTree(result!!.content)
+                            assertEquals("completed", done["status"].asText())
+                            assertEquals("$survivor done", done["result"].asText())
+                            reply(request, "parent and $survivor finished")
+                        }
+                    }
+                },
+            ) {
+                val owner = UUID.randomUUID().toString()
+                val chat = createPublicChat(owner, tools = clientToolsJson("user.ask"))
+                withPublicSocket(chat) { session ->
+                    session.send(Frame.Text(messageFrame(chat, owner, "delegate", text = "delegate two questions")))
+                    val ack = readJson(session)
+                    assertEquals("accepted", ack["status"].asText())
+                    val thread = ack["thread"]["id"].asText()
+                    assertEquals("thread.status", readJson(session)["type"].asText())
+                    // Both device commands must arrive before either receives a result.
+                    val calls = List(2) {
+                        val call = readJson(session)
+                        assertEquals("tool.call.started", call["type"].asText())
+                        assertEquals(thread, call["threadId"].asText())
+                        assertEquals("user.ask", call["payload"]["name"].asText())
+                        assertTrue(call["seq"].isNull)
+                        call
+                    }.associateBy { it["payload"]["arguments"]["question"].asText() }
+                    assertEquals(setOf("first", "second"), calls.keys)
+                    bothStarted.complete(Unit)
+                    val parent = readJson(session)
+                    assertEquals("tool.call.started", parent["type"].asText())
+                    assertEquals("parent", parent["payload"]["arguments"]["question"].asText())
+                    val cancelled = calls.getValue(if (cancelFirst) "first" else "second")
+                    session.send(Frame.Text(toolResultFrame(cancelled, "succeeded", mapOf("answer" to "late"))))
+                    val rejected = readJson(session)
+                    assertEquals("rejected", rejected["status"].asText())
+                    assertEquals("tool_call_not_found", rejected["error"]["code"].asText())
+                    val remaining = calls.getValue(survivor)
+                    for (call in if (cancelFirst) listOf(parent, remaining) else listOf(remaining, parent)) {
+                        val question = call["payload"]["arguments"]["question"].asText()
+                        session.send(Frame.Text(toolResultFrame(call, "succeeded", mapOf("answer" to question))))
+                        assertEquals("accepted", readJson(session)["status"].asText())
+                    }
+                    val terminal = readJson(session)
+                    assertEquals("thread.completed", terminal["type"].asText())
+                    assertEquals("parent and $survivor finished", terminal["payload"]["response"].asText())
+                }
+            }
+        }
+    }
+
+    @Test
     fun `legacy and named remote children preserve credentials and usage`() = withNamedLlmConfig { namedSource ->
         listOf(false, true).forEach { streaming ->
             val childModel = if (streaming) "tv-agent" else "My-Deployment/v2"
@@ -89,9 +190,13 @@ class BackendSubagentE2eTest {
                 assertEquals(1, childRequests)
                 assertEquals(3, llm.requests.size)
                 val usage = events.single { it["type"].asText() == "execution.finished" }["payload"]
+                assertEquals(32, usage["promptTokens"].asInt())
+                assertEquals(13, usage["completionTokens"].asInt())
                 assertEquals(45, usage["totalTokens"].asInt())
                 val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
+                assertEquals(listOf("user", "assistant"), messages.map { it["role"].asText() })
                 assertEquals(listOf("Delegate", "parent completed"), messages.map { it["content"].asText() })
+                assertEquals("parent completed", events.single { it["type"].asText() == "message.completed" }["payload"]["content"].asText())
             }
         }
     }
@@ -121,7 +226,7 @@ class BackendSubagentE2eTest {
             },
         ) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            val chatId = createPublicChat(userId, tools = clientToolsJson("user.ask"))
             client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId)
                 jsonBody("""{"streamingMessages":true,"narrateSteps":true,"systemPrompt":"custom base"}""")
@@ -156,6 +261,7 @@ class BackendSubagentE2eTest {
                     assertEquals(started, readJson(observer, includeProgress = true))
                     val payload = started["payload"]
                     assertEquals("tool.call.started", started["type"].asText())
+                    assertTrue(started["seq"].isNull)
                     assertEquals(chatId, started["chatId"].asText())
                     assertEquals(threadId, started["threadId"].asText())
                     assertEquals("user.ask", payload["name"].asText())
@@ -170,7 +276,6 @@ class BackendSubagentE2eTest {
                     assertEquals(threadId, terminal["threadId"].asText())
                     assertEquals(terminal, readJson(observer, includeProgress = true))
                     withPublicSocket(chatId) { replay ->
-                        assertEquals(started, readJson(replay, includeProgress = true))
                         assertEquals(terminal, readJson(replay, includeProgress = true))
                         replay.send(Frame.Text(historyFrame(chatId, "history", "user", "passive context")))
                         assertEquals("ack", readJson(replay, includeProgress = true)["kind"].asText())
@@ -196,53 +301,10 @@ class BackendSubagentE2eTest {
             val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
             assertEquals(listOf("delegate the question", "parent final answer", "passive context"), messages.map { it["content"].asText() })
             val events = client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(userId) }.jsonBody()["items"]
-            assertEquals(listOf("tool.call.started", "thread.completed"), events.map { it["type"].asText() })
+            assertEquals(listOf("thread.completed"), events.map { it["type"].asText() })
             assertEquals("parent final answer", events.last()["payload"]["response"].asText())
         }
     }
-
-    @Test
-    fun `HTTP execution accounts for child usage and stores only the parent response`() =
-        backendE2eTest(
-            schemaPrefix = "e2e_subagent_usage",
-            featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = true, toolEvents = true),
-            llm = E2eLlmApi { request ->
-                when {
-                    request.functions.isEmpty() -> reply(request, "private child text")
-                    request.messages.any { it.name == "WaitSubagent" } -> reply(request, "parent synthesized answer")
-                    request.messages.any { it.name == "SpawnSubagent" } -> waitForChild(request, request.messages.last().content)
-                    else -> toolCallReply(request, "SpawnSubagent", mapOf("task" to "Produce a private child answer."))
-                }
-            },
-        ) {
-            val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
-            client.patch(BackendHttpRoutes.SETTINGS) {
-                trusted(userId)
-                jsonBody("""{"defaultModel":"${E2E_MODEL.alias}","streamingMessages":true}""")
-            }
-            val sent = client.post(BackendHttpRoutes.chatMessages(chatId)) {
-                trusted(userId)
-                jsonBody("""{"content":"Delegate and synthesize"}""")
-            }
-            assertEquals(HttpStatusCode.OK, sent.status)
-            val events = eventually("parent completion with child usage") {
-                client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(userId) }.jsonBody()["items"].takeIf { items ->
-                    items.any { it["type"].asText() == "execution.finished" }
-                }
-            }
-            assertEquals(4, llm.requests.size)
-            assertTrue("private child text" in llm.streamedChunks)
-            val finished = events.single { it["type"].asText() == "execution.finished" }["payload"]
-            assertEquals(28, finished["promptTokens"].asInt())
-            assertEquals(12, finished["completionTokens"].asInt())
-            assertEquals(40, finished["totalTokens"].asInt())
-            val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
-            assertEquals(listOf("user", "assistant"), messages.map { it["role"].asText() })
-            assertEquals("parent synthesized answer", messages.last()["content"].asText())
-            val completed = events.single { it["type"].asText() == "message.completed" }
-            assertEquals("parent synthesized answer", completed["payload"]["content"].asText())
-        }
 
     @Test
     fun `proxy child selection excludes compiled web search and returns failure to parent`() =
@@ -254,7 +316,7 @@ class BackendSubagentE2eTest {
             ))
         }) {
             val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
+            val chatId = createPublicChat(userId, tools = clientToolsJson("web.search"))
             val settings = client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted(userId)
                 jsonBody("""{"defaultModel":"${E2E_MODEL.alias}","enabledTools":["InternetSearch"]}""")

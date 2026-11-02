@@ -51,8 +51,9 @@ class BackendPublicThreadStartupE2eTest {
                     every { this@mockk.incoming } returns incoming
                     coEvery { send(any()) } coAnswers {
                         val frame = firstArg<Frame.Text>()
-                        if (json.readTree(frame.readText()).path("payload").path("name").asText() !=
-                            ru.souz.backend.personality.PERSONALITY_SYNC_COMMAND) {
+                        val node = json.readTree(frame.readText())
+                        if (node.path("type").asText() != "assistant.message" &&
+                            node.path("payload").path("name").asText() != ru.souz.backend.personality.PERSONALITY_SYNC_COMMAND) {
                             writing.complete(Unit)
                             outgoing.send(frame)
                         }
@@ -135,8 +136,8 @@ class BackendPublicThreadStartupE2eTest {
     ) {
         val userId = UUID.randomUUID().toString()
         val chatId = createPublicChat(userId, tools = clientToolsJson("user.ask"))
-        submitDirectly(chatId, messageFrame(chatId, userId, "unacked"))
         withPublicSocket(chatId) { session -> withTimeout(10.seconds) {
+            submitDirectly(chatId, messageFrame(chatId, userId, "unacked"))
             val started = readJson(session)
             assertEquals("tool.call.started", started["type"].asText())
             val threadId = started["threadId"].asText()

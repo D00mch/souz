@@ -5,6 +5,7 @@ import java.time.ZoneId
 import java.util.Locale
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.chatId
+import ru.souz.llms.FileContent
 import ru.souz.llms.LLMRequest
 
 /** Persisted backend conversation snapshot used to resume the next agent turn. */
@@ -15,6 +16,8 @@ data class AgentConversationSession(
     val timeZone: String,
     val basedOnMessageSeq: Long = 0L,
     val rowVersion: Long = 0L,
+    val attachmentExecutionId: String? = null,
+    val replyAttachments: List<FileContent> = emptyList(),
 )
 
 internal fun AgentConversationSession.toState(key: AgentConversationKey): AgentConversationState =
@@ -29,17 +32,23 @@ internal fun AgentConversationSession.toState(key: AgentConversationKey): AgentC
         basedOnMessageSeq = basedOnMessageSeq,
         updatedAt = Instant.now(),
         rowVersion = rowVersion,
+        attachmentExecutionId = attachmentExecutionId,
+        replyAttachments = replyAttachments,
     )
 
-internal fun AgentConversationState.toConversationSession(): AgentConversationSession =
-    AgentConversationSession(
+internal fun AgentConversationState.toConversationSession(): AgentConversationSession {
+    require(schemaVersion in 1..DEFAULT_SCHEMA_VERSION) { "Unsupported agent session schema version: $schemaVersion" }
+    return AgentConversationSession(
         history = history,
         temperature = temperature,
         locale = locale.languageTagOrDefault(),
         timeZone = timeZone.id,
         basedOnMessageSeq = basedOnMessageSeq,
         rowVersion = rowVersion,
+        attachmentExecutionId = attachmentExecutionId,
+        replyAttachments = replyAttachments,
     )
+}
 
 private fun String.toLocale(): Locale =
     Locale.forLanguageTag(this)
@@ -52,5 +61,5 @@ private fun String.toZoneId(): ZoneId =
 private fun Locale.languageTagOrDefault(): String =
     toLanguageTag().takeIf { it.isNotBlank() } ?: DEFAULT_LOCALE.toLanguageTag()
 
-private const val DEFAULT_SCHEMA_VERSION: Int = 1
+private const val DEFAULT_SCHEMA_VERSION: Int = 2
 private val DEFAULT_LOCALE: Locale = Locale.forLanguageTag("ru-RU")

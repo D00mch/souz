@@ -23,12 +23,18 @@ class AttachmentStorage(
     // Limits active transfers, not total heap: callers can retain returned arrays.
     private val transfers = Semaphore(config.maxConcurrentUploads)
 
-    suspend fun save(userId: String, sourceKey: String, name: String, input: InputStream): StoredAttachment = transfers.withPermit {
-        require(userId.isNotBlank() && sourceKey.isNotBlank() && sourceKey.length <= 512)
+    suspend fun save(userId: String, sourceKey: String, name: String, input: InputStream): StoredAttachment =
+        save(userId, name, input) { sourceKey }
+
+    /** Reads and hashes [input] once under the transfer limit; [sourceKey] receives the content SHA-256. */
+    suspend fun save(userId: String, name: String, input: InputStream, sourceKey: (String) -> String): StoredAttachment = transfers.withPermit {
         val bytes = runInterruptible(Dispatchers.IO) { input.use { it.readAttachmentBytes(config.maxFileBytes) } }
+        val sha256 = bytes.sha256Hex()
+        val key = sourceKey(sha256)
+        require(userId.isNotBlank() && key.isNotBlank() && key.length <= 512)
         val safeName = attachmentName(name)
-        val file = repository.reserve(userId, sourceKey, safeName, attachmentMime(bytes, safeName),
-            bytes.size.toLong(), bytes.sha256Hex(), clock.instant())
+        val file = repository.reserve(userId, key, safeName, attachmentMime(bytes, safeName),
+            bytes.size.toLong(), sha256, clock.instant())
         if (file.state == "ready") return@withPermit available(file)
         // Failed/canceled uploads stay pending until their cleanup deadline; PUT is never resumed.
         objects.put(file, bytes)
@@ -38,12 +44,41 @@ class AttachmentStorage(
     suspend fun get(userId: String, id: UUID): StoredAttachment =
         available(repository.get(userId, id) ?: throw AttachmentException("attachment_not_found"))
 
+    suspend fun importUpload(userId: String, objectKey: String, name: String): StoredAttachment = transfers.withPermit {
+        validateAttachmentObjectKey(objectKey)
+        val safeName = attachmentName(name)
+        repository.getByObjectKey(userId, objectKey)?.let { existing ->
+            available(existing)
+            if (existing.name != safeName) throw AttachmentException("attachment_idempotency_conflict")
+            return@withPermit existing
+        }
+        val bytes = try {
+            objects.readUpload(objectKey, config.maxFileBytes)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (known: AttachmentException) {
+            throw known
+        } catch (error: S3Exception) {
+            throw AttachmentException(if (error.statusCode() == 404) "attachment_not_found" else "attachment_operation_failed")
+        } catch (_: Exception) {
+            throw AttachmentException("attachment_operation_failed")
+        }
+        val now = clock.instant()
+        available(repository.registerUpload(StoredAttachment(
+            UUID.randomUUID(), userId, safeName, attachmentMime(bytes, safeName), bytes.size.toLong(), bytes.sha256Hex(),
+            "ready", now, now, now.plus(ATTACHMENT_RETENTION), now.plus(ATTACHMENT_RETENTION), objectKey,
+        )))
+    }
+
     suspend fun find(userId: String, sourceKey: String): StoredAttachment? =
         repository.find(userId, sourceKey)?.let(::available)
 
-    suspend fun read(userId: String, id: UUID): ByteArray = transfers.withPermit {
+    suspend fun read(userId: String, id: UUID): ByteArray = load(userId, id).second
+
+    /** Returns metadata and bytes from one row lookup, checking availability again after the transfer. */
+    suspend fun load(userId: String, id: UUID): Pair<StoredAttachment, ByteArray> = transfers.withPermit {
         val file = get(userId, id)
-        objects.read(file).also { available(file) }
+        file to objects.read(file).also { available(file) }
     }
 
     suspend fun cleanup(): Int {

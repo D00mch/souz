@@ -4,6 +4,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
+import ru.souz.llms.FileContent
 import ru.souz.llms.LLMRequest
 
 data class AgentConversationState(
@@ -17,4 +18,6 @@ data class AgentConversationState(
     val basedOnMessageSeq: Long,
     val updatedAt: Instant,
     val rowVersion: Long,
+    val attachmentExecutionId: String? = null,
+    val replyAttachments: List<FileContent> = emptyList(),
 )

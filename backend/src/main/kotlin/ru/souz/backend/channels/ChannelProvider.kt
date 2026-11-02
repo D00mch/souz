@@ -19,6 +19,10 @@ interface ChannelProvider {
     suspend fun listChannels(userId: String): List<ChannelDescriptor>
 
     suspend fun sendMessage(userId: String, channelId: String, text: String): ChannelSendResult
+
+    suspend fun sendAttachments(userId: String, channelId: String, text: String, fileIds: List<String>): ChannelSendResult =
+        if (fileIds.isEmpty()) sendMessage(userId, channelId, text)
+        else ChannelSendResult.Failed("This channel does not support attachments.")
 }
 
 /** Aggregates registered [ChannelProvider]s. Providers list and address their own destinations. */
@@ -38,7 +42,8 @@ class ChannelProviderRegistry(providers: List<ChannelProvider>) {
         channelType: String,
         channelId: String,
         text: String,
+        fileIds: List<String> = emptyList(),
     ): ChannelSendResult =
-        providersByType[channelType]?.sendMessage(userId, channelId, text)
+        providersByType[channelType]?.sendAttachments(userId, channelId, text, fileIds)
             ?: ChannelSendResult.Failed("Unknown or unsupported channel type: '$channelType'.")
 }

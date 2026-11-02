@@ -1,6 +1,6 @@
 ---
 name: user-ask
-description: Ask the user a concise clarification question over the active public Souz WebSocket and wait for their answer. Use when required information is missing or the user's preference must be confirmed.
+description: Ask the user a concise clarification question over a declared provider’s public Souz WebSocket and wait for their answer. Use when required information is missing or the user's preference must be confirmed.
 metadata:
   souz.skill-id: user.ask
   souz.transport: client-websocket
@@ -16,6 +16,10 @@ Invoke `RunSkillCommand` with `skillId` set to `user.ask` and a `question` strin
 {"skillId":"user.ask","arguments":{"question":"Какие фильмы и жанры тебе нравятся?"}}
 ```
 
-Souz sends a durable `tool.call.started` event named `user.ask` to the active client device and waits up to five minutes for `tool.result`. Use the returned `answer`; do not invent the user's response.
+Souz sends a `tool.call.started` event named `user.ask` to the selected channel’s device and waits up to five minutes for `tool.result`. Use the returned `answer`; do not invent the user's response.
 
-If the Skill reports missing client context, no active public WebSocket device is available for this execution.
+This Skill requires a channel declaration or discovery; it is not injected automatically.
+Omit routing `channelId` when the current channel provides it; pass `channelId` in `arguments`
+to ask on an explicitly selected other channel.
+
+If the Skill reports missing client context, the selected channel is unavailable.

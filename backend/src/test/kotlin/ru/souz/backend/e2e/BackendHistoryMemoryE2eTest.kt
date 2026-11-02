@@ -167,9 +167,9 @@ class BackendHistoryMemoryE2eTest {
                 readJson(socket)
             }
             withPublicSocket(chat) { socket ->
-                readJson(socket) // Replayed tool call.
                 socket.send(Frame.Text(initial))
-                repeat(2) { readJson(socket) }
+                assertTrue(readJson(socket)["duplicate"].asBoolean())
+                assertEquals("thread.status", readJson(socket)["type"].asText())
                 socket.send(Frame.Text(messageFrame(chat, owner, "follow-up", text = "Prefer a train")))
                 repeat(2) { readJson(socket) }
                 socket.send(Frame.Text(

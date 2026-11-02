@@ -10,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.agent.skills.bundle.CompositeTemplate
 import ru.souz.agent.skills.bundle.SkillBundle
+import ru.souz.llms.FileContent
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
@@ -27,7 +28,11 @@ internal suspend fun SkillCommandExecutor.executeComposite(
     tools: Map<String, LLMToolSetup>,
 ): SandboxCommandResult {
     var location = "composite '${arguments.composite}'"
-    return try {
+    val attachments = mutableListOf<String>()
+    val files = mutableListOf<FileContent>()
+    val replyFiles = linkedMapOf<String, FileContent>()
+    val detachedReplyFiles = linkedSetOf<String>()
+    val result = try {
         val spec = bundle.manifest.commands[arguments.composite]
             ?: error("Command is unavailable.")
         require(arguments.inputs.keys.containsAll(spec.inputs)) { "Missing inputs: ${spec.inputs - arguments.inputs.keys}" }
@@ -58,7 +63,13 @@ internal suspend fun SkillCommandExecutor.executeComposite(
                     tool != null -> {
                         val target = tools.getValue(tool)
                         val call = LLMResponse.FunctionCall(target.fn.name, restJsonMapper.convertValue(resolve(step.arguments)))
-                        jsonOrText(target.invoke(call, meta).content)
+                        val message = target.invoke(call, meta)
+                        attachments.clear()
+                        attachments.addAll(message.attachments.orEmpty())
+                        files.addAll(message.files)
+                        message.detachedReplyFiles.forEach { replyFiles.remove(it); detachedReplyFiles.add(it) }
+                        message.replyFiles.forEach { detachedReplyFiles.remove(it.fileId); replyFiles[it.fileId] = it }
+                        jsonOrText(message.content)
                     }
                     step.script != null -> {
                         val result = execute(bundle, bundleHash, SkillCommandExecutor.Args(
@@ -86,6 +97,11 @@ internal suspend fun SkillCommandExecutor.executeComposite(
     } catch (error: Exception) {
         SandboxCommandResult(1, "", "$location: ${error.message}")
     }
+    val successful = result.exitCode == 0 && !result.timedOut
+    return result.copy(files = files.distinctBy { it.fileId },
+        replyFiles = if (successful) replyFiles.values.toList() else emptyList(),
+        detachedReplyFiles = if (successful) detachedReplyFiles.toList() else emptyList(),
+        attachments = attachments.takeIf { successful }.orEmpty())
 }
 
 private val compositeJsonReader = restJsonMapper.reader()

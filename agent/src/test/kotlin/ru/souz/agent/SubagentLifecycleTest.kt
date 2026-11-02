@@ -1,5 +1,6 @@
 package ru.souz.agent
 
+import com.fasterxml.jackson.databind.JsonNode
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
@@ -7,6 +8,10 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -27,7 +32,7 @@ import kotlin.test.assertTrue
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class SubagentLifecycleTest {
     @Test
-    fun `bounded waits poll without cancelling and terminal results are repeatable`() = runTest {
+    fun `bounded polls preserve the child and the default wait collects a repeatable result`() = runTest {
         val release = CompletableDeferred<Unit>()
         val tool = tool { release.await(); "answer" }
         withSubagentTasks {
@@ -35,7 +40,7 @@ class SubagentLifecycleTest {
             for (timeout in listOf(0, 5, 30000)) {
                 assertEquals("running", tool.call(SubagentTool.WAIT, id, timeout)["status"].asText())
             }
-            release.complete(Unit)
+            backgroundScope.launch { delay(15_000); release.complete(Unit) }
             val done = tool.call(SubagentTool.WAIT, id)
             assertEquals("completed", done["status"].asText())
             assertEquals("answer", done["result"].asText())
@@ -51,7 +56,9 @@ class SubagentLifecycleTest {
         val tool = tool { executions++; "answer" }
         withSubagentTasks {
             val id = tool.spawn()
-            val cancelled = tool.call(SubagentTool.CANCEL, id)
+            val status = tool.call(SubagentTool.CANCEL, id)["status"].asText()
+            assertTrue(status == "cancelling" || status == "cancelled")
+            val cancelled = tool.call(SubagentTool.WAIT, id)
             assertEquals("cancelled", cancelled["status"].asText())
             assertEquals(cancelled, tool.call(SubagentTool.CANCEL, id))
             assertEquals(cancelled, tool.call(SubagentTool.WAIT, id))
@@ -71,7 +78,7 @@ class SubagentLifecycleTest {
                 val finish: suspend () -> Unit = { release.complete(Unit) }
                 val cancel: suspend () -> Unit = { tool.call(SubagentTool.CANCEL, id) }
                 val actions = if (iteration % 2 == 0) listOf(finish, cancel) else listOf(cancel, finish)
-                actions.map { async { it() } }.awaitAll()
+                coroutineScope { actions.map { async { it() } }.awaitAll() }
                 val result = tool.call(SubagentTool.WAIT, id)
                 val status = result["status"].asText()
                 assertTrue(status == "completed" || status == "cancelled")
@@ -82,17 +89,117 @@ class SubagentLifecycleTest {
     }
 
     @Test
-    fun `child failure is retained without cancelling parent or sibling`() = runTest {
-        val tool = tool { ctx -> if (ctx.input == "fail") error("child failed") else "answer" }
+    fun `failures and deadlines retain their outcomes without stopping the parent or sibling`() = runTest {
+        var stopped = false
+        val tool = tool { ctx ->
+            when (ctx.input) {
+                "fail" -> error("child failed")
+                "slow" -> try { awaitCancellation() } finally { stopped = true }
+                else -> "answer"
+            }
+        }
         withSubagentTasks {
-            val failed = tool.spawn("fail")
             val success = tool.spawn("success")
-            val result = tool.call(SubagentTool.WAIT, failed)
-            assertEquals("failed", result["status"].asText())
-            assertEquals("subagent_failed", result["error"]["code"].asText())
-            assertEquals("child failed", result["error"]["message"].asText())
-            assertEquals(result, tool.call(SubagentTool.CANCEL, failed))
-            assertEquals("completed", tool.call(SubagentTool.WAIT, success)["status"].asText())
+            for ((task, code) in listOf("fail" to "subagent_failed", "slow" to "subagent_timeout")) {
+                val id = tool.spawn(task)
+                if (task == "slow") {
+                    runCurrent()
+                    advanceTimeBy(SubagentTasks.TASK_TIMEOUT_MS)
+                }
+                val result = tool.call(SubagentTool.WAIT, id)
+                assertEquals("failed", result["status"].asText())
+                assertEquals(code, result["error"]["code"].asText())
+                if (task == "fail") assertEquals("child failed", result["error"]["message"].asText())
+                else assertTrue(result["sideEffectsMayHaveOccurred"].asBoolean())
+                assertEquals(result, tool.call(SubagentTool.CANCEL, id))
+            }
+            assertTrue(stopped)
+            assertEquals("answer", tool.call(SubagentTool.WAIT, success)["result"].asText())
+        }
+    }
+
+    @Test
+    fun `oversized success and failure results are bounded without replaying child work`() = runTest {
+        var executions = 0
+        val large = "Ж".repeat(40_000)
+        val tool = tool { ctx ->
+            executions++
+            if (ctx.input == "fail") error(large)
+            large
+        }
+        withSubagentTasks {
+            for (task in listOf("success", "fail")) {
+                val id = tool.spawn(task)
+                val result = tool.call(SubagentTool.WAIT, id)
+                assertEquals("failed", result["status"].asText())
+                assertEquals("subagent_result_limit", result["error"]["code"].asText())
+                assertTrue(result["sideEffectsMayHaveOccurred"].asBoolean())
+                assertTrue(result["resultBytes"].asInt() > 64 * 1024)
+                assertTrue(restJsonMapper.writeValueAsBytes(result).size < 64 * 1024)
+                assertFalse(result.has("result"))
+                assertEquals(result, tool.call(SubagentTool.STATUS, id))
+                assertEquals(result, tool.call(SubagentTool.CANCEL, id))
+            }
+        }
+        assertEquals(2, executions)
+    }
+
+    @Test
+    fun `cancellation stays pending until cleanup releases child resources`() = runTest {
+        val cleanup = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val tool = tool {
+            try { awaitCancellation() } finally {
+                withContext(NonCancellable) { cleanup.complete(Unit); release.await() }
+            }
+        }
+        withSubagentTasks {
+            val id = tool.spawn()
+            runCurrent()
+            assertEquals("cancelling", tool.call(SubagentTool.CANCEL, id)["status"].asText())
+            cleanup.await()
+            assertEquals("cancelling", tool.call(SubagentTool.WAIT, id, 5)["status"].asText())
+            assertEquals("cancelling", tool.call(SubagentTool.CANCEL, id)["status"].asText())
+            release.complete(Unit)
+            val result = tool.call(SubagentTool.WAIT, id)
+            assertEquals("cancelled", result["status"].asText())
+            assertEquals(result, tool.call(SubagentTool.STATUS, id))
+        }
+    }
+
+    @Test
+    fun `concurrent admission is bounded and capacity is released only after cleanup`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val tool = tool {
+            try { awaitCancellation() } finally { withContext(NonCancellable) { release.await() } }
+        }
+        withSubagentTasks {
+            val outcomes = coroutineScope {
+                List(256) { async { tool.call(SubagentTool.NAME, task = "child") } }.awaitAll()
+            }
+            val ids = outcomes.filter { it.has("subagentId") }.map { it["subagentId"].asText() }
+            assertEquals(8, ids.size)
+            assertEquals(248, outcomes.count { it.path("error").path("code").asText() == "subagent_concurrency_limit" })
+            runCurrent()
+            tool.call(SubagentTool.CANCEL, ids.first())
+            assertEquals("subagent_concurrency_limit", tool.call(SubagentTool.NAME, task = "still full")["error"]["code"].asText())
+            release.complete(Unit)
+            assertEquals("cancelled", tool.call(SubagentTool.WAIT, ids.first())["status"].asText())
+            assertTrue(tool.call(SubagentTool.NAME, task = "replacement").has("subagentId"))
+        }
+    }
+
+    @Test
+    fun `total limit retains completed results without allowing unlimited sequential spawns`() = runTest {
+        val tool = tool { "answer" }
+        withSubagentTasks {
+            val ids = List(32) {
+                tool.spawn().also { id -> assertEquals("completed", tool.call(SubagentTool.WAIT, id)["status"].asText()) }
+            }
+            assertEquals("subagent_task_limit", tool.call(SubagentTool.NAME, task = "overflow")["error"]["code"].asText())
+            for (id in listOf(ids.first(), ids.last())) {
+                assertEquals("answer", tool.call(SubagentTool.STATUS, id)["result"].asText())
+            }
         }
     }
 
@@ -150,7 +257,12 @@ class SubagentLifecycleTest {
 
     private suspend fun SubagentTool.spawn(task: String = "task") = call(SubagentTool.NAME, task = task)["subagentId"].asText()
 
-    private suspend fun SubagentTool.call(name: String, id: String = "", timeout: Int = 1000, task: String? = null) =
-        restJsonMapper.readTree(tools.single { it.fn.name == name }.invoke(LLMResponse.FunctionCall(name,
-            if (task != null) mapOf("task" to task) else mapOf("subagentId" to id, "timeoutMs" to timeout))).content)
+    private suspend fun SubagentTool.call(name: String, id: String = "", timeout: Int? = null, task: String? = null): JsonNode {
+        val arguments = if (task != null) mapOf("task" to task) else buildMap<String, Any> {
+            put("subagentId", id)
+            if (timeout != null) put("timeoutMs", timeout)
+        }
+        val tool = tools.single { it.fn.name == name }
+        return restJsonMapper.readTree(tool.invoke(LLMResponse.FunctionCall(name, arguments)).content)
+    }
 }

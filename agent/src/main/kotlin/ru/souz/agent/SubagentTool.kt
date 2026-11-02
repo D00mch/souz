@@ -7,6 +7,7 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.runtime.SubagentTasks
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
+import ru.souz.llms.FileContent
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -39,6 +40,7 @@ class SubagentTool(
         description = "Start a self-contained child task and return its subagentId immediately. " +
             "Continue working, inspect with GetSubagentStatus, wait with WaitSubagent, or stop it with CancelSubagent. " +
             "Unfinished children are cancelled when you finish; collect needed results before your final answer. " +
+            "At most 8 children may be active, 32 may be started per execution, and each has a 10-minute deadline. " +
             "Include all needed context in task. The child sees only selected enabled tools or file-backed Skills, " +
             "starts with a fresh history, and cannot spawn another child. Empty skillIds grants no tools.",
         parameters = LLMRequest.Parameters(
@@ -93,7 +95,11 @@ class SubagentTool(
                 try {
                     val result = createAgent(input.maxTurns).execute(childContext)
                     currentCoroutineContext().ensureActive()
-                    mapOf("status" to "completed", "result" to result.output)
+                    buildMap<String, Any> {
+                        put("status", "completed")
+                        put("result", result.output)
+                        if (result.context.replyAttachments.isNotEmpty()) put("files", result.context.replyAttachments)
+                    }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -135,19 +141,19 @@ class SubagentTool(
 }
 
 private class SubagentLifecycleTool(private val name: String) : LLMToolSetup {
-    data class Input(val subagentId: String, val timeoutMs: Long = 1000)
+    data class Input(val subagentId: String, val timeoutMs: Long = 30_000)
 
     override val fn = LLMRequest.Function(
         name = name,
         description = when (name) {
-            SubagentTool.CANCEL -> "Cancel one child without stopping the parent or other children. Cancellation is cooperative and does not undo side effects."
-            SubagentTool.WAIT -> "Wait up to timeoutMs for a child. A timeout returns running without cancelling it."
+            SubagentTool.CANCEL -> "Request cancellation of one child without stopping the parent or siblings. cancelling means cleanup is still running; wait for cancelled before depending on released resources. Cancellation is cooperative and does not undo side effects."
+            SubagentTool.WAIT -> "Wait up to timeoutMs for a child; default 30000. Use the full wait when you have no other work to avoid repeated model calls. Timeout returns the current status without cancelling it."
             else -> "Read a child's status and final result or error without waiting. Results remain readable until this parent execution ends."
         },
         parameters = LLMRequest.Parameters(
             "object",
             properties = mapOf("subagentId" to LLMRequest.Property("string", "ID returned by SpawnSubagent in this execution.")) +
-                if (name == SubagentTool.WAIT) mapOf("timeoutMs" to LLMRequest.Property("integer", "Wait from 0 to 30000 milliseconds; default 1000. Zero polls.")) else emptyMap(),
+                if (name == SubagentTool.WAIT) mapOf("timeoutMs" to LLMRequest.Property("integer", "Wait from 0 to 30000 milliseconds; default 30000. Zero polls.")) else emptyMap(),
             required = listOf("subagentId"),
         ),
     )
@@ -174,7 +180,10 @@ private suspend fun subagentMessage(call: LLMResponse.FunctionCall, execute: sus
         subagentFailure(error)
     }
     currentCoroutineContext().ensureActive()
-    return LLMRequest.Message(LLMMessageRole.function, restJsonMapper.writeValueAsString(result), name = call.name)
+    return LLMRequest.Message(
+        LLMMessageRole.function, restJsonMapper.writeValueAsString(result), name = call.name,
+        files = (result["files"] as? List<*>)?.filterIsInstance<FileContent>().orEmpty(),
+    )
 }
 
 private fun subagentFailure(error: Exception): Map<String, Any> = mapOf("error" to mapOf(

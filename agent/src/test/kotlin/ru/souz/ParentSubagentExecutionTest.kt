@@ -51,74 +51,10 @@ import kotlin.test.assertTrue
 
 class ParentSubagentExecutionTest {
     @Test
-    fun `parent works while two isolated children run and selectively cancels one`() = runTest {
-        val started = List(2) { CompletableDeferred<Unit>() }
-        val stopped = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        var ownWork = 0
-        val ownTool = object : LLMToolSetup {
-            override val fn = testTool("RunSkillCommand").fn
-            override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message {
-                ownWork++
-                return LLMRequest.Message(LLMMessageRole.function, "own work done", name = fn.name)
-            }
-        }
-        var step = 0
-        lateinit var first: String
-        lateinit var second: String
-        val harness = ParentHarness(backgroundScope, ownTool, child = { ctx ->
-            assertTrue(ctx.history.isEmpty())
-            assertTrue(ctx.activeTools.isEmpty())
-            assertTrue(ctx.settings.tools.byName.isEmpty())
-            assertSame(AgentRuntimeEventSink.NONE, ctx.runtimeEventSink)
-            assertEquals("delegating-user", ctx.toolInvocationMeta.userId)
-            assertEquals("parent-model", ctx.settings.model)
-            val index = ctx.input.toInt()
-            started[index].complete(Unit)
-            if (index == 0) try { awaitCancellation() } finally { stopped.complete(Unit) }
-            release.await()
-            "second answer"
-        }) { ctx ->
-            when (step++) {
-                0 -> parentResponse(call(SubagentTool.NAME, "task" to "0"), call(SubagentTool.NAME, "task" to "1"))
-                1 -> {
-                    started.forEach { it.await() }
-                    val ids = ctx.history.filter { it.name == SubagentTool.NAME }.map { body(it)["subagentId"].asText() }
-                    assertEquals(2, ids.distinct().size)
-                    first = ids[0]; second = ids[1]
-                    parentResponse(call(SubagentTool.STATUS, "subagentId" to first), call(SubagentTool.STATUS, "subagentId" to second), call("RunSkillCommand"))
-                }
-                2 -> {
-                    assertEquals(1, ownWork)
-                    assertEquals(listOf("running", "running"), ctx.history.filter { it.name == SubagentTool.STATUS }.map { body(it)["status"].asText() })
-                    parentResponse(call(SubagentTool.CANCEL, "subagentId" to first))
-                }
-                3 -> {
-                    assertEquals("cancelled", body(ctx.history.last())["status"].asText())
-                    stopped.await()
-                    release.complete(Unit)
-                    parentResponse(call(SubagentTool.WAIT, "subagentId" to second))
-                }
-                else -> {
-                    val result = body(ctx.history.last())
-                    assertEquals("completed", result["status"].asText())
-                    assertEquals("second answer", result["result"].asText())
-                    parentResponse()
-                }
-            }
-        }
-        assertEquals("parent answer", harness.agent.execute(harness.context()).output)
-        assertEquals(5, step)
-        assertEquals(1, harness.boundSettings.size)
-        assertTrue(harness.requests.all { it.activeTools.map { t -> t.name }.toSet().containsAll(SubagentTool.NAMES) })
-    }
-
-    @Test
     fun `parent completion failure and cancellation all stop unfinished children before returning`() = runTest {
         for (outcome in listOf("complete", "fail", "cancel")) {
             val started = CompletableDeferred<Unit>()
             val stopped = CompletableDeferred<Unit>()
-            val parentReady = CompletableDeferred<Unit>()
             var step = 0
             val harness = ParentHarness(backgroundScope, child = {
                 started.complete(Unit)
@@ -126,7 +62,6 @@ class ParentSubagentExecutionTest {
             }) {
                 if (step++ == 0) parentResponse(call(SubagentTool.NAME, "task" to "wait")) else {
                     started.await()
-                    parentReady.complete(Unit)
                     when (outcome) {
                         "fail" -> error("parent failed")
                         "cancel" -> awaitCancellation()
@@ -139,7 +74,7 @@ class ParentSubagentExecutionTest {
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (failure: IllegalStateException) { assertEquals("parent failed", failure.message); null }
             }
-            parentReady.await()
+            started.await()
             if (outcome == "cancel") {
                 harness.agent.cancelActiveJob()
                 assertFailsWith<CancellationException> { execution.await() }
@@ -192,7 +127,7 @@ class ParentSubagentExecutionTest {
         parentReady.await()
         assertTrue(harness.agent.submitToActiveRun { ActiveRunInput(input = "use the result differently") })
         assertEquals("parent answer", execution.await().output)
-        assertEquals(1, harness.boundSettings.size)
+        assertEquals(1, harness.bindingCount)
     }
 
     @Test
@@ -232,7 +167,7 @@ class ParentSubagentExecutionTest {
         assertSame(failure, assertFailsWith<LLMException> { harness.agent.execute(harness.context()) })
         assertEquals(1, executions)
         assertEquals(1, laterInvocations)
-        assertEquals(1, harness.requests.size)
+        assertEquals(1, harness.requestCount)
     }
 }
 
@@ -242,8 +177,8 @@ private class ParentHarness(
     child: suspend (AgentContext<String>) -> String,
     respond: suspend (AgentContext<String>) -> LLMResponse.Chat.Ok,
 ) {
-    val boundSettings = mutableListOf<AgentSettings>()
-    val requests = mutableListOf<AgentContext<String>>()
+    var bindingCount = 0
+    var requestCount = 0
     val agent: SkillsGraphBasedAgent
 
     init {
@@ -251,7 +186,8 @@ private class ParentHarness(
         every { nodesLLM.sideEffects } returns emptyFlow()
         every { nodesLLM.chat(any(), any()) } answers {
             Node<String, LLMResponse.Chat>(firstArg()) { ctx ->
-                requests += ctx
+                assertTrue(ctx.activeTools.map { it.name }.containsAll(SubagentTool.NAMES))
+                requestCount++
                 val response = respond(ctx)
                 ctx.map(history = ctx.history + response.choices.mapNotNull { it.toMessage() }) { response }
             }
@@ -263,10 +199,16 @@ private class ParentHarness(
             testTool("GetSkillByName"), testTool("GetSkillsByCategory"), testTool("GetSkillsNamesByCategory"),
             testTool("GetKnowledge"), testTool("SearchKnowledge"), testTool("SearchMemory"), runtimeCommand,
             subagentTools = { settings ->
-                boundSettings += settings
+                bindingCount++
                 SubagentTool({ _ -> mockk<Agent> {
                     coEvery { execute(any(), any(), any()) } coAnswers {
                         val ctx = firstArg<AgentContext<String>>()
+                        assertTrue(ctx.history.isEmpty())
+                        assertTrue(ctx.activeTools.isEmpty())
+                        assertTrue(ctx.settings.tools.byName.isEmpty())
+                        assertSame(AgentRuntimeEventSink.NONE, ctx.runtimeEventSink)
+                        assertEquals("delegating-user", ctx.toolInvocationMeta.userId)
+                        assertEquals(settings.model, ctx.settings.model)
                         AgentExecutionResult(child(ctx), ctx)
                     }
                 } }) { _, _ -> SubagentTool.Setup(settings.copy(tools = AgentTools(emptyList())), "child instructions") }.tools

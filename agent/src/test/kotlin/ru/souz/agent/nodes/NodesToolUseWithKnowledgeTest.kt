@@ -13,6 +13,7 @@ import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
+import ru.souz.llms.FileContent
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
@@ -45,12 +46,16 @@ class NodesToolUseWithKnowledgeTest {
     @Test
     fun `offloading preserves all message metadata`() = runTest {
         val store = RecordingKnowledgeStore()
+        val file = FileContent("file-id", "report.md", "text/markdown", 12)
         val original = LLMRequest.Message(
             role = LLMMessageRole.function,
             content = "x".repeat(8_193),
             functionsStateId = "call-7",
             attachments = listOf("attachment-1"),
             name = "LargeTool",
+            files = listOf(file),
+            replyFiles = listOf(file),
+            detachedReplyFiles = listOf("obsolete"),
         )
 
         val result = executeToolResult(original.content, store, original)
@@ -58,6 +63,9 @@ class NodesToolUseWithKnowledgeTest {
         assertEquals(original.role, result.role)
         assertEquals("call-1", result.functionsStateId)
         assertEquals(original.attachments, result.attachments)
+        assertEquals(original.files, result.files)
+        assertEquals(original.replyFiles, result.replyFiles)
+        assertEquals(original.detachedReplyFiles, result.detachedReplyFiles)
         assertEquals(original.name, result.name)
         assertTrue(result.content.length < original.content.length)
     }
@@ -183,6 +191,7 @@ class NodesToolUseWithKnowledgeTest {
         val tool = FixedResultTool(functionName, returnedMessage)
         val context = toolContext(tool)
         val result = nodes(store).node(alwaysInlineToolNames).execute(context, runtime())
+        assertEquals(returnedMessage.replyFiles, result.replyAttachments)
         return result.history.last()
     }
 

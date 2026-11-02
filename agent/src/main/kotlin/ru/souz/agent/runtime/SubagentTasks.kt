@@ -14,6 +14,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.agent.SubagentInputException
+import ru.souz.llms.restJsonMapper
 import java.util.UUID
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
@@ -38,9 +39,28 @@ internal class SubagentTasks(private val scope: CoroutineScope) : AbstractCorout
     suspend fun spawn(execute: suspend () -> Map<String, Any>): String = mutex.withLock {
         currentCoroutineContext().ensureActive()
         check(!closed) { "Parent execution has ended." }
+        if (tasks.size >= MAX_TASKS) {
+            throw SubagentInputException("subagent_task_limit", "At most $MAX_TASKS children may be started in one execution.")
+        }
+        if (tasks.values.count { !it.isCompleted } >= MAX_ACTIVE_TASKS) {
+            throw SubagentInputException("subagent_concurrency_limit", "At most $MAX_ACTIVE_TASKS children may be active; wait for one to finish.")
+        }
         val id = UUID.randomUUID().toString()
         // Register before starting; cancellation before dispatch still leaves a readable terminal job.
-        val job = scope.async(start = CoroutineStart.LAZY) { execute() }
+        val job = scope.async(start = CoroutineStart.LAZY) {
+            val result = withTimeoutOrNull(TASK_TIMEOUT_MS) { execute() } ?: mapOf(
+                "status" to "failed",
+                "error" to mapOf("code" to "subagent_timeout", "message" to "Child exceeded its 10-minute execution deadline."),
+                "sideEffectsMayHaveOccurred" to true,
+            )
+            val bytes = restJsonMapper.writeValueAsBytes(result).size
+            if (bytes <= MAX_RESULT_BYTES) result else mapOf(
+                "status" to "failed",
+                "error" to mapOf("code" to "subagent_result_limit", "message" to "Child result exceeded the 64 KiB retention limit."),
+                "resultBytes" to bytes,
+                "sideEffectsMayHaveOccurred" to true,
+            )
+        }
         tasks[id] = job
         job.start()
         id
@@ -54,7 +74,7 @@ internal class SubagentTasks(private val scope: CoroutineScope) : AbstractCorout
         }
         if (timeoutMs > 0) withTimeoutOrNull(timeoutMs) { job.join() }
         val result = when {
-            !job.isCompleted -> mapOf("status" to if (job.isCancelled) "cancelled" else "running")
+            !job.isCompleted -> mapOf("status" to if (job.isCancelled) "cancelling" else "running")
             job.isCancelled -> mapOf("status" to "cancelled")
             else -> job.await()
         }
@@ -70,6 +90,12 @@ internal class SubagentTasks(private val scope: CoroutineScope) : AbstractCorout
     }
 
     companion object Key : CoroutineContext.Key<SubagentTasks> {
+        const val MAX_ACTIVE_TASKS = 8
+        const val MAX_TASKS = 32
+        const val TASK_TIMEOUT_MS = 600_000L
+        // Together with MAX_TASKS, bounds retained result JSON to 2 MiB per execution.
+        private const val MAX_RESULT_BYTES = 64 * 1024
+
         suspend fun current(): SubagentTasks = currentCoroutineContext()[Key]
             ?: throw SubagentInputException("subagent_unavailable", "Subagent tools require an active parent execution.")
     }

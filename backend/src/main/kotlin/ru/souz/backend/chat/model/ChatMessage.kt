@@ -2,6 +2,7 @@ package ru.souz.backend.chat.model
 
 import java.time.Instant
 import java.util.UUID
+import ru.souz.llms.FileContent
 
 internal const val CROSS_CHANNEL_MESSAGE_METADATA_KEY = "crossChannel"
 internal const val CLIENT_HISTORY_MESSAGE_METADATA_KEY = "clientHistory"
@@ -15,4 +16,5 @@ data class ChatMessage(
     val content: String,
     val metadata: Map<String, String>,
     val createdAt: Instant,
+    val attachments: List<FileContent> = emptyList(),
 )

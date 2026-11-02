@@ -14,6 +14,7 @@ import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
+import ru.souz.llms.FileContent
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -33,6 +34,85 @@ import kotlin.test.assertTrue
 class CompositeCommandExecutorTest {
     private val meta = ToolInvocationMeta("owner", "conversation", "request", attributes = mapOf("clientToolSessionId" to "client"))
     private val scripts = mockk<SkillCommandExecutor>()
+
+    @Test
+    fun `file references and prepared paths pass between composite tools and remain structured results`() = runTest {
+        val file = FileContent("file-id", "report.md", "text/markdown", 12)
+        val path = "/workspace/report.md"
+        val prepare = fileTool("PrepareAttachment") { args ->
+            assertEquals(file.fileId, args["fileId"])
+            LLMRequest.Message(LLMMessageRole.function, restJsonMapper.writeValueAsString(mapOf("attachment" to file, "path" to path)),
+                files = listOf(file))
+        }
+        val sources = mutableListOf<Map<String, Any>>()
+        val attach = fileTool("AttachFileToReply") { args ->
+            sources += args
+            LLMRequest.Message(LLMMessageRole.function, restJsonMapper.writeValueAsString(file), files = listOf(file), replyFiles = listOf(file))
+        }
+        val command = bundle("""
+            inputs: [fileId]
+            steps:
+              - id: prepared
+                tool: PrepareAttachment
+                arguments: {fileId: '${'$'}{inputs.fileId}'}
+              - id: saved
+                tool: AttachFileToReply
+                arguments: {path: '${'$'}{prepared.path}'}
+              - id: attached
+                tool: AttachFileToReply
+                arguments: {fileId: '${'$'}{saved.fileId}'}
+            returns: '${'$'}{attached}'
+        """)
+        val result = runner(command, listOf(prepare, attach)).invoke(LLMResponse.FunctionCall(ToolInvokeSkill.NAME, mapOf(
+            "skillId" to "skill", "arguments" to mapOf("composite" to "run", "inputs" to mapOf("fileId" to "file-id")),
+        )), meta)
+        assertEquals(listOf(file), result.files)
+        assertEquals(listOf(file), result.replyFiles)
+        val payload = restJsonMapper.readValue(result.content, SandboxCommandResult::class.java)
+        assertEquals(0, payload.exitCode)
+        assertEquals(file.fileId, restJsonMapper.readTree(payload.stdout)["fileId"].asText())
+        assertEquals(listOf<Map<String, Any>>(mapOf("path" to path), mapOf("fileId" to file.fileId)), sources)
+    }
+
+    @Test
+    fun `reply replacement commits only on composite success while artifacts survive failure and timeout`() = runTest {
+        val first = FileContent("v1", "v1.md", "text/markdown", 12)
+        val corrected = first.copy(fileId = "v2", name = "v2.md")
+        val files = listOf(first, corrected).associateBy { it.fileId }
+        val tools = listOf(
+            fileTool("AttachFileToReply") { args ->
+                val file = files.getValue(args["fileId"] as String)
+                LLMRequest.Message(LLMMessageRole.function, file.name, files = listOf(file), replyFiles = listOf(file))
+            },
+            fileTool("DetachFileFromReply") { args ->
+                LLMRequest.Message(LLMMessageRole.function, "detached", detachedReplyFiles = listOf(args["fileId"] as String))
+            },
+        )
+        coEvery { scripts.execute(any(), any(), any(), meta) } returns SandboxCommandResult(2, "", "invalid")
+        for ((ending, success) in listOf(
+            "" to true,
+            "  - {id: validation, script: scripts/check.py, runtime: PYTHON}" to false,
+            "  - {id: wait, waitMs: 60001}" to false,
+        )) {
+            val command = bundle("""
+                steps:
+                  - {id: old, tool: AttachFileToReply, arguments: {fileId: v1}}
+                  - {id: removed, tool: DetachFileFromReply, arguments: {fileId: v1}}
+                  - {id: corrected, tool: AttachFileToReply, arguments: {fileId: v2}}
+            """.trimIndent() + "\n" + ending + "\nreturns: '\${corrected}'")
+            val result = runner(command, tools).invoke(LLMResponse.FunctionCall(ToolInvokeSkill.NAME, mapOf(
+                // The runner also checks real elapsed time; leave CPU headroom under coverage.
+                // runTest advances the final wait virtually beyond this deadline.
+                "skillId" to "skill", "arguments" to mapOf("composite" to "run", "timeoutMillis" to 60_000),
+            )), meta)
+            val payload = restJsonMapper.readValue(result.content, SandboxCommandResult::class.java)
+            assertEquals(success, payload.exitCode == 0 && !payload.timedOut, "Ending '$ending': $payload")
+            assertEquals(ending.contains("waitMs"), payload.timedOut)
+            assertEquals(listOf(first, corrected), result.files)
+            assertEquals(if (success) listOf(corrected) else emptyList(), result.replyFiles)
+            assertEquals(if (success) listOf(first.fileId) else emptyList(), result.detachedReplyFiles)
+        }
+    }
 
     @Test
     fun `discovery and mixed execution preserve values identity and remaining deadline`() = runBlocking {
@@ -79,6 +159,24 @@ class CompositeCommandExecutorTest {
         assertEquals(listOf("target", "options", "empty"), restJsonMapper.readTree(detail.content)["skill"]["commands"]["run"]["inputs"].map { it.asText() })
         val result = runner(bundle, listOf(read, send)).run(inputs = mapOf("target" to text, "options" to "{\"x\":7}", "empty" to ""), timeout = 5_000)
         assertEquals(SandboxCommandResult(0, "$text: {\"uri\":\"screen.png\"}", ""), result)
+    }
+
+    @Test
+    fun `composite forwards its last tool image and drops it after a later failure or imageless result`() = runTest {
+        val screen = tool("screen") { _, _ -> "frame" }
+        coEvery { screen.invoke(any(), meta) } returns LLMRequest.Message(
+            LLMMessageRole.function, "frame", name = "screen", attachments = listOf("https://screen.test/fresh.webp"),
+        )
+        val plain = tool("plain") { _, _ -> "capture unavailable" }
+        val fail = tool("fail") { _, _ -> error("offline") }
+        for ((last, expected) in listOf("screen" to listOf("https://screen.test/fresh.webp"), "plain" to null, "fail" to null)) {
+            val command = bundle("steps: [{id: first, tool: screen}, {id: last, tool: $last}]\nreturns: '\${last}'")
+            val result = runner(command, listOf(screen, plain, fail)).invoke(LLMResponse.FunctionCall(ToolInvokeSkill.NAME, mapOf(
+                "skillId" to "skill", "arguments" to mapOf("composite" to "run"),
+            )), meta)
+            assertEquals(expected, result.attachments)
+            assertTrue(!result.content.contains("attachments"))
+        }
     }
 
     @Test
@@ -149,6 +247,11 @@ class CompositeCommandExecutorTest {
         restJsonMapper.readValue(invoke(LLMResponse.FunctionCall(ToolInvokeSkill.NAME, mapOf(
             "skillId" to "skill", "arguments" to mapOf("composite" to command, "inputs" to inputs, "timeoutMillis" to timeout),
         )), meta).content, SandboxCommandResult::class.java)
+
+    private fun fileTool(name: String, result: (Map<String, Any>) -> LLMRequest.Message): LLMToolSetup = mockk<LLMToolSetup> {
+        every { fn } returns LLMRequest.Function(name, name, LLMRequest.Parameters("object"))
+        coEvery { this@mockk.invoke(any(), meta) } answers { result(firstArg<LLMResponse.FunctionCall>().arguments).copy(name = name) }
+    }
 
     private fun tool(name: String, action: suspend (LLMResponse.FunctionCall, ToolInvocationMeta) -> String): LLMToolSetup = mockk<LLMToolSetup> {
         every { fn } returns LLMRequest.Function(name, name, LLMRequest.Parameters("object"))

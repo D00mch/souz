@@ -28,6 +28,19 @@ import ru.souz.tool.web.ToolWebImageSearch
 
 class BackendExecutionToolCatalogTest {
     @Test
+    fun `attachment preparation and reply selection respect enabled tools`() {
+        val names = setOf("PrepareAttachment", "AttachFileToReply", "DetachFileFromReply")
+        for (enabled in listOf(null, emptySet(), names)) {
+            val catalog = backendExecutionToolCatalog(
+                compiledToolCatalog = TestToolCatalog(ToolCategory.FILES to names.toList()),
+                executionLlmToolCatalog = TestToolCatalog(), enabledCompiledToolNames = enabled,
+                clientToolCatalog = TestToolCatalog(), includeFewShotExamples = false,
+            )
+            assertEquals(enabled ?: names, toolNames(catalog))
+        }
+    }
+
+    @Test
     fun `compiled tool outcomes are recorded through Skill delegation and counted once for direct calls`() = runTest {
         val failures = mapOf(
             "success" to null,

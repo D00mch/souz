@@ -16,7 +16,9 @@ File-backed Skills use the same command execution as the parent, with approval a
 
 [Composite commands](composite-skill-commands.md) execute fixed tool/script/wait sequences in one call. Include every tool used by their steps in `skillIds` alongside the file-backed Skill; its manifest does not grant capabilities.
 
-The optional `model` selects an exact advertised model ID; omission inherits the parent's actual model and provider. Temperature and context size are inherited. `maxTurns` defaults to 32 and accepts 1–128 model turns. Existing provider retries and timeouts still apply.
+The optional `model` selects an exact advertised model ID; omission inherits the parent's actual model and provider. Temperature and context size are inherited. `maxTurns` defaults to 32 and accepts 1–128 model turns. Each parent execution allows eight active children and 32 total spawns; cancellation cleanup counts as active. Further spawns return `subagent_concurrency_limit` (wait for capacity) or `subagent_task_limit` (execution-wide limit). Each child has a cooperative ten-minute deadline. Expiry returns `failed` with `error.code: "subagent_timeout"` and `sideEffectsMayHaveOccurred: true` after cleanup. Existing provider retries and timeouts still apply.
+
+Retained outcomes are limited to 64 KiB of UTF-8 JSON per child, or at most 2 MiB across 32 children. Oversized answers or errors are replaced with `failed`, `error.code: "subagent_result_limit"`, `resultBytes`, and `sideEffectsMayHaveOccurred: true`. The oversized payload and its files are not retained or returned. Inspect current state before retrying: child work may already have completed its side effects.
 
 The optional `reasoningEffort` accepts `minimal`, `low`, `medium`, or `high` and applies only to the child. For example, add `"reasoningEffort": "low"` for a mostly mechanical task. Omission leaves effort unspecified for provider defaults, even if the parent has an explicit effort. Support depends on the selected provider and model.
 
@@ -25,18 +27,18 @@ Spawn validation failures return `{"error":{"code":"...","message":"..."}}` with
 | Tool | Behavior |
 | --- | --- |
 | `GetSubagentStatus` | Returns the current status without waiting. |
-| `WaitSubagent` | Waits up to `timeoutMs` (default 1,000; range 0–30,000). Zero polls; timeout does not cancel the child. |
-| `CancelSubagent` | Requests cancellation of one child and returns its status. Repeated cancellation is harmless. |
+| `WaitSubagent` | Waits up to `timeoutMs` (default 30,000; range 0–30,000). Zero polls; timeout does not cancel the child. |
+| `CancelSubagent` | Requests cancellation of one child and returns `cancelling` while cleanup runs, then `cancelled`. Repeated cancellation is harmless. |
 
-All three return `subagentId` and `status`: `running`, `completed`, `failed`, or `cancelled`. Completed results include `result`; failures include `error`. Reads do not consume results. A completed or failed child keeps its outcome when cancelled afterward. Unknown IDs return `subagent_not_found`; IDs are usable only in their owning parent execution.
+All three return `subagentId` and `status`: `running`, `cancelling`, `completed`, `failed`, or `cancelled`. Completed results include `result`; failures include `error`. Reads do not consume results. A completed or failed child keeps its outcome when cancelled afterward. Unknown IDs return `subagent_not_found`; IDs are usable only in their owning parent execution.
 
-For example, call `WaitSubagent` with `{"subagentId":"<returned ID>","timeoutMs":1000}`. A completed answer looks like `{"subagentId":"...","status":"completed","result":"242"}`. If still `running`, continue other work or wait again; do not spawn the same task again just to retrieve its result.
+For example, call `WaitSubagent` with `{"subagentId":"<returned ID>","timeoutMs":30000}`. A completed answer looks like `{"subagentId":"...","status":"completed","result":"242"}`. If still `running`, continue other work or wait again; do not spawn the same task again just to retrieve its result. When no other work remains, use the full wait instead of frequent short polls: each repeated tool call requires another parent-model turn.
 
 Turn exhaustion returns `status: "failed"`, the `subagent_turn_limit` error, and `progress`: `modelTurns`, `sideEffectsMayHaveOccurred`, `completedToolCallCount`, `omittedToolCallCount`, and bounded recent `completedToolCalls`. Each reported call contains `toolCallId`, `name`, `result`, and a `truncated` flag; attachments and child reasoning are omitted. Counts describe returned tool messages, which can include tool-level errors, rather than successful operations.
 
-Tools requested on the last allowed model turn still execute. Exhaustion does not undo their effects, and the warning remains conservative even when no results are available. Inspect the reported results and current state before retrying to avoid repeating completed work. Cancellation is cooperative and does not roll back side effects. A `cancelled` response acknowledges the request; cleanup may still be running. Child-only cancellation leaves the parent and siblings runnable. Queued input can steer the parent while children work; a current bounded wait completes before queued input is applied.
+Tools requested on the last allowed model turn still execute. Exhaustion does not undo their effects, and the warning remains conservative even when no results are available. Inspect the reported results and current state before retrying to avoid repeating completed work. Cancellation is cooperative and does not roll back side effects. Wait until `cancelled` before depending on resources released by child cleanup. Cancelling a child does not send a stop command to an external device; an already dispatched operation may continue. Child-only cancellation leaves the parent and siblings runnable. Queued input can steer the parent while children work; a current bounded wait completes before queued input is applied.
 
-Completed, failed, and cancelled results stay in memory until the parent execution ends. Every parent exit—success, failure, or cancellation—cancels unfinished children, joins cleanup, and releases the registry. Collect required results before the parent's final answer. Children do not survive a new turn, restart, or option continuation. Client tools retain their existing host concurrency limits, including one outstanding same-thread client-tool waiter.
+Completed, failed, and cancelled results stay in memory until the parent execution ends. Every parent exit—success, failure, or cancellation—cancels unfinished children, joins cleanup, and releases the registry. Blocking or cancellation-ignoring operations can delay this exit. Collect required results before the parent's final answer. Children do not survive a new turn, restart, or option continuation. Parent and child client calls use independent correlated waiters, including calls in the same thread; cancellation removes only the selected child's waiters.
 
 ## Compatibility and migration
 
@@ -70,7 +72,7 @@ description: Calculate an item total including delivery.
 
 Call SpawnSubagent with the user's quantities, prices, and delivery cost
 included in task, skillIds set to ["Calculator"], and maxTurns set to 8.
-Save subagentId and call WaitSubagent until its status is terminal.
+Save subagentId and call WaitSubagent with timeoutMs: 30000 until terminal.
 Use the completed result to answer the user. If delegation fails, explain
 the failure or complete the calculation using an available tool.
 ```

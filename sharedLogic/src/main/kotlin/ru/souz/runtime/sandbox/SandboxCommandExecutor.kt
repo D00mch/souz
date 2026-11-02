@@ -1,5 +1,8 @@
 package ru.souz.runtime.sandbox
 
+import com.fasterxml.jackson.annotation.JsonIgnore
+import ru.souz.llms.FileContent
+
 enum class SandboxCommandRuntime {
     PROCESS,
 
@@ -29,6 +32,11 @@ data class SandboxCommandResult(
     val stdout: String,
     val stderr: String,
     val timedOut: Boolean = false,
+    val files: List<FileContent> = emptyList(),
+    val replyFiles: List<FileContent> = emptyList(),
+    val detachedReplyFiles: List<String> = emptyList(),
+    @get:JsonIgnore
+    val attachments: List<String> = emptyList(),
 )
 
 interface SandboxCommandExecutor {

@@ -20,6 +20,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.ActiveRunInput
+import ru.souz.agent.DEFAULT_ATTACHMENT_HISTORY_LIMIT
 import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.RetryPolicy
 import ru.souz.agent.graph.buildGraph
@@ -33,6 +34,7 @@ import ru.souz.agent.spi.RoutedModel
 import ru.souz.agent.spi.TaskClassification
 import ru.souz.agent.spi.TaskComplexityClassifier
 import ru.souz.agent.state.AgentSettings
+import ru.souz.llms.FileContent
 import ru.souz.testTool
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMException
@@ -43,7 +45,36 @@ import ru.souz.llms.LLMResponse
 
 class NodesLLMTest {
     @Test
+    fun `summary file references are bounded by last occurrence while active input remains intact`() = runTest {
+        val files = (0 until 23).map { index -> FileContent(
+            "file-$index", "$index.md", "text/markdown", 12,
+        ) }
+        val latest = files.first().copy(name = "latest.md")
+        val active = LLMRequest.Message(LLMMessageRole.user, "active", files = files)
+        val prefix = listOf(
+            LLMRequest.Message(LLMMessageRole.system, "system"),
+            LLMRequest.Message(LLMMessageRole.assistant, "old files", files = files),
+            LLMRequest.Message(LLMMessageRole.assistant, "used again", replyFiles = listOf(latest)),
+        )
+        val request = LLMRequest.Chat(model = "test-model", messages = prefix + active, contextSize = 24_000)
+        val api = mockk<LLMChatAPI> { coEvery { message(any()) } returns block(0, "summary") }
+        for (limit in listOf(DEFAULT_ATTACHMENT_HISTORY_LIMIT, 2)) {
+            val compacted = if (limit == DEFAULT_ATTACHMENT_HISTORY_LIMIT)
+                api.compactHistory(request, prefix.size) else api.compactHistory(request, prefix.size, limit)
+            val expected = files.takeLast(limit - 1) + latest
+            assertEquals(expected, compacted[1].files)
+            assertEquals(active, compacted.last())
+            val nextPrefix = compacted.dropLast(1) + LLMRequest.Message(LLMMessageRole.assistant, "reused", files = listOf(files[1]))
+            val again = api.compactHistory(request.copy(messages = nextPrefix + active), nextPrefix.size, limit)
+            assertEquals(expected.takeLast(limit - 1) + files[1], again[1].files)
+            assertEquals(active, again.last())
+        }
+    }
+
+    @Test
     fun `compaction preserves the active exchange through steering and tool loops`() = runTest {
+        val file = FileContent("old-file", "report.md", "text/markdown", 12)
+        val incoming = file.copy(fileId = "incoming-file")
         val calls = mutableListOf<LLMRequest.Chat>()
         val style = "style ".repeat(3600)
         var instructionReads = 0
@@ -62,7 +93,7 @@ class NodesLLMTest {
         val laterSystem = system.copy(content = "retained instructions")
         val completed = listOf(system) + exchange("old ".repeat(15000)) +
             activeTurn("completed tool output", "previous request") +
-            LLMRequest.Message(LLMMessageRole.assistant, "completed answer") + laterSystem
+            LLMRequest.Message(LLMMessageRole.assistant, "completed answer", files = listOf(file), replyFiles = listOf(file)) + laterSystem
         val active = listOf(
             LLMRequest.Message(LLMMessageRole.user, "fresh memory", name = INJECTED_MEMORY_MESSAGE_NAME),
             LLMRequest.Message(LLMMessageRole.user, "fresh host context"),
@@ -71,22 +102,29 @@ class NodesLLMTest {
         val runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10)
         val controller = ActiveRunInputController()
         val queued = listOf("first follow-up", "second follow-up")
-        queued.forEach { input -> controller.submit { ActiveRunInput(input = input) } }
+        queued.forEach { input -> controller.submit { ActiveRunInput(input = input, attachments = listOf(incoming)) } }
         val chat = SteerableChatNode(nodes, controller)
-        val expectedActive = active + queued.map { LLMRequest.Message(LLMMessageRole.user, it) }
+        val expectedActive = active + queued.map { LLMRequest.Message(LLMMessageRole.user, it, files = listOf(incoming)) }
 
         val result = chat.execute(ctx, runtime)
 
         val summary = calls.dropLast(1).single()
         assertTrue(summary.isSummarization)
-        assertEquals(completed, summary.messages.dropLast(1))
+        assertEquals(completed.map { it.withFileReferences() }, summary.messages.dropLast(1))
+        assertTrue(summary.messages.any { it.content.startsWith("completed answer") && "fileId: old-file" in it.content })
         assertEquals(SUMMARIZATION_MAX_OUTPUT_TOKENS, summary.maxTokens)
         assertTrue(summary.functions.isEmpty())
         assertTrue(calls.all { it.contextSize == 24_000 && !it.exceedsContextBudget(24_000) })
         assertEquals("system\n\n$style", calls.last().messages.first().content)
         assertTrue(calls.last().messages.any { "compact history" in it.content })
+        assertEquals(listOf(file), result.history.single { "compact history" in it.content }.files)
+        // Providers see file IDs as text; the stored history keeps only structured references.
+        assertTrue(calls.last().messages.single { "compact history" in it.content }.content.endsWith(
+            "[Files available by fileId]\n- report.md (fileId: old-file, text/markdown, 12 bytes, document)"))
+        assertTrue(result.history.none { "[Files available by fileId]" in it.content })
         assertEquals(CHAT_MAX_OUTPUT_TOKENS, calls.last().maxTokens)
-        assertEquals(expectedActive, calls.last().messages.drop(result.activeExchangeStartIndex))
+        assertEquals(expectedActive.map { it.withFileReferences() }, calls.last().messages.drop(result.activeExchangeStartIndex))
+        assertTrue(calls.last().messages.last().content.contains("fileId: incoming-file"))
         assertEquals(3, result.activeExchangeStartIndex)
         assertEquals(listOf(system, laterSystem), result.history.filter { it.role == LLMMessageRole.system })
         assertTrue(result.history.none { style in it.content })
@@ -99,8 +137,9 @@ class NodesLLMTest {
         val next = chat.execute(afterTools, runtime)
         assertEquals(2, instructionReads)
         assertEquals(listOf(true, false, true, false), calls.map { it.isSummarization })
-        assertEquals(result.history.take(result.activeExchangeStartIndex), calls[2].messages.dropLast(1))
-        assertEquals(afterTools.history.drop(afterTools.activeExchangeStartIndex), calls.last().messages.drop(next.activeExchangeStartIndex))
+        assertEquals(result.history.take(result.activeExchangeStartIndex).map { it.withFileReferences() }, calls[2].messages.dropLast(1))
+        assertEquals(afterTools.history.drop(afterTools.activeExchangeStartIndex).map { it.withFileReferences() },
+            calls.last().messages.drop(next.activeExchangeStartIndex))
         assertEquals(3, next.activeExchangeStartIndex)
         assertEquals("system\n\nupdated style", calls.last().messages.first().content)
     }
