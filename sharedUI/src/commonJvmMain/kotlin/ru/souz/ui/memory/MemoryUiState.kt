@@ -50,7 +50,8 @@ data class MemoryMaintenanceUiState(
     val mode: MemoryMaintenanceMode get() = preferences.mode
     val isEnabled: Boolean get() = mode != MemoryMaintenanceMode.OFF
     val canRunNow: Boolean get() = isEnabled && !isRunningNow && pendingClusters > 0 && blockedReason == null
-    val selectedModel: LLMModel? get() = availableModels.firstOrNull { it.alias == preferences.modelAlias }
+    // Resolve once per snapshot; copy() recomputes when the model or preferences change.
+    val selectedModel: LLMModel? = availableModels.firstOrNull { it.alias == preferences.modelAlias }
     val runOutcome: MemoryMaintenanceRunOutcome
         get() = when {
             isRunningNow -> MemoryMaintenanceRunOutcome.RUNNING
@@ -229,7 +230,7 @@ fun MemoryMaintenanceStatus.toUiState(isRunningNow: Boolean = false): MemoryMain
         lastCompletedAt = lastCompletedAt,
         isRunningNow = isRunningNow,
         lastErrorCode = lastErrorCode,
-        availableModels = availableModels,
+        availableModels = availableModels.toList(),
     )
 
 fun MemoryMaintenanceUiState.toPreferences(): MemoryMaintenancePreferences =

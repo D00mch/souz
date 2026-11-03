@@ -111,7 +111,7 @@ class DeferredToolModifyPermissionBroker(
             }
             val editableTextFile = virtualFile.toEditableTextFile(filesToolUtil)
             val prepared = ToolModifyFilePlanner.prepareEdit(input, editableTextFile, filesToolUtil)
-            virtualFile.currentRawText = prepared.updatedRawText
+            virtualFiles[fileKey] = virtualFile.copy(currentRawText = prepared.updatedRawText)
             nextStagedId += 1
             stagedCalls += StagedEditCall(
                 id = nextStagedId,
@@ -310,7 +310,7 @@ class DeferredToolModifyPermissionBroker(
         val meta: ToolInvocationMeta,
         val path: String,
         val originalRawText: String,
-        var currentRawText: String,
+        val currentRawText: String,
     )
 
     private fun VirtualFileState.toEditableTextFile(

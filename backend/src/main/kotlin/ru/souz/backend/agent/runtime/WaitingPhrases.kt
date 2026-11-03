@@ -17,8 +17,9 @@ internal class WaitingPhrases(
     data class Category(val description: String, val phrases: List<String>)
 
     private val mutex = Mutex()
-    private val rounds = HashMap<String?, ArrayDeque<String>>()
-    private val previousPhrases = HashMap<String?, String>()
+    private val rounds = HashMap<String?, Round>()
+
+    private data class Round(val phrases: List<String>, val nextIndex: Int = 0)
 
     init {
         require(generic.isNotEmpty() && categories.values.all { it.description.isNotBlank() && it.phrases.isNotEmpty() }) {
@@ -30,12 +31,20 @@ internal class WaitingPhrases(
     /** A phrase of [category], or a generic one when the category is null or unknown. */
     suspend fun pick(category: String?): String = mutex.withLock {
         val known = category?.takeIf { it in categories }
-        val round = rounds.getOrPut(known) { ArrayDeque() }
-        if (round.isEmpty()) {
-            round.addAll((known?.let { categories.getValue(it).phrases } ?: generic).shuffled())
-            if (round.size > 1 && round.first() == previousPhrases[known]) round.addLast(round.removeFirst())
+        val previous = rounds[known]
+        val round = if (previous == null || previous.nextIndex == previous.phrases.size) {
+            val shuffled = (known?.let { categories.getValue(it).phrases } ?: generic).shuffled()
+            val phrases = if (shuffled.size > 1 && shuffled.first() == previous?.phrases?.last()) {
+                shuffled.drop(1) + shuffled.first()
+            } else {
+                shuffled
+            }
+            Round(phrases)
+        } else {
+            previous
         }
-        round.removeFirst().also { previousPhrases[known] = it }
+        rounds[known] = round.copy(nextIndex = round.nextIndex + 1)
+        round.phrases[round.nextIndex]
     }
 
     companion object {
