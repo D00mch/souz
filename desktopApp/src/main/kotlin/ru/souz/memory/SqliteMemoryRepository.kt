@@ -14,6 +14,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+// Supersession cleanup binds each ID twice; stay below SQLite's legacy 999-parameter limit.
+private const val DELETE_FACTS_BATCH_SIZE = 400
+
 internal suspend fun initializeSqliteMemoryRepository(
     dbPath: Path,
     legacyOwnerMigrationTarget: MemoryOwnerId? = null,
@@ -368,7 +371,7 @@ class SqliteMemoryRepository(
 
     override suspend fun deleteFact(factId: String): Unit = withConnection { connection ->
         connection.inTransaction {
-            deleteFactById(factId)
+            deleteFactsById(listOf(factId))
         }
     }
 
@@ -394,7 +397,7 @@ class SqliteMemoryRepository(
             }
         }
         connection.inTransaction {
-            factIds.forEach { factId -> deleteFactById(factId) }
+            deleteFactsById(factIds)
         }
     }
 
@@ -911,63 +914,54 @@ class SqliteMemoryRepository(
         }
     }
 
-    private fun Connection.deleteFactById(factId: String) {
-        val sourceEventIds = ArrayList<String>()
-        prepareStatement(
-            "select source_event_id from memory_fact_evidence where fact_id = ?"
-        ).use { statement ->
-            statement.setString(1, factId)
-            statement.executeQuery().use { rs ->
-                while (rs.next()) {
-                    sourceEventIds.add(rs.getString("source_event_id"))
+    private fun Connection.deleteFactsById(factIds: List<String>) {
+        factIds.chunked(DELETE_FACTS_BATCH_SIZE).forEach { ids ->
+            val parameters = placeholders(ids.size)
+            // Capture only these facts' sources before removing evidence. A source shared with
+            // another chunk survives until its last reference is deleted in this transaction.
+            val sourceEventIds = prepareStatement(
+                "select distinct source_event_id from memory_fact_evidence where fact_id in ($parameters)"
+            ).use { statement ->
+                bindParams(statement, ids)
+                statement.executeQuery().use { rs ->
+                    buildList {
+                        while (rs.next()) add(rs.getString("source_event_id"))
+                    }
+                }
+            }
+            listOf("memory_fact_embeddings", "memory_fact_stats", "memory_index_jobs", "memory_fact_evidence")
+                .forEach { table ->
+                    prepareStatement("delete from $table where fact_id in ($parameters)").use { statement ->
+                        bindParams(statement, ids)
+                        statement.executeUpdate()
+                    }
+                }
+            prepareStatement(
+                "delete from memory_fact_supersedes " +
+                    "where replacement_fact_id in ($parameters) or superseded_fact_id in ($parameters)"
+            ).use { statement ->
+                bindParams(statement, ids + ids)
+                statement.executeUpdate()
+            }
+            prepareStatement("delete from memory_facts where id in ($parameters)").use { statement ->
+                bindParams(statement, ids)
+                statement.executeUpdate()
+            }
+            sourceEventIds.chunked(DELETE_FACTS_BATCH_SIZE).forEach { sourceIds ->
+                prepareStatement(
+                    """
+                    delete from memory_source_events
+                    where id in (${placeholders(sourceIds.size)})
+                      and not exists (
+                          select 1 from memory_fact_evidence where source_event_id = memory_source_events.id
+                      )
+                    """.trimIndent()
+                ).use { statement ->
+                    bindParams(statement, sourceIds)
+                    statement.executeUpdate()
                 }
             }
         }
-
-        prepareStatement(
-            "delete from memory_fact_embeddings where fact_id = ?"
-        ).use { statement ->
-            statement.setString(1, factId)
-            statement.executeUpdate()
-        }
-
-        prepareStatement(
-            "delete from memory_fact_stats where fact_id = ?"
-        ).use { statement ->
-            statement.setString(1, factId)
-            statement.executeUpdate()
-        }
-
-        prepareStatement(
-            "delete from memory_index_jobs where fact_id = ?"
-        ).use { statement ->
-            statement.setString(1, factId)
-            statement.executeUpdate()
-        }
-
-        prepareStatement(
-            "delete from memory_fact_evidence where fact_id = ?"
-        ).use { statement ->
-            statement.setString(1, factId)
-            statement.executeUpdate()
-        }
-
-        prepareStatement(
-            "delete from memory_fact_supersedes where replacement_fact_id = ? or superseded_fact_id = ?"
-        ).use { statement ->
-            statement.setString(1, factId)
-            statement.setString(2, factId)
-            statement.executeUpdate()
-        }
-
-        prepareStatement(
-            "delete from memory_facts where id = ?"
-        ).use { statement ->
-            statement.setString(1, factId)
-            statement.executeUpdate()
-        }
-
-        sourceEventIds.distinct().forEach { deleteSourceEventIfUnused(it) }
     }
 
     private fun Connection.upsertEmbedding(

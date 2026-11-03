@@ -548,6 +548,36 @@ class ToolTest {
     }
 
     @Test
+    fun `staged edits use the latest virtual text after a rejected edit and reset after apply`() = runTest {
+        val path = File(createTempDirectory(), "sequential.txt").apply { writeText("original\n") }
+        val settingsProvider = mockk<SettingsProvider>()
+        every { settingsProvider.safeModeEnabled } returns true
+        val broker = DeferredToolModifyPermissionBroker(settingsProvider, createFilesToolUtil(emptyList()))
+        broker.stageEdit(ToolModifyFile.Input(path = path.path, oldString = "original", newString = "first"))
+        val firstReview = broker.snapshotPendingReview() ?: error("Expected first edit")
+
+        assertFailsWith<BadInputException> {
+            broker.stageEdit(ToolModifyFile.Input(path = path.path, oldString = "missing", newString = "invalid"))
+        }
+        assertEquals(firstReview, broker.snapshotPendingReview())
+        broker.stageEdit(ToolModifyFile.Input(path = path.path, oldString = "first", newString = "second"))
+        val review = broker.snapshotPendingReview() ?: error("Expected sequential edits")
+        assertEquals(1, firstReview.items.size)
+        assertEquals(2, review.items.size)
+        assertEquals("original\n", path.readText())
+
+        val applied = broker.applySelection(review.items.map { it.id }.toSet(), ToolModifySelectionAction.APPLY_SELECTED)
+        assertEquals(listOf(ToolModifyApplyStatus.APPLIED, ToolModifyApplyStatus.APPLIED), applied.items.map { it.status })
+        assertEquals("second\n", path.readText())
+        assertFalse(broker.hasPendingEdits())
+
+        broker.stageEdit(ToolModifyFile.Input(path = path.path, oldString = "second", newString = "discarded"))
+        broker.clearPending()
+        assertFalse(broker.hasPendingEdits())
+        assertEquals("second\n", path.readText())
+    }
+
+    @Test
     fun `test ToolModifyFile staged apply preserves mixed line endings outside replaced region`() = runTest {
         val tempDir = createTempDirectory()
         try {
