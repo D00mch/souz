@@ -18,6 +18,7 @@ import ru.souz.llms.restJsonMapper
 import java.util.UUID
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Owns children until the parent body exits, then cancels and joins them before returning. */
 suspend fun <T> withSubagentTasks(block: suspend () -> T): T = coroutineScope {
@@ -48,7 +49,7 @@ internal class SubagentTasks(private val scope: CoroutineScope) : AbstractCorout
         val id = UUID.randomUUID().toString()
         // Register before starting; cancellation before dispatch still leaves a readable terminal job.
         val job = scope.async(start = CoroutineStart.LAZY) {
-            val result = withTimeoutOrNull(TASK_TIMEOUT_MS) { execute() } ?: mapOf(
+            val result = withTimeoutOrNull(TASK_TIMEOUT_MS.milliseconds) { execute() } ?: mapOf(
                 "status" to "failed",
                 "error" to mapOf("code" to "subagent_timeout", "message" to "Child exceeded its 10-minute execution deadline."),
                 "sideEffectsMayHaveOccurred" to true,
@@ -72,7 +73,7 @@ internal class SubagentTasks(private val scope: CoroutineScope) : AbstractCorout
             if (cancel) job.cancel(CancellationException("Cancelled by parent tool"))
             job
         }
-        if (timeoutMs > 0) withTimeoutOrNull(timeoutMs) { job.join() }
+        if (timeoutMs > 0) withTimeoutOrNull(timeoutMs.milliseconds) { job.join() }
         val result = when {
             !job.isCompleted -> mapOf("status" to if (job.isCancelled) "cancelling" else "running")
             job.isCancelled -> mapOf("status" to "cancelled")

@@ -62,7 +62,7 @@ class SubagentTool(
         ),
     )
 
-    val tools: List<LLMToolSetup> = listOf(this) + listOf(WAIT, CANCEL).map(::SubagentLifecycleTool)
+    val tools: List<LLMToolSetup> = listOf(this, SubagentLifecycleTool(WAIT), SubagentLifecycleTool(CANCEL))
 
     override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
         invoke(functionCall, ToolInvocationMeta.localDefault())
