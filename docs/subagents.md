@@ -14,6 +14,10 @@
 
 File-backed Skills use the same command execution as the parent, with approval applied when selected at spawn. Commands use the existing Skill directory, so executable permissions, file edits, and generated outputs persist between calls.
 
+JVM plugin tools use `plugin.<pluginId>.<toolId>` names and inherit the parent's exact version bindings.
+Only selected tools enter the child catalog; a rollout or user-settings change does not expand it.
+Operator disable or quarantine still blocks subsequent calls.
+
 [Composite commands](composite-skill-commands.md) execute fixed tool/script/wait sequences in one call. Include every tool used by their steps in `skillIds` alongside the file-backed Skill; its manifest does not grant capabilities.
 
 The optional `model` selects an exact advertised model ID; omission inherits the parent's actual model and provider. Temperature and context size are inherited. `maxTurns` defaults to 32 and accepts 1–128 model turns. Existing provider retries and timeouts still apply.

@@ -25,6 +25,7 @@ import ru.souz.skilloauth.ApiCallRequest
 import ru.souz.skilloauth.ApiCallResponse
 import ru.souz.skilloauth.AuthorizationState
 import ru.souz.skilloauth.SkillOAuthException
+import ru.souz.skilloauth.SkillOAuthValidationException
 
 /** Gateway decisions and delegation; PostgreSQL tests own durable pending-state rules. */
 class SkillOAuthGatewayImplTest {
@@ -596,7 +597,7 @@ class SkillOAuthGatewayImplTest {
         // bearer token to an attacker-controlled or internal host via the model-supplied `url`.
         val api = newApi(credentialRepository = connectedCredentialRepository(listOf("login:info")))
 
-        assertFailsWith<SkillOAuthException> {
+        assertFailsWith<SkillOAuthValidationException> {
             api.call(
                 userId = "user-1",
                 provider = "yandex",
@@ -610,7 +611,7 @@ class SkillOAuthGatewayImplTest {
     fun `call rejects a non-HTTPS URL even on an allowed host`() = runTest {
         val api = newApi(credentialRepository = connectedCredentialRepository(listOf("login:info")))
 
-        assertFailsWith<SkillOAuthException> {
+        assertFailsWith<SkillOAuthValidationException> {
             api.call(
                 userId = "user-1",
                 provider = "yandex",
@@ -752,8 +753,8 @@ class SkillOAuthGatewayImplTest {
     fun `unsupported providers are rejected across all entry points`() = runTest {
         val api = newApi()
 
-        assertFailsWith<SkillOAuthException> { api.ensureAuthorized("user-1", "github", emptySet()) }
-        assertFailsWith<SkillOAuthException> {
+        assertFailsWith<SkillOAuthValidationException> { api.ensureAuthorized("user-1", "github", emptySet()) }
+        assertFailsWith<SkillOAuthValidationException> {
             api.call("user-1", "github", emptySet(), ApiCallRequest("GET", "https://example.com"))
         }
     }

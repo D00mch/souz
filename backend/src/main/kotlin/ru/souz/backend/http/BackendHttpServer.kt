@@ -27,6 +27,7 @@ import io.ktor.server.routing.routing
 import io.ktor.server.routing.routingRoot
 import io.ktor.server.routing.openapi.OpenApiDocSource
 import io.ktor.server.routing.openapi.registerApiKeySecurityScheme
+import io.ktor.server.routing.openapi.registerBearerAuthSecurityScheme
 import io.ktor.server.websocket.WebSockets
 import java.net.InetSocketAddress
 import kotlinx.coroutines.CancellationException
@@ -36,6 +37,8 @@ import org.slf4j.LoggerFactory
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.routes.v1Routes
 import ru.souz.backend.http.routes.hookRoutes
+import ru.souz.backend.http.routes.pluginRoutes
+import ru.souz.backend.http.routes.PLUGIN_ADMIN_SECURITY
 import ru.souz.backend.security.RequestIdentityPlugin
 import ru.souz.skilloauth.impl.installSkillOAuthRoutes
 
@@ -156,6 +159,10 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
         keyLocation = SecuritySchemeIn.HEADER,
         description = "Bearer <per-hook secret>, or provider token when required by the hook verifier. Custom verifier authentication is defined in hook.yaml; trusted-proxy identity is never used.",
     )
+    registerBearerAuthSecurityScheme(
+        name = PLUGIN_ADMIN_SECURITY,
+        description = "Bearer <SOUZ_PLUGINS_ADMIN_TOKEN>. Separate operator credential; user and proxy credentials do not grant access.",
+    )
     registerApiKeySecurityScheme(
         name = BackendOpenApiSecurity.PROXY_AUTH_SCHEME,
         keyName = BackendOpenApiSecurity.PROXY_AUTH_HEADER,
@@ -238,6 +245,7 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
 
         v1Routes(dependencies)
         hookRoutes(dependencies.hookService)
+        pluginRoutes(dependencies.pluginRuntime, dependencies.pluginAdminToken)
         dependencies.skillOAuthGatewayImpl?.let { installSkillOAuthRoutes(it, BackendHttpRoutes.OAUTH_CALLBACK) }
 
         swaggerUI(BackendHttpRoutes.DOCS) {

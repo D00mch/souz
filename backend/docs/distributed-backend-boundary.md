@@ -12,6 +12,8 @@ Ordinary trusted-proxy HTTP executions, Telegram/VK-triggered executions and sch
 
 [Workspace hooks](hooks.md) have single-process receipt-based recovery: pending work resumes and interrupted receipt-linked executions fail without replaying side effects. This does not provide distributed ownership or recover unrelated ordinary executions.
 
+[JVM plugin](jvm-plugins.md) invocations serialize by owner/plugin across replicas through PostgreSQL leases. Exact JAR pins survive durable user waits and can be restored on another replica. This provides neither general agent-execution failover nor replay of an interrupted plugin call. An expired lease can admit a new invocation while non-cooperative old code still runs; previously dispatched external effects cannot be fenced retroactively.
+
 Server-managed Codex OAuth is safe for a single backend process through process-local refresh coordination. A terminal refresh rejection suppresses deployment credentials only while the configured refresh token matches the rejected value. A different `CODEX_REFRESH_TOKEN` lifts suppression, so replace all four deployment values together before restarting. Multi-replica deployments must not enable it unless refresh is database-coordinated and replaces the access token, refresh token, account ID, and expiry as one credential set.
 
 ## Why it is fragile
