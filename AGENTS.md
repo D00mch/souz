@@ -59,6 +59,7 @@ Only these direct production project dependencies are allowed. Standard test-sou
 - Run `npm ci --prefix quality && ./gradlew souzDuplicationCheck` for the exact-checkout duplicate-code ratchet.
 - Run `./gradlew test :koverXmlReport :koverHtmlReport koverLog -Psouz.coverage --no-parallel` for the CI JVM test-and-coverage graph. PostgreSQL-backed tests require Docker and fail when it is unavailable.
 - When changing quality tooling, run `./gradlew :build-logic:check`.
+- For PR advisory publishing, run `node --test quality/pr_advisory_test.cjs`.
 - Run the affected module's command from its `AGENTS.md`; use `./gradlew check` for repository-wide verification when the change warrants it.
 - Backend entry point: `./gradlew :backend:run`.
 - For documentation-only changes, validate local links and run `git diff --check`; runtime tests are unnecessary unless source behavior also changes.
