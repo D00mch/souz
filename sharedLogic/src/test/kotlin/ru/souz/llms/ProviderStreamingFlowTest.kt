@@ -200,6 +200,7 @@ class ProviderStreamingFlowTest {
     }
 
     private fun settings(): SettingsProvider = mockk<SettingsProvider>(relaxed = true) {
+        every { subagentTaskTimeout } returns ru.souz.agent.runtime.DEFAULT_SUBAGENT_TASK_TIMEOUT
         every { requestTimeoutMillis } returns 1_000L
         every { gigaModel } returns LLMModel.AnthropicHaiku45
         every { openaiBaseUrl } returns "https://openai.test/v1"

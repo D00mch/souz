@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import ru.souz.agent.runtime.SubagentTasks
+import ru.souz.agent.runtime.DEFAULT_SUBAGENT_TASK_TIMEOUT
 import ru.souz.agent.runtime.withSubagentTasks
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -28,6 +29,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class SubagentLifecycleTest {
@@ -106,7 +109,7 @@ class SubagentLifecycleTest {
                 val id = tool.spawn(task)
                 if (task == "slow") {
                     runCurrent()
-                    advanceTimeBy(SubagentTasks.TASK_TIMEOUT_MS)
+                    advanceTimeBy(DEFAULT_SUBAGENT_TASK_TIMEOUT.inWholeMilliseconds)
                 }
                 val result = tool.call(SubagentTool.WAIT, id)
                 assertEquals("failed", result["status"].asText())
@@ -117,6 +120,28 @@ class SubagentLifecycleTest {
             }
             assertTrue(stopped)
             assertEquals("answer", tool.call(SubagentTool.WAIT, success)["result"].asText())
+        }
+    }
+
+    @Test
+    fun `configured deadlines expire after the selected duration and reject unbounded values`() = runTest {
+        for (timeout in listOf(Duration.ZERO, (-1).milliseconds, Duration.INFINITE)) {
+            assertFailsWith<IllegalArgumentException> { withSubagentTasks(timeout) { error("must not run") } }
+        }
+        var stopped = false
+        val tool = tool { try { awaitCancellation() } finally { stopped = true } }
+        withSubagentTasks(1250.milliseconds) {
+            val id = tool.spawn()
+            runCurrent()
+            advanceTimeBy(1249)
+            assertEquals("running", tool.call(SubagentTool.WAIT, id, 0)["status"].asText())
+            advanceTimeBy(1)
+            runCurrent()
+            val result = tool.call(SubagentTool.WAIT, id, 0)
+            assertEquals("failed", result["status"].asText())
+            assertEquals("subagent_timeout", result["error"]["code"].asText())
+            assertTrue("1.25s" in result["error"]["message"].asText())
+            assertTrue(stopped)
         }
     }
 

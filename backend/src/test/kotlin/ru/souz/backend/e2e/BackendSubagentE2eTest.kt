@@ -13,6 +13,7 @@ import io.ktor.http.headersOf
 import io.ktor.websocket.Frame
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -28,6 +29,49 @@ import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.http.providerHttpClientDefaults
 
 class BackendSubagentE2eTest {
+    @Test
+    fun `configured child deadline expires through the production kernel and parent can finish`() {
+        val stopped = CompletableDeferred<Unit>()
+        backendE2eTest(
+            schemaPrefix = "e2e_subagent_timeout",
+            settingsSource = object : BackendConfigSource {
+                override fun env(key: String): String? = if (key == "SUBAGENT_TASK_TIMEOUT_MS") "1000" else null
+                override fun property(key: String): String? = null
+            },
+            llm = E2eLlmApi { request ->
+                if (request.functions.isEmpty()) {
+                    try { awaitCancellation() } finally { stopped.complete(Unit) }
+                } else {
+                    val result = request.messages.lastOrNull { it.role == LLMMessageRole.function }
+                    when (result?.name) {
+                        "SpawnSubagent" -> waitForChild(request, result.content)
+                        "WaitSubagent" -> {
+                            val outcome = restJsonMapper.readTree(result.content)
+                            assertEquals("failed", outcome["status"].asText())
+                            assertEquals("subagent_timeout", outcome["error"]["code"].asText())
+                            assertTrue("1s" in outcome["error"]["message"].asText())
+                            assertTrue(outcome["sideEffectsMayHaveOccurred"].asBoolean())
+                            assertTrue(stopped.isCompleted)
+                            reply(request, "parent recovered from child timeout")
+                        }
+                        else -> toolCallReply(request, "SpawnSubagent", mapOf("task" to "Wait indefinitely"))
+                    }
+                }
+            },
+        ) {
+            val userId = UUID.randomUUID().toString()
+            val chatId = createPublicChat(userId)
+            assertEquals(HttpStatusCode.OK, client.post(BackendHttpRoutes.chatMessages(chatId)) {
+                trusted(userId); jsonBody("""{"content":"Delegate a slow task"}""")
+            }.status)
+            eventually("parent recovery from configured child timeout") {
+                client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
+                    .takeIf { it.last()["content"].asText() == "parent recovered from child timeout" }
+            }
+            assertTrue(stopped.isCompleted)
+        }
+    }
+
     @Test
     fun `parent and children share a channel with independent calls and selective cancellation`() {
         for (cancelFirst in listOf(false, true)) {

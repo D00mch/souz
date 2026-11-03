@@ -16,7 +16,7 @@ File-backed Skills use the same command execution as the parent, with approval a
 
 [Composite commands](composite-skill-commands.md) execute fixed tool/script/wait sequences in one call. Include every tool used by their steps in `skillIds` alongside the file-backed Skill; its manifest does not grant capabilities.
 
-The optional `model` selects an exact advertised model ID; omission inherits the parent's actual model and provider. Temperature and context size are inherited. `maxTurns` defaults to 32 and accepts 1–128 model turns. Each parent execution allows eight active children and 32 total spawns; cancellation cleanup counts as active. Further spawns return `subagent_concurrency_limit` (wait for capacity) or `subagent_task_limit` (execution-wide limit). Each child has a cooperative ten-minute deadline. Expiry returns `failed` with `error.code: "subagent_timeout"` and `sideEffectsMayHaveOccurred: true` after cleanup. Existing provider retries and timeouts still apply.
+The optional `model` selects an exact advertised model ID; omission inherits the parent's actual model and provider. Temperature and context size are inherited. `maxTurns` defaults to 32 and accepts 1–128 model turns. Each parent execution allows eight active children and 32 total spawns; cancellation cleanup counts as active. Further spawns return `subagent_concurrency_limit` (wait for capacity) or `subagent_task_limit` (execution-wide limit). Each child has a cooperative deadline configured by the host, defaulting to ten minutes. Expiry returns `failed` with `error.code: "subagent_timeout"` and `sideEffectsMayHaveOccurred: true` after cleanup. Existing provider retries and timeouts still apply.
 
 Retained outcomes are limited to 64 KiB of UTF-8 JSON per child, or at most 2 MiB across 32 children. Oversized answers or errors are replaced with `failed`, `error.code: "subagent_result_limit"`, `resultBytes`, and `sideEffectsMayHaveOccurred: true`. The oversized payload and its files are not retained or returned. Inspect current state before retrying: child work may already have completed its side effects.
 
@@ -44,6 +44,10 @@ Completed, failed, and cancelled results stay in memory until the parent executi
 The blocking `SpawnSubagent` contract is unsupported: consumers must read `subagentId`, then use `WaitSubagent` to obtain the answer. Update Skill instructions that expect a result directly from spawn. Turn-limit consumers must recognize `failed` plus `error.code == "subagent_turn_limit"`; the bounded progress fields retain their meanings. There is no blocking compatibility mode or backend child-cancellation endpoint.
 
 Hosts install all three tools with `SubagentToolFactory.create(settings).tools` through `AgentCoreTools.subagentTools`. Standard agent graphs own the lifecycle automatically. Direct tool hosts wrap the entire parent loop in `withSubagentTasks`; wrapping just a spawn call would cancel its child on return.
+
+## Deadline configuration
+
+`SUBAGENT_TASK_TIMEOUT_MS` sets the cooperative execution deadline for each child in milliseconds (default `600000`, ten minutes). For example, `SUBAGENT_TASK_TIMEOUT_MS=1200000` allows twenty minutes. The backend reads the environment variable before the same-named JVM system property and validates it at startup: values must be positive integers representing finite Kotlin durations; blank, malformed, zero, negative, and overflowing values are rejected. Restart after changing it. This server-wide setting is independent of provider request timeouts and `WaitSubagent.timeoutMs`; users and tool arguments cannot override it.
 
 ## Model configuration
 

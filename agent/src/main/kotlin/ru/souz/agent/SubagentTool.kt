@@ -40,7 +40,7 @@ class SubagentTool(
         description = "Start a self-contained child task and return its subagentId immediately. " +
             "Continue working, collect results with WaitSubagent (timeoutMs: 0 polls), or stop it with CancelSubagent. " +
             "Unfinished children are cancelled when you finish; collect needed results before your final answer. " +
-            "At most 8 children may be active, 32 may be started per execution, and each has a 10-minute deadline. " +
+            "At most 8 children may be active, 32 may be started per execution, and each has a host-configured execution deadline. " +
             "Include all needed context in task. The child sees only selected enabled tools or file-backed Skills, " +
             "starts with a fresh history, and cannot spawn another child. Empty skillIds grants no tools.",
         parameters = LLMRequest.Parameters(

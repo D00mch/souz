@@ -373,7 +373,10 @@ class SubagentToolTest {
             val request = firstArg<LLMRequest.Chat>()
             flow { emit(respond(request)) }
         }
-        val settings = mockk<AgentSettingsProvider> { every { useStreaming } returns streaming }
+        val settings = mockk<AgentSettingsProvider> {
+            every { useStreaming } returns streaming
+            every { subagentTaskTimeout } returns ru.souz.agent.runtime.DEFAULT_SUBAGENT_TASK_TIMEOUT
+        }
         return ToolLoopGraphBasedAgent(api, settings, maxTurns, telemetry)
     }
 

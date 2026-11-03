@@ -18,11 +18,18 @@ import ru.souz.llms.restJsonMapper
 import java.util.UUID
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
+
+val DEFAULT_SUBAGENT_TASK_TIMEOUT: Duration = 10.minutes
 
 /** Owns children until the parent body exits, then cancels and joins them before returning. */
-suspend fun <T> withSubagentTasks(block: suspend () -> T): T = coroutineScope {
-    val tasks = SubagentTasks(this)
+suspend fun <T> withSubagentTasks(
+    taskTimeout: Duration = DEFAULT_SUBAGENT_TASK_TIMEOUT,
+    block: suspend () -> T,
+): T = coroutineScope {
+    val tasks = SubagentTasks(this, taskTimeout)
     withContext(tasks) {
         try {
             block()
@@ -32,7 +39,14 @@ suspend fun <T> withSubagentTasks(block: suspend () -> T): T = coroutineScope {
     }
 }
 
-internal class SubagentTasks(private val scope: CoroutineScope) : AbstractCoroutineContextElement(Key) {
+internal class SubagentTasks(
+    private val scope: CoroutineScope,
+    private val taskTimeout: Duration,
+) : AbstractCoroutineContextElement(Key) {
+    init {
+        require(taskTimeout.isPositive() && taskTimeout.isFinite()) { "Subagent task timeout must be positive and finite." }
+    }
+
     private val mutex = Mutex()
     private val tasks = mutableMapOf<String, Deferred<Map<String, Any>>>()
     private var closed = false
@@ -49,9 +63,9 @@ internal class SubagentTasks(private val scope: CoroutineScope) : AbstractCorout
         val id = UUID.randomUUID().toString()
         // Register before starting; cancellation before dispatch still leaves a readable terminal job.
         val job = scope.async(start = CoroutineStart.LAZY) {
-            val result = withTimeoutOrNull(TASK_TIMEOUT_MS.milliseconds) { execute() } ?: mapOf(
+            val result = withTimeoutOrNull(taskTimeout) { execute() } ?: mapOf(
                 "status" to "failed",
-                "error" to mapOf("code" to "subagent_timeout", "message" to "Child exceeded its 10-minute execution deadline."),
+                "error" to mapOf("code" to "subagent_timeout", "message" to "Child exceeded its $taskTimeout execution deadline."),
                 "sideEffectsMayHaveOccurred" to true,
             )
             val bytes = restJsonMapper.writeValueAsBytes(result).size
@@ -93,7 +107,6 @@ internal class SubagentTasks(private val scope: CoroutineScope) : AbstractCorout
     companion object Key : CoroutineContext.Key<SubagentTasks> {
         const val MAX_ACTIVE_TASKS = 8
         const val MAX_TASKS = 32
-        const val TASK_TIMEOUT_MS = 600_000L
         // Together with MAX_TASKS, bounds retained result JSON to 2 MiB per execution.
         private const val MAX_RESULT_BYTES = 64 * 1024
 

@@ -14,10 +14,12 @@ import ru.souz.agent.state.AgentContext
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration
 
 internal class GraphExecutionDelegate(
     private val logObjectMapper: ObjectMapper,
     loggerClass: Class<*>,
+    private val subagentTaskTimeout: Duration = DEFAULT_SUBAGENT_TASK_TIMEOUT,
 ) {
     private val logger = LoggerFactory.getLogger(loggerClass)
     private val runningJob = AtomicReference<Deferred<*>?>(null)
@@ -34,7 +36,7 @@ internal class GraphExecutionDelegate(
         cancelActiveJob()
         val newContext = coroutineScope {
             val result: Deferred<AgentContext<String>> = async {
-                withSubagentTasks {
+                withSubagentTasks(subagentTaskTimeout) {
                     graph.start(ctx) { step, node, from, to ->
                         val fromCtx = from as AgentContext<Any?>
                         val toCtx = to as AgentContext<Any?>

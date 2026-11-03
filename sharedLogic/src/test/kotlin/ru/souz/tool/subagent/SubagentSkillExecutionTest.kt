@@ -94,7 +94,10 @@ class SubagentSkillExecutionTest {
                 }
             }
             val meta = ToolInvocationMeta("owner", "conversation", attributes = mapOf("client" to "session"))
-            val settings = mockk<AgentSettingsProvider> { every { useStreaming } returns false }
+            val settings = mockk<AgentSettingsProvider> {
+                every { useStreaming } returns false
+                every { subagentTaskTimeout } returns ru.souz.agent.runtime.DEFAULT_SUBAGENT_TASK_TIMEOUT
+            }
             val spawn = SubagentToolFactory(
                 { maxTurns -> ToolLoopGraphBasedAgent(api, settings, maxTurns) },
                 { catalog }, filter, registry, commands, approval,
