@@ -9,6 +9,9 @@ internal object ModuleBoundaries {
         ModuleScope(":skill-oauth-impl", "main") to setOf(":skill-oauth-api"),
         ModuleScope(":job-api", "main") to emptySet(),
         ModuleScope(":job-impl", "main") to setOf(":job-api"),
+        ModuleScope(":plugin-api", "main") to emptySet(),
+        ModuleScope(":plugins", "main") to emptySet(),
+        ModuleScope(":plugins:gmail", "main") to setOf(":plugin-api"),
         ModuleScope(":sharedLogic", "main") to setOf(":agent", ":llms", ":skill-oauth-api"),
         ModuleScope(":backend", "main") to setOf(
             ":agent",
@@ -18,6 +21,7 @@ internal object ModuleBoundaries {
             ":skill-oauth-impl",
             ":job-api",
             ":job-impl",
+            ":plugin-api",
         ),
     )
 
