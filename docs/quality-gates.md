@@ -212,9 +212,9 @@ RepoWise health scores.
 
 The advisory comparison reports base-to-head changes in average and hotspot
 defect health, worst-performer health, average and hotspot maintainability,
-and average and hotspot performance. KPI regressions appear in the job summary
-and uploaded artifacts but do not fail CI. Only execution errors, invalid
-reports, or missing or empty artifacts fail the RepoWise job.
+and average and hotspot performance. KPI regressions appear in the job summary,
+uploaded artifacts, and combined PR advisory but do not fail CI. Only execution
+errors, invalid reports, or missing or empty artifacts fail the RepoWise job.
 
 The same job runs `repowise risk` over the grafted base-to-merge revision range
 and publishes the PR's change-risk classification, percentile, size, spread,
@@ -233,9 +233,10 @@ through the reusable [`Qodana`](../.github/workflows/qodana.yml) workflow.
 its built-in summary and full report artifact on the same Actions run page.
 Qodana also runs on pushes to `main` and manual dispatch. It uses the JVM
 Community linter with JDK 21, pull-request mode, `--config quality/qodana.yaml`,
-and GitHub caches. Comments and API annotations are disabled; reporting uses
-read-only repository permissions and supports fork PRs after any required
-workflow approval.
+and GitHub caches. The analyzer runs with read-only repository permissions;
+its built-in comments and API annotations are disabled. A separate publisher
+uses its SARIF artifact for the combined PR advisory, including fork PRs after
+any required workflow approval.
 
 Qodana findings are advisory. The configuration has no baseline,
 `failureConditions`, fail threshold, or aggregate quality-score gate. Analyzer
@@ -247,6 +248,34 @@ Qodana does not require a `QODANA_TOKEN`, Qodana Cloud account, or paid
 features. It relies on the repository `.gitignore` for generated and ignored
 files; add Qodana exclusions only for tracked generated or vendored paths that
 the analyzer must skip.
+
+## Pull-request advisory publishing
+
+The [PR Quality Advisory](../.github/workflows/quality-advisory.yml) workflow
+runs after `CI-Tests`, including failed runs. It reads the fast-gate,
+duplication, RepoWise, and Qodana JSON artifacts and updates one bot-owned
+comment per open PR. The comment includes the checked head SHA, CI run link,
+findings, KPI regressions, and review priority. Clean runs replace old warnings
+with explicit clear results; missing or malformed reports remain visible as
+unavailable instead of passing.
+
+The publisher adds a `Quality advisory` check with `neutral` conclusion when
+attention is needed and `success` otherwise. It publishes up to 50 source
+annotations for findings in changed files; the comment lists up to 40 findings
+and links to the complete CI reports. Findings in unchanged files are marked
+outside the PR diff, without attributing them to the PR as new issues. Required
+CI checks retain their blocking behavior.
+
+Analysis jobs keep read-only repository permissions. The publisher runs trusted
+code from the default branch, reads artifacts as data outside the checkout,
+and receives only the Actions read, checks write, and PR write permissions
+needed for publication. It obtains PR identities from GitHub, supports fork
+PRs, ignores closed or outdated heads and older run attempts, and escapes
+artifact text before rendering it. It does not execute PR code or artifact
+contents. The workflow must exist on the default branch before GitHub can
+trigger it.
+
+Run publisher tests with `node --test quality/pr_advisory_test.cjs`.
 
 ## RepoWise maintenance guidance
 
