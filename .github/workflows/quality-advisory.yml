@@ -1,0 +1,51 @@
+name: PR Quality Advisory
+
+on:
+  workflow_run:
+    workflows: [CI-Tests]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-advisory-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+      checks: write
+
+    steps:
+      # Run only publisher code from the default branch, never from the PR.
+      - name: Checkout trusted publisher
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: quality
+
+      - name: Download analysis data
+        uses: actions/download-artifact@v8
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          pattern: '{souz-quality-gate,souz-duplication-ratchet,souz-repowise-pr-quality,souz-qodana-findings}-${{ github.event.workflow_run.id }}'
+          path: ${{ runner.temp }}/quality-advisory
+
+      - name: Publish PR advisory
+        if: always()
+        uses: actions/github-script@v8
+        env:
+          SOUZ_ADVISORY_REPORTS: ${{ runner.temp }}/quality-advisory
+        with:
+          script: |
+            const { publish } = require('./quality/pr_advisory.cjs');
+            await publish({ github, context, core });
