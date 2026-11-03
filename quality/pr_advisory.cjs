@@ -1,0 +1,197 @@
+const fs = require('node:fs');
+const path = require('node:path');
+
+const MARKER = '<!-- souz-quality-advisory -->';
+const CHECK_NAME = 'Quality advisory';
+const GATE_STATUSES = ['pass', 'warning', 'fail', 'error', 'skipped', 'not_authoritative'];
+const KPIS = {
+  average_health: 'Defect health · average',
+  hotspot_health: 'Defect health · hotspots',
+  worst_performer_score: 'Defect health · worst file',
+  maintainability_average: 'Maintainability · average',
+  maintainability_hotspot: 'Maintainability · hotspots',
+  performance_average: 'Performance · average',
+  performance_hotspot: 'Performance · hotspots',
+};
+
+// Artifact strings are untrusted: render plain text, without mentions or Markdown.
+const text = value => String(value ?? '').slice(0, 700)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/@/g, '@\u200b').replace(/[\\`*_[\]|]/g, '\\$&').replace(/[\r\n]/g, ' ');
+
+function repoPath(value) {
+  if (typeof value !== 'string') return null;
+  try { value = decodeURIComponent(value); } catch { return null; }
+  return value && value.length <= 1000 && !/[:\\\x00-\x1f]/.test(value) &&
+    value.split('/').every(part => part && part !== '.' && part !== '..') ? value : null;
+}
+
+function score(value, maximum = 10) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > maximum) {
+    throw new Error('Invalid score');
+  }
+  return value;
+}
+
+function render({ reports, sha, runUrl, repository, changedFiles, conclusion }) {
+  const rows = [], findings = [], problems = [], regressions = [];
+  let highPriority = false, gateAttention = false;
+  function source(name, read) {
+    try { read(); } catch {
+      problems.push(`${name}: report missing or invalid; see the CI run.`);
+      rows.push(`| ${name} | ⚠️ Report unavailable |`);
+    }
+  }
+  for (const [key, name] of [['fast', 'Quality Gate'], ['duplication', 'Duplicate Code Ratchet']]) {
+    source(name, () => {
+      const report = reports[key];
+      if (report.schemaVersion !== 1 || report.prHeadSha !== sha || !GATE_STATUSES.includes(report.status) ||
+          !Array.isArray(report.checks) || !report.checks.length) {
+        throw new Error('Invalid gate identity');
+      }
+      const diagnostics = report.checks.flatMap(check => {
+        if (!GATE_STATUSES.includes(check.status) || typeof check.id !== 'string' ||
+            !Array.isArray(check.diagnostics)) throw new Error('Invalid check');
+        if (check.status === 'pass') return [];
+        if (check.diagnostics.some(d => typeof d.message !== 'string')) throw new Error('Invalid diagnostic');
+        return check.diagnostics.map(d => ({
+          title: check.id, message: d.message, path: repoPath(d.path), line: d.line, level: 'warning',
+        }));
+      });
+      gateAttention ||= report.status !== 'pass' || report.checks.some(check => check.status !== 'pass');
+      rows.push(`| ${name} | ${report.status === 'pass' ? '✅' : '⚠️'} ${text(report.status)}; ${diagnostics.length} findings |`);
+      findings.push(...diagnostics);
+    });
+  }
+  source('Qodana', () => {
+    if (reports.qodana.version !== '2.1.0' || !reports.qodana.runs.length) throw new Error('Invalid SARIF');
+    const diagnostics = reports.qodana.runs.flatMap(run => (run.results ?? []).filter(result =>
+      result.baselineState !== 'absent' && result.kind !== 'pass' && result.kind !== 'notApplicable' &&
+      !result.suppressions?.some(s => s.status === 'accepted') && result.level !== 'none'
+    ).map(result => {
+      const location = result.locations?.[0]?.physicalLocation;
+      const message = result.message?.text ?? result.message?.markdown;
+      if (typeof message !== 'string') throw new Error('Invalid SARIF message');
+      return {
+        title: `Qodana: ${result.ruleId ?? 'Inspection'}`, message,
+        path: repoPath(location?.artifactLocation?.uri), line: location?.region?.startLine,
+        level: result.level === 'note' ? 'notice' : 'warning',
+      };
+    }));
+    rows.push(`| Qodana | ${diagnostics.length ? '⚠️' : '✅'} ${diagnostics.length} findings |`);
+    findings.push(...diagnostics);
+  });
+  source('RepoWise', () => {
+    const comparisons = Object.entries(KPIS).map(([key, label]) => {
+      const base = score(reports.base.kpis[key]), head = score(reports.head.kpis[key]);
+      return { label, base, head, delta: head - base };
+    });
+    const risk = reports.risk;
+    score(risk.score); score(risk.risk_percentile, 100);
+    if (typeof risk.review_priority !== 'string' || !risk.review_priority ||
+        typeof risk.classification !== 'string' || !risk.classification) {
+      throw new Error('Invalid risk');
+    }
+    regressions.push(...comparisons.filter(c => c.delta < 0));
+    highPriority = /high|critical/i.test(risk.review_priority);
+    rows.push(`| RepoWise KPIs | ${regressions.length ? '⚠️' : '✅'} ${regressions.length} regressions |`);
+    rows.push(`| PR review priority | ${highPriority ? '⚠️' : ''} **${text(risk.review_priority)}**; ` +
+      `${text(risk.classification)}, risk ${risk.score.toFixed(1)}/10, percentile ${risk.risk_percentile.toFixed(1)} |`);
+  });
+  const attention = gateAttention || findings.length > 0 || regressions.length > 0 || highPriority || problems.length > 0;
+  const body = [MARKER, `## ${attention ? '⚠️' : '✅'} Souz quality advisory`, '',
+    `Commit: \`${sha}\` · [CI run](${runUrl}) · CI result: **${text(conclusion)}**`, '',
+    'Advisory findings do not block merging. Required CI checks retain their own result.', '',
+    '| Analysis | Result |', '| --- | --- |', ...rows, '',
+  ];
+  if (regressions.length) {
+    body.push('### RepoWise regressions', '', '| KPI | Base | PR | Delta |', '| --- | ---: | ---: | ---: |');
+    for (const c of regressions) body.push(`| ${c.label} | ${c.base.toFixed(2)} | ${c.head.toFixed(2)} | ${c.delta.toFixed(2)} |`);
+    body.push('');
+  }
+  if (findings.length) {
+    body.push('### Findings', '', '“Outside PR diff” findings are not attributed to this PR as new issues.', '');
+    let shown = 0;
+    for (const f of findings.slice(0, 40)) {
+      const location = f.path && Number.isSafeInteger(f.line) && f.line > 0;
+      const url = location && `https://github.com/${repository}/blob/${sha}/${f.path.split('/').map(encodeURIComponent).join('/')}#L${f.line}`;
+      const label = location ? `[${text(f.path)}:${f.line}](${url})` : 'No source location';
+      const detail = `- **${text(f.title)}** — ${text(f.message)} — ${label}` +
+        (f.path && !changedFiles.has(f.path) ? ' (outside PR diff)' : '');
+      if (Buffer.byteLength(body.join('\n') + detail, 'utf8') > 55000) break;
+      body.push(detail);
+      shown++;
+    }
+    if (findings.length > shown) body.push(`- Showing ${shown} of ${findings.length} findings; full reports are in the CI run.`);
+    body.push('');
+  }
+  body.push(...problems.map(p => `- ⚠️ ${p}`));
+  const annotations = findings.filter(f => changedFiles.has(f.path) && Number.isSafeInteger(f.line) && f.line > 0)
+    .slice(0, 50).map(f => ({
+      path: f.path, start_line: f.line, end_line: f.line, annotation_level: f.level,
+      title: String(f.title).slice(0, 255), message: String(f.message).slice(0, 2000),
+    }));
+  return { body: body.join('\n'), annotations, attention };
+}
+
+function readReports(directory, runId) {
+  const files = {
+    fast: ['souz-quality-gate', 'gate-summary-v1.json'],
+    duplication: ['souz-duplication-ratchet', 'gate-summary-v1.json'],
+    qodana: ['souz-qodana-findings', 'qodana.sarif.json'],
+    base: ['souz-repowise-pr-quality', 'base-health.json'],
+    head: ['souz-repowise-pr-quality', 'pr-health.json'],
+    risk: ['souz-repowise-pr-quality', 'pr-risk.json'],
+  };
+  return Object.fromEntries(Object.entries(files).map(([key, [artifact, file]]) => {
+    let report;
+    try {
+      const filename = path.join(directory, `${artifact}-${runId}`, file);
+      const stat = fs.lstatSync(filename);
+      if (stat.isFile() && stat.size <= 16 * 1024 * 1024) report = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    } catch { /* Render missing and malformed reports as unavailable, never as passes. */ }
+    return [key, report];
+  }));
+}
+
+async function publish({ github, context, core }) {
+  const run = context.payload.workflow_run, repo = context.repo;
+  if (run.event !== 'pull_request' || run.path !== '.github/workflows/ci.yml' ||
+      run.repository.id !== context.payload.repository.id) throw new Error('Unexpected source workflow');
+  const candidates = run.pull_requests.length ? run.pull_requests : await github.paginate(
+    github.rest.repos.listPullRequestsAssociatedWithCommit, { ...repo, commit_sha: run.head_sha, per_page: 100 });
+  for (const candidate of candidates) {
+    const { data: pr } = await github.rest.pulls.get({ ...repo, pull_number: candidate.number });
+    if (pr.state !== 'open' || pr.head.sha !== run.head_sha || pr.base.repo.id !== run.repository.id) continue;
+    const comments = await github.paginate(github.rest.issues.listComments, { ...repo, issue_number: pr.number, per_page: 100 });
+    const previous = comments.find(c => c.user?.login === 'github-actions[bot]' && c.body.startsWith(MARKER));
+    const stamp = previous?.body.match(/<!-- source-run:(\d+):(\d+) -->/);
+    if (stamp && (Number(stamp[1]) > run.id ||
+        (Number(stamp[1]) === run.id && Number(stamp[2]) > run.run_attempt))) continue;
+    const files = await github.paginate(github.rest.pulls.listFiles, { ...repo, pull_number: pr.number, per_page: 100 });
+    const result = render({
+      reports: readReports(process.env.SOUZ_ADVISORY_REPORTS, run.id), sha: pr.head.sha,
+      runUrl: `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${run.id}/attempts/${run.run_attempt}`,
+      repository: `${repo.owner}/${repo.repo}`, changedFiles: new Set(files.map(f => f.filename)), conclusion: run.conclusion,
+    });
+    const body = `${result.body}\n\n<!-- source-run:${run.id}:${run.run_attempt} -->`;
+    // A push while reading artifacts must not replace the current PR's advisory.
+    const { data: current } = await github.rest.pulls.get({ ...repo, pull_number: pr.number });
+    if (current.head.sha !== run.head_sha || current.state !== 'open') continue;
+    if (previous) await github.rest.issues.updateComment({ ...repo, comment_id: previous.id, body });
+    else await github.rest.issues.createComment({ ...repo, issue_number: pr.number, body });
+    const externalId = `${run.id}:${run.run_attempt}`;
+    const checks = await github.paginate(github.rest.checks.listForRef, { ...repo, ref: pr.head.sha, per_page: 100 });
+    if (!checks.some(c => c.name === CHECK_NAME && c.app?.slug === 'github-actions' && c.external_id === externalId)) {
+      await github.rest.checks.create({
+        ...repo, name: CHECK_NAME, head_sha: pr.head.sha, external_id: externalId,
+        status: 'completed', conclusion: result.attention ? 'neutral' : 'success', details_url: run.html_url,
+        output: { title: result.attention ? 'Quality findings need review' : 'No quality findings',
+          summary: result.body, annotations: result.annotations },
+      });
+    }
+    core.info(`Published quality advisory for PR #${pr.number} at ${pr.head.sha}`);
+  }
+}
+
+module.exports = { render, readReports, publish };

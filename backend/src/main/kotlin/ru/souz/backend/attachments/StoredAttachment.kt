@@ -23,8 +23,16 @@ data class StoredAttachment(
     val storedAt: Instant?,
     val expiresAt: Instant?,
     val cleanupDueAt: Instant,
-) {
-    val objectKey: String get() = "files/${userId.sha256Hex()}/$id"
+    val objectKey: String,
+)
+
+internal fun attachmentObjectKey(userId: String, id: UUID): String = "files/${userId.sha256Hex()}/$id"
+
+/** A raw key inside the configured bucket, never a URL or filesystem path. */
+internal fun validateAttachmentObjectKey(key: String) {
+    if (key.isBlank() || key.toByteArray(Charsets.UTF_8).size > 1024 || key.any { it.isISOControl() }) {
+        throw AttachmentException("invalid_attachment_object_key")
+    }
 }
 
 class AttachmentException(val code: String) : IllegalStateException(code)

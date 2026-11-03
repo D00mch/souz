@@ -56,6 +56,18 @@ class ToolSendMessageToChannelTest {
     }
 
     @Test
+    fun `unsupported file delivery fails without silently sending text`() = runTest {
+        val provider = FakeProvider("telegram", ChannelSendResult.Delivered("sent"))
+        val tool = ToolSendMessageToChannel(ChannelProviderRegistry(listOf(provider)))
+        val result = tool.suspendInvoke(
+            ToolSendMessageToChannel.Input("telegram", "chat-1", "caption", listOf("file-id")),
+            ToolInvocationMeta(userId = "user-1"),
+        )
+        assertTrue(result.contains("\"success\":false"))
+        assertTrue(provider.lastCall == null)
+    }
+
+    @Test
     fun `throws BadInputException for blank text`() = runTest {
         val tool = ToolSendMessageToChannel(ChannelProviderRegistry(emptyList()))
 

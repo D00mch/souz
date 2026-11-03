@@ -24,6 +24,7 @@ internal class LiveClientToolDispatcher(
         timeout: Duration,
         sourceExecution: UUID? = null,
         threadId: UUID = UUID.randomUUID(),
+        deviceId: String? = null,
     ): ClientToolOutcome {
         val context = ToolCallContext(chat.userId, chat.id.toString(), threadId.toString(), UUID.randomUUID().toString())
         val deadline = now().plus(timeout)
@@ -31,6 +32,7 @@ internal class LiveClientToolDispatcher(
             val published = events.publishClientToolCall(chat.userId, chat.id, threadId, PublicToolCallStartedPayload(
                 toolCallId = context.toolCallId,
                 name = name,
+                deviceId = deviceId,
                 arguments = restJsonMapper.valueToTree(arguments),
                 deadlineAt = deadline.toString(),
             ))

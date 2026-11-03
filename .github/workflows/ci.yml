@@ -99,6 +99,9 @@ jobs:
       - name: Install pinned quality tools
         run: npm ci --prefix quality
 
+      - name: Test PR advisory publisher
+        run: node --test quality/pr_advisory_test.cjs
+
       - name: Run duplication ratchet
         shell: bash
         env:

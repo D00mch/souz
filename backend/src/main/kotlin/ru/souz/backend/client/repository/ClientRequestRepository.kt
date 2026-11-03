@@ -3,6 +3,7 @@ package ru.souz.backend.client.repository
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
+import ru.souz.llms.FileContent
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.client.model.ClientRequest
@@ -19,6 +20,7 @@ data class ClientFollowUpInput(
     val content: String,
     val metadata: Map<String, String>,
     val latestDeviceContextJson: String,
+    val attachments: List<FileContent> = emptyList(),
     val messageId: UUID = UUID.randomUUID(),
     val createdAt: Instant = Instant.now().truncatedTo(ChronoUnit.MICROS),
 )

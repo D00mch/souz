@@ -202,7 +202,7 @@ class BackendImagesE2eTest {
                 assertEquals("accepted", readJson(socket)["status"].asText())
                 assertEquals("thread.completed", readJson(socket)["type"].asText())
                 socket.send(Frame.Text(result))
-                assertTrue(readJson(socket)["duplicate"].asBoolean())
+                assertEquals("tool_call_not_found", readJson(socket)["error"]["code"].asText())
             }
             assertEquals(2, call)
             val state = backend.agentStateRepository.get(user, UUID.fromString(chat))!!
@@ -215,11 +215,6 @@ class BackendImagesE2eTest {
             assertEquals("Report 0", links[0]["name"].asText())
             assertTrue(links.take(7).none { it.has("attachment") }, "Client metadata cannot create file references")
             assertFalse(base64 in restJsonMapper.writeValueAsString(state.history))
-            sql { connection -> connection.createStatement().use { statement ->
-                statement.executeQuery("select result_json::text from tool_calls where result_json is not null").use {
-                    assertTrue(it.next()); assertFalse(base64 in it.getString(1))
-                }
-            } }
             // Exercise input images through the internal attachment ingress, independently of #986.
             val inputs = (0..5).map { backend.attachmentStorage.save(user, "input-$it", "input-$it.png", png.inputStream()).toContent() }
             val next = backend.dependencies.executionService.executeChatTurn(user, UUID.fromString(chat), "inspect again",

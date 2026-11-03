@@ -23,11 +23,11 @@ For attachment generation, a PostgreSQL receipt claims `(owner, execution, finge
 
 ## Client tool images
 
-Existing Client-Souz `tool.result` accepts MCP `image` and image `resource_link` content. The backend validates and saves pixels before persisting or acknowledging the result, replacing them with an `attachment:` reference and canonical `FileContent`. For owned `attachment:` links, storage metadata determines the type: non-image links remain tool data and do not consume image limits. The backend removes client-provided internal `attachment` fields, including without S3; only validated images receive canonical file references. Failed tool results omit their images. A result allows five images and 20 MB total; invalid images fail the result with `tool_image_unavailable`.
+Existing Client-Souz `tool.result` accepts MCP `image` and image `resource_link` content. The backend validates and saves pixels before acknowledging the result, replacing them with an `attachment:` reference and canonical `FileContent`. For owned `attachment:` links, storage metadata determines the type: non-image links remain tool data and do not consume image limits. The backend removes client-provided internal `attachment` fields, including without S3; only validated images receive canonical file references. Failed tool results omit their images. A result allows five images and 20 MB total; invalid images fail the result with `tool_image_unavailable`.
 
-HTTP(S) resources must resolve exclusively to public addresses. Downloads pin the checked DNS results, disable redirects/proxies/retries, and have a ten-second call timeout and bounded body. `attachment:` links must already belong to the caller. A result replay reuses the persisted outcome; it does not download again. Local files, private endpoints and arbitrary URL credentials are unsupported.
+HTTP(S) resources must resolve exclusively to public addresses. Downloads pin the checked DNS results, disable redirects/proxies/retries, and have a ten-second call timeout and bounded body. `attachment:` links must already belong to the caller. Only the first reserved live result is normalized; subsequent results are rejected without downloading again. Local files, private endpoints and arbitrary URL credentials are unsupported.
 
-The references pass through existing Skill, composite-command and subagent results. This feature does not add attachment upload/delivery fields to the public WebSocket protocol or implement Telegram/VK transport.
+The references pass through existing Skill, composite-command and subagent results. Public WebSocket upload and reply delivery use the existing [attachment transport](attachments.md#websocket-transport). Embedded Telegram/VK file transport is outside this feature.
 
 ## Verification
 
