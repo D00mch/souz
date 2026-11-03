@@ -24,8 +24,15 @@ and-set race, read the winning credential and retry. A successful refresh whose 
 race still returns its issued access token to that call.
 
 Validate HTTPS and the provider's exact host allowlist before attaching an access token.
+`SkillOAuthValidationException` identifies invalid provider or URL inputs separately
+from provider, transport and storage failures, allowing callers to classify validation correctly.
 Caller headers cannot override authorization. Ktor takes content type from the request body's
 metadata, so explicit content types belong on `TextContent`.
+
+`ApiCallRequest.maxResponseBytes` optionally limits response bytes while streaming,
+before charset decoding. A response exceeding the limit fails and closes its body,
+including unfinished streams. Omission preserves the normal transport behavior.
+Plugin adapters impose their own finite maximum before calling this gateway.
 
 Keep the provider-neutral API, callback route, provider catalog, token payload format, and schema
 compatible during internal refactors. Verify with:

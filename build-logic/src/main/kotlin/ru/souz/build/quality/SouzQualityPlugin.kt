@@ -127,8 +127,9 @@ class SouzQualityPlugin : Plugin<Project> {
 
                 val analysisTasks = subproject.tasks.withType(Detekt::class.java)
                     .matching { task -> task.name != "detekt" && !task.name.endsWith("SourceSet") }
+                // The generic check task also reads the custom rule configuration on a clean checkout.
+                subproject.tasks.withType(Detekt::class.java).configureEach { dependsOn(rulesJarTask) }
                 analysisTasks.configureEach {
-                    dependsOn(rulesJarTask)
                     val projectPath = subproject.projectDir.relativeInvariantPath(
                         project.layout.projectDirectory.asFile
                     )
