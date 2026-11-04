@@ -18,3 +18,5 @@ implemented in Gradle build logic and documented in
   maintenance RepoWise reports.
 - `qodana.yaml` configures advisory Qodana analysis; behavior is documented in
   [`docs/quality-gates.md`](../docs/quality-gates.md).
+- `pr_advisory.cjs` publishes the combined PR comment and source annotations
+  from CI artifacts. Run its tests with `node --test quality/pr_advisory_test.cjs`.

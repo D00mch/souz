@@ -1,0 +1,96 @@
+name: PR Quality Advisory
+
+on:
+  workflow_run:
+    workflows: [CI-Tests]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-advisory-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+      checks: write
+
+    steps:
+      # Run only publisher code from the default branch, never from the PR.
+      - name: Checkout trusted publisher
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: quality
+
+      - name: Select current PR source run
+        id: source
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { selectRun } = require('./quality/pr_advisory.cjs');
+            const run = await selectRun({ github, context });
+            if (run) core.setOutput('run', JSON.stringify(run));
+
+      # Each pattern matches at most one artifact. Give it the named directory
+      # expected by the reader, extracting directly into that path.
+      # Unmatched patterns are allowed; download failures must not hide other reports.
+      - name: Download quality gate data
+        if: always() && steps.source.outputs.run != ''
+        uses: actions/download-artifact@v8
+        with:
+          run-id: ${{ fromJSON(steps.source.outputs.run).id }}
+          github-token: ${{ github.token }}
+          pattern: souz-quality-gate-${{ fromJSON(steps.source.outputs.run).id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/quality-advisory/souz-quality-gate-${{ fromJSON(steps.source.outputs.run).id }}
+
+      - name: Download duplication data
+        if: always() && steps.source.outputs.run != ''
+        uses: actions/download-artifact@v8
+        with:
+          run-id: ${{ fromJSON(steps.source.outputs.run).id }}
+          github-token: ${{ github.token }}
+          pattern: souz-duplication-ratchet-${{ fromJSON(steps.source.outputs.run).id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/quality-advisory/souz-duplication-ratchet-${{ fromJSON(steps.source.outputs.run).id }}
+
+      - name: Download RepoWise data
+        if: always() && steps.source.outputs.run != ''
+        uses: actions/download-artifact@v8
+        with:
+          run-id: ${{ fromJSON(steps.source.outputs.run).id }}
+          github-token: ${{ github.token }}
+          pattern: souz-repowise-pr-quality-${{ fromJSON(steps.source.outputs.run).id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/quality-advisory/souz-repowise-pr-quality-${{ fromJSON(steps.source.outputs.run).id }}
+
+      - name: Download Qodana data
+        if: always() && steps.source.outputs.run != ''
+        uses: actions/download-artifact@v8
+        with:
+          run-id: ${{ fromJSON(steps.source.outputs.run).id }}
+          github-token: ${{ github.token }}
+          pattern: souz-qodana-findings-${{ fromJSON(steps.source.outputs.run).id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/quality-advisory/souz-qodana-findings-${{ fromJSON(steps.source.outputs.run).id }}
+
+      - name: Publish PR advisory
+        if: always() && steps.source.outputs.run != ''
+        uses: actions/github-script@v8
+        env:
+          SOUZ_ADVISORY_REPORTS: ${{ runner.temp }}/quality-advisory
+          SOUZ_ADVISORY_SOURCE_RUN: ${{ steps.source.outputs.run }}
+        with:
+          script: |
+            const { publish } = require('./quality/pr_advisory.cjs');
+            await publish({ github, context, core, run: JSON.parse(process.env.SOUZ_ADVISORY_SOURCE_RUN) });

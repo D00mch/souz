@@ -48,6 +48,14 @@ jobs:
           artifact-name: qodana-report-${{ github.run_id }}
           cache-default-branch-only: true
 
+      - name: Upload Qodana findings for PR advisory
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: souz-qodana-findings-${{ github.run_id }}
+          path: ${{ runner.temp }}/qodana/results/qodana.sarif.json
+          if-no-files-found: warn
+
       - name: Verify Qodana report
         if: always()
         shell: bash
