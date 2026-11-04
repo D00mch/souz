@@ -179,9 +179,9 @@ async function selectRun({ github, context }) {
   if (!source.head_repository) return null;
   for (const candidate of candidates) {
     const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: candidate.number });
-    if (pr.number !== candidate.number || !matchesProvider(source, pr) || !sameBase(candidate, pr)) continue;
+    if (pr.number !== candidate.number || !matchesProvider(source, pr)) continue;
     // Actions can replace the pending current-head publisher with a late stale event.
-    // Reconcile the live head before choosing which run's artifacts to download.
+    // Reconcile the live head and base; only the selected run must match both.
     const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
       ...context.repo, workflow_id: source.workflow_id, head_sha: pr.head.sha,
       event: 'pull_request', status: 'completed', per_page: 100,

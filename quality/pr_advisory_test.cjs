@@ -164,6 +164,26 @@ function writeReports(f, data = reports(), runId = 10) {
   }
 }
 
+test('workflow pattern downloads explicitly extract into the reader artifact directories', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/quality-advisory.yml'), 'utf8');
+  const downloads = workflow.split(/^      - /m).filter(step => step.includes('uses: actions/download-artifact@'));
+  const runId = '${{ fromJSON(steps.source.outputs.run).id }}';
+  const artifacts = ['souz-quality-gate', 'souz-duplication-ratchet',
+    'souz-repowise-pr-quality', 'souz-qodana-findings'];
+  assert.equal(downloads.length, artifacts.length);
+  for (const step of downloads) {
+    const inputs = Object.fromEntries([...step.matchAll(/^          ([\w-]+): (.+)$/gm)]
+      .map(([, key, value]) => [key, value]));
+    assert.equal(inputs['run-id'], runId);
+    assert.equal(inputs['merge-multiple'], 'true', `${inputs.pattern} must extract directly into path`);
+    assert.equal(inputs.path, '${{ runner.temp }}/quality-advisory/' + inputs.pattern);
+    const artifact = artifacts.find(name => inputs.pattern === `${name}-${runId}`);
+    assert.ok(artifact, `Unexpected artifact pattern: ${inputs.pattern}`);
+    artifacts.splice(artifacts.indexOf(artifact), 1);
+  }
+  assert.deepEqual(artifacts, []);
+});
+
 test('a late stale completion recovers the current head publication displaced from the queue', async t => {
   const runs = [], f = fixture(t, { fork: true, runs });
   const current = { ...f.context.payload.workflow_run, id: 11,
@@ -184,6 +204,35 @@ test('a late stale completion recovers the current head publication displaced fr
   assert.match(f.calls[1].args.external_id, /^11:2:7:/);
   assert.equal(f.calls[1].args.conclusion, 'success');
   assert.equal(f.calls[1].args.details_url, current.html_url);
+});
+
+test('an obsolete triggering base recovers only evidence for the live PR base', async t => {
+  for (const base of [{ ref: 'kmp', sha: 'e'.repeat(40) }, { ref: 'main', sha: 'e'.repeat(40) }]) {
+    await t.test(base.ref, async child => {
+      const runs = [], f = fixture(child, { fork: true, runs });
+      const source = f.context.payload.workflow_run;
+      f.pr.base = { ...f.pr.base, ...base };
+      const association = { number: f.pr.number, base: f.pr.base };
+      const current = { ...source, id: 11, pull_requests: [association],
+        html_url: 'https://github.com/o/r/actions/runs/11' };
+      // Even a newer completed run must be skipped if it analyzed the old base.
+      runs.push(source, current, { ...source, id: 12 });
+      const selected = await selectRun(f);
+      assert.equal(selected?.id, current.id);
+      assert.deepEqual(selected.pull_requests, [association]);
+      writeReports(f, reports(), current.id);
+      await publish({ ...f, run: selected });
+      assert.deepEqual(f.calls.map(c => c.name), ['createComment', 'createCheck']);
+      assert.match(f.calls[0].args.body, /source-run:11:2/);
+      assert.equal(f.calls[1].args.conclusion, 'success');
+      assert.equal(f.calls[1].args.details_url, current.html_url);
+      runs.splice(1, 1);
+      assert.equal(await selectRun(f), null);
+      f.calls.length = 0;
+      await publish(f);
+      assert.deepEqual(f.calls, []);
+    });
+  }
 });
 
 test('recovery binds evidence to the PR and base even when two PRs share a head', async t => {

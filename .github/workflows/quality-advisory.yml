@@ -42,7 +42,7 @@ jobs:
             if (run) core.setOutput('run', JSON.stringify(run));
 
       # Each pattern matches at most one artifact. Give it the named directory
-      # expected by the reader even when the other analyses produced no data.
+      # expected by the reader, extracting directly into that path.
       # Unmatched patterns are allowed; download failures must not hide other reports.
       - name: Download quality gate data
         if: always() && steps.source.outputs.run != ''
@@ -51,6 +51,7 @@ jobs:
           run-id: ${{ fromJSON(steps.source.outputs.run).id }}
           github-token: ${{ github.token }}
           pattern: souz-quality-gate-${{ fromJSON(steps.source.outputs.run).id }}
+          merge-multiple: true
           path: ${{ runner.temp }}/quality-advisory/souz-quality-gate-${{ fromJSON(steps.source.outputs.run).id }}
 
       - name: Download duplication data
@@ -60,6 +61,7 @@ jobs:
           run-id: ${{ fromJSON(steps.source.outputs.run).id }}
           github-token: ${{ github.token }}
           pattern: souz-duplication-ratchet-${{ fromJSON(steps.source.outputs.run).id }}
+          merge-multiple: true
           path: ${{ runner.temp }}/quality-advisory/souz-duplication-ratchet-${{ fromJSON(steps.source.outputs.run).id }}
 
       - name: Download RepoWise data
@@ -69,6 +71,7 @@ jobs:
           run-id: ${{ fromJSON(steps.source.outputs.run).id }}
           github-token: ${{ github.token }}
           pattern: souz-repowise-pr-quality-${{ fromJSON(steps.source.outputs.run).id }}
+          merge-multiple: true
           path: ${{ runner.temp }}/quality-advisory/souz-repowise-pr-quality-${{ fromJSON(steps.source.outputs.run).id }}
 
       - name: Download Qodana data
@@ -78,6 +81,7 @@ jobs:
           run-id: ${{ fromJSON(steps.source.outputs.run).id }}
           github-token: ${{ github.token }}
           pattern: souz-qodana-findings-${{ fromJSON(steps.source.outputs.run).id }}
+          merge-multiple: true
           path: ${{ runner.temp }}/quality-advisory/souz-qodana-findings-${{ fromJSON(steps.source.outputs.run).id }}
 
       - name: Publish PR advisory

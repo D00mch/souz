@@ -267,7 +267,7 @@ the newest completed `CI-Tests` run for the same open PR, current head, and base
 branch and revision before downloading artifacts. Recovered runs retain their
 verified PR association. Runs without PR metadata are skipped, including fork
 runs: commit lookup cannot verify the analyzed base even for a single matching PR.
-A late completion for a stale head can therefore recover
+A late completion for a stale head or base can therefore recover
 a current-head publisher displaced from the pending Actions concurrency slot.
 If the current head has no completed run, publication waits for its completion.
 
