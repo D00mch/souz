@@ -263,8 +263,11 @@ with explicit clear results; missing or malformed reports remain visible as
 unavailable instead of passing.
 
 Publication is serialized per source repository and branch. Each event selects
-the newest completed `CI-Tests` run for the open PR's current head before
-downloading artifacts. A late completion for a stale head can therefore recover
+the newest completed `CI-Tests` run for the same open PR, current head, and base
+branch and revision before downloading artifacts. Recovered runs retain their
+verified PR association. When GitHub omits a fork run's PR metadata, commit
+lookup is used only for a single matching open PR; ambiguous evidence is skipped.
+A late completion for a stale head can therefore recover
 a current-head publisher displaced from the pending Actions concurrency slot.
 If the current head has no completed run, publication waits for its completion.
 
@@ -274,6 +277,11 @@ annotations for findings in changed files; the comment lists up to 40 findings
 and links to the complete CI reports. Findings in unchanged files are marked
 outside the PR diff, without attributing them to the PR as new issues. Required
 CI checks retain their blocking behavior.
+
+Publisher retries reuse the latest check when its output is identical. Changed
+reports, including recovered artifact downloads, supersede it with a new check
+so the summary and annotations reflect the available evidence without appending
+duplicate annotations.
 
 Analysis jobs keep read-only repository permissions. The publisher runs trusted
 code from the default branch, reads artifacts as data outside the checkout,

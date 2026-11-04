@@ -104,33 +104,64 @@ function fixture(t, options = {}) {
     if (oldDirectory === undefined) delete process.env.SOUZ_ADVISORY_REPORTS;
     else process.env.SOUZ_ADVISORY_REPORTS = oldDirectory;
   });
+  const pr = { number: 7, state: options.closed ? 'closed' : 'open',
+    head: { sha: options.stale ? 'b'.repeat(40) : SHA, ref: 'feature', repo: { id: options.fork ? 2 : 1 } },
+    base: { ref: 'kmp', sha: 'd'.repeat(40), repo: { id: 1 } } };
   const context = { repo: { owner: 'o', repo: 'r' }, payload: { repository: { id: 1 }, workflow_run: {
     id: 10, run_attempt: 2, workflow_id: 3, status: 'completed', event: 'pull_request',
     path: '.github/workflows/ci.yml', repository: { id: 1 },
     head_repository: { id: options.fork ? 2 : 1 }, head_branch: 'feature',
-    pull_requests: options.fork ? [] : [{ number: 7 }], head_sha: SHA, conclusion: 'success', html_url: 'https://github.com/o/r/actions/runs/10',
+    pull_requests: options.fork ? [] : [{ number: pr.number, base: pr.base }],
+    head_sha: SHA, conclusion: 'success', html_url: 'https://github.com/o/r/actions/runs/10',
   } } };
-  const pr = { number: 7, state: options.closed ? 'closed' : 'open',
-    head: { sha: options.stale ? 'b'.repeat(40) : SHA, ref: 'feature', repo: { id: options.fork ? 2 : 1 } },
-    base: { repo: { id: 1 } } };
+  const checks = options.checks || [];
+  const comments = options.comments || [];
+  const prs = new Map([[pr.number, pr]]);
   let gets = 0;
-  const record = name => async args => { calls.push({ name, args }); return { data: {} }; };
+  const record = name => async args => {
+    calls.push({ name, args });
+    if (name === 'createComment') comments.push({ id: 100 + comments.length,
+      user: { login: 'github-actions[bot]' }, body: args.body });
+    if (name === 'updateComment') comments.find(c => c.id === args.comment_id).body = args.body;
+    return { data: {} };
+  };
   const github = { rest: {
-    pulls: { get: async () => ({ data: { ...pr, head: { ...pr.head,
-      sha: options.push && ++gets > 1 ? 'c'.repeat(40) : pr.head.sha } } }),
+    pulls: { get: async ({ pull_number }) => {
+      const target = prs.get(pull_number);
+      assert.ok(target, `Unexpected PR: ${pull_number}`);
+      return { data: { ...target, head: { ...target.head,
+        sha: options.push && ++gets > 1 ? 'c'.repeat(40) : target.head.sha } } };
+    },
       listFiles: 'files' },
     issues: { listComments: 'comments', createComment: record('createComment'), updateComment: record('updateComment') },
-    checks: { listForRef: 'checks', create: record('createCheck') }, repos: { listPullRequestsAssociatedWithCommit: 'associated' },
+    checks: { listForRef: 'checks', create: async args => {
+      calls.push({ name: 'createCheck', args });
+      checks.unshift({ ...args, id: checks.length + 100, app: { slug: 'github-actions' } });
+      return { data: checks[0] };
+    } }, repos: { listPullRequestsAssociatedWithCommit: 'associated' },
     actions: { listWorkflowRuns: 'runs' },
   }, paginate: async endpoint => {
     if (endpoint === 'files') return [{ filename: 'src/New.kt' }];
-    if (endpoint === 'comments') return options.comments || [];
-    if (endpoint === 'checks') return options.checks || [];
-    if (endpoint === 'associated') return [{ number: 7 }];
+    if (endpoint === 'comments') return comments;
+    if (endpoint === 'checks') return checks;
+    if (endpoint === 'associated') return options.associated || [pr];
     if (endpoint === 'runs') return options.runs || [context.payload.workflow_run];
     throw new Error(`Unexpected endpoint: ${endpoint}`);
   } };
-  return { github, context, core: { info() {} }, calls, directory };
+  return { github, context, core: { info() {} }, calls, directory, pr, prs };
+}
+
+function writeReports(f, data = reports(), runId = 10) {
+  for (const [artifact, files] of [
+    ['souz-quality-gate', { 'gate-summary-v1.json': data.fast }],
+    ['souz-duplication-ratchet', { 'gate-summary-v1.json': data.duplication }],
+    ['souz-qodana-findings', { 'qodana.sarif.json': data.qodana }],
+    ['souz-repowise-pr-quality', { 'base-health.json': data.base, 'pr-health.json': data.head, 'pr-risk.json': data.risk }],
+  ]) {
+    const folder = path.join(f.directory, `${artifact}-${runId}`);
+    fs.mkdirSync(folder, { recursive: true });
+    for (const [filename, report] of Object.entries(files)) fs.writeFileSync(path.join(folder, filename), JSON.stringify(report));
+  }
 }
 
 test('a late stale completion recovers the current head publication displaced from the queue', async t => {
@@ -145,24 +176,77 @@ test('a late stale completion recovers the current head publication displaced fr
   assert.equal(selected.id, 11);
   assert.equal(selected.head_sha, SHA);
   // Artifacts must come from the recovered run, not the stale triggering event.
-  const data = reports();
-  for (const [artifact, files] of [
-    ['souz-quality-gate', { 'gate-summary-v1.json': data.fast }],
-    ['souz-duplication-ratchet', { 'gate-summary-v1.json': data.duplication }],
-    ['souz-qodana-findings', { 'qodana.sarif.json': data.qodana }],
-    ['souz-repowise-pr-quality', { 'base-health.json': data.base, 'pr-health.json': data.head, 'pr-risk.json': data.risk }],
-  ]) {
-    const folder = path.join(f.directory, `${artifact}-11`);
-    fs.mkdirSync(folder);
-    for (const [filename, report] of Object.entries(files)) fs.writeFileSync(path.join(folder, filename), JSON.stringify(report));
-  }
+  writeReports(f, reports(), 11);
   await publish({ ...f, run: selected });
   assert.deepEqual(f.calls.map(c => c.name), ['createComment', 'createCheck']);
   assert.match(f.calls[0].args.body, /source-run:11:2/);
   assert.equal(f.calls[1].args.head_sha, SHA);
-  assert.equal(f.calls[1].args.external_id, '11:2');
+  assert.match(f.calls[1].args.external_id, /^11:2:7:/);
   assert.equal(f.calls[1].args.conclusion, 'success');
   assert.equal(f.calls[1].args.details_url, current.html_url);
+});
+
+test('recovery binds evidence to the PR and base even when two PRs share a head', async t => {
+  const runs = [], f = fixture(t, { runs });
+  const source = f.context.payload.workflow_run;
+  const other = { number: 8, base: { ...f.pr.base, ref: 'main' } };
+  f.prs.set(8, { ...f.pr, ...other });
+  const wrongRuns = [
+    { ...source, id: 12, pull_requests: [other] },
+    { ...source, id: 13, pull_requests: [{ number: 7, base: other.base }] },
+    { ...source, id: 14, pull_requests: [{ number: 7, base: { ...f.pr.base, sha: 'e'.repeat(40) } }] },
+  ];
+  runs.push(source, ...wrongRuns);
+  assert.equal((await selectRun(f)).id, 10);
+  const mainContext = { ...f.context, payload: { ...f.context.payload, workflow_run: wrongRuns[0] } };
+  assert.equal((await selectRun({ ...f, context: mainContext })).id, 12);
+  runs.splice(0, 1);
+  assert.equal(await selectRun(f), null);
+  for (const run of wrongRuns.slice(1)) await publish({ ...f, run });
+  assert.deepEqual(f.calls, []);
+});
+
+test('recovered publication retains only the verified selected-run association', async t => {
+  const runs = [], f = fixture(t, { runs });
+  const source = f.context.payload.workflow_run;
+  const association = { ...source.pull_requests[0], url: 'https://api.github.com/repos/o/r/pulls/7' };
+  source.pull_requests.push({ number: 8, base: { ...f.pr.base, ref: 'main' } });
+  runs.push({ ...source, id: 11, pull_requests: [association] });
+  const selected = await selectRun(f);
+  assert.deepEqual(selected.pull_requests, [association]);
+  await publish({ ...f, run: selected });
+  assert.equal(f.calls.filter(c => c.name === 'createComment').length, 1);
+  assert.equal(f.calls[0].args.issue_number, 7);
+});
+
+test('missing fork run associations fail closed when commit lookup matches both main and kmp PRs', async t => {
+  const f = fixture(t, { fork: true });
+  const other = { ...f.pr, number: 8, base: { ...f.pr.base, ref: 'main' } };
+  const paginate = f.github.paginate;
+  f.github.paginate = async (endpoint, args) => endpoint === 'associated' ? [f.pr, other] : paginate(endpoint, args);
+  assert.equal(await selectRun(f), null);
+  await publish(f);
+  assert.deepEqual(f.calls, []);
+});
+
+test('recovery rejects ambiguous metadata-free runs even when the triggering PR is known', async t => {
+  const runs = [], f = fixture(t, { runs });
+  const source = f.context.payload.workflow_run;
+  const other = { ...f.pr, number: 8, base: { ...f.pr.base, ref: 'main' } };
+  const paginate = f.github.paginate;
+  f.github.paginate = async (endpoint, args) => endpoint === 'associated' ? [f.pr, other] : paginate(endpoint, args);
+  runs.push(source, { ...source, id: 11, pull_requests: [] });
+  assert.equal((await selectRun(f)).id, 10);
+});
+
+test('a base retarget while reading reports prevents publication', async t => {
+  const f = fixture(t);
+  let reads = 0;
+  f.github.rest.pulls.get = async () => ({ data: {
+    ...f.pr, base: ++reads > 1 ? { ...f.pr.base, ref: 'main' } : f.pr.base,
+  } });
+  await publish(f);
+  assert.deepEqual(f.calls, []);
 });
 
 test('selects the newest completed run and attempt only for the same workflow, head and provider branch', async t => {
@@ -207,15 +291,50 @@ test('missing artifacts publish a neutral check and a warning comment, including
   assert.match(f.calls[0].args.body, /Report unavailable/);
 });
 
-test('updates only the bot-owned sticky comment and does not duplicate annotations on retry', async t => {
+test('updates only the bot-owned sticky comment and supersedes legacy checks once', async t => {
   const f = fixture(t, { comments: [
     { id: 1, user: { login: 'contributor' }, body: '<!-- souz-quality-advisory -->' },
     { id: 2, user: { login: 'github-actions[bot]' }, body: '<!-- souz-quality-advisory -->\n<!-- source-run:10:1 -->' },
-  ], checks: [{ name: 'Quality advisory', app: { slug: 'github-actions' }, external_id: '10:2' }] });
+  ], checks: [{ id: 1, name: 'Quality advisory', app: { slug: 'github-actions' }, external_id: '10:2' }] });
   await publish(f);
-  assert.deepEqual(f.calls.map(c => c.name), ['updateComment']);
+  await publish(f);
+  assert.deepEqual(f.calls.map(c => c.name), ['updateComment', 'createCheck', 'updateComment']);
   assert.equal(f.calls[0].args.comment_id, 2);
   assert.match(f.calls[0].args.body, /source-run:10:2/);
+});
+
+test('artifact recovery supersedes unavailable output and adds annotations exactly once', async t => {
+  const f = fixture(t);
+  await publish(f);
+  const unavailable = f.calls.find(c => c.name === 'createCheck').args;
+  assert.match(unavailable.output.summary, /Report unavailable/);
+  const data = reports();
+  data.qodana.runs[0].results = [{ ruleId: 'Rule', message: { text: 'Recovered finding' },
+    locations: [{ physicalLocation: { artifactLocation: { uri: 'src/New.kt' }, region: { startLine: 3 } } }] }];
+  writeReports(f, data);
+  await publish(f);
+  await publish(f);
+  const checks = f.calls.filter(c => c.name === 'createCheck').map(c => c.args);
+  assert.equal(checks.length, 2);
+  assert.notEqual(checks[1].external_id, unavailable.external_id);
+  assert.doesNotMatch(checks[1].output.summary, /Report unavailable/);
+  assert.equal(checks[1].output.annotations.length, 1);
+  assert.equal(checks[1].output.annotations[0].message, 'Recovered finding');
+  assert.match(f.calls.filter(c => c.name === 'updateComment').at(-1).args.body, /Recovered finding/);
+  assert.equal(f.calls.filter(c => c.name === 'createComment').length, 1);
+  writeReports(f);
+  await publish(f);
+  await publish(f);
+  const clear = f.calls.filter(c => c.name === 'createCheck').map(c => c.args);
+  assert.equal(clear.length, 3);
+  assert.equal(clear[2].conclusion, 'success');
+  assert.deepEqual(clear[2].output.annotations, []);
+  writeReports(f, data);
+  await publish(f);
+  await publish(f);
+  const restored = f.calls.filter(c => c.name === 'createCheck').map(c => c.args);
+  assert.equal(restored.length, 4);
+  assert.equal(restored[3].external_id, checks[1].external_id);
 });
 
 test('stale heads, concurrent pushes and older runs/attempts cannot overwrite the advisory', async t => {

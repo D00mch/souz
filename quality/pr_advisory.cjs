@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 
 const MARKER = '<!-- souz-quality-advisory -->';
 const CHECK_NAME = 'Quality advisory';
@@ -154,11 +155,26 @@ function readReports(directory, runId) {
   }));
 }
 
+function matchesProvider(run, pr) {
+  return pr.state === 'open' && pr.base.repo.id === run.repository.id &&
+    pr.head.repo?.id === run.head_repository?.id && pr.head.ref === run.head_branch;
+}
+
+function sameBase(candidate, pr) {
+  return candidate.base?.repo?.id === pr.base.repo.id && candidate.base.ref === pr.base.ref &&
+    typeof candidate.base.sha === 'string' && candidate.base.sha === pr.base.sha;
+}
+
 async function candidatesForRun(github, context, run) {
   if (run.event !== 'pull_request' || run.path !== '.github/workflows/ci.yml' ||
       run.repository.id !== context.payload.repository.id) throw new Error('Unexpected source workflow');
-  return run.pull_requests.length ? run.pull_requests : github.paginate(
+  if (run.pull_requests.length) return run.pull_requests;
+  const associated = await github.paginate(
     github.rest.repos.listPullRequestsAssociatedWithCommit, { ...context.repo, commit_sha: run.head_sha, per_page: 100 });
+  // Fork runs can omit PR metadata. A commit shared by multiple open PRs cannot
+  // identify which base was analyzed, so never guess between those PRs.
+  const candidates = associated.filter(pr => matchesProvider(run, pr));
+  return candidates.length === 1 ? candidates : [];
 }
 
 async function selectRun({ github, context }) {
@@ -167,20 +183,23 @@ async function selectRun({ github, context }) {
   if (!source.head_repository) return null;
   for (const candidate of candidates) {
     const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: candidate.number });
-    if (pr.state !== 'open' || pr.base.repo.id !== source.repository.id ||
-        pr.head.repo?.id !== source.head_repository.id || pr.head.ref !== source.head_branch) continue;
+    if (pr.number !== candidate.number || !matchesProvider(source, pr) || !sameBase(candidate, pr)) continue;
     // Actions can replace the pending current-head publisher with a late stale event.
     // Reconcile the live head before choosing which run's artifacts to download.
     const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
       ...context.repo, workflow_id: source.workflow_id, head_sha: pr.head.sha,
       event: 'pull_request', status: 'completed', per_page: 100,
     });
-    const selected = runs.filter(run => run.status === 'completed' && run.head_sha === pr.head.sha &&
+    const eligible = runs.filter(run => run.status === 'completed' && run.head_sha === pr.head.sha &&
       run.workflow_id === source.workflow_id && run.event === 'pull_request' && run.path === source.path &&
       run.repository.id === source.repository.id && run.head_repository?.id === source.head_repository.id &&
       run.head_branch === source.head_branch)
-      .sort((a, b) => b.id - a.id || b.run_attempt - a.run_attempt)[0];
-    return selected ? { ...selected, pull_requests: candidates } : null;
+      .sort((a, b) => b.id - a.id || b.run_attempt - a.run_attempt);
+    for (const selected of eligible) {
+      const associations = await candidatesForRun(github, context, selected);
+      const association = associations.find(c => c.number === pr.number && sameBase(c, pr));
+      if (association) return { ...selected, pull_requests: [association] };
+    }
   }
   return null;
 }
@@ -190,7 +209,8 @@ async function publish({ github, context, core, run = context.payload.workflow_r
   const candidates = await candidatesForRun(github, context, run);
   for (const candidate of candidates) {
     const { data: pr } = await github.rest.pulls.get({ ...repo, pull_number: candidate.number });
-    if (pr.state !== 'open' || pr.head.sha !== run.head_sha || pr.base.repo.id !== run.repository.id) continue;
+    if (pr.number !== candidate.number || pr.head.sha !== run.head_sha ||
+        !matchesProvider(run, pr) || !sameBase(candidate, pr)) continue;
     const comments = await github.paginate(github.rest.issues.listComments, { ...repo, issue_number: pr.number, per_page: 100 });
     const previous = comments.find(c => c.user?.login === 'github-actions[bot]' && c.body.startsWith(MARKER));
     const stamp = previous?.body.match(/<!-- source-run:(\d+):(\d+) -->/);
@@ -203,19 +223,27 @@ async function publish({ github, context, core, run = context.payload.workflow_r
       repository: `${repo.owner}/${repo.repo}`, changedFiles: new Set(files.map(f => f.filename)), conclusion: run.conclusion,
     });
     const body = `${result.body}\n\n<!-- source-run:${run.id}:${run.run_attempt} -->`;
-    // A push while reading artifacts must not replace the current PR's advisory.
+    // A push or base retarget while reading artifacts must not replace the advisory.
     const { data: current } = await github.rest.pulls.get({ ...repo, pull_number: pr.number });
-    if (current.head.sha !== run.head_sha || current.state !== 'open') continue;
+    if (current.head.sha !== run.head_sha || !matchesProvider(run, current) || !sameBase(candidate, current)) continue;
     if (previous) await github.rest.issues.updateComment({ ...repo, comment_id: previous.id, body });
     else await github.rest.issues.createComment({ ...repo, issue_number: pr.number, body });
-    const externalId = `${run.id}:${run.run_attempt}`;
+    const check = {
+      status: 'completed', conclusion: result.attention ? 'neutral' : 'success', details_url: run.html_url,
+      output: { title: result.attention ? 'Quality findings need review' : 'No quality findings',
+        summary: result.body, annotations: result.annotations },
+    };
+    // GitHub appends annotations on updates. Supersede changed output instead,
+    // including recovered downloads, and reuse the latest check on identical retries.
+    const digest = createHash('sha256').update(JSON.stringify(check)).digest('hex');
+    const externalId = `${run.id}:${run.run_attempt}:${pr.number}:${digest}`;
     const checks = await github.paginate(github.rest.checks.listForRef, { ...repo, ref: pr.head.sha, per_page: 100 });
-    if (!checks.some(c => c.name === CHECK_NAME && c.app?.slug === 'github-actions' && c.external_id === externalId)) {
+    const latest = checks.filter(c => c.name === CHECK_NAME && c.app?.slug === 'github-actions')
+      .sort((a, b) => b.id - a.id)[0];
+    if (latest?.external_id !== externalId) {
       await github.rest.checks.create({
         ...repo, name: CHECK_NAME, head_sha: pr.head.sha, external_id: externalId,
-        status: 'completed', conclusion: result.attention ? 'neutral' : 'success', details_url: run.html_url,
-        output: { title: result.attention ? 'Quality findings need review' : 'No quality findings',
-          summary: result.body, annotations: result.annotations },
+        ...check,
       });
     }
     core.info(`Published quality advisory for PR #${pr.number} at ${pr.head.sha}`);
