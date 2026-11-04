@@ -174,7 +174,15 @@ internal class PublicClientService(
         }
         val context = ToolCallContext(chat.userId, chat.id.toString(), threadId.toString(), toolCallId)
         registry.acceptChannelTool(context, now)?.let { pending ->
-            val normalized = normalizeImages(chat.userId, "$threadId:$toolCallId", ClientToolOutcome(status, frame.result, frame.error))
+            val normalized = try {
+                normalizeImages(chat.userId, "$threadId:$toolCallId", ClientToolOutcome(status, frame.result, frame.error))
+            } catch (cancelled: CancellationException) {
+                // Receipt has disabled the waiter's deadline; no ACK failure callback exists yet.
+                pending.result.complete(ClientToolOutcome(
+                    "failed", null, ClientError("client_tool_failed", "Client tool result preparation was cancelled."),
+                ))
+                throw cancelled
+            }
             return HandledClientFrame(
                 response = acceptedTool(chat.id, threadId, toolCallId, duplicate = false, now),
                 afterSend = { pending.result.complete(normalized) },

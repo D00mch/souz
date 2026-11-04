@@ -12,12 +12,17 @@ import java.nio.file.Files
 import java.util.Base64
 import java.util.UUID
 import javax.imageio.ImageIO
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import kotlin.time.Duration.Companion.seconds
 import kotlin.test.*
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.attachments.*
 import ru.souz.backend.client.ClientImages
 import ru.souz.backend.client.ClientToolOutcome
 import ru.souz.backend.client.imageFiles
+import ru.souz.backend.client.ToolResultFrame
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.llms.*
@@ -277,6 +282,49 @@ class BackendImagesE2eTest {
             val invalidHistory = backend.agentStateRepository.get(user, invalidChat)!!.history
             assertTrue(invalidHistory.flatMap { it.files }.containsAll(files))
             assertFalse("unavailable; unsupported" in restJsonMapper.writeValueAsString(invalidHistory))
+        }
+    }
+
+    @Test fun `cancelled screenshot preparation releases the reserved client tool`() = backendE2eTest(
+        "image_cancelled", attachments = storageConfig(),
+        llm = E2eLlmApi().apply { requestSkill("screen.capture", emptyMap()) },
+    ) {
+        val user = UUID.randomUUID().toString()
+        val chat = createPublicChat(user, tools = clientToolsJson("screen.capture"))
+        val service = backend.dependencies.publicClientService
+        val ownedChat = service.requireChat(UUID.fromString(chat), "backend")
+        withPublicSocket(chat) { socket ->
+            socket.send(Frame.Text(messageFrame(chat, user, "capture")))
+            assertEquals("accepted", readJson(socket)["status"].asText())
+            readJson(socket)
+            val started = readJson(socket)
+            assertEquals("screen.capture", started["payload"]["name"].asText())
+            val frame = ToolResultFrame(
+                "tool.result", chat, started["threadId"].asText(), started["payload"]["toolCallId"].asText(),
+                "succeeded", restJsonMapper.valueToTree(mapOf("content" to listOf(
+                    mapOf("type" to "image", "mimeType" to "image/png", "data" to base64),
+                ))),
+            )
+            lateinit var receiver: Job
+            withTableLocked("stored_attachments", "share") {
+                receiver = launch {
+                    service.handleToolResult(ownedChat, frame)
+                    fail("Cancelled preparation must not return an ACK")
+                }
+                awaitLockWait("stored_attachments")
+                receiver.cancel()
+            }
+            assertTrue(receiver.isCancelled)
+            withTimeout(5.seconds) {
+                assertEquals("thread.completed", readJson(socket)["type"].asText())
+                backend.clientThreadRegistry.awaitRemoved(UUID.fromString(frame.threadId))
+            }
+            val result = llm.requests.last().messages.single { it.name == "RunSkillCommand" }
+            assertTrue("client_tool_failed" in result.content)
+            assertTrue(result.files.isEmpty())
+            assertTrue(backend.clientThreadRegistry.isEmpty())
+            socket.send(Frame.Text(restJsonMapper.writeValueAsString(frame)))
+            assertEquals("tool_call_not_found", readJson(socket)["error"]["code"].asText())
         }
     }
 
