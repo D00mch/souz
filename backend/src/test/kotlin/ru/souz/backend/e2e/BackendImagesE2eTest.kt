@@ -156,6 +156,8 @@ class BackendImagesE2eTest {
 
     @Test fun `client screenshots persist as references and reach the model without pixels in history`() {
         var call = 0
+        val attachmentConfig = storageConfig()
+        var unavailableFiles = emptyList<FileContent>()
         val http = HttpClient(MockEngine { request ->
             val body = restJsonMapper.readTree(request.body.toByteArray())
             val message = if (call++ == 0) {
@@ -178,6 +180,7 @@ class BackendImagesE2eTest {
                     } == true })
                 } else {
                     assertTrue("unavailable; unsupported, damaged or too large to decode safely" in body.toString())
+                    unavailableFiles.forEach { assertTrue("Image ${it.fileId} unavailable; request it again." in body.toString()) }
                 }
                 mapOf("role" to "assistant", "content" to "I see the screenshot")
             }
@@ -185,7 +188,7 @@ class BackendImagesE2eTest {
                 "message" to message, "finish_reason" to if (call == 1) "tool_calls" else "stop")), "created" to 1)),
                 headers = headersOf(HttpHeaders.ContentType, "application/json"))
         }) { providerHttpClientDefaults() }
-        backendE2eTest("image_client", attachments = storageConfig(), settingsSource = settings,
+        backendE2eTest("image_client", attachments = attachmentConfig, settingsSource = settings,
             providerClients = ProviderHttpClients(http, http)) {
             val user = UUID.randomUUID().toString()
             val chat = createPublicChat(user, tools = clientToolsJson("screen.capture"))
@@ -265,12 +268,22 @@ class BackendImagesE2eTest {
                 assertTrue(structured.imageFiles().isEmpty(), "Arbitrary structured data is not normalized image content")
             }
 
-            // Unsupported and damaged historical images must not poison subsequent text-only turns.
+            // Keep ready metadata while losing or corrupting the underlying S3 objects.
+            val unavailable = listOf("missing", "changed-hash", "changed-size").map {
+                backend.attachmentStorage.save(user, it, "$it.png", png.inputStream())
+            }
+            S3AttachmentObjects(attachmentConfig).use { objects ->
+                objects.delete(unavailable[0])
+                objects.put(unavailable[1], png.copyOf().also { it[it.lastIndex] = (it.last() + 1).toByte() })
+                objects.put(unavailable[2], png.copyOf(png.size - 1))
+            }
+            unavailableFiles = unavailable.map { backend.attachmentStorage.get(user, it.id).toContent() }
+            // Unreadable historical images must not poison subsequent text-only turns.
             val gif = ByteArrayOutputStream().also { ImageIO.write(BufferedImage(2, 3, BufferedImage.TYPE_INT_RGB), "gif", it) }.toByteArray()
             val unsupported = backend.attachmentStorage.save(user, "gif", "image.gif", gif.inputStream())
             assertEquals("image/gif", unsupported.mimeType)
             val invalidChat = UUID.fromString(createPublicChat(user, requestId = "invalid-images"))
-            val files = listOf(unsupported.toContent(), broken.toContent())
+            val files = listOf(unsupported.toContent(), broken.toContent()) + unavailableFiles
             for (attachments in listOf(files, emptyList())) {
                 val execution = backend.dependencies.executionService.executeChatTurn(user, invalidChat, "continue in text",
                     requestOverrides = ru.souz.backend.settings.service.UserSettingsOverrides(defaultModel = LLMModel.OpenAIGpt52.alias),
@@ -281,7 +294,7 @@ class BackendImagesE2eTest {
             assertEquals(5, call)
             val invalidHistory = backend.agentStateRepository.get(user, invalidChat)!!.history
             assertTrue(invalidHistory.flatMap { it.files }.containsAll(files))
-            assertFalse("unavailable; unsupported" in restJsonMapper.writeValueAsString(invalidHistory))
+            assertFalse("unavailable;" in restJsonMapper.writeValueAsString(invalidHistory))
         }
     }
 

@@ -7,6 +7,7 @@ import ru.souz.llms.*
 import ru.souz.llms.runtime.ImageSource
 import ru.souz.llms.runtime.InvalidImageException
 import ru.souz.llms.runtime.supportsImageInput
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 
 /** Request-only projection of durable references; neither pixels nor synthetic messages enter history. */
 internal suspend fun LLMRequest.Chat.withAttachmentImages(userId: String, storage: AttachmentStorage?): LLMRequest.Chat {
@@ -40,7 +41,9 @@ internal suspend fun LLMRequest.Chat.withAttachmentImages(userId: String, storag
                 attachments = message.attachments.orEmpty() + data,
             )
         } catch (error: AttachmentException) {
-            if (error.code != "attachment_not_found" && error.code != "attachment_expired") throw error
+            if (error.code != "attachment_not_found" && error.code != "attachment_expired" && error.code != "attachment_corrupt") throw error
+            projected[index] = message.copy(content = message.content + "\nImage $id unavailable; request it again.")
+        } catch (_: NoSuchKeyException) {
             projected[index] = message.copy(content = message.content + "\nImage $id unavailable; request it again.")
         } catch (_: InvalidImageException) {
             projected[index] = message.copy(content = message.content + "\nImage $id unavailable; unsupported, damaged or too large to decode safely. Request a PNG, JPEG or WebP replacement.")
