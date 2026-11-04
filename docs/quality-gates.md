@@ -265,11 +265,15 @@ unavailable instead of passing.
 Publication is serialized per source repository and branch. Each event selects
 the newest completed `CI-Tests` run for the same open PR, current head, and base
 branch and revision before downloading artifacts. Recovered runs retain their
-verified PR association. When GitHub omits a fork run's PR metadata, commit
-lookup is used only for a single matching open PR; ambiguous evidence is skipped.
+verified PR association. Runs without PR metadata are skipped, including fork
+runs: commit lookup cannot verify the analyzed base even for a single matching PR.
 A late completion for a stale head can therefore recover
 a current-head publisher displaced from the pending Actions concurrency slot.
 If the current head has no completed run, publication waits for its completion.
+
+Each analysis artifact is downloaded into its own named directory. Failed or
+cancelled runs with only one surviving artifact still publish its findings;
+the other analyses are marked unavailable.
 
 The publisher adds a `Quality advisory` check with `neutral` conclusion when
 attention is needed and `success` otherwise. It publishes up to 50 source

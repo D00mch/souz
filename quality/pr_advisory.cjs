@@ -165,21 +165,17 @@ function sameBase(candidate, pr) {
     typeof candidate.base.sha === 'string' && candidate.base.sha === pr.base.sha;
 }
 
-async function candidatesForRun(github, context, run) {
+function candidatesForRun(context, run) {
   if (run.event !== 'pull_request' || run.path !== '.github/workflows/ci.yml' ||
       run.repository.id !== context.payload.repository.id) throw new Error('Unexpected source workflow');
-  if (run.pull_requests.length) return run.pull_requests;
-  const associated = await github.paginate(
-    github.rest.repos.listPullRequestsAssociatedWithCommit, { ...context.repo, commit_sha: run.head_sha, per_page: 100 });
-  // Fork runs can omit PR metadata. A commit shared by multiple open PRs cannot
-  // identify which base was analyzed, so never guess between those PRs.
-  const candidates = associated.filter(pr => matchesProvider(run, pr));
-  return candidates.length === 1 ? candidates : [];
+  // Commit lookup returns the PR's live base, not the base analyzed by this run.
+  // Without a run-bound association, even a unique matching PR is unverifiable.
+  return run.pull_requests;
 }
 
 async function selectRun({ github, context }) {
   const source = context.payload.workflow_run;
-  const candidates = await candidatesForRun(github, context, source);
+  const candidates = candidatesForRun(context, source);
   if (!source.head_repository) return null;
   for (const candidate of candidates) {
     const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: candidate.number });
@@ -196,7 +192,7 @@ async function selectRun({ github, context }) {
       run.head_branch === source.head_branch)
       .sort((a, b) => b.id - a.id || b.run_attempt - a.run_attempt);
     for (const selected of eligible) {
-      const associations = await candidatesForRun(github, context, selected);
+      const associations = candidatesForRun(context, selected);
       const association = associations.find(c => c.number === pr.number && sameBase(c, pr));
       if (association) return { ...selected, pull_requests: [association] };
     }
@@ -206,7 +202,7 @@ async function selectRun({ github, context }) {
 
 async function publish({ github, context, core, run = context.payload.workflow_run }) {
   const repo = context.repo;
-  const candidates = await candidatesForRun(github, context, run);
+  const candidates = candidatesForRun(context, run);
   for (const candidate of candidates) {
     const { data: pr } = await github.rest.pulls.get({ ...repo, pull_number: candidate.number });
     if (pr.number !== candidate.number || pr.head.sha !== run.head_sha ||

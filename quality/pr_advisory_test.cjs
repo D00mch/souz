@@ -111,7 +111,7 @@ function fixture(t, options = {}) {
     id: 10, run_attempt: 2, workflow_id: 3, status: 'completed', event: 'pull_request',
     path: '.github/workflows/ci.yml', repository: { id: 1 },
     head_repository: { id: options.fork ? 2 : 1 }, head_branch: 'feature',
-    pull_requests: options.fork ? [] : [{ number: pr.number, base: pr.base }],
+    pull_requests: [{ number: pr.number, base: pr.base }],
     head_sha: SHA, conclusion: 'success', html_url: 'https://github.com/o/r/actions/runs/10',
   } } };
   const checks = options.checks || [];
@@ -168,7 +168,7 @@ test('a late stale completion recovers the current head publication displaced fr
   const runs = [], f = fixture(t, { fork: true, runs });
   const current = { ...f.context.payload.workflow_run, id: 11,
     html_url: 'https://github.com/o/r/actions/runs/11' };
-  f.context.payload.workflow_run = { ...current, id: 9, head_sha: 'b'.repeat(40), pull_requests: [] };
+  f.context.payload.workflow_run = { ...current, id: 9, head_sha: 'b'.repeat(40) };
   runs.push(f.context.payload.workflow_run, current);
   await publish(f);
   assert.deepEqual(f.calls, []); // Publishing only the surviving stale event loses the advisory.
@@ -219,24 +219,29 @@ test('recovered publication retains only the verified selected-run association',
   assert.equal(f.calls[0].args.issue_number, 7);
 });
 
-test('missing fork run associations fail closed when commit lookup matches both main and kmp PRs', async t => {
-  const f = fixture(t, { fork: true });
-  const other = { ...f.pr, number: 8, base: { ...f.pr.base, ref: 'main' } };
-  const paginate = f.github.paginate;
-  f.github.paginate = async (endpoint, args) => endpoint === 'associated' ? [f.pr, other] : paginate(endpoint, args);
-  assert.equal(await selectRun(f), null);
-  await publish(f);
-  assert.deepEqual(f.calls, []);
+test('metadata-free fork runs cannot adopt a retargeted PR base from commit lookup', async t => {
+  for (const base of [{ ref: 'kmp', sha: 'd'.repeat(40) }, { ref: 'main', sha: 'e'.repeat(40) }]) {
+    await t.test(JSON.stringify(base), async child => {
+      // The run analyzed main at d; the sole associated PR has since been
+      // retargeted or its base has advanced, with the same head and provider.
+      const f = fixture(child, { fork: true });
+      f.pr.base = { ...f.pr.base, ...base };
+      f.context.payload.workflow_run.pull_requests = [];
+      writeReports(f);
+      assert.equal(await selectRun(f), null);
+      await publish(f);
+      assert.deepEqual(f.calls, []);
+    });
+  }
 });
 
-test('recovery rejects ambiguous metadata-free runs even when the triggering PR is known', async t => {
+test('recovery skips metadata-free runs even when the triggering PR and live base are known', async t => {
   const runs = [], f = fixture(t, { runs });
   const source = f.context.payload.workflow_run;
-  const other = { ...f.pr, number: 8, base: { ...f.pr.base, ref: 'main' } };
-  const paginate = f.github.paginate;
-  f.github.paginate = async (endpoint, args) => endpoint === 'associated' ? [f.pr, other] : paginate(endpoint, args);
   runs.push(source, { ...source, id: 11, pull_requests: [] });
   assert.equal((await selectRun(f)).id, 10);
+  runs.shift();
+  assert.equal(await selectRun(f), null);
 });
 
 test('a base retarget while reading reports prevents publication', async t => {
@@ -282,13 +287,43 @@ test('a push after run selection prevents publishing the recovered advisory', as
   assert.deepEqual(f.calls, []);
 });
 
-test('missing artifacts publish a neutral check and a warning comment, including fork PR lookup', async t => {
+test('missing artifacts publish a neutral check and a warning comment for a verified fork run', async t => {
   const f = fixture(t, { fork: true });
   await publish(f);
   assert.deepEqual(f.calls.map(c => c.name), ['createComment', 'createCheck']);
   assert.equal(f.calls[1].args.head_sha, SHA);
   assert.equal(f.calls[1].args.conclusion, 'neutral');
   assert.match(f.calls[0].args.body, /Report unavailable/);
+});
+
+test('a single surviving artifact preserves its findings while missing analyses stay unavailable', async t => {
+  for (const artifact of ['souz-quality-gate', 'souz-duplication-ratchet',
+    'souz-qodana-findings', 'souz-repowise-pr-quality']) {
+    await t.test(artifact, async child => {
+      const f = fixture(child), data = reports();
+      data.fast.status = data.fast.checks[0].status = 'warning';
+      data.fast.checks[0].diagnostics = [{ path: 'src/New.kt', line: 3, message: 'Fast finding' }];
+      data.duplication.status = data.duplication.checks[0].status = 'fail';
+      data.duplication.checks[0].diagnostics = [{ message: 'Duplication finding' }];
+      data.qodana.runs[0].results = [{ ruleId: 'Rule', message: { text: 'Qodana finding' },
+        locations: [{ physicalLocation: { artifactLocation: { uri: 'src/New.kt' }, region: { startLine: 5 } } }] }];
+      data.head.kpis.average_health = 7;
+      writeReports(f, data);
+      for (const folder of fs.readdirSync(f.directory)) {
+        if (folder !== `${artifact}-10`) fs.rmSync(path.join(f.directory, folder), { recursive: true });
+      }
+      f.context.payload.workflow_run.conclusion = 'failure';
+      await publish(f);
+      const check = f.calls.find(c => c.name === 'createCheck').args;
+      const expected = { 'souz-quality-gate': /Fast finding/, 'souz-duplication-ratchet': /Duplication finding/,
+        'souz-qodana-findings': /Qodana finding/, 'souz-repowise-pr-quality': /-1.00/ };
+      assert.match(check.output.summary, expected[artifact]);
+      assert.equal((check.output.summary.match(/Report unavailable/g) || []).length, 3);
+      assert.equal(check.conclusion, 'neutral');
+      const annotation = { 'souz-quality-gate': 'Fast finding', 'souz-qodana-findings': 'Qodana finding' }[artifact];
+      assert.deepEqual(check.output.annotations.map(a => a.message), annotation ? [annotation] : []);
+    });
+  }
 });
 
 test('updates only the bot-owned sticky comment and supersedes legacy checks once', async t => {
