@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { render, readReports, publish } = require('./pr_advisory.cjs');
+const { render, readReports, selectRun, publish } = require('./pr_advisory.cjs');
 
 const SHA = 'a'.repeat(40);
 const KPIS = ['average_health', 'hotspot_health', 'worst_performer_score', 'maintainability_average',
@@ -105,26 +105,98 @@ function fixture(t, options = {}) {
     else process.env.SOUZ_ADVISORY_REPORTS = oldDirectory;
   });
   const context = { repo: { owner: 'o', repo: 'r' }, payload: { repository: { id: 1 }, workflow_run: {
-    id: 10, run_attempt: 2, event: 'pull_request', path: '.github/workflows/ci.yml', repository: { id: 1 },
+    id: 10, run_attempt: 2, workflow_id: 3, status: 'completed', event: 'pull_request',
+    path: '.github/workflows/ci.yml', repository: { id: 1 },
+    head_repository: { id: options.fork ? 2 : 1 }, head_branch: 'feature',
     pull_requests: options.fork ? [] : [{ number: 7 }], head_sha: SHA, conclusion: 'success', html_url: 'https://github.com/o/r/actions/runs/10',
   } } };
-  const pr = { number: 7, state: 'open', head: { sha: options.stale ? 'b'.repeat(40) : SHA }, base: { repo: { id: 1 } } };
+  const pr = { number: 7, state: options.closed ? 'closed' : 'open',
+    head: { sha: options.stale ? 'b'.repeat(40) : SHA, ref: 'feature', repo: { id: options.fork ? 2 : 1 } },
+    base: { repo: { id: 1 } } };
   let gets = 0;
   const record = name => async args => { calls.push({ name, args }); return { data: {} }; };
   const github = { rest: {
-    pulls: { get: async () => ({ data: { ...pr, head: { sha: options.push && ++gets > 1 ? 'c'.repeat(40) : pr.head.sha } } }),
+    pulls: { get: async () => ({ data: { ...pr, head: { ...pr.head,
+      sha: options.push && ++gets > 1 ? 'c'.repeat(40) : pr.head.sha } } }),
       listFiles: 'files' },
     issues: { listComments: 'comments', createComment: record('createComment'), updateComment: record('updateComment') },
     checks: { listForRef: 'checks', create: record('createCheck') }, repos: { listPullRequestsAssociatedWithCommit: 'associated' },
+    actions: { listWorkflowRuns: 'runs' },
   }, paginate: async endpoint => {
     if (endpoint === 'files') return [{ filename: 'src/New.kt' }];
     if (endpoint === 'comments') return options.comments || [];
     if (endpoint === 'checks') return options.checks || [];
     if (endpoint === 'associated') return [{ number: 7 }];
+    if (endpoint === 'runs') return options.runs || [context.payload.workflow_run];
     throw new Error(`Unexpected endpoint: ${endpoint}`);
   } };
   return { github, context, core: { info() {} }, calls, directory };
 }
+
+test('a late stale completion recovers the current head publication displaced from the queue', async t => {
+  const runs = [], f = fixture(t, { fork: true, runs });
+  const current = { ...f.context.payload.workflow_run, id: 11,
+    html_url: 'https://github.com/o/r/actions/runs/11' };
+  f.context.payload.workflow_run = { ...current, id: 9, head_sha: 'b'.repeat(40), pull_requests: [] };
+  runs.push(f.context.payload.workflow_run, current);
+  await publish(f);
+  assert.deepEqual(f.calls, []); // Publishing only the surviving stale event loses the advisory.
+  const selected = await selectRun(f);
+  assert.equal(selected.id, 11);
+  assert.equal(selected.head_sha, SHA);
+  // Artifacts must come from the recovered run, not the stale triggering event.
+  const data = reports();
+  for (const [artifact, files] of [
+    ['souz-quality-gate', { 'gate-summary-v1.json': data.fast }],
+    ['souz-duplication-ratchet', { 'gate-summary-v1.json': data.duplication }],
+    ['souz-qodana-findings', { 'qodana.sarif.json': data.qodana }],
+    ['souz-repowise-pr-quality', { 'base-health.json': data.base, 'pr-health.json': data.head, 'pr-risk.json': data.risk }],
+  ]) {
+    const folder = path.join(f.directory, `${artifact}-11`);
+    fs.mkdirSync(folder);
+    for (const [filename, report] of Object.entries(files)) fs.writeFileSync(path.join(folder, filename), JSON.stringify(report));
+  }
+  await publish({ ...f, run: selected });
+  assert.deepEqual(f.calls.map(c => c.name), ['createComment', 'createCheck']);
+  assert.match(f.calls[0].args.body, /source-run:11:2/);
+  assert.equal(f.calls[1].args.head_sha, SHA);
+  assert.equal(f.calls[1].args.external_id, '11:2');
+  assert.equal(f.calls[1].args.conclusion, 'success');
+  assert.equal(f.calls[1].args.details_url, current.html_url);
+});
+
+test('selects the newest completed run and attempt only for the same workflow, head and provider branch', async t => {
+  const runs = [], f = fixture(t, { runs });
+  const source = f.context.payload.workflow_run;
+  runs.push({ ...source, id: 11, run_attempt: 1 }, source, { ...source, id: 11, run_attempt: 2 });
+  for (const override of [{ status: 'in_progress' }, { head_sha: 'b'.repeat(40) }, { head_branch: 'other' },
+    { head_repository: { id: 2 } }, { repository: { id: 2 } }, { workflow_id: 4 },
+    { path: '.github/workflows/other.yml' }, { event: 'push' }]) {
+    runs.push({ ...source, id: 12, ...override });
+  }
+  const selected = await selectRun(f);
+  assert.equal(selected.id, 11);
+  assert.equal(selected.run_attempt, 2);
+  assert.deepEqual(f.calls, []);
+});
+
+test('does not select stale evidence when current-head CI is incomplete or the PR is closed', async t => {
+  for (const options of [{ runs: [] }, { stale: true }, { closed: true }]) {
+    await t.test(JSON.stringify(options), async child => {
+      const f = fixture(child, options);
+      assert.equal(await selectRun(f), null);
+      assert.deepEqual(f.calls, []);
+    });
+  }
+});
+
+test('a push after run selection prevents publishing the recovered advisory', async t => {
+  const f = fixture(t, { push: true });
+  const run = await selectRun(f);
+  assert.equal(run.head_sha, SHA);
+  await publish({ ...f, run });
+  assert.deepEqual(f.calls, []);
+});
 
 test('missing artifacts publish a neutral check and a warning comment, including fork PR lookup', async t => {
   const f = fixture(t, { fork: true });
@@ -161,6 +233,7 @@ test('stale heads, concurrent pushes and older runs/attempts cannot overwrite th
 test('unexpected source workflows are rejected before publishing', async t => {
   const f = fixture(t);
   f.context.payload.workflow_run.path = '.github/workflows/other.yml';
+  await assert.rejects(selectRun(f), /Unexpected source workflow/);
   await assert.rejects(publish(f), /Unexpected source workflow/);
   assert.deepEqual(f.calls, []);
 });

@@ -32,20 +32,31 @@ jobs:
           persist-credentials: false
           sparse-checkout: quality
 
+      - name: Select current PR source run
+        id: source
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { selectRun } = require('./quality/pr_advisory.cjs');
+            const run = await selectRun({ github, context });
+            if (run) core.setOutput('run', JSON.stringify(run));
+
       - name: Download analysis data
+        if: steps.source.outputs.run != ''
         uses: actions/download-artifact@v8
         with:
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ fromJSON(steps.source.outputs.run).id }}
           github-token: ${{ github.token }}
-          pattern: '{souz-quality-gate,souz-duplication-ratchet,souz-repowise-pr-quality,souz-qodana-findings}-${{ github.event.workflow_run.id }}'
+          pattern: '{souz-quality-gate,souz-duplication-ratchet,souz-repowise-pr-quality,souz-qodana-findings}-${{ fromJSON(steps.source.outputs.run).id }}'
           path: ${{ runner.temp }}/quality-advisory
 
       - name: Publish PR advisory
-        if: always()
+        if: always() && steps.source.outputs.run != ''
         uses: actions/github-script@v8
         env:
           SOUZ_ADVISORY_REPORTS: ${{ runner.temp }}/quality-advisory
+          SOUZ_ADVISORY_SOURCE_RUN: ${{ steps.source.outputs.run }}
         with:
           script: |
             const { publish } = require('./quality/pr_advisory.cjs');
-            await publish({ github, context, core });
+            await publish({ github, context, core, run: JSON.parse(process.env.SOUZ_ADVISORY_SOURCE_RUN) });

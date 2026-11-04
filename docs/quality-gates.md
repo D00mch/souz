@@ -262,6 +262,12 @@ findings, KPI regressions, and review priority. Clean runs replace old warnings
 with explicit clear results; missing or malformed reports remain visible as
 unavailable instead of passing.
 
+Publication is serialized per source repository and branch. Each event selects
+the newest completed `CI-Tests` run for the open PR's current head before
+downloading artifacts. A late completion for a stale head can therefore recover
+a current-head publisher displaced from the pending Actions concurrency slot.
+If the current head has no completed run, publication waits for its completion.
+
 The publisher adds a `Quality advisory` check with `neutral` conclusion when
 attention is needed and `success` otherwise. It publishes up to 50 source
 annotations for findings in changed files; the comment lists up to 40 findings

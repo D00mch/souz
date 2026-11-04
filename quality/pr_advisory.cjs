@@ -154,12 +154,40 @@ function readReports(directory, runId) {
   }));
 }
 
-async function publish({ github, context, core }) {
-  const run = context.payload.workflow_run, repo = context.repo;
+async function candidatesForRun(github, context, run) {
   if (run.event !== 'pull_request' || run.path !== '.github/workflows/ci.yml' ||
       run.repository.id !== context.payload.repository.id) throw new Error('Unexpected source workflow');
-  const candidates = run.pull_requests.length ? run.pull_requests : await github.paginate(
-    github.rest.repos.listPullRequestsAssociatedWithCommit, { ...repo, commit_sha: run.head_sha, per_page: 100 });
+  return run.pull_requests.length ? run.pull_requests : github.paginate(
+    github.rest.repos.listPullRequestsAssociatedWithCommit, { ...context.repo, commit_sha: run.head_sha, per_page: 100 });
+}
+
+async function selectRun({ github, context }) {
+  const source = context.payload.workflow_run;
+  const candidates = await candidatesForRun(github, context, source);
+  if (!source.head_repository) return null;
+  for (const candidate of candidates) {
+    const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: candidate.number });
+    if (pr.state !== 'open' || pr.base.repo.id !== source.repository.id ||
+        pr.head.repo?.id !== source.head_repository.id || pr.head.ref !== source.head_branch) continue;
+    // Actions can replace the pending current-head publisher with a late stale event.
+    // Reconcile the live head before choosing which run's artifacts to download.
+    const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+      ...context.repo, workflow_id: source.workflow_id, head_sha: pr.head.sha,
+      event: 'pull_request', status: 'completed', per_page: 100,
+    });
+    const selected = runs.filter(run => run.status === 'completed' && run.head_sha === pr.head.sha &&
+      run.workflow_id === source.workflow_id && run.event === 'pull_request' && run.path === source.path &&
+      run.repository.id === source.repository.id && run.head_repository?.id === source.head_repository.id &&
+      run.head_branch === source.head_branch)
+      .sort((a, b) => b.id - a.id || b.run_attempt - a.run_attempt)[0];
+    return selected ? { ...selected, pull_requests: candidates } : null;
+  }
+  return null;
+}
+
+async function publish({ github, context, core, run = context.payload.workflow_run }) {
+  const repo = context.repo;
+  const candidates = await candidatesForRun(github, context, run);
   for (const candidate of candidates) {
     const { data: pr } = await github.rest.pulls.get({ ...repo, pull_number: candidate.number });
     if (pr.state !== 'open' || pr.head.sha !== run.head_sha || pr.base.repo.id !== run.repository.id) continue;
@@ -194,4 +222,4 @@ async function publish({ github, context, core }) {
   }
 }
 
-module.exports = { render, readReports, publish };
+module.exports = { render, readReports, selectRun, publish };
