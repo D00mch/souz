@@ -95,53 +95,42 @@ class SubagentLifecycleTest {
 
     @Test
     fun `failures and deadlines retain their outcomes without stopping the parent or sibling`() = runTest {
-        var stopped = false
-        val tool = tool { ctx ->
-            when (ctx.input) {
-                "fail" -> error("child failed")
-                "slow" -> try { awaitCancellation() } finally { stopped = true }
-                else -> "answer"
-            }
-        }
-        withSubagentTasks {
-            val success = tool.spawn("success")
-            for ((task, code) in listOf("fail" to "subagent_failed", "slow" to "subagent_timeout")) {
-                val id = tool.spawn(task)
-                if (task == "slow") {
-                    runCurrent()
-                    advanceTimeBy(DEFAULT_SUBAGENT_TASK_TIMEOUT.inWholeMilliseconds)
-                }
-                val result = tool.call(SubagentTool.WAIT, id)
-                assertEquals("failed", result["status"].asText())
-                assertEquals(code, result["error"]["code"].asText())
-                if (task == "fail") assertEquals("child failed", result["error"]["message"].asText())
-                else assertTrue(result["sideEffectsMayHaveOccurred"].asBoolean())
-                assertEquals(result, tool.call(SubagentTool.CANCEL, id))
-            }
-            assertTrue(stopped)
-            assertEquals("answer", tool.call(SubagentTool.WAIT, success)["result"].asText())
-        }
-    }
-
-    @Test
-    fun `configured deadlines expire after the selected duration and reject unbounded values`() = runTest {
         for (timeout in listOf(Duration.ZERO, (-1).milliseconds, Duration.INFINITE)) {
             assertFailsWith<IllegalArgumentException> { withSubagentTasks(timeout) { error("must not run") } }
         }
-        var stopped = false
-        val tool = tool { try { awaitCancellation() } finally { stopped = true } }
-        withSubagentTasks(1250.milliseconds) {
-            val id = tool.spawn()
-            runCurrent()
-            advanceTimeBy(1249)
-            assertEquals("running", tool.call(SubagentTool.WAIT, id, 0)["status"].asText())
-            advanceTimeBy(1)
-            runCurrent()
-            val result = tool.call(SubagentTool.WAIT, id, 0)
-            assertEquals("failed", result["status"].asText())
-            assertEquals("subagent_timeout", result["error"]["code"].asText())
-            assertTrue("1.25s" in result["error"]["message"].asText())
-            assertTrue(stopped)
+        for (timeout in listOf(DEFAULT_SUBAGENT_TASK_TIMEOUT, 1250.milliseconds)) {
+            var stopped = false
+            val tool = tool { ctx ->
+                when (ctx.input) {
+                    "fail" -> error("child failed")
+                    "slow" -> try { awaitCancellation() } finally { stopped = true }
+                    else -> "answer"
+                }
+            }
+            withSubagentTasks(timeout) {
+                val success = tool.spawn("success")
+                for ((task, code) in listOf("fail" to "subagent_failed", "slow" to "subagent_timeout")) {
+                    val id = tool.spawn(task)
+                    runCurrent()
+                    if (task == "slow") {
+                        advanceTimeBy(timeout.inWholeMilliseconds - 1)
+                        assertEquals("running", tool.call(SubagentTool.WAIT, id, 0)["status"].asText())
+                        advanceTimeBy(1)
+                        runCurrent()
+                    }
+                    val result = tool.call(SubagentTool.WAIT, id, 0)
+                    assertEquals("failed", result["status"].asText())
+                    assertEquals(code, result["error"]["code"].asText())
+                    if (task == "fail") assertEquals("child failed", result["error"]["message"].asText())
+                    else {
+                        assertTrue("$timeout" in result["error"]["message"].asText())
+                        assertTrue(result["sideEffectsMayHaveOccurred"].asBoolean())
+                        assertTrue(stopped)
+                    }
+                    assertEquals(result, tool.call(SubagentTool.CANCEL, id))
+                }
+                assertEquals("answer", tool.call(SubagentTool.WAIT, success)["result"].asText())
+            }
         }
     }
 
@@ -172,33 +161,13 @@ class SubagentLifecycleTest {
     }
 
     @Test
-    fun `cancellation stays pending until cleanup releases child resources`() = runTest {
+    fun `concurrent admission is bounded and capacity is released only after cleanup`() = runTest {
         val cleanup = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val tool = tool {
             try { awaitCancellation() } finally {
                 withContext(NonCancellable) { cleanup.complete(Unit); release.await() }
             }
-        }
-        withSubagentTasks {
-            val id = tool.spawn()
-            runCurrent()
-            assertEquals("cancelling", tool.call(SubagentTool.CANCEL, id)["status"].asText())
-            cleanup.await()
-            assertEquals("cancelling", tool.call(SubagentTool.WAIT, id, 5)["status"].asText())
-            assertEquals("cancelling", tool.call(SubagentTool.CANCEL, id)["status"].asText())
-            release.complete(Unit)
-            val result = tool.call(SubagentTool.WAIT, id)
-            assertEquals("cancelled", result["status"].asText())
-            assertEquals(result, tool.call(SubagentTool.WAIT, id, 0))
-        }
-    }
-
-    @Test
-    fun `concurrent admission is bounded and capacity is released only after cleanup`() = runTest {
-        val release = CompletableDeferred<Unit>()
-        val tool = tool {
-            try { awaitCancellation() } finally { withContext(NonCancellable) { release.await() } }
         }
         withSubagentTasks {
             val outcomes = coroutineScope {
@@ -208,10 +177,16 @@ class SubagentLifecycleTest {
             assertEquals(8, ids.size)
             assertEquals(248, outcomes.count { it.path("error").path("code").asText() == "subagent_concurrency_limit" })
             runCurrent()
-            tool.call(SubagentTool.CANCEL, ids.first())
+            val id = ids.first()
+            assertEquals("cancelling", tool.call(SubagentTool.CANCEL, id)["status"].asText())
+            cleanup.await()
+            assertEquals("cancelling", tool.call(SubagentTool.WAIT, id, 5)["status"].asText())
+            assertEquals("cancelling", tool.call(SubagentTool.CANCEL, id)["status"].asText())
             assertEquals("subagent_concurrency_limit", tool.call(SubagentTool.NAME, task = "still full")["error"]["code"].asText())
             release.complete(Unit)
-            assertEquals("cancelled", tool.call(SubagentTool.WAIT, ids.first())["status"].asText())
+            val result = tool.call(SubagentTool.WAIT, id)
+            assertEquals("cancelled", result["status"].asText())
+            assertEquals(result, tool.call(SubagentTool.WAIT, id, 0))
             assertTrue(tool.call(SubagentTool.NAME, task = "replacement").has("subagentId"))
         }
     }
