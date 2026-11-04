@@ -11,6 +11,7 @@ import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.runtime.AgentToolExecutor
+import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.spi.AgentErrorMessages
@@ -86,6 +87,8 @@ class AgentExecutionKernelFactory(
             nodesSkillInventory = nodesSkillInventory,
             nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
             coreTools = coreTools,
+            executionDelegate = GraphExecutionDelegate(logObjectMapper, SkillsGraphBasedAgent::class.java,
+                settingsProvider.subagentTaskTimeout),
         )
         val executor = AgentExecutor(
             agentProvider = { skillsGraphAgent },

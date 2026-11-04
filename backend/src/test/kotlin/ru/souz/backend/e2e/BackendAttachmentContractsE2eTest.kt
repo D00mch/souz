@@ -6,6 +6,7 @@ import io.ktor.client.request.post
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
+import kotlinx.coroutines.CompletableDeferred
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -47,6 +48,7 @@ class BackendAttachmentContractsE2eTest {
     fun `input files prepare attach and survive persisted sessions without automatic reply reuse`() {
         val root = Files.createTempDirectory(Path.of("build"), "attachment-contracts-").toAbsolutePath()
         var phase = 0
+        val childDone = CompletableDeferred<Unit>()
         var fileId = ""
         lateinit var readSandboxFile: (String) -> String
         lateinit var delegate: BackendConversationTurnRunner
@@ -60,7 +62,11 @@ class BackendAttachmentContractsE2eTest {
             }
         }
         val llm = E2eLlmApi { request ->
-            when (phase++) {
+            val last = request.messages.lastOrNull()
+            if (last?.name == "SpawnSubagent") {
+                childDone.await()
+                toolCallReply(request, "WaitSubagent", mapOf("subagentId" to restJsonMapper.readTree(last.content)["subagentId"].asText()))
+            } else when (phase++) {
                 0 -> {
                     val input = request.messages.single { it.content.startsWith("return this document") }
                     assertEquals(fileId, input.files.single().fileId)
@@ -78,10 +84,10 @@ class BackendAttachmentContractsE2eTest {
                     assertEquals("# Original", readSandboxFile(path))
                     toolCallReply(request, "AttachFileToReply", mapOf("path" to path))
                 }
-                3 -> reply(request, "Child document ready")
+                3 -> reply(request, "Child document ready").also { childDone.complete(Unit) }
                 4 -> {
                     val child = request.messages.last()
-                    assertEquals("SpawnSubagent", child.name)
+                    assertEquals("WaitSubagent", child.name)
                     assertTrue(child.replyFiles.isEmpty())
                     val savedId = child.files.single().fileId
                     assertEquals(savedId, restJsonMapper.readTree(child.content)["files"][0]["fileId"].asText())

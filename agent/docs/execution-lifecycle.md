@@ -4,7 +4,7 @@
 
 `AgentExecutionKernelFactory` creates an isolated skills-graph execution with its own context factory and executor. Backend conversation runtime owns execution state and continuation; concurrent executions must not share graph instances or mutable context.
 
-`ToolLoopGraphBasedAgent` implements the same `Agent` contract with a bounded model/tool loop. It preserves the caller's context and exposes streaming, step callbacks, and cancellation through the shared execution delegate. Its turn counter resets per execution; concurrent executions require separate agent instances. Delegation and context isolation belong to `SubagentTool`.
+`ToolLoopGraphBasedAgent` implements the same `Agent` contract with a bounded model/tool loop. It preserves the caller's context and exposes streaming, step callbacks, and cancellation through the shared execution delegate. Its turn counter resets per execution; concurrent executions require separate agent instances. Delegation and context isolation belong to `SubagentTool`. The execution delegate owns a coroutine-scoped subagent registry for each graph run and cancels and joins unfinished children on every exit. Lifecycle tools share that registry across model routing and queued input; see [subagents](subagents.md).
 
 `submitToActiveRun` is an explicit continuation path for an open agent execution. The steerable agent owns its execution-scoped `ActiveRunInputController`; the backend can reserve the controller and publish a role-preserving history-plus-execute batch after durable commit. Submission returns `false` when no run is open or the run has sealed before finalization.
 

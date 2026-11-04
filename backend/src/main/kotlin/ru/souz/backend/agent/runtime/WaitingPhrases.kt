@@ -17,6 +17,8 @@ internal class WaitingPhrases(
     data class Category(val description: String, val phrases: List<String>)
 
     private val mutex = Mutex()
+    // The map and its deques stay private; pick serializes all access with mutex.
+    @Suppress("LayeredMutability")
     private val rounds = HashMap<String?, ArrayDeque<String>>()
     private val previousPhrases = HashMap<String?, String>()
 

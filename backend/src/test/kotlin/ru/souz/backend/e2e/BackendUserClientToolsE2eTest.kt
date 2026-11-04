@@ -175,7 +175,9 @@ class BackendUserClientToolsE2eTest {
         val continueChild = CompletableDeferred<Unit>()
         var provider = ""
         val llm = E2eLlmApi { request ->
-            val result = request.messages.lastOrNull { it.name == "RunSkillCommand" || it.name == "SpawnSubagent" }
+            val result = request.messages.lastOrNull {
+                it.name == "RunSkillCommand" || it.name == "SpawnSubagent" || it.name == "WaitSubagent"
+            }
             when {
                 request.functions.map { it.name } == listOf("RunSkillCommand") -> {
                     assertTrue("Current conversation channelId: $provider." in request.messages.first().content)
@@ -188,7 +190,15 @@ class BackendUserClientToolsE2eTest {
                         reply(request, "Provider definition changed")
                     }
                 }
-                result != null -> reply(request, "Cannot use the changed tool")
+                result?.name == "SpawnSubagent" -> toolCallReply(request, "WaitSubagent", mapOf(
+                    "subagentId" to restJsonMapper.readTree(result.content)["subagentId"].asText(),
+                ))
+                result != null -> {
+                    val child = restJsonMapper.readTree(result.content)
+                    assertEquals("completed", child["status"].asText())
+                    assertEquals("Provider definition changed", child["result"].asText())
+                    reply(request, "Cannot use the changed tool")
+                }
                 else -> toolCallReply(request, "SpawnSubagent", mapOf("task" to "Read status on $provider",
                     "skillIds" to listOf("speaker.status")))
             }

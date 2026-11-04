@@ -146,7 +146,7 @@ suspend fun ScenarioLiveModel.runScenario(
                     runtimeCommand = ToolInvokeSkill(
                         { catalog }, filter, registry::loadSkillBundle, commandExecutor,
                     ),
-                    spawnSubagent = { scenarioTool(subagents.create(it)) },
+                    subagentTools = { subagents.create(it).tools.map(::scenarioTool) },
                     forgetMemory = listOf(
                         scenarioTool(ToolForgetMemoryFact(mockk(), mockk())),
                         scenarioTool(ToolForgetAllMemory(mockk(), mockk(), mockk(), mockk())),
