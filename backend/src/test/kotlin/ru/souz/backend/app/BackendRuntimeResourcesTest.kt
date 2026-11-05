@@ -12,6 +12,29 @@ import kotlinx.coroutines.test.runTest
 
 class BackendRuntimeResourcesTest {
     @Test
+    fun `undrained plugin code retains shared resources and requests process recovery`() = runTest {
+        for (throws in listOf(false, true)) {
+            val steps = mutableListOf<String>()
+            val resources = BackendRuntimeResources(
+                cancelAndJoinApplicationWork = { steps += "application" },
+                shutdownPlugins = {
+                    steps += "plugins"
+                    if (throws) error("cleanup failed")
+                    false
+                },
+                pluginDidNotDrain = { steps += "restart" },
+                closePluginServices = { error("plugin services closed under live code") },
+                closeProviderClients = { error("provider services closed under live code") },
+                closeSkillOAuthClients = { error("OAuth closed under live code") },
+                closeAttachmentStorage = { error("files closed under live code") },
+                closeDataSource = { error("database closed under live code") },
+            )
+            if (throws) assertFailsWith<IllegalStateException> { resources.shutdown() } else resources.shutdown()
+            assertEquals(listOf("application", "plugins", "restart"), steps)
+        }
+    }
+
+    @Test
     fun `concurrent callers await one shutdown and observe the same aggregate failure`() = runTest {
         val shutdownStarted = CompletableDeferred<Unit>()
         val allowShutdown = CompletableDeferred<Unit>()
