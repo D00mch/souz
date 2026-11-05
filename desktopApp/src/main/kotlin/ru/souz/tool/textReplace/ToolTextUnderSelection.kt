@@ -1,5 +1,7 @@
 package ru.souz.tool.textReplace
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import ru.souz.llms.ToolInvocationMeta
 
 import ru.souz.tool.FewShotExample
@@ -25,8 +27,8 @@ class ToolTextUnderSelection(
         properties = mapOf("result" to ReturnProperty("string", "The selected text in quotes")),
     )
 
-    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        return getDataFromSelectionWithKeys(meta)
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String = ClipboardTransactions.run {
+        getDataFromSelectionWithKeys(meta)
     }
 
     private fun getDataFromSelectionWithKeys(meta: ToolInvocationMeta): String {
@@ -59,7 +61,8 @@ class ToolTextUnderSelection(
         private const val COPY_RETRY_DELAY_MS = 30L
     }
 
-    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String =
+        runInterruptible(Dispatchers.IO) { invoke(input, meta) }
 }
 
 private const val SCRIPT = """tell application "System Events"

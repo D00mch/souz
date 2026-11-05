@@ -1,5 +1,6 @@
 package ru.souz.tool
 
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 
 data class SelectionApprovalCandidate(
@@ -18,6 +19,8 @@ data class SelectionApprovalRequest(
     val confirmText: String,
     val cancelText: String,
     val candidates: List<SelectionApprovalCandidate>,
+    /** Completes on resolution or caller cancellation, including while queued for display. */
+    val completion: Job,
 )
 
 interface SelectionApprovalSource {

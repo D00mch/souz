@@ -1,5 +1,7 @@
 package ru.souz.tool.textReplace
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import ru.souz.llms.ToolInvocationMeta
 
 import ru.souz.service.keys.MrRobot
@@ -33,11 +35,11 @@ class ToolTextReplace(
         )
     )
 
-    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String = ClipboardTransactions.run {
         val clipboard = Toolkit.getDefaultToolkit().systemClipboard
         val previousContent: Transferable? = runCatching { clipboard.getContents(null) }.getOrNull()
 
-        return try {
+        try {
             runCatching { clipboard.setContents(StringSelection(input.newText), null) }
                 .onFailure { MrRobot.clipboardPut(input.newText) }
             bash.apple(SCRIPT)
@@ -54,7 +56,8 @@ class ToolTextReplace(
         private const val PASTE_SETTLE_DELAY_MS = 70L
     }
 
-    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String =
+        runInterruptible(Dispatchers.IO) { invoke(input, meta) }
 }
 
 private const val SCRIPT = """
