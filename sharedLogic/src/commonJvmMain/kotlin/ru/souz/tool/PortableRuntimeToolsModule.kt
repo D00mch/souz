@@ -196,7 +196,7 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
             searchKnowledge = instance<ToolSearchKnowledge>(),
             searchMemory = instance<ToolSearchMemory>(),
             runtimeCommand = instance<ToolInvokeSkill>(),
-            spawnSubagent = { settings -> instance<SubagentToolFactory>().create(settings) },
+            subagentTools = { settings -> instance<SubagentToolFactory>().create(settings).tools },
         )
     }
 }

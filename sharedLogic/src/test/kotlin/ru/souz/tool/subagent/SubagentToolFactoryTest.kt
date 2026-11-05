@@ -8,6 +8,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.Agent
 import ru.souz.agent.AgentExecutionResult
+import ru.souz.agent.runtime.withSubagentTasks
 import ru.souz.agent.SubagentTool
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
@@ -51,11 +52,10 @@ class SubagentToolFactoryTest {
             locale = "ru", timeZone = "Europe/Moscow", attributes = mapOf("clientToolSessionId" to "client"),
         )
 
-        val response = tool.invoke(LLMResponse.FunctionCall(tool.fn.name, mapOf("task" to "Summarize this text.")), meta)
+        val response = tool.call(mapOf("task" to "Summarize this text."), meta)
 
-        assertEquals(LLMMessageRole.function, response.role)
-        assertEquals(SubagentTool.NAME, response.name)
-        assertEquals("{\"result\":\"child answer\"}", response.content)
+        assertEquals("completed", response["status"].asText())
+        assertEquals("child answer", response["result"].asText())
         assertEquals("Summarize this text.", fixture.context.input)
         assertEquals(parent.copy(tools = AgentTools(emptyMap())), fixture.context.settings)
         assertEquals(meta, fixture.context.toolInvocationMeta)
@@ -118,13 +118,16 @@ class SubagentToolFactoryTest {
 
     @Test
     fun `spawning and generic discovery or execution cannot be selected even from catalog`() = runTest {
-        val forbidden = listOf("SpawnSubagent", "RunSkillCommand", "GetSkillByName", "GetSkillsByCategory", "GetSkillsNamesByCategory")
+        val forbidden = SubagentTool.NAMES + listOf("RunSkillCommand", "GetSkillByName", "GetSkillsByCategory", "GetSkillsNamesByCategory")
         val fixture = Fixture(forbidden.map(::namedTool))
         val tool = fixture.factory().create(fixture.parent)
 
         forbidden.forEach { id ->
             val response = tool.call(mapOf("task" to "Escape", "skillIds" to listOf(id)))
             assertEquals("skill_not_allowed", response["error"]["code"].asText())
+            every { fixture.filter.applyFilter(any()) } returns mapOf(ToolCategory.FILES to mapOf("alias" to namedTool(id)))
+            val alias = tool.call(mapOf("task" to "Escape", "skillIds" to listOf("alias")))
+            assertEquals("skill_not_allowed", alias["error"]["code"].asText())
         }
         assertTrue(fixture.contexts.isEmpty())
         coVerify(exactly = 0) { fixture.bundles.loadSkillBundle(any(), any()) }
@@ -367,4 +370,9 @@ private fun bundle(id: String, instructions: String): SkillBundle = SkillBundle.
 private suspend fun LLMToolSetup.call(
     arguments: Map<String, Any>,
     meta: ToolInvocationMeta = ToolInvocationMeta("owner"),
-) = restJsonMapper.readTree(invoke(LLMResponse.FunctionCall(fn.name, arguments), meta).content)
+) = withSubagentTasks {
+    val result = restJsonMapper.readTree(invoke(LLMResponse.FunctionCall(fn.name, arguments), meta).content)
+    if (this !is SubagentTool || !result.has("subagentId")) result else restJsonMapper.readTree(
+        tools.single { it.fn.name == SubagentTool.WAIT }.invoke(LLMResponse.FunctionCall(SubagentTool.WAIT,
+            mapOf("subagentId" to result["subagentId"].asText(), "timeoutMs" to 30000))).content)
+}

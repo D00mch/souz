@@ -50,6 +50,7 @@ import ru.souz.tool.memory.ToolSearchMemory
 import ru.souz.tool.portableSkillRuntimeToolsDiModule
 import ru.souz.tool.portableSkillToolsDiModule
 import ru.souz.agent.SubagentTool
+import ru.souz.tool.subagent.spawnAndWait
 import kotlin.io.path.createDirectories
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -471,6 +472,7 @@ class SkillRuntimeToolsTest {
         val catalog = catalog(ToolCategory.FILES to listOf(RecordingTool("ordinary")))
         val settings = mockk<SettingsProvider> {
             every { subagentModels } returns emptyMap()
+            every { subagentTaskTimeout } returns ru.souz.agent.runtime.DEFAULT_SUBAGENT_TASK_TIMEOUT
             every { gigaModel } returns LLMModel.Max
             every { useStreaming } returns false
         }
@@ -519,9 +521,13 @@ class SkillRuntimeToolsTest {
             catalog.toolsByCategory.values.any { tools -> tools.keys.any { it in coreToolNames } }
         )
         val executionSettings = AgentSettings(LLMModel.Pro.alias, LLMModel.Pro.provider, 0.3f, catalog.toolsByCategory, 16_000)
-        val spawn = direct.instance<AgentCoreTools>().skillsTools(executionSettings).last()
-        assertEquals(SubagentTool.NAME, spawn.fn.name)
-        assertEquals("delegated result", spawn.call(mapOf("task" to "Isolated task"))["result"].asText())
+        val boundTools = direct.instance<AgentCoreTools>().skillsTools(executionSettings)
+        assertEquals(SubagentTool.NAMES, boundTools.takeLast(3).map { it.fn.name }.toSet())
+        assertEquals(boundTools.map { it.fn.name }.takeLast(3),
+            direct.instance<AgentCoreTools>().graphTools(executionSettings).takeLast(3).map { it.fn.name })
+        val spawn = boundTools.single { it.fn.name == SubagentTool.NAME } as SubagentTool
+        val result = spawn.spawnAndWait(LLMResponse.FunctionCall(spawn.fn.name, mapOf("task" to "Isolated task")))
+        assertEquals("delegated result", restJsonMapper.readTree(result.content)["result"].asText())
         coVerify(exactly = 1) {
             llm.message(match {
                 it.model == LLMModel.Pro.alias && it.temperature == 0.3f && it.maxTokens == 4096 && it.contextSize == 16_000 &&

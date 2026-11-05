@@ -10,6 +10,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
@@ -36,6 +38,8 @@ class LocalLlamaRuntime(
 ) : AutoCloseable {
     private val l = LoggerFactory.getLogger(LocalLlamaRuntime::class.java)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // Keep model handles and cancellation ownership private to one full native request.
+    private val requestMutex = Mutex()
     private val loadMutex = Mutex()
     private val runtimeOperationMutex = Mutex()
 
@@ -47,6 +51,7 @@ class LocalLlamaRuntime(
     suspend fun chat(body: LLMRequest.Chat): LLMResponse.Chat {
         val nativeResult = runCatching { generate(body, stream = false) }
             .getOrElse { error ->
+                if (error is CancellationException) throw error
                 NativeGenerationResult.error("Local inference failed: ${error.message ?: error::class.simpleName.orEmpty()}")
             }
         nativeResult.error?.let { message ->
@@ -76,6 +81,7 @@ class LocalLlamaRuntime(
                     allowRawOutput = body.prefersPlainTextLocalOutput(),
                 )
             }.getOrElse { error ->
+                if (error is CancellationException) throw error
                 LLMResponse.Chat.Error(
                     -1,
                     "Local inference failed: ${error.message ?: error::class.simpleName.orEmpty()}",
@@ -92,6 +98,7 @@ class LocalLlamaRuntime(
     internal suspend fun nativeEmbeddings(body: LLMRequest.Embeddings): NativeEmbeddingsResult =
         runCatching { executeEmbeddings(body) }
             .getOrElse { error ->
+                if (error is CancellationException) throw error
                 NativeEmbeddingsResult.error("Local embeddings failed: ${error.message ?: error::class.simpleName.orEmpty()}")
             }
 
@@ -107,7 +114,11 @@ class LocalLlamaRuntime(
         preload(profile)
     }
 
-    suspend fun preload(profile: LocalModelProfile) {
+    suspend fun preload(profile: LocalModelProfile) = requestMutex.withLock {
+        preloadExclusively(profile)
+    }
+
+    private suspend fun preloadExclusively(profile: LocalModelProfile) {
         val availabilityStatus = availability.status()
         if (!availabilityStatus.available || profile.gigaModel !in availabilityStatus.availableModels) {
             return
@@ -138,7 +149,11 @@ class LocalLlamaRuntime(
         }
     }
 
-    private suspend fun executeEmbeddings(body: LLMRequest.Embeddings): NativeEmbeddingsResult {
+    private suspend fun executeEmbeddings(body: LLMRequest.Embeddings): NativeEmbeddingsResult = requestMutex.withLock {
+        executeEmbeddingsExclusively(body)
+    }
+
+    private suspend fun executeEmbeddingsExclusively(body: LLMRequest.Embeddings): NativeEmbeddingsResult {
         val availabilityStatus = availability.status()
         if (!availabilityStatus.available) {
             return NativeEmbeddingsResult.error(availabilityStatus.message)
@@ -169,7 +184,11 @@ class LocalLlamaRuntime(
         return restJsonMapper.readValue(responseJson, NativeEmbeddingsResult::class.java)
     }
 
-    private suspend fun generate(body: LLMRequest.Chat, stream: Boolean): NativeGenerationResult {
+    private suspend fun generate(body: LLMRequest.Chat, stream: Boolean): NativeGenerationResult = requestMutex.withLock {
+        generateExclusively(body, stream)
+    }
+
+    private suspend fun generateExclusively(body: LLMRequest.Chat, stream: Boolean): NativeGenerationResult {
         val availabilityStatus = availability.status()
         if (!availabilityStatus.available) {
             return NativeGenerationResult.error(availabilityStatus.message)
@@ -287,38 +306,45 @@ class LocalLlamaRuntime(
         stream: Boolean,
     ): NativeGenerationResult {
         val requestJson = restJsonMapper.writeValueAsString(generationRequest)
-        return suspendCancellableCoroutine { cont ->
-            val nativeOperationStarted = CompletableDeferred<Unit>()
-            val job = scope.launch {
-                runCatching {
-                    runtimeOperationMutex.withLock {
-                        nativeOperationStarted.complete(Unit)
-                        if (stream) {
-                            bridge.generateStream(runtime, modelHandle, requestJson) { event ->
-                                l.debug("Local native stream event: {}", event)
+        var operation: Job? = null
+        return try {
+            suspendCancellableCoroutine { cont ->
+                val nativeOperationStarted = CompletableDeferred<Unit>()
+                val job = scope.launch {
+                    runCatching {
+                        runtimeOperationMutex.withLock {
+                            nativeOperationStarted.complete(Unit)
+                            if (stream) {
+                                bridge.generateStream(runtime, modelHandle, requestJson) { event ->
+                                    l.debug("Local native stream event: {}", event)
+                                }
+                            } else {
+                                bridge.generate(runtime, modelHandle, requestJson)
                             }
-                        } else {
-                            bridge.generate(runtime, modelHandle, requestJson)
+                        }
+                    }.onSuccess { json ->
+                        val parsed = restJsonMapper.readValue(json, NativeGenerationResult::class.java)
+                        if (cont.isActive) {
+                            cont.resume(parsed)
+                        }
+                    }.onFailure { error ->
+                        if (cont.isActive) {
+                            cont.resumeWithException(error)
                         }
                     }
-                }.onSuccess { json ->
-                    val parsed = restJsonMapper.readValue(json, NativeGenerationResult::class.java)
-                    if (cont.isActive) {
-                        cont.resume(parsed)
-                    }
-                }.onFailure { error ->
-                    if (cont.isActive) {
-                        cont.resumeWithException(error)
-                    }
                 }
-            }
 
-            cont.invokeOnCancellation {
-                if (nativeOperationStarted.isCompleted) {
-                    cancelActiveRequest()
+                operation = job
+                cont.invokeOnCancellation {
+                    if (nativeOperationStarted.isCompleted) {
+                        cancelActiveRequest()
+                    }
+                    job.cancel()
                 }
-                job.cancel()
             }
+        } finally {
+            // A cancelled caller must retain request ownership until the blocking bridge returns.
+            withContext(NonCancellable) { operation?.join() }
         }
     }
 
@@ -526,6 +552,11 @@ class LocalLlamaRuntime(
 
     suspend fun shutdown() {
         cancelActiveRequest()
+        requestMutex.withLock { releaseRuntime() }
+        scope.cancel()
+    }
+
+    private suspend fun releaseRuntime() {
         loadMutex.withLock {
             runtimeOperationMutex.withLock {
                 val runtime = runtimeHandle.get()
@@ -560,7 +591,6 @@ class LocalLlamaRuntime(
                 runtimeHandle.set(null)
             }
         }
-        scope.cancel()
     }
 
     override fun close() {

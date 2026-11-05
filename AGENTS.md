@@ -8,6 +8,8 @@ Complexity routing admits only confident tool-free turns to the light model. Pub
 
 Backend uses one startup-validated `CONTEXT_SIZE` (minimum 24,000 tokens) for all models, including summaries. Compaction and input validation share an 80% limit independent of output limits; context size is not a user or execution setting.
 
+Subagents run asynchronously with admission limits and cooperative host deadlines (ten minutes by default; backend `SUBAGENT_TASK_TIMEOUT_MS`) within one parent execution; parent-only tools wait for or cancel children. A zero-timeout wait polls status. See [subagent lifecycle](agent/docs/subagents.md).
+
 Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts. Revisioned snapshots go to the current connected channel if it declares `prompt.personality.set`, otherwise to another declaring channel. Settings save independently of discovery; no known receiver means synchronization is skipped.
 
 Backend [external memory](backend/docs/external-memory.md) exposes exact-fact forgetting and one-time confirmed bank deletion only on authenticated interactive owner turns when Hindsight is configured.

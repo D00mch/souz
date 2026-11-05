@@ -106,9 +106,8 @@ class ToolInvokeSkill(
 }
 
 internal val NON_DELEGABLE_SKILL_TOOLS = setOf(
-    SubagentTool.NAME,
     ToolInvokeSkill.NAME,
     ToolGetSkillByName.NAME,
     ToolGetSkillsByCategory.NAME,
     ToolGetSkillsNamesByCategory.NAME,
-)
+) + SubagentTool.NAMES
