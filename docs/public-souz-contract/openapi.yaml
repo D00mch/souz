@@ -142,8 +142,8 @@ components:
       properties:
         name:
           type: string
-          pattern: '^[A-Za-z][A-Za-z0-9_.-]{0,63}$'
-          description: Exact wire name; unique and not reserved by server or core Skills.
+          pattern: '^(?!plugin\.)[A-Za-z][A-Za-z0-9_.-]{0,63}$'
+          description: Exact wire name; unique and not reserved by server or core Skills. The entire plugin. namespace is reserved, even while a plugin is unavailable.
         description:
           type: string
           minLength: 1
