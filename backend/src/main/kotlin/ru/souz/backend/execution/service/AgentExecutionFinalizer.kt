@@ -24,6 +24,7 @@ import ru.souz.backend.execution.model.AgentExecutionUsage
 import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.http.BackendV1Exception
+import ru.souz.backend.plugins.PluginUnavailableException
 import ru.souz.llms.LLMResponse
 
 internal class AgentExecutionFinalizer(
@@ -177,15 +178,20 @@ internal class AgentExecutionFinalizer(
         val cause = turnException?.cause ?: error
         val response = cause as? BackendV1Exception ?: BackendV1Exception(
             status = HttpStatusCode.InternalServerError,
-            code = "agent_execution_failed",
-            message = "Agent execution failed.",
+            code = (cause as? PluginUnavailableException)?.code ?: "agent_execution_failed",
+            message = if (cause is PluginUnavailableException) "The execution's pinned plugin cannot be restored: ${cause.code}."
+                else "Agent execution failed.",
         )
         val stateConflict = cause is AgentStateConflictException
         val cancelled = withContext(NonCancellable) {
             val persisted = markFailed(
                 execution = execution,
                 errorCode = if (stateConflict) "state_conflict" else response.code,
-                errorMessage = if (stateConflict) "Agent state changed before save." else cause.message ?: response.message,
+                errorMessage = when {
+                    stateConflict -> "Agent state changed before save."
+                    cause is PluginUnavailableException -> response.message
+                    else -> cause.message ?: response.message
+                },
                 usage = turnException?.usage?.toExecutionUsage() ?: execution.usage,
             )
             eventSink.emitTerminal(persisted)
