@@ -19,7 +19,7 @@ class SelectionDialogTest {
     fun `consecutive prompts reset choice even when an intermediate null is not composed`() = runComposeUiTest {
         var sourceId by mutableStateOf("chats")
         var requestId by mutableStateOf(1L)
-        val chosen = mutableListOf<Long>()
+        val events = mutableListOf<MainEvent>()
         setContent {
             AppTheme {
                 MainScreenContent(
@@ -36,27 +36,36 @@ class SelectionDialogTest {
                         cancelText = "Cancel",
                     )),
                     isOnline = false,
-                    onSelectApprovalCandidate = { chosen += it },
+                    onSelectApprovalCandidate = { source, request, candidate ->
+                        events += MainEvent.SelectApprovalCandidate(source, request, candidate)
+                    },
+                    onCancelSelectionDialog = { source, request ->
+                        events += MainEvent.CancelSelectionDialog(source, request)
+                    },
                 )
             }
         }
         onNodeWithText("Choose", useUnmergedTree = true).performTouchInput { click() }
-        assertEquals(emptyList(), chosen)
+        assertEquals(emptyList(), events)
         onNodeWithText("First").performClick()
         onNodeWithText("Choose", useUnmergedTree = true).performTouchInput { click() }
-        assertEquals(listOf(11L), chosen)
+        val first: MainEvent = MainEvent.SelectApprovalCandidate("chats", 1, 11)
+        assertEquals(listOf(first), events)
 
         // The next source deliberately reuses both requestId and candidate IDs.
         runOnIdle { sourceId = "contacts" }
         onNodeWithText("Choose", useUnmergedTree = true).performTouchInput { click() }
-        assertEquals(listOf(11L), chosen)
+        assertEquals(listOf(first), events)
         onNodeWithText("Second").performClick()
         onNodeWithText("Choose", useUnmergedTree = true).performTouchInput { click() }
-        assertEquals(listOf(11L, 22L), chosen)
+        val second: MainEvent = MainEvent.SelectApprovalCandidate("contacts", 1, 22)
+        assertEquals(listOf(first, second), events)
 
         // A subsequent prompt from the same source must reset too.
         runOnIdle { requestId = 2 }
         onNodeWithText("Choose", useUnmergedTree = true).performTouchInput { click() }
-        assertEquals(listOf(11L, 22L), chosen)
+        assertEquals(listOf(first, second), events)
+        onNodeWithText("Cancel", useUnmergedTree = true).performClick()
+        assertEquals(listOf(first, second, MainEvent.CancelSelectionDialog("contacts", 2)), events)
     }
 }

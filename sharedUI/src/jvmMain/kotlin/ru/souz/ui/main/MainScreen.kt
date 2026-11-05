@@ -136,8 +136,8 @@ fun MainScreenContent(
     onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit = { _, _ -> },
     onApproveToolPermission: () -> Unit = {},
     onRejectToolPermission: () -> Unit = {},
-    onSelectApprovalCandidate: (Long) -> Unit = {},
-    onCancelSelectionDialog: () -> Unit = {},
+    onSelectApprovalCandidate: (String, Long, Long) -> Unit = { _, _, _ -> },
+    onCancelSelectionDialog: (String, Long) -> Unit = { _, _ -> },
     onOpenPath: (String) -> Unit = {},
     onUpdateChatSearchQuery: (String) -> Unit = {},
     onSelectNextChatSearchResult: () -> Unit = {},
@@ -471,8 +471,10 @@ fun MainScreenContent(
                     candidates = dialog.candidates,
                     confirmText = dialog.confirmText,
                     cancelText = dialog.cancelText,
-                    onConfirmSelection = onSelectApprovalCandidate,
-                    onDismiss = onCancelSelectionDialog,
+                    onConfirmSelection = { candidateId ->
+                        onSelectApprovalCandidate(dialog.sourceId, dialog.requestId, candidateId)
+                    },
+                    onDismiss = { onCancelSelectionDialog(dialog.sourceId, dialog.requestId) },
                 )
             }
 

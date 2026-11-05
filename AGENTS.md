@@ -10,7 +10,7 @@ Backend uses one startup-validated `CONTEXT_SIZE` (minimum 24,000 tokens) for al
 
 Backend provider attempts share per-user admission, request/token quotas and provider concurrency across parents and children. Subagents run asynchronously with admission limits and cooperative host deadlines (ten minutes by default; backend `SUBAGENT_TASK_TIMEOUT_MS`) within one parent execution; parent-only tools wait for or cancel children. A zero-timeout wait polls status. See [subagent lifecycle](agent/docs/subagents.md).
 
-Desktop selection prompts queue across sources and expire with their callers. Clipboard tools share [transaction ownership](desktopApp/docs/clipboard-transactions.md) across parent and child agents.
+Desktop selection prompts queue across sources and expire with their callers; dialog events carry the displayed source and request IDs. Clipboard tools share [transaction ownership](desktopApp/docs/clipboard-transactions.md) across parent and child agents.
 
 Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts. Revisioned snapshots go to the current connected channel if it declares `prompt.personality.set`, otherwise to another declaring channel. Settings save independently of discovery; no known receiver means synchronization is skipped.
 

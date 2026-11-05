@@ -271,15 +271,15 @@ class MainViewModel(
 
             is MainEvent.SelectApprovalCandidate ->
                 permissionsUseCase.resolveSelectionDialog(
-                    sourceId = currentState.selectionDialog?.sourceId,
-                    requestId = currentState.selectionDialog?.requestId,
+                    sourceId = event.sourceId,
+                    requestId = event.requestId,
                     selectedCandidateId = event.candidateId,
                 )
 
-            MainEvent.CancelSelectionDialog ->
+            is MainEvent.CancelSelectionDialog ->
                 permissionsUseCase.resolveSelectionDialog(
-                    sourceId = currentState.selectionDialog?.sourceId,
-                    requestId = currentState.selectionDialog?.requestId,
+                    sourceId = event.sourceId,
+                    requestId = event.requestId,
                     selectedCandidateId = null,
                 )
 
