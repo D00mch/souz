@@ -63,7 +63,9 @@ kotlin {
             }
         }
 
+        @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
         jvmTest.dependencies {
+            implementation(compose.uiTest)
             implementation(libs.kotlin.test)
             implementation(libs.kotlin.testJunit5)
             implementation(libs.junit.jupiterParams)

@@ -464,6 +464,7 @@ fun MainScreenContent(
 
             state.selectionDialog?.let { dialog ->
                 SelectionDialog(
+                    sourceId = dialog.sourceId,
                     requestId = dialog.requestId,
                     title = dialog.title,
                     message = dialog.message,
@@ -495,6 +496,7 @@ fun MainScreenContent(
 
 @Composable
 private fun SelectionDialog(
+    sourceId: String,
     requestId: Long,
     title: String,
     message: String,
@@ -504,7 +506,7 @@ private fun SelectionDialog(
     onConfirmSelection: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var selectedId by remember(requestId) { mutableStateOf<Long?>(null) }
+    var selectedId by remember(sourceId, requestId) { mutableStateOf<Long?>(null) }
 
     ConfirmDialog(
         type = ConfirmDialogType.WARNING,

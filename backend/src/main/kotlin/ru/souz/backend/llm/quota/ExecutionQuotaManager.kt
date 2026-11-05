@@ -2,6 +2,8 @@ package ru.souz.backend.llm.quota
 
 import java.time.Duration
 import java.time.Instant
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -33,7 +35,7 @@ class ExecutionQuotaManager(
         try {
             return block()
         } finally {
-            releaseExecution(userId)
+            withContext(NonCancellable) { releaseExecution(userId) }
         }
     }
 

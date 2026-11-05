@@ -1,5 +1,6 @@
 package ru.souz.backend.e2e
 
+import ru.souz.backend.app.BackendLlmLimits
 import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.AppenderBase
@@ -712,7 +713,9 @@ class BackendHistoryMemoryE2eTest {
     fun `ForgetAllMemory deletes only after a later one-time confirmation in the same chat`() = withMemoryLogs { logs ->
         val results = CopyOnWriteArrayList<JsonNode>()
         val clock = ShiftedClock()
+        // This workflow intentionally makes more than 30 provider attempts in a minute.
         backendE2eTest("memory_forget_all", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock,
+            llmLimits = BackendLlmLimits(perUserRequestsPerMinute = 100),
             providerClients = hindsight.clients(), llm = forgetLlm(results)) {
             val owner = UUID.randomUUID().toString()
             val other = UUID.randomUUID().toString()

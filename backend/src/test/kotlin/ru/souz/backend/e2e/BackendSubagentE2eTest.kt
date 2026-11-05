@@ -18,6 +18,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.http.BackendHttpRoutes
@@ -29,6 +30,47 @@ import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.http.providerHttpClientDefaults
 
 class BackendSubagentE2eTest {
+    @Test
+    fun `public children cannot bypass their owners provider request quota`() {
+        var childCalls = 0
+        var parentCalls = 0
+        backendE2eTest(
+            schemaPrefix = "e2e_subagent_quota",
+            llmLimits = BackendLlmLimits(perUserRequestsPerMinute = 1),
+            llm = E2eLlmApi { request ->
+                if (request.functions.isEmpty()) {
+                    childCalls++
+                    reply(request, "unexpected child call")
+                } else if (request.conversationPrompt().contains("delegate")) {
+                    parentCalls++
+                    reply(request, "").copy(choices = List(8) { index ->
+                        val choice = toolCallReply(request, "SpawnSubagent", mapOf("task" to "child $index")).choices.single()
+                        choice.copy(index = index, message = choice.message.copy(functionsStateId = "spawn-$index"))
+                    })
+                } else error("Unexpected parent request")
+            },
+        ) {
+            val owner = UUID.randomUUID().toString()
+            val chat = createPublicChat(owner)
+            client.patch("/v1/me/settings") { trusted(owner); jsonBody("""{"intermediateMessages":false}""") }
+            withPublicSocket(chat) { session ->
+                session.send(Frame.Text(messageFrame(chat, owner, "delegate", text = "delegate eight tasks")))
+                assertEquals("accepted", readJson(session)["status"].asText())
+                var terminal = readJson(session)
+                while (when (terminal["type"].asText()) {
+                    "thread.failed", "thread.completed", "thread.cancelled" -> false
+                    else -> true
+                }) {
+                    terminal = readJson(session)
+                }
+                assertEquals("thread.failed", terminal["type"].asText())
+                assertEquals(0, childCalls)
+            }
+            assertEquals(1, parentCalls, "The parent emitted the eight spawn calls")
+            assertEquals(1, llm.requests.size, "No later parent or child attempt reached the provider")
+        }
+    }
+
     @Test
     fun `configured child deadline expires through the production kernel and parent can finish`() {
         val stopped = CompletableDeferred<Unit>()
