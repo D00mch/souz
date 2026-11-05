@@ -9,6 +9,7 @@ import ru.souz.tool.*
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.awt.datatransfer.Transferable
+import java.util.concurrent.TimeUnit
 
 class ToolTextReplace(
     private val bash: ToolRunBashCommand
@@ -42,8 +43,12 @@ class ToolTextReplace(
         try {
             runCatching { clipboard.setContents(StringSelection(input.newText), null) }
                 .onFailure { MrRobot.clipboardPut(input.newText) }
-            bash.apple(SCRIPT)
-            Thread.sleep(PASTE_SETTLE_DELAY_MS)
+            try {
+                bash.apple(SCRIPT)
+            } finally {
+                // Dispatch can succeed even if waiting for osascript is interrupted.
+                settlePaste()
+            }
             "ok"
         } finally {
             if (previousContent != null) {
@@ -54,6 +59,25 @@ class ToolTextReplace(
 
     private companion object {
         private const val PASTE_SETTLE_DELAY_MS = 70L
+
+        private fun settlePaste() {
+            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(PASTE_SETTLE_DELAY_MS)
+            var interrupted = false
+            try {
+                var remaining = deadline - System.nanoTime()
+                while (remaining > 0) {
+                    try {
+                        TimeUnit.NANOSECONDS.sleep(remaining)
+                    } catch (_: InterruptedException) {
+                        // Keep the replacement available until the target has consumed the paste.
+                        interrupted = true
+                    }
+                    remaining = deadline - System.nanoTime()
+                }
+            } finally {
+                if (interrupted) Thread.currentThread().interrupt()
+            }
+        }
     }
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String =

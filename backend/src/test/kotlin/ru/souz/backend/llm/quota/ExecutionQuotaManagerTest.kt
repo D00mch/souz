@@ -6,8 +6,28 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.llms.LlmProvider
+import java.time.Instant
+import kotlin.test.assertEquals
 
 class ExecutionQuotaManagerTest {
+    @Test
+    fun `zero token chunks skip quota bookkeeping while positive usage expires normally`() = runTest {
+        var clockReads = 0
+        var time = Instant.parse("2026-11-05T12:00:00Z")
+        val manager = ExecutionQuotaManager(
+            limits = BackendLlmLimits(perUserTokensPerMinute = 10),
+            now = { clockReads++; time },
+        )
+
+        repeat(10_000) { manager.recordTokenUsage("user-a", 0) }
+        assertEquals(0, clockReads, "Empty stream chunks must not touch the quota queue or clock.")
+        manager.recordTokenUsage("user-a", 10)
+        assertSuspendFailsWith<QuotaExceededException> { manager.checkTokenQuota("user-a") }
+        manager.checkTokenQuota("user-b")
+        time = time.plusSeconds(61)
+        manager.checkTokenQuota("user-a")
+    }
+
     @Test
     fun `per user concurrent execution limit rejects second active execution`() = runTest {
         val manager = ExecutionQuotaManager(

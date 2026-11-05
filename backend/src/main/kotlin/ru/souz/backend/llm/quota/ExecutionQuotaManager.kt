@@ -72,6 +72,7 @@ class ExecutionQuotaManager(
         userId: String,
         totalTokens: Int,
     ) {
+        if (totalTokens <= 0) return
         mutex.withLock {
             val cutoff = now().minus(Duration.ofMinutes(1))
             val queue = tokenUsageByUser[userId].orEmpty().dropWhile { it.at.isBefore(cutoff) }

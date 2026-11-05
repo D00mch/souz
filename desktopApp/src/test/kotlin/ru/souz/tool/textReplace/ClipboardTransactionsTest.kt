@@ -6,6 +6,8 @@ import io.mockk.mockkObject
 import io.mockk.mockkStatic
 import io.mockk.unmockkAll
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -16,12 +18,15 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
+import org.junit.jupiter.params.provider.ValueSource
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.ToolRunBashCommand
 import java.awt.Toolkit
 import java.awt.datatransfer.Clipboard
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.StringSelection
+import java.awt.datatransfer.ClipboardOwner
+import java.awt.datatransfer.Transferable
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -32,7 +37,13 @@ import kotlin.test.assertTrue
 import kotlin.test.assertFailsWith
 
 class ClipboardTransactionsTest {
-    private val clipboard = Clipboard("isolated synthetic clipboard")
+    private var onRestore: () -> Unit = {}
+    private val clipboard = object : Clipboard("isolated synthetic clipboard") {
+        override fun setContents(contents: Transferable?, owner: ClipboardOwner?) {
+            if (contents === original) onRestore()
+            super.setContents(contents, owner)
+        }
+    }
     private val original = StringSelection("ORIGINAL")
     private val meta = ToolInvocationMeta.localDefault()
 
@@ -103,6 +114,37 @@ class ClipboardTransactionsTest {
         every { ToolRunBashCommand.apple(any()) } returns ""
         assertEquals("ok", invoke("paste", "next"))
         assertSame(original, clipboard.getContents(null))
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `cancelled paste keeps replacement through settling before restoring and releasing ownership`(
+        interruptCommand: Boolean,
+    ) = runBlocking {
+        var cancelledAt = 0L
+        var restoredAfter = 0L
+        var restoredText: Any? = null
+        onRestore = {
+            restoredAfter = System.nanoTime() - cancelledAt
+            restoredText = clipboard.getData(DataFlavor.stringFlavor)
+        }
+        lateinit var active: Deferred<String>
+        every { ToolRunBashCommand.apple(any()) } answers {
+            active.cancel()
+            cancelledAt = System.nanoTime()
+            if (interruptCommand) throw InterruptedException("Cancelled after native paste dispatch")
+            ""
+        }
+        active = async(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            ToolTextReplace(ToolRunBashCommand).suspendInvoke(ToolTextReplace.Input("temporary"), meta)
+        }
+        active.start()
+        withTimeout(5_000) { active.join() }
+        assertTrue(active.isCancelled)
+        assertEquals("temporary", restoredText)
+        assertTrue(restoredAfter >= TimeUnit.MILLISECONDS.toNanos(70), "Paste settle ended early: $restoredAfter ns")
+        assertSame(original, clipboard.getContents(null))
+        assertEquals("ORIGINAL", ToolGetClipboard().suspendInvoke(ToolGetClipboard.Input, meta))
     }
 
     @Test

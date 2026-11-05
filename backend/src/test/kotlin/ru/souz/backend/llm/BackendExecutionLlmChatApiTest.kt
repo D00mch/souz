@@ -12,6 +12,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
 import io.mockk.mockk
 import java.io.File
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertFalse
@@ -677,6 +678,34 @@ class BackendExecutionLlmChatApiTest {
             assertEquals(0, secondCalls)
         }
         tokens.checkTokenQuota("user-b")
+    }
+
+    @Test
+    fun `stream deltas without usage skip quota work and final usage is still charged`() = runTest {
+        var clockReads = 0
+        val quotas = ExecutionQuotaManager(
+            BackendLlmLimits(perUserTokensPerMinute = 10),
+            now = { clockReads++; Instant.parse("2026-11-05T12:00:00Z") },
+        )
+        val provider = StubChatApi(stream = { body -> flow {
+            val beforeChunks = clockReads
+            repeat(10_000) { emit(ok(body.model)) }
+            assertEquals(beforeChunks, clockReads, "Text and tool deltas must not update quota history.")
+            emit(ok(body.model, usage(7, 3, 10, 0)))
+            val afterUsage = clockReads
+            emit(ok(body.model))
+            emit(ok(body.model, usage(7, 3, 10, 0)))
+            emit(ok(body.model, usage(2, 1, 3, 0)))
+            assertEquals(afterUsage, clockReads, "Empty, repeated and decreasing snapshots have no new spend.")
+        } })
+        facadeFixture(executionQuotas = quotas, providerApiOverride = { provider }).use { fixture ->
+            val chunks = fixture.api.messageStream(chat("test").copy(provider = LlmProvider.OPENAI)).toList()
+            assertEquals(10_004, chunks.size)
+            assertEquals(usage(7, 3, 10, 0), fixture.api.cumulativeUsage())
+            assertEquals("per_user_token_quota_exceeded", assertFailsWith<QuotaExceededException> {
+                fixture.api.message(chat("test").copy(provider = LlmProvider.OPENAI))
+            }.code)
+        }
     }
 
     @Test
