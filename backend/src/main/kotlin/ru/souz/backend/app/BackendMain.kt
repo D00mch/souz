@@ -1,7 +1,6 @@
 package ru.souz.backend.app
 
 import java.net.InetSocketAddress
-import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import ru.souz.backend.http.BackendHttpServer
@@ -43,7 +42,11 @@ fun main() {
         appConfig.server.host,
         appConfig.server.port,
     )
-    CountDownLatch(1).await()
+    runBlocking {
+        runtime.awaitPluginFailure()
+        log.error("Plugin resources did not recover; terminating this replica for supervised restart.")
+        exitAfterPluginFailure(appConfig.plugins.shutdownMillis, server::close, runtime::shutdown)
+    }
 }
 
 internal suspend fun shutdownBackendProcess(
