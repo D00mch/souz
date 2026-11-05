@@ -106,10 +106,11 @@ class ClipboardTransactionsTest {
         }
     }
 
-    @Test
-    fun `failed transaction restores full clipboard and releases ownership`() {
+    @ParameterizedTest
+    @ValueSource(strings = ["copy", "paste"])
+    fun `failed transaction restores full clipboard and releases ownership`(kind: String) {
         every { ToolRunBashCommand.apple(any()) } throws IllegalStateException("synthetic failure")
-        assertFailsWith<IllegalStateException> { invoke("paste", "failed") }
+        assertFailsWith<IllegalStateException> { invoke(kind, "failed") }
         assertSame(original, clipboard.getContents(null))
         every { ToolRunBashCommand.apple(any()) } returns ""
         assertEquals("ok", invoke("paste", "next"))
@@ -145,6 +146,54 @@ class ClipboardTransactionsTest {
         assertTrue(restoredAfter >= TimeUnit.MILLISECONDS.toNanos(70), "Paste settle ended early: $restoredAfter ns")
         assertSame(original, clipboard.getContents(null))
         assertEquals("ORIGINAL", ToolGetClipboard().suspendInvoke(ToolGetClipboard.Input, meta))
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `cancelled copy settles before restoring and admitting a sibling read`(interruptCommand: Boolean) = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val waitingThread = CompletableDeferred<Thread>()
+        val releaseCommand = CountDownLatch(1)
+        var cancelledAt = 0L
+        var restoredAfter = 0L
+        var restoredText: Any? = null
+        onRestore = {
+            restoredAfter = System.nanoTime() - cancelledAt
+            restoredText = clipboard.getData(DataFlavor.stringFlavor)
+        }
+        lateinit var active: Deferred<String>
+        every { ToolRunBashCommand.apple(any()) } answers {
+            entered.complete(Unit)
+            check(releaseCommand.await(5, TimeUnit.SECONDS))
+            cancelledAt = System.nanoTime()
+            active.cancel()
+            if (interruptCommand) throw InterruptedException("Cancelled after native copy dispatch")
+            // The pending interruption is delivered by the first clipboard-polling sleep.
+            ""
+        }
+        active = async(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            ToolTextUnderSelection(ToolRunBashCommand, ToolGetClipboard())
+                .suspendInvoke(ToolTextUnderSelection.Input, meta)
+        }
+        active.start()
+        try {
+            withTimeout(5_000) { entered.await() }
+            val waiting = async(Dispatchers.IO) {
+                waitingThread.complete(Thread.currentThread())
+                ToolGetClipboard().suspendInvoke(ToolGetClipboard.Input, meta)
+            }
+            awaitClipboardLock(withTimeout(5_000) { waitingThread.await() })
+            releaseCommand.countDown()
+            withTimeout(5_000) { active.join() }
+            assertTrue(active.isCancelled)
+            assertTrue(restoredText.toString().startsWith("SOUZ_SELECTION_MARKER_"))
+            assertTrue(restoredAfter >= TimeUnit.MILLISECONDS.toNanos(240), "Copy settle ended early: $restoredAfter ns")
+            assertEquals("ORIGINAL", withTimeout(5_000) { waiting.await() })
+            assertSame(original, clipboard.getContents(null))
+        } finally {
+            releaseCommand.countDown()
+            active.cancelAndJoin()
+        }
     }
 
     @Test

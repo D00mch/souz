@@ -37,6 +37,7 @@ class ToolTextUnderSelection(
         val marker = "SOUZ_SELECTION_MARKER_${UUID.randomUUID()}"
         runCatching { clipboard.setContents(StringSelection(marker), null) }
 
+        var copySettled = false
         return try {
             bash.apple(SCRIPT)
 
@@ -44,11 +45,17 @@ class ToolTextUnderSelection(
                 Thread.sleep(COPY_RETRY_DELAY_MS)
                 val current = toolGetClipboard.invoke(ToolGetClipboard.Input, meta)
                 if (current == NO_SELECTION_ERROR) return@repeat
-                if (current != marker) return current
+                if (current != marker) {
+                    copySettled = true
+                    return current
+                }
             }
 
+            copySettled = true
             NO_SELECTION_ERROR
         } finally {
+            // Cmd+C may still complete after interruption of the command or clipboard polling.
+            if (!copySettled) ClipboardTransactions.settle(COPY_RETRY_ATTEMPTS * COPY_RETRY_DELAY_MS)
             if (previousContent != null) {
                 runCatching { clipboard.setContents(previousContent, null) }
             }
