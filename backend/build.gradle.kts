@@ -1,4 +1,4 @@
-    import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.bundling.AbstractArchiveTask
 import org.gradle.api.tasks.bundling.Jar
@@ -26,6 +26,7 @@ dependencies {
     implementation(project(":skill-oauth-impl"))
     implementation(project(":job-api"))
     implementation(project(":job-impl"))
+    implementation(project(":plugin-api"))
     implementation(kotlin("stdlib"))
     implementation(libs.kotlinx.coroutines)
     implementation(libs.kotlinx.coroutinesSlf4j)
