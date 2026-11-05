@@ -36,18 +36,18 @@ internal fun List<ClientToolDefinition>.normalizeClientTools(
             "Invalid tool description."
         )
         val path = "/tools/$index/parameters"
-        requireCatalogue(tool.parameters.type == "object", "$path: Tool parameters must have an object root.")
         requireCatalogue(
             "channelId" !in tool.parameters.properties,
             "$path: channelId is reserved for channel routing."
         )
-        val schema = normalizeSchema(tool.parameters.asProperty(), 0, path)
-        val params = tool.parameters.copy(
-            properties = schema.properties.orEmpty(),
-            required = schema.required.orEmpty(),
-        )
-        tool.copy(parameters = params)
+        tool.copy(parameters = normalizeToolParameters(tool.parameters, path))
     }
+}
+
+internal fun normalizeToolParameters(parameters: LLMRequest.Parameters, path: String = "/parameters"): LLMRequest.Parameters {
+    requireCatalogue(parameters.type == "object", "$path: Tool parameters must have an object root.")
+    val schema = normalizeSchema(parameters.asProperty(), 0, path)
+    return parameters.copy(properties = schema.properties.orEmpty(), required = schema.required.orEmpty())
 }
 
 // Include optional server capabilities even when their integrations are not configured.
