@@ -253,6 +253,7 @@ class BackendCompositionE2eTest {
         val schema = ru.souz.backend.storage.postgres.newPostgresSchema("e2e_restart")
         val userId = UUID.randomUUID().toString()
         lateinit var chatId: String
+        lateinit var explicitTools: Set<String>
 
         backendE2eTest(schemaPrefix = "e2e_restart_first", schema = schema) {
             val created = client.post(BackendHttpRoutes.CHATS) {
@@ -281,17 +282,18 @@ class BackendCompositionE2eTest {
             }
             assertEquals(2, persistedMessages.size())
             val allTools = client.get(BackendHttpRoutes.SETTINGS) { trusted("all-tools-user") }.jsonBody()["settings"]["enabledTools"]
+            explicitTools = allTools.map { it.asText() }.toSet()
             client.patch(BackendHttpRoutes.SETTINGS) { trusted("all-tools-user"); jsonBody("""{"enabledTools":$allTools}""") }
         }
 
-        // Skill OAuth adds tools after settings were saved; users who never narrowed the default receive them.
+        // Default settings discover new tools; a submitted allowlist stays explicit even if it contained every tool.
         backendE2eTest(schemaPrefix = "e2e_restart_second", schema = schema, skillOAuth = true) {
             val advertised = client.get(BackendHttpRoutes.BOOTSTRAP) { trusted(userId) }
                 .jsonBody()["capabilities"]["tools"].map { it["name"].asText() }
             assertTrue(advertised.containsAll(listOf("ConnectOAuthProvider", "SafeApiCall")))
             for (user in listOf(userId, "all-tools-user")) {
                 val enabled = client.get(BackendHttpRoutes.SETTINGS) { trusted(user) }.jsonBody()["settings"]["enabledTools"]
-                assertEquals(advertised, enabled.map { it.asText() }, user)
+                assertEquals(if (user == userId) advertised.toSet() else explicitTools, enabled.map { it.asText() }.toSet(), user)
             }
             val list = client.get(BackendHttpRoutes.CHATS) {
                 trusted(userId)
@@ -469,6 +471,13 @@ class BackendCompositionE2eTest {
             "/ready" to setOf("get"),
             "/metrics" to setOf("get"),
             "/hooks/{hookId}" to setOf("post"),
+            "/admin/v1/plugins" to setOf("get"),
+            "/admin/v1/plugins/install" to setOf("post"),
+            "/admin/v1/plugins/{id}" to setOf("get"),
+            "/admin/v1/plugins/{id}/selection" to setOf("put"),
+            "/admin/v1/plugins/{id}/disable" to setOf("post"),
+            "/admin/v1/plugins/{id}/versions/{version}/retire" to setOf("post"),
+            "/admin/v1/plugins/{id}/versions/{version}/reenable" to setOf("post"),
             "/v1/hooks/reload" to setOf("post"),
             "/v1/hooks/receipts/{receiptId}" to setOf("get"),
             "/v1/bootstrap" to setOf("get"),
@@ -512,7 +521,7 @@ class BackendCompositionE2eTest {
                 assertFalse(actual.containsKey(BackendHttpRoutes.CHAT_WS_PATTERN))
                 assertFalse(actual.containsKey(BackendHttpRoutes.WS))
                 assertEquals(
-                    setOf("souzProxyAuth", "souzUserIdentity", "hookBearer"),
+                    setOf("souzProxyAuth", "souzUserIdentity", "hookBearer", "pluginAdminBearer"),
                     document["components"]["securitySchemes"].fieldNames().asSequence().toSet(),
                 )
                 document["paths"].properties().forEach { (path, pathItem) ->
@@ -526,6 +535,8 @@ class BackendCompositionE2eTest {
                             if (path == "/hooks/{hookId}") {
                                 assertEquals(setOf("hookBearer"), operation["security"][0].fieldNames().asSequence().toSet())
                                 assertEquals(0, operation["security"][1].size(), "Custom verification need not use a Bearer header")
+                            } else if (path.startsWith("/admin/v1/plugins")) {
+                                assertEquals(setOf("pluginAdminBearer"), operation["security"][0].fieldNames().asSequence().toSet())
                             } else if (publicOperation) {
                                 assertFalse(operation.has("security"), "$method $path")
                             } else {
