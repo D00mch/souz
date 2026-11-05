@@ -415,13 +415,8 @@ class MemoryMaintenanceWorker(
                 ownerId = ownerId,
                 now = now,
             )
-            enqueueEmbeddingJob(
-                factId = fact.first,
-                ownerId = ownerId,
-                contentHash = fact.second,
-                now = now,
-            )
         }
+        enqueueEmbeddingJobs(insertedFacts, ownerId, now)
         return insertedFacts.size
     }
 
@@ -516,13 +511,13 @@ class MemoryMaintenanceWorker(
         }
     }
 
-    private fun Connection.enqueueEmbeddingJob(
-        factId: String,
+    private fun Connection.enqueueEmbeddingJobs(
+        facts: List<Pair<String, String>>,
         ownerId: MemoryOwnerId,
-        contentHash: String,
         now: String,
     ) {
         val model = embeddingModel ?: return
+        if (facts.isEmpty()) return
         prepareStatement(
             """
             insert into memory_index_jobs(
@@ -534,14 +529,17 @@ class MemoryMaintenanceWorker(
                 updated_at = excluded.updated_at
             """.trimIndent()
         ).use { statement ->
-            statement.setString(1, factId)
-            statement.setString(2, ownerId.value)
-            statement.setString(3, model)
-            statement.setString(4, contentHash)
-            statement.setString(5, now)
-            statement.setString(6, now)
-            statement.setString(7, now)
-            statement.executeUpdate()
+            facts.forEach { (factId, contentHash) ->
+                statement.setString(1, factId)
+                statement.setString(2, ownerId.value)
+                statement.setString(3, model)
+                statement.setString(4, contentHash)
+                statement.setString(5, now)
+                statement.setString(6, now)
+                statement.setString(7, now)
+                statement.addBatch()
+            }
+            statement.executeBatch()
         }
     }
 
