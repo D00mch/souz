@@ -41,6 +41,7 @@ dependencies {
     implementation("io.micrometer:micrometer-registry-prometheus:1.16.3")
     implementation(libs.ktor.openapiSchemaReflect)
     implementation(libs.ktor.clientCore)
+    implementation(libs.ktor.clientCio)
     implementation(libs.ktor.serializationJackson)
     implementation(libs.ktor.serverRoutingOpenapi)
     implementation(libs.ktor.serverSwagger)
