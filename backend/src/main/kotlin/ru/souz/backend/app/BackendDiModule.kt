@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.zaxxer.hikari.HikariDataSource
 import java.time.Clock
+import ru.souz.backend.plugins.*
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
@@ -172,6 +173,22 @@ fun backendDiModule(
     import(skillOAuthBackendModule(skillOAuthConfig))
 
     bindSingleton { BackendApplicationScope() }
+    bindSingleton { PluginFailureSignal() }
+    appConfig.pluginArtifacts?.let { config ->
+        bindSingleton { PostgresPluginRepository(instance<HikariDataSource>()) }
+        bindSingleton { S3PluginArtifacts(config) }
+        bindSingleton { PluginServices(instance(), instanceOrNull(), instance(), instance(), instanceOrNull()) }
+        bindSingleton {
+            val failure = instance<PluginFailureSignal>()
+            BackendPluginRuntime(instance(), instance(), instance(), appConfig.plugins,
+                registry = instance<BackendMetrics>().registry, onFatal = { failure.requestRestart() })
+        }
+        appConfig.pluginAdminToken?.let { token ->
+            bindSingleton {
+                PluginAdministration(instance(), instance(), instance(), token, appConfig.plugins, instance<BackendPluginRuntime>().replicaId)
+            }
+        }
+    }
     bindSingleton<Clock> { Clock.systemUTC() }
     appConfig.attachments?.let { config ->
         bindSingleton { S3AttachmentObjects(config) }
@@ -244,6 +261,12 @@ fun backendDiModule(
                 instance<BackendMetrics>().close()
             },
             closeAttachmentStorage = { instanceOrNull<S3AttachmentObjects>()?.close() },
+            shutdownPlugins = { instanceOrNull<BackendPluginRuntime>()?.shutdown() ?: true },
+            pluginDidNotDrain = { instance<PluginFailureSignal>().requestRestart() },
+            closePluginServices = {
+                instanceOrNull<PluginServices>()?.close()
+                instanceOrNull<S3PluginArtifacts>()?.close()
+            },
         )
     }
     bindSingleton { AgentEventBus(instance()) }
@@ -280,6 +303,7 @@ fun backendDiModule(
             userProviderKeyRepository = instance(),
             featureFlags = instance(),
             toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
+            pluginToolCatalog = { instanceOrNull<BackendPluginRuntime>()?.snapshot?.catalog ?: AgentToolCatalog() },
         )
     }
     bindSingleton {
@@ -391,10 +415,11 @@ fun backendDiModule(
             effectiveSettingsResolver = instance(),
             clientThreadRegistry = instance(),
             modelRouting = instance<NamedLlmConfig>().routing,
+            plugins = instanceOrNull(),
         )
     }
     bindSingleton<BackendConversationTurnRunner> {
-        BackendConversationRuntimeTurnRunner(instance(), instance())
+        BackendConversationRuntimeTurnRunner(instance(), instance(), instanceOrNull())
     }
     bindSingleton {
         AgentExecutionFinalizer(
@@ -597,7 +622,6 @@ fun backendDiModule(
         BackendBootstrapService(
             settingsProvider = instance(),
             effectiveSettingsResolver = instance(),
-            toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
             featureFlags = instance(),
             userProviderKeyRepository = instance(),
         )
@@ -621,6 +645,7 @@ fun backendDiModule(
             eventService = instance(),
             publicClientService = instance(),
             hookService = instance(),
+            pluginAdministration = instanceOrNull(),
             telegramBotBindingService = if (featureFlags.telegramBot) instance() else null,
             vkBotBindingService = if (featureFlags.vkBot) instance() else null,
             featureFlags = featureFlags,

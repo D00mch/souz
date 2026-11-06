@@ -50,8 +50,8 @@ interface SkillOAuthGateway {
      * Needing to (re)connect is a routine, expected outcome of calling this — tokens expire, scopes
      * get added, refresh tokens get revoked — not a caller error, so it is modeled as a normal
      * [ApiCallOutcome] rather than a thrown exception: see [ApiCallReconnectRequired].
-     * [SkillOAuthException] is still thrown for genuine caller mistakes (an unsupported provider, a
-     * malformed or disallowed [ApiCallRequest.url]) and for failures that aren't a matter of
+     * [SkillOAuthValidationException] identifies caller mistakes (an unsupported provider or a
+     * malformed or disallowed [ApiCallRequest.url]). Other [SkillOAuthException] failures aren't a matter of
      * reconnecting (e.g. a transient network error reaching the provider during token refresh).
      */
     suspend fun call(
@@ -79,6 +79,8 @@ data class ApiCallRequest(
      * `SkillOAuthGatewayImpl.call`.
      */
     val headers: Map<String, String> = emptyMap(),
+    /** Optional byte limit enforced while reading the response, before decoding it. */
+    val maxResponseBytes: Int? = null,
 )
 
 /** Result of [SkillOAuthGateway.call] — either the provider actually responded
@@ -105,3 +107,6 @@ data class ApiCallReconnectRequired(
 ) : ApiCallOutcome
 
 open class SkillOAuthException(message: String) : Exception(message)
+
+/** Invalid caller input, distinct from provider, transport and credential-storage failures. */
+class SkillOAuthValidationException(message: String) : SkillOAuthException(message)

@@ -37,6 +37,9 @@ Client commands share one live-only dispatcher, permit concurrent correlated cal
 - [`:skill-oauth-impl`](skill-oauth-impl/AGENTS.md) — Postgres-backed `SkillOAuthGateway` implementation, provider token exchange, and the OAuth callback route, consumed only by `:backend`.
 - [`:job-api`](job-api/AGENTS.md) — owner-scoped job management and execution contracts.
 - [`:job-impl`](job-impl/AGENTS.md) — PostgreSQL job persistence, scheduling, leased workers, retries, and queue metrics, composed by `:backend`.
+- [`:plugin-api`](plugin-api/AGENTS.md) — independent stateless JVM plugin contracts and invocation-bound host services.
+- [`:plugins`](plugins/AGENTS.md) — independently packaged plugin artifacts.
+- [`:plugins:gmail`](plugins/gmail/AGENTS.md) — independently packaged Gmail plugin, outside the backend runtime classpath.
 - [`:backend`](backend/AGENTS.md) — trusted-proxy HTTP host and PostgreSQL-backed conversation runtime.
 - [`build-logic`](build-logic/AGENTS.md) — included build for repository quality checks, outside the production module graph.
 
@@ -51,8 +54,11 @@ Only these direct production project dependencies are allowed. Standard test-sou
 - `:skill-oauth-impl` `main` → `:skill-oauth-api`.
 - `:job-api` `main` → none.
 - `:job-impl` `main` → `:job-api`.
+- `:plugin-api` `main` → none.
+- `:plugins` `main` → none.
+- `:plugins:gmail` `main` → `:plugin-api`.
 - `:sharedLogic` `main` → `:agent`, `:llms`, `:skill-oauth-api`.
-- `:backend` `main` → `:agent`, `:llms`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`, `:job-api`, `:job-impl`.
+- `:backend` `main` → `:agent`, `:llms`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`, `:job-api`, `:job-impl`, `:plugin-api`.
 
 ## Verification
 
