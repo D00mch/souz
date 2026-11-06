@@ -5,6 +5,7 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.findLLMModel
 
 fun LlmProvider?.supportsImageInput(): Boolean = when (this) {
     LlmProvider.OPENAI, LlmProvider.CODEX, LlmProvider.ANTHROPIC -> true
@@ -15,14 +16,16 @@ fun LlmProvider?.supportsImageInput(): Boolean = when (this) {
 class ChatVisionGateway(
     private val settings: SettingsProvider,
     private val api: LLMChatAPI,
+    private val modelSelection: String? = null,
 ) : VisionGateway {
     override suspend fun analyze(input: VisionInput): String {
-        val model = settings.gigaModel
-        check(model.provider.supportsImageInput()) { "Image understanding is unavailable for ${model.provider}" }
+        val model = if (modelSelection == null) settings.gigaModel else findLLMModel(modelSelection)
+        val provider = model?.provider ?: LlmProvider.OPENAI
+        check(provider.supportsImageInput()) { "Image understanding is unavailable for $provider" }
         return api.message(
             LLMRequest.Chat(
-                model = settings.executionModelId(model),
-                provider = model.provider,
+                model = if (modelSelection == null) settings.executionModelId(requireNotNull(model)) else model?.alias ?: modelSelection,
+                provider = provider,
                 messages = listOf(
                     LLMRequest.Message(
                         LLMMessageRole.user,

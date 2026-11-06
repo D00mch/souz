@@ -61,6 +61,7 @@ import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.config.NamedLlmConfig
 import ru.souz.backend.llm.ImageModelRoute
+import ru.souz.backend.llm.VisionModelRoute
 import ru.souz.backend.config.SystemBackendConfigSource
 import ru.souz.backend.config.loadNamedModels
 import ru.souz.agent.spi.TaskComplexityClassifier
@@ -209,6 +210,7 @@ fun backendDiModule(
     }
     bindSingleton { SystemBackendConfigSource.loadNamedModels() }
     bindSingleton { ImageModelRoute(appConfig.imageModel, instance()) }
+    bindSingleton { VisionModelRoute(appConfig.visionModel, instance()) }
     bindSingleton<SettingsProvider> {
         BackendSettingsProvider(
             preferenceStore = instance(),
@@ -367,6 +369,7 @@ fun backendDiModule(
             retryPolicy = appConfig.providerRetryPolicy,
             attachmentHistoryLimit = appConfig.attachmentHistoryLimit,
             imageModel = instance(),
+            visionModel = instance(),
             imageGeneration = instanceOrNull(),
             attachmentStorage = instanceOrNull(),
             providerHttpClients = instance(),

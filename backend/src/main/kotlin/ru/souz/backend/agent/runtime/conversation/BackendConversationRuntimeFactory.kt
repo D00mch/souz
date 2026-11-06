@@ -1,6 +1,7 @@
 package ru.souz.backend.agent.runtime.conversation
 
 import ru.souz.backend.llm.ImageModelRoute
+import ru.souz.backend.llm.VisionModelRoute
 import ru.souz.backend.attachments.ToolGenerateAttachmentImage
 import ru.souz.backend.attachments.AttachmentStorage
 import ru.souz.backend.attachments.ImageGeneration
@@ -48,7 +49,6 @@ import ru.souz.backend.personality.PersonalityTool
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.runtime.ChatVisionGateway
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
@@ -107,6 +107,7 @@ internal class BackendConversationRuntimeFactory(
     private val providerApiOverride: ((LlmProvider) -> LLMChatAPI?)? = null,
     private val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
     private val imageModel: ImageModelRoute,
+    private val visionModel: VisionModelRoute,
     private val imageGeneration: ImageGeneration? = null,
     private val attachmentStorage: AttachmentStorage? = null,
 ) {
@@ -157,8 +158,8 @@ internal class BackendConversationRuntimeFactory(
             fallbackModels = effectiveSettingsResolver.fallbackModels(key.userId, Locale.forLanguageTag(request.locale)),
             failureMemory = modelFailures,
             attachmentStorage = attachmentStorage,
+            visionModel = visionModel.selection,
         )
-        val visionGateway = ChatVisionGateway(settingsProvider, executionApi)
         val imageGenerationGateway = imageModel.gateway(
             settingsProvider, providerHttpClients, codexOAuthService, executionApi, hookBudget,
         )
@@ -172,7 +173,7 @@ internal class BackendConversationRuntimeFactory(
             settingsProvider = settingsProvider,
             filesToolUtil = filesToolUtil,
             webResearchClient = webResearchClient,
-            visionGateway = visionGateway,
+            visionGateway = executionApi.visionGateway,
             imageGenerationGateway = imageGenerationGateway,
         )
         val serverNames = toolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet() +

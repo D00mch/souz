@@ -159,6 +159,7 @@ data class BackendAppConfig(
     val attachments: AttachmentStorageConfig? = null,
     val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
     val imageModel: String = DEFAULT_IMAGE_MODEL,
+    val visionModel: String? = null,
     val policyPrompt: String? = null,
 ) {
     fun validate(): BackendAppConfig {
@@ -220,6 +221,7 @@ data class BackendAppConfig(
                 } ?: 0.5,
                 attachments = AttachmentStorageConfig.load(source),
                 imageModel = source.value("SOUZ_IMAGE_MODEL", "souz.image.model")?.trim() ?: DEFAULT_IMAGE_MODEL,
+                visionModel = source.value("SOUZ_ATTACHMENTS_VISION_MODEL", "souz.attachments.visionModel")?.trim(),
                 attachmentHistoryLimit = source.intValue("SOUZ_ATTACHMENTS_HISTORY_LIMIT", "souz.attachments.historyLimit", DEFAULT_ATTACHMENT_HISTORY_LIMIT),
                 hooks = HookConfig(
                     owners = source.value("SOUZ_HOOK_OWNERS", "souz.hooks.owners")

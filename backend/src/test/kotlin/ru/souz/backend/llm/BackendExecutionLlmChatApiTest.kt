@@ -39,6 +39,9 @@ import ru.souz.backend.config.NamedLlmModel
 import ru.souz.backend.config.loadNamedModels
 import ru.souz.db.SettingsProvider
 import ru.souz.backend.app.BackendProviderRetryPolicy
+import ru.souz.backend.attachments.AttachmentStorage
+import ru.souz.backend.attachments.attachmentTest
+import ru.souz.backend.attachments.toContent
 import ru.souz.backend.hooks.HookAuth
 import ru.souz.backend.hooks.HookConfig
 import ru.souz.backend.hooks.HookDefinition
@@ -72,6 +75,103 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.TestTimeSource
 
 class BackendExecutionLlmChatApiTest {
+    @Test
+    fun `named text routes and streams share one visual analysis across retries and fallbacks`() = attachmentTest {
+        val pixels = java.io.ByteArrayOutputStream().also {
+            javax.imageio.ImageIO.write(java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", it)
+        }.toByteArray()
+        val files = (1..2).map { storage.save("user-a", "source-$it", "$it.png", pixels.inputStream()).toContent() }
+        val input = chat("text").copy(provider = LlmProvider.OPENAI, messages = listOf(
+            LLMRequest.Message(LLMMessageRole.user, "compare these screenshots", files = files),
+        ))
+        var visionCalls = 0
+        var mainCalls = 0
+        var visionFail = false
+        val models = NamedLlmConfig(listOf("text", "vision", "backup").associateWith {
+            NamedLlmModel("upstream-$it", "https://$it.test/v1", "$it-key")
+        })
+        facadeFixture(llmConfig = models, attachmentStorage = storage, visionModel = "vision",
+            retryPolicy = BackendProviderRetryPolicy(max429Retries = 1), fallbackModels = listOf("backup"),
+            providerApiOverride = { StubChatApi(message = { request ->
+                if (request.model == "upstream-vision") {
+                    visionCalls++
+                    assertEquals(2, request.messages.sumOf { it.attachments.orEmpty().size })
+                    if (visionFail) LLMResponse.Chat.Error(503, "no vision") else
+                        ok(request.model).copy(choices = listOf(LLMResponse.Choice(
+                            LLMResponse.Message("TWO_SCREENS", LLMMessageRole.assistant, functionsStateId = null), 0, null,
+                        )))
+                } else {
+                    assertTrue(request.messages.all { it.attachments.isNullOrEmpty() })
+                    assertTrue("TWO_SCREENS" in request.messages.last().content)
+                    if (request.model == "upstream-text") LLMResponse.Chat.Error(if (mainCalls++ == 0) 429 else 503, "retry")
+                    else ok(request.model)
+                }
+            }, stream = { request ->
+                assertEquals("upstream-text", request.model)
+                assertTrue(request.messages.all { it.attachments.isNullOrEmpty() })
+                assertTrue("TWO_SCREENS" in request.messages.last().content)
+                flowOf(ok(request.model))
+            }) },
+        ).use { fixture ->
+            assertEquals("upstream-backup", assertIs<LLMResponse.Chat.Ok>(fixture.api.message(input)).model)
+            assertEquals(1, visionCalls, "Text retries and fallback reuse the analysis")
+            fixture.api.messageStream(input).toList()
+            assertEquals(2, visionCalls)
+            assertEquals(files, input.messages.single().files)
+            assertTrue(input.messages.single().attachments.isNullOrEmpty(), "Input projection must not mutate history")
+            visionFail = true
+            assertEquals(503, assertIs<LLMResponse.Chat.Error>(fixture.api.message(input.copy(model = "vision", provider = null))).status)
+            assertEquals(3, visionCalls, "The explicit vision route receives images directly without text fallback")
+        }
+    }
+
+    @Test
+    fun `dedicated vision uses its own model retries and accounting without the text cascade or S3`() = runTest {
+        val requests = mutableListOf<LLMRequest.Chat>()
+        var failure: Int? = 429
+        var cancel = false
+        val pixels = java.io.ByteArrayOutputStream().also {
+            javax.imageio.ImageIO.write(java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", it)
+        }.toByteArray()
+        val input = ru.souz.llms.runtime.VisionInput(listOf(ru.souz.llms.runtime.ImageSource.read(pixels)), "read the label")
+        facadeFixture(
+            settingsProvider = LlmSettingsStub().apply { gigaModel = LLMModel.QwenMax },
+            visionModel = "CodexGpt61Sol",
+            llmConfig = NamedLlmConfig(reasoningEfforts = mapOf("gpt-6.1-sol" to "low")),
+            fallbackModels = listOf("QwenMax"),
+            retryPolicy = BackendProviderRetryPolicy(max429Retries = 1),
+            providerApiOverride = { provider ->
+                assertEquals(LlmProvider.CODEX, provider)
+                StubChatApi(message = { request ->
+                    requests += request
+                    if (cancel) throw CancellationException("stop vision")
+                    val status = failure.also { failure = null }
+                    if (status != null) LLMResponse.Chat.Error(status, "vision unavailable") else
+                        ok(request.model, usage(7, 3, 10, 0)).copy(choices = listOf(LLMResponse.Choice(
+                            LLMResponse.Message("Label", LLMMessageRole.assistant, functionsStateId = null), 0, null,
+                        )))
+                })
+            },
+        ).use { fixture ->
+            fixture.api.visionGateway.analyze(input)
+            assertEquals(2, requests.size)
+            requests.forEach {
+                assertEquals("gpt-6.1-sol", it.model)
+                assertEquals("low", it.reasoningEffort)
+                assertEquals("read the label", it.messages.single().content)
+                assertEquals(1, it.messages.single().attachments!!.size)
+                assertTrue(it.functions.isEmpty())
+            }
+            assertEquals(usage(7, 3, 10, 0), fixture.api.cumulativeUsage())
+            failure = 503
+            assertFailsWith<IllegalStateException> { fixture.api.visionGateway.analyze(input) }
+            assertEquals(3, requests.size, "Vision failure must not call a text-model fallback")
+            cancel = true
+            assertFailsWith<CancellationException> { fixture.api.visionGateway.analyze(input) }
+            assertEquals(4, requests.size)
+        }
+    }
+
     @Test
     fun `image selection routes independently of chat through OpenAI named and Codex connections`() = runTest {
         val settings = LlmSettingsStub().apply {
@@ -672,6 +772,8 @@ private fun facadeFixture(
     },
     fallbackModels: List<String> = emptyList(),
     failureMemory: ModelFailureMemory = ModelFailureMemory(),
+    visionModel: String? = null,
+    attachmentStorage: AttachmentStorage? = null,
 ): FacadeFixture {
     val clients = ProviderHttpClients(standard = client, openAi = client)
     val metrics = BackendMetrics()
@@ -690,6 +792,8 @@ private fun facadeFixture(
         metrics = metrics,
         fallbackModels = fallbackModels,
         failureMemory = failureMemory,
+        visionModel = visionModel,
+        attachmentStorage = attachmentStorage,
     )
     return FacadeFixture(api, credentialResolver, clients, metrics)
 }

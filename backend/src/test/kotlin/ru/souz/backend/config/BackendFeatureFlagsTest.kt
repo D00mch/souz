@@ -103,6 +103,7 @@ class BackendAppConfigTest {
                     "SOUZ_BACKEND_PROXY_TOKEN" to " proxy-secret ",
                     "SOUZ_MASTER_KEY" to "test-master-key",
                     "SOUZ_IMAGE_MODEL" to "  CodexGpt61Sol  ",
+                    "SOUZ_ATTACHMENTS_VISION_MODEL" to "  named-vision  ",
                 ),
             )
         ).validate()
@@ -115,6 +116,7 @@ class BackendAppConfigTest {
                     "souz.backend.proxyToken" to " property-secret ",
                     "souz.masterKey" to "test-master-key",
                     "souz.image.model" to "gpt-image-2",
+                    "souz.attachments.visionModel" to "CodexGpt61Sol",
                 ),
             )
         ).validate()
@@ -134,6 +136,9 @@ class BackendAppConfigTest {
         assertEquals(DEFAULT_IMAGE_MODEL, defaultConfig.imageModel)
         assertEquals("CodexGpt61Sol", envConfig.imageModel)
         assertEquals("gpt-image-2", propertyConfig.imageModel)
+        assertNull(defaultConfig.visionModel)
+        assertEquals("named-vision", envConfig.visionModel)
+        assertEquals("CodexGpt61Sol", propertyConfig.visionModel)
         assertEquals(
             BackendServerConfig(host = "0.0.0.0", port = 9090, proxyToken = "proxy-secret"),
             envConfig.server,

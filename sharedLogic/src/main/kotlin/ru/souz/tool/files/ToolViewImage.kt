@@ -33,7 +33,7 @@ class ToolViewImage(
 
     override val name: String = NAME
     override val description: String =
-        "Read a local image from a safe absolute path and ask the current multimodal model to describe or analyze it."
+        "Read a local image from a safe absolute path and ask the configured vision model to describe or analyze it."
 
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(

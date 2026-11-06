@@ -33,6 +33,25 @@ class ImageGatewayTest {
         every { it.codexAccountId } returns "account"
     }
 
+    @Test fun `vision selection preserves the current named route by default and can use another provider`() = runTest {
+        every { settings.gigaModel } returns LLMModel.OpenAICompatibleCustom
+        every { settings.executionModelId(LLMModel.OpenAICompatibleCustom) } returns "current-named-model"
+        val api = mockk<LLMChatAPI>()
+        val requests = mutableListOf<LLMRequest.Chat>()
+        coEvery { api.message(capture(requests)) } answers {
+            LLMResponse.Chat.Ok(listOf(LLMResponse.Choice(
+                LLMResponse.Message("Visible label", LLMMessageRole.assistant, functionsStateId = null), 0, null,
+            )), 0, firstArg<LLMRequest.Chat>().model, LLMResponse.Usage(1, 1, 2, 0))
+        }
+        val input = VisionInput(listOf(ImageSource.read(png)), "read the label")
+        for (selection in listOf(null, "named-vision", "CodexGpt61Sol")) {
+            assertEquals("Visible label", ChatVisionGateway(settings, api, selection).analyze(input))
+        }
+        assertEquals(listOf("current-named-model", "named-vision", "gpt-6.1-sol"), requests.map { it.model })
+        assertEquals(listOf(LlmProvider.OPENAI, LlmProvider.OPENAI, LlmProvider.CODEX), requests.map { it.provider })
+        requests.forEach { assertEquals(listOf("data:image/png;base64,$base64"), it.messages.single().attachments) }
+    }
+
     @Test fun `OpenAI generation and editing use the same route and preserve source bytes`() = runTest {
         val requests = mutableListOf<Pair<String, ByteArray>>()
         HttpClient(MockEngine { request ->
