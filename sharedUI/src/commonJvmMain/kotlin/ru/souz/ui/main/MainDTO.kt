@@ -202,8 +202,8 @@ sealed interface MainEvent : VMEvent {
     data object RefreshSettings : MainEvent
     data class ToggleToolModifyReviewSelection(val messageId: String, val itemId: Long) : MainEvent
     data class ResolveToolModifyReview(val messageId: String, val action: ToolModifySelectionAction) : MainEvent
-    data object ApproveToolPermission : MainEvent
-    data object RejectToolPermission : MainEvent
+    data class ApproveToolPermission(val requestId: Long) : MainEvent
+    data class RejectToolPermission(val requestId: Long) : MainEvent
     data class SelectApprovalCandidate(val sourceId: String, val requestId: Long, val candidateId: Long) : MainEvent
     data class CancelSelectionDialog(val sourceId: String, val requestId: Long) : MainEvent
     data object ToggleAmbientMode : MainEvent

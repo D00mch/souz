@@ -134,8 +134,8 @@ fun MainScreenContent(
     onClearContext: () -> Unit = {},
     onToggleToolModifyReviewSelection: (String, Long) -> Unit = { _, _ -> },
     onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit = { _, _ -> },
-    onApproveToolPermission: () -> Unit = {},
-    onRejectToolPermission: () -> Unit = {},
+    onApproveToolPermission: (Long) -> Unit = {},
+    onRejectToolPermission: (Long) -> Unit = {},
     onSelectApprovalCandidate: (String, Long, Long) -> Unit = { _, _, _ -> },
     onCancelSelectionDialog: (String, Long) -> Unit = { _, _ -> },
     onOpenPath: (String) -> Unit = {},
@@ -457,8 +457,8 @@ fun MainScreenContent(
                     },
                     confirmText = stringPermissionAllow,
                     cancelText = stringPermissionDeny,
-                    onConfirm = onApproveToolPermission,
-                    onDismiss = onRejectToolPermission
+                    onConfirm = { onApproveToolPermission(dialog.requestId) },
+                    onDismiss = { onRejectToolPermission(dialog.requestId) }
                 )
             }
 

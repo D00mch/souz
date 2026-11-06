@@ -297,7 +297,7 @@ class BackendHooksE2eTest {
     }
 
     @Test
-    fun `image generation holds provider capacity through HTTP completion without charging rejected calls`() {
+    fun `image generation holds provider capacity through HTTP completion without charging queued calls`() {
         writeHook()
         writeHook(id = "second", directory = "second")
         val entered = CompletableDeferred<Unit>()
@@ -318,16 +318,23 @@ class BackendHooksE2eTest {
             providerClients = ProviderHttpClients(standard = http, openAi = http)) {
             setupOwner()
             val first = invoke().jsonBody()["receiptId"].asText()
+            var second: String? = null
             try {
                 withTimeout(5_000) { entered.await() }
-                val rejected = awaitStatus(invoke(id = "second").jsonBody()["receiptId"].asText(), "completed")
-                assertEquals(3, rejected["llmCalls"].asInt(), "Only the three chat calls consume budget when image capacity is full")
-                assertTrue(llm.requests.last().messages.any { it.content.contains("Global provider concurrency limit exceeded") })
+                val callsBeforeQueue = llm.requests.size
+                second = invoke(id = "second").jsonBody()["receiptId"].asText()
+                val queued = eventually("second hook waiting for image capacity") {
+                    client.get("/v1/hooks/receipts/$second") { trusted(owner) }.jsonBody().takeIf {
+                        it["status"].asText() == "running" && it["llmCalls"].asInt() == 2
+                    }
+                }
+                assertEquals(2, queued["llmCalls"].asInt(), "Only the two local chat calls consume budget; the queued image call does not")
+                assertEquals(callsBeforeQueue + 2, llm.requests.size, "Local chat uses independent provider capacity")
             } finally {
                 release.complete(Unit)
             }
             assertEquals(4, awaitStatus(first, "completed")["llmCalls"].asInt())
-            assertEquals(4, awaitStatus(invoke(id = "second").jsonBody()["receiptId"].asText(), "completed")["llmCalls"].asInt())
+            assertEquals(4, awaitStatus(requireNotNull(second), "completed")["llmCalls"].asInt())
             assertEquals("image", Files.readString(workspace.resolve("tree.png")))
         }
     }

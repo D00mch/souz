@@ -104,7 +104,9 @@ class PermissionsUseCase(
     suspend fun resolveToolPermission(requestId: Long?, approved: Boolean) {
         if (requestId == null) return
         toolPermissionBroker.resolve(requestId, approved)
-        emitState { copy(toolPermissionDialog = null) }
+        emitState {
+            if (toolPermissionDialog?.requestId == requestId) copy(toolPermissionDialog = null) else this
+        }
     }
 
     suspend fun resolveSelectionDialog(

@@ -26,6 +26,9 @@ import ru.souz.db.SettingsProvider
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
 import ru.souz.service.telegram.SelectionBroker
+import ru.souz.tool.ImmediateToolPermissionBroker
+import ru.souz.tool.ToolPermissionBroker
+import ru.souz.tool.ToolPermissionResult
 import ru.souz.tool.SelectionApprovalCandidate
 import ru.souz.tool.SelectionApprovalRequest
 import ru.souz.tool.SelectionApprovalSource
@@ -94,7 +97,55 @@ class MainSelectionEventsTest {
         }
     }
 
-    private fun TestScope.viewModel(sources: Set<SelectionApprovalSource>): MainViewModel {
+    @Test
+    fun `permission events from cancelled child cannot approve deny or dismiss promoted request`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        mockkStatic("org.jetbrains.compose.resources.StringArrayResourcesKt")
+        try {
+            coEvery { getStringArray(any()) } returns listOf("tip")
+            val broker = ImmediateToolPermissionBroker(mockk { every { safeModeEnabled } returns true })
+            val viewModel = viewModel(emptySet(), broker)
+            try {
+                runCurrent()
+                val first = backgroundScope.async { broker.requestPermission("Read synthetic A", emptyMap()) }
+                runCurrent()
+                val displayed = requireNotNull(viewModel.uiState.value.toolPermissionDialog)
+                val next = backgroundScope.async { broker.requestPermission("Delete synthetic B", emptyMap()) }
+                runCurrent()
+                first.cancel()
+                runCurrent()
+                val promoted = requireNotNull(viewModel.uiState.value.toolPermissionDialog)
+                assertEquals("Delete synthetic B", promoted.description)
+                for (event in listOf(MainEvent.ApproveToolPermission(displayed.requestId),
+                    MainEvent.RejectToolPermission(displayed.requestId))) {
+                    viewModel.send(event)
+                    runCurrent()
+                    assertFalse(next.isCompleted, "Stale $event must not resolve B")
+                    assertEquals(promoted, viewModel.uiState.value.toolPermissionDialog)
+                }
+                viewModel.send(MainEvent.RejectToolPermission(promoted.requestId))
+                runCurrent()
+                assertEquals("User disapproved", (next.await() as ToolPermissionResult.No).msg)
+                assertNull(viewModel.uiState.value.toolPermissionDialog)
+                val last = backgroundScope.async { broker.requestPermission("Read synthetic C", emptyMap()) }
+                runCurrent()
+                viewModel.send(MainEvent.ApproveToolPermission(requireNotNull(viewModel.uiState.value.toolPermissionDialog).requestId))
+                runCurrent()
+                assertEquals(ToolPermissionResult.Ok, last.await())
+                assertNull(viewModel.uiState.value.toolPermissionDialog)
+            } finally {
+                viewModel.viewModelScope.cancel()
+            }
+        } finally {
+            unmockkStatic("org.jetbrains.compose.resources.StringArrayResourcesKt")
+            Dispatchers.resetMain()
+        }
+    }
+
+    private fun TestScope.viewModel(
+        sources: Set<SelectionApprovalSource>,
+        broker: ToolPermissionBroker = mockk { every { requests } returns emptyFlow() },
+    ): MainViewModel {
         val settings = mockk<SettingsProvider>(relaxed = true) {
             every { gigaModel } returns LLMModel.Max
             every { embeddingsModel } returns EmbeddingsModel.GigaEmbeddings
@@ -102,7 +153,7 @@ class MainSelectionEventsTest {
         }
         val permissions = PermissionsUseCase(
             settingsProvider = settings,
-            toolPermissionBroker = mockk { every { requests } returns emptyFlow() },
+            toolPermissionBroker = broker,
             selectionApprovalSources = sources,
             speechUseCase = mockk(),
             permissionPromptService = mockk(),

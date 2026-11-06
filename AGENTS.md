@@ -8,9 +8,9 @@ Complexity routing admits only confident tool-free turns to the light model. Pub
 
 Backend uses one startup-validated `CONTEXT_SIZE` (minimum 24,000 tokens) for all models, including summaries. Compaction and input validation share an 80% limit independent of output limits; context size is not a user or execution setting.
 
-Backend provider attempts share per-user admission, request/token quotas and provider concurrency across parents and children. Subagents run asynchronously with admission limits and cooperative host deadlines (ten minutes by default; backend `SUBAGENT_TASK_TIMEOUT_MS`) within one parent execution; parent-only tools wait for or cancel children. A zero-timeout wait polls status. See [subagent lifecycle](agent/docs/subagents.md).
+Backend provider attempts share per-user admission, request/token quotas and provider concurrency across parents and children. Concurrency admission waits cancellably for capacity; request and token quotas still reject excess calls. Subagents run asynchronously with admission limits and cooperative host deadlines (ten minutes by default; backend `SUBAGENT_TASK_TIMEOUT_MS`) within one parent execution; parent-only tools wait for or cancel children. A zero-timeout wait polls status. See [subagent lifecycle](agent/docs/subagents.md).
 
-Desktop selection prompts queue across sources and expire with their callers; dialog events carry the displayed source and request IDs. Clipboard tools share [transaction ownership](desktopApp/docs/clipboard-transactions.md) across parent and child agents.
+Desktop selection prompts queue across sources and expire with their callers; dialog events carry the displayed source and request IDs. Tool permission approval and denial events carry the displayed request ID so stale clicks cannot resolve or dismiss a replacement prompt. Clipboard tools share [transaction ownership](desktopApp/docs/clipboard-transactions.md) across parent and child agents.
 
 Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts. Revisioned snapshots go to the current connected channel if it declares `prompt.personality.set`, otherwise to another declaring channel. Settings save independently of discovery; no known receiver means synchronization is skipped.
 

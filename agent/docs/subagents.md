@@ -12,6 +12,8 @@ Each execution admits at most eight active children, including cancellation clea
 
 The host supplies the same LLM API and complete invocation metadata. Each child has a fresh agent, history, tool lookup, and output stream. The tool leaves child `sideEffects` uncollected and sets `AgentRuntimeEventSink.NONE`; host tools retain their permission and client-interaction owners. The parent records its lifecycle tool calls and results, including normal Knowledge offloading for large results. Cancellation does not undo tool side effects; callers must inspect existing work before retrying.
 
+Backend provider calls wait cancellably for shared per-user and provider concurrency capacity. A parent queues alongside children rather than failing when they occupy every slot. FIFO admission prevents later child calls from overtaking queued parent calls; capacity stays occupied through provider cancellation cleanup. Request/token quotas and hook call budgets are checked after admission, before the provider attempt.
+
 Completed child output carries its selected files as structured `files`, also included in the result JSON for subsequent tool arguments. It does not set the parent's `replyFiles`: the parent explicitly selects any file it wants to include in its reply. Child and parent file tools share the invocation's ownership.
 
 ## Why this is fragile

@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.backend.settings.service.BackendSettingsProvider
@@ -584,7 +585,8 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
-    fun `ordinary provider calls share admission across executions and release after cancellation cleanup`() = runTest {
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun `ordinary provider calls queue across executions and release after cancellation cleanup`() = runTest {
         for (kind in listOf("chat", "stream", "embeddings", "upload", "image")) {
             for (perUser in listOf(false, true)) {
                 val quotas = ExecutionQuotaManager(BackendLlmLimits(
@@ -631,19 +633,21 @@ class BackendExecutionLlmChatApiTest {
                             }
                         }
                         val running = async { call(first) }
-                        val code = if (perUser) "per_user_concurrent_executions_exceeded" else "global_provider_concurrency_exceeded"
+                        val waiting = async { call(second) }
                         try {
-                            withTimeout(1000) { entered.await() }
-                            assertEquals(code, assertFailsWith<QuotaExceededException> { call(second) }.code)
+                            entered.await()
+                            runCurrent()
+                            assertFalse(waiting.isCompleted)
                             running.cancel()
-                            withTimeout(1000) { cleanupStarted.await() }
-                            assertEquals(code, assertFailsWith<QuotaExceededException> { call(second) }.code)
+                            cleanupStarted.await()
+                            runCurrent()
+                            assertFalse(waiting.isCompleted, "Capacity includes cancellation cleanup")
                             assertEquals(1, attempts)
                         } finally {
                             releaseCleanup.complete(Unit)
                             running.cancelAndJoin()
                         }
-                        call(second)
+                        waiting.await()
                         assertEquals(2, attempts)
                     }
                 }
@@ -681,6 +685,50 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun `four children occupying shared capacity leave parent queued and cancellable until a slot opens`() = runTest {
+        for (providerLimited in listOf(false, true)) {
+            val quotas = ExecutionQuotaManager(BackendLlmLimits(
+                perUserConcurrentExecutions = if (providerLimited) 8 else 4,
+                globalProviderConcurrency = if (providerLimited) 4 else 8,
+                perUserRequestsPerMinute = 5,
+            ))
+            val releases = List(4) { CompletableDeferred<Unit>() }
+            var calls = 0
+            var active = 0
+            val provider = StubChatApi(message = { body ->
+                val index = calls++
+                active++
+                assertTrue(active <= 4, "Shared concurrency limit exceeded")
+                try {
+                    if (index < 4) releases[index].await()
+                    ok(body.model)
+                } finally { active-- }
+            })
+            facadeFixture(executionQuotas = quotas, providerApiOverride = { provider }).use { fixture ->
+                val request = chat("shared-parent-child-model").copy(provider = LlmProvider.OPENAI)
+                val children = List(4) { async { fixture.api.message(request) } }
+                runCurrent()
+                assertEquals(4, active)
+                val cancelled = async { fixture.api.message(request) }
+                val parent = async { fixture.api.message(request) }
+                runCurrent()
+                assertFalse(parent.isCompleted, "Parent must queue instead of failing admission")
+                assertEquals(4, calls, "Queued calls cannot reach provider or spend request quota")
+                cancelled.cancelAndJoin()
+                releases[0].complete(Unit)
+                runCurrent()
+                assertIs<LLMResponse.Chat.Ok>(parent.await())
+                assertEquals(5, calls)
+                assertFalse(children[1].isCompleted, "Parent resumes while other children remain active")
+                releases.forEach { it.complete(Unit) }
+                children.awaitAll()
+                assertEquals(0, active)
+            }
+        }
+    }
+
+    @Test
     fun `stream deltas without usage skip quota work and final usage is still charged`() = runTest {
         var clockReads = 0
         val quotas = ExecutionQuotaManager(
@@ -709,7 +757,8 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
-    fun `hook provider calls hold capacity without charging rejected calls and release it on cancellation`() = runTest {
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun `hook provider calls hold capacity without charging queued calls and release it on cancellation`() = runTest {
         PostgresDataSourceFactory.create(postgresAppConfig(newPostgresSchema("provider_permit")).postgres).use { db ->
             PostgresUserRepository(db).ensureUser("user-a")
             for (kind in listOf("chat", "stream", "embeddings", "upload")) {
@@ -758,10 +807,10 @@ class BackendExecutionLlmChatApiTest {
                     val running = async { call() }
                     try {
                         entered.await()
-                        assertFailsWith<QuotaExceededException> { quotas.withProviderPermit(model.provider) {} }
-                        assertEquals("global_provider_concurrency_exceeded", assertFailsWith<QuotaExceededException> {
-                            call()
-                        }.code)
+                        val queued = async { call() }
+                        runCurrent()
+                        assertFalse(queued.isCompleted)
+                        queued.cancelAndJoin()
                         assertEquals(1, store.find("user-a", receiptId)?.llmCalls)
                     } finally {
                         running.cancelAndJoin()

@@ -71,8 +71,8 @@ fun MainScreen(
         onResolveToolModifyReview = { messageId, action ->
             viewModel.send(MainEvent.ResolveToolModifyReview(messageId, action))
         },
-        onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
-        onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
+        onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission(it)) },
+        onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission(it)) },
         onSelectApprovalCandidate = { sourceId, requestId, candidateId ->
             viewModel.send(MainEvent.SelectApprovalCandidate(sourceId, requestId, candidateId))
         },

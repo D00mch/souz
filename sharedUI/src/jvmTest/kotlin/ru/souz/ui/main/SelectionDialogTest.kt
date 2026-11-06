@@ -9,12 +9,38 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
+import kotlinx.coroutines.runBlocking
+import org.jetbrains.compose.resources.getString
+import souz.sharedui.generated.resources.Res
+import souz.sharedui.generated.resources.dialog_permission_allow
+import souz.sharedui.generated.resources.dialog_permission_deny
 import ru.souz.ui.AppTheme
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 @OptIn(ExperimentalTestApi::class)
 class SelectionDialogTest {
+    @Test
+    fun `permission buttons emit the rendered request id across replacements`() = runComposeUiTest {
+        var requestId by mutableStateOf(41L)
+        val decisions = mutableListOf<Pair<Long, Boolean>>()
+        setContent {
+            AppTheme {
+                MainScreenContent(
+                    state = MainState(toolPermissionDialog = ToolPermissionDialogData(requestId, "Synthetic permission", emptyMap())),
+                    isOnline = false,
+                    onApproveToolPermission = { decisions += it to true },
+                    onRejectToolPermission = { decisions += it to false },
+                )
+            }
+        }
+        onNodeWithText(runBlocking { getString(Res.string.dialog_permission_allow) }, useUnmergedTree = true).performTouchInput { click() }
+        assertEquals(listOf(41L to true), decisions)
+        runOnIdle { requestId = 42 }
+        onNodeWithText(runBlocking { getString(Res.string.dialog_permission_deny) }, useUnmergedTree = true).performTouchInput { click() }
+        assertEquals(listOf(41L to true, 42L to false), decisions)
+    }
+
     @Test
     fun `consecutive prompts reset choice even when an intermediate null is not composed`() = runComposeUiTest {
         var sourceId by mutableStateOf("chats")
