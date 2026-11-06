@@ -9,8 +9,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
-import kotlinx.coroutines.runBlocking
-import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.stringResource
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.dialog_permission_allow
 import souz.sharedui.generated.resources.dialog_permission_deny
@@ -24,8 +23,13 @@ class SelectionDialogTest {
     fun `permission buttons emit the rendered request id across replacements`() = runComposeUiTest {
         var requestId by mutableStateOf(41L)
         val decisions = mutableListOf<Pair<Long, Boolean>>()
+        lateinit var allowText: String
+        lateinit var denyText: String
         setContent {
             AppTheme {
+                // Use the rendered resource environment; standalone getString queries AWT screen DPI.
+                allowText = stringResource(Res.string.dialog_permission_allow)
+                denyText = stringResource(Res.string.dialog_permission_deny)
                 MainScreenContent(
                     state = MainState(toolPermissionDialog = ToolPermissionDialogData(requestId, "Synthetic permission", emptyMap())),
                     isOnline = false,
@@ -34,10 +38,10 @@ class SelectionDialogTest {
                 )
             }
         }
-        onNodeWithText(runBlocking { getString(Res.string.dialog_permission_allow) }, useUnmergedTree = true).performTouchInput { click() }
+        onNodeWithText(runOnIdle { allowText }, useUnmergedTree = true).performTouchInput { click() }
         assertEquals(listOf(41L to true), decisions)
         runOnIdle { requestId = 42 }
-        onNodeWithText(runBlocking { getString(Res.string.dialog_permission_deny) }, useUnmergedTree = true).performTouchInput { click() }
+        onNodeWithText(runOnIdle { denyText }, useUnmergedTree = true).performTouchInput { click() }
         assertEquals(listOf(41L to true, 42L to false), decisions)
     }
 
