@@ -99,6 +99,9 @@ internal val clientFrameMapper = jacksonObjectMapper { enable(KotlinFeature.Stri
     .enable(DeserializationFeature.FAIL_ON_NUMBERS_FOR_ENUMS)
     .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
     .apply {
+        // One valid 20 MB image occupies more bytes after base64 encoding.
+        factory.setStreamReadConstraints(com.fasterxml.jackson.core.StreamReadConstraints.builder()
+            .maxStringLength(ru.souz.llms.runtime.ImageSource.MAX_ENCODED_BYTES).build())
         coercionConfigFor(LogicalType.Textual)
             .setCoercion(CoercionInputShape.Integer, CoercionAction.Fail)
             .setCoercion(CoercionInputShape.Float, CoercionAction.Fail)

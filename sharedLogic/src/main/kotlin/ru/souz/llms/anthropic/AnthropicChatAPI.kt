@@ -1,5 +1,6 @@
 package ru.souz.llms.anthropic
 
+import ru.souz.llms.runtime.ImageSource
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
@@ -432,6 +433,13 @@ class AnthropicChatAPI(
         }
 
         attachments?.forEach { fileId ->
+            if (fileId.startsWith("data:image/")) {
+                val mime = fileId.substringAfter("data:").substringBefore(';')
+                require(mime in ImageSource.MIME_TYPES && fileId.contains(";base64,"))
+                content += mapOf("type" to "image", "source" to mapOf("type" to "base64", "media_type" to mime,
+                    "data" to fileId.substringAfter(";base64,")))
+                return@forEach
+            }
             content += mapOf(
                 "type" to attachmentBlockType(fileId),
                 "source" to mapOf(

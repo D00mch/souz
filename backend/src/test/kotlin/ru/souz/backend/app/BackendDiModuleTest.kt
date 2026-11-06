@@ -3,6 +3,7 @@ package ru.souz.backend.app
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotEquals
@@ -41,6 +42,7 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.common.BackendToolCapabilityPolicy
+import ru.souz.backend.common.BackendConfigurationException
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.execution.repository.AgentExecutionRepository
@@ -91,6 +93,23 @@ import ru.souz.jobs.JobService
 import ru.souz.jobs.impl.PostgresJobService
 
 class BackendDiModuleTest {
+    @Test
+    fun `invalid generation and vision selections reject HTTP startup before database or provider access`() {
+        for (selection in listOf("", "unknown-image", "gpt-image-1", "gpt-image-2-typo", "QwenMax")) {
+            for ((config, key) in listOf(
+                testAppConfig().copy(imageModel = selection) to "SOUZ_IMAGE_MODEL",
+                testAppConfig().copy(visionModel = selection) to "SOUZ_ATTACHMENTS_VISION_MODEL",
+            )) HikariDataSource().use { database ->
+                val di = testDi(config, database)
+                val error = assertFailsWith<BackendConfigurationException>(selection) {
+                    di.direct.instance<BackendHttpDependencies>()
+                }
+                assertTrue(error.message.orEmpty().contains(key))
+                assertFalse(database.isRunning)
+            }
+        }
+    }
+
     @Test
     fun `hindsight uses user ID banks for recall search and capture without a token`() = runTest {
         val config = testAppConfig().copy(hindsightApiUrl = "http://hindsight.test/").validate()

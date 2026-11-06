@@ -6,6 +6,7 @@ import io.ktor.client.HttpClient
 import org.junit.jupiter.api.AfterEach
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.runtime.ImageGenerationInput
+import ru.souz.llms.runtime.DEFAULT_IMAGE_MODEL
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -23,7 +24,9 @@ class OpenAIImageGenerationGatewayTest {
 
         val payload = gateway.buildRequestPayload(ImageGenerationInput(prompt = "Draw a cat"))
 
-        assertEquals("gpt-image-1", payload["model"])
+        assertEquals(DEFAULT_IMAGE_MODEL, payload["model"])
+        assertEquals("gpt-image-2.5-sunburst", payload["model"])
+        assertEquals("gpt-image-2", gateway.buildRequestPayload(ImageGenerationInput("Draw a cat", model = "gpt-image-2"))["model"])
     }
 
     private fun createGateway(): OpenAIImageGenerationGateway {

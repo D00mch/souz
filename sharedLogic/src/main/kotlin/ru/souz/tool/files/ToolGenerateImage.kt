@@ -1,5 +1,7 @@
 package ru.souz.tool.files
 
+import java.nio.file.Files
+import ru.souz.llms.runtime.ImageSource
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.time.Instant
 import java.nio.file.Path
@@ -26,11 +28,13 @@ class ToolGenerateImage(
         val prompt: String,
         @InputParamDescription("Optional absolute output file path. Defaults to ~/Documents/souz/generated_image_<timestamp>.png")
         val outputPath: String? = null,
+        @InputParamDescription("Optional ordered source images for editing, up to five absolute sandbox paths.")
+        val imagePaths: List<String> = emptyList(),
     )
 
     override val name: String = NAME
     override val description: String =
-        "Generate a new image with the current provider, save it to a safe file path, and return the saved path."
+        "Generate or edit an image with the configured image model, save it to a safe file path, and return the saved path."
 
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(
@@ -55,8 +59,15 @@ class ToolGenerateImage(
             throw BadInputException("prompt must not be empty")
         }
 
+        require(input.imagePaths.size <= ImageSource.MAX_IMAGES) { "image_count_exceeded" }
+        val sources = input.imagePaths.map { path ->
+            val file = filesToolUtil.resolveSafeExistingFile(path, meta)
+            filesToolUtil.withReadableLocalPathSuspend(file, meta) { local ->
+                Files.newInputStream(local).use { ImageSource.read(it) }
+            }
+        }
         val generated = imageGenerationGateway.generate(
-            ImageGenerationInput(prompt = input.prompt.trim())
+            ImageGenerationInput(prompt = input.prompt.trim(), images = sources)
         )
         val target = resolveOutputPath(
             rawOutputPath = input.outputPath,
@@ -64,7 +75,7 @@ class ToolGenerateImage(
             meta = meta,
         )
         filesToolUtil.withWritableLocalPath(target, meta) { localPath ->
-            java.nio.file.Files.write(localPath, generated.bytes)
+            Files.write(localPath, generated.bytes)
         }
         return mapper.writeValueAsString(
             linkedMapOf(

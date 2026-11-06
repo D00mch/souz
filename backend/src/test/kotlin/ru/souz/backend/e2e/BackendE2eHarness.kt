@@ -393,6 +393,7 @@ internal class BackendE2eBackend(
         llmLimits = llmLimits,
         policyPrompt = E2E_POLICY_PROMPT,
         attachments = attachments,
+        visionModel = settingsSource?.value("SOUZ_ATTACHMENTS_VISION_MODEL", "souz.attachments.visionModel")?.trim(),
     )
     private val source = object : BackendConfigSource {
         override fun env(key: String): String? = settingsSource?.env(key) ?: when {

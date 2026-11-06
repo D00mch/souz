@@ -54,6 +54,11 @@ Only these direct production project dependencies are allowed. Standard test-sou
 - `:sharedLogic` `main` → `:agent`, `:llms`, `:skill-oauth-api`.
 - `:backend` `main` → `:agent`, `:llms`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`, `:job-api`, `:job-impl`.
 
+## Images
+
+For [image support](backend/docs/images.md), keep pixels out of persisted history and do not retry uncertain paid attachment generations.
+`SOUZ_ATTACHMENTS_VISION_MODEL` selects independent image analysis for input/tool images and `ViewImage`; vision requests share execution accounting but never enter the main text-model fallback cascade. Explicit requests to that vision route receive pixels directly.
+
 ## Verification
 
 - Use the Gradle wrapper and the Java 21 toolchain configured by the build.

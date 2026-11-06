@@ -22,11 +22,9 @@ import java.io.ByteArrayInputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
-import kotlin.io.path.exists
 import kotlin.io.path.writeBytes
 import kotlin.test.assertContentEquals
 import kotlin.test.Test
-import kotlin.test.assertFalse
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
@@ -44,7 +42,7 @@ class ToolViewImageTest {
         val homeDir = tempDir("home")
         val imagePath = homeDir.resolve("Pictures/cat.png")
         imagePath.parent.createDirectories()
-        val imageBytes = byteArrayOf(1, 2, 3, 4)
+        val imageBytes = imageBytes()
         imagePath.writeBytes(imageBytes)
 
         val filesToolUtil = createFilesToolUtil(homeDir)
@@ -66,10 +64,10 @@ class ToolViewImageTest {
         )
 
         assertEquals("A small cat", result)
-        assertEquals(imagePath.toRealPath(), inputSlot.captured.imagePath)
-        assertEquals("image/png", inputSlot.captured.mimeType)
-        assertEquals(imageBytes.size.toLong(), inputSlot.captured.sizeBytes)
-        assertEquals("What is in the image?", inputSlot.captured.question)
+        assertContentEquals(imageBytes, inputSlot.captured.images.single().bytes)
+        tool.suspendInvoke(ToolViewImage.Input(imagePaths = List(2) { imagePath.toString() }, question = "Compare"), ToolInvocationMeta.localDefault())
+        assertEquals(2, inputSlot.captured.images.size)
+        assertEquals("Compare", inputSlot.captured.question)
     }
 
     @Test
@@ -104,7 +102,7 @@ class ToolViewImageTest {
     @Test
     fun `bridges non local sandbox images through a temporary local file`() = runTest {
         val tempRoot = tempDir("sandbox-root")
-        val imageBytes = byteArrayOf(9, 8, 7, 6)
+        val imageBytes = imageBytes()
         val sandboxPath = SandboxPathInfo(
             rawPath = "/sandbox/cat.png",
             path = "/sandbox/cat.png",
@@ -130,7 +128,7 @@ class ToolViewImageTest {
         val gateway = mockk<VisionGateway>()
         val inputSlot = slot<VisionInput>()
         coEvery { gateway.analyze(capture(inputSlot)) } answers {
-            assertContentEquals(imageBytes, Files.readAllBytes(inputSlot.captured.imagePath))
+            assertContentEquals(imageBytes, inputSlot.captured.images.single().bytes)
             "A bridged cat"
         }
 
@@ -148,12 +146,15 @@ class ToolViewImageTest {
         )
 
         assertEquals("A bridged cat", result)
-        assertEquals("image/png", inputSlot.captured.mimeType)
-        assertEquals(imageBytes.size.toLong(), inputSlot.captured.sizeBytes)
+        assertEquals("image/png", inputSlot.captured.images.single().mimeType)
         assertEquals("What is in the image?", inputSlot.captured.question)
-        assertFalse(inputSlot.captured.imagePath.exists())
+
         coVerify(exactly = 1) { gateway.analyze(any()) }
     }
+
+    private fun imageBytes(): ByteArray = java.io.ByteArrayOutputStream().also {
+        javax.imageio.ImageIO.write(java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", it)
+    }.toByteArray()
 
     private fun createFilesToolUtil(homeDir: Path): FilesToolUtil {
         val settingsProvider = mockk<SettingsProvider>()
