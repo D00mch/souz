@@ -31,31 +31,67 @@ class DreamerEmbeddingJobsTest {
     private val dbPath get() = tempDir.resolve("memory.db")
     private val jdbcUrl get() = "jdbc:sqlite:${dbPath.toAbsolutePath()}"
     private val preferences = MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY)
+    private var candidates = emptyList<MemoryConsolidationCandidate>()
 
     @ParameterizedTest
     @ValueSource(ints = [1, 12])
-    fun `replacement enqueues all embeddings with one prepared batch`(replacements: Int) = runTest {
+    fun `replacement batches facts evidence and embeddings with one statement each`(replacements: Int) = runTest {
         val repository = seed(replacements)
-        val writes = recordEnqueues {
+        val writes = recordInserts {
             assertEquals(1, worker(model).runOnce(preferences))
         }
 
         assertReplacement(repository, replacements, expectEmbeddings = true)
-        assertEquals(1, writes.prepares)
-        assertEquals(0, writes.updates)
-        assertEquals(replacements, writes.batchEntries)
-        assertEquals(1, writes.batches)
+        writes.forEach { (table, calls) ->
+            println("$replacements replacements: $table prepares=${calls.prepares} updates=${calls.updates} entries=${calls.batchEntries} batches=${calls.batches}")
+        }
+        writes.forEach { (table, calls) ->
+            assertEquals(1, calls.prepares, table)
+            assertEquals(0, calls.updates, table)
+            assertEquals(if (table == "memory_fact_evidence") replacements * 2 else replacements, calls.batchEntries, table)
+            assertEquals(1, calls.batches, table)
+        }
     }
 
     @Test
     fun `replacement without an embedding model does no enqueue work`() = runTest {
         val repository = seed(3)
-        val writes = recordEnqueues { assertEquals(1, worker(null).runOnce(preferences)) }
+        val writes = recordInserts { assertEquals(1, worker(null).runOnce(preferences)) }
 
         assertReplacement(repository, 3, expectEmbeddings = false)
-        assertEquals(0, writes.prepares)
-        assertEquals(0, writes.updates)
-        assertEquals(0, writes.batches)
+        assertEquals(0, writes.getValue("memory_index_jobs").prepares)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["memory_facts", "memory_fact_evidence"])
+    fun `later fact or evidence failure rolls back the complete replacement and permits retry`(table: String) = runTest {
+        val repository = seed(3)
+        connection { connection ->
+            connection.createStatement().use {
+                it.executeUpdate(
+                    """
+                    create trigger fail_later_insert before insert on $table
+                    when (select count(*) from $table) = 7
+                    begin select raise(abort, 'fixture insert failure'); end
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val error = assertFailsWith<SQLException> { worker(model).runOnce(preferences) }
+        assertTrue(error.message.orEmpty().contains("fixture insert failure"))
+        connection { connection ->
+            assertEquals(6, connection.count("memory_facts", "status = 'ACTIVE'"))
+            assertEquals(0, connection.count("memory_facts", "created_by = 'dreamer'"))
+            assertEquals(6, connection.count("memory_fact_evidence"))
+            assertEquals(0, connection.count("memory_fact_supersedes"))
+            assertEquals(0, connection.count("memory_index_jobs"))
+            assertEquals(1, connection.count("memory_maintenance_jobs", "status = 'PENDING' and attempt_count = 0"))
+            connection.createStatement().use { it.executeUpdate("drop trigger fail_later_insert") }
+        }
+
+        assertEquals(1, worker(model).runOnce(preferences))
+        assertReplacement(repository, 3, expectEmbeddings = true)
     }
 
     @Test
@@ -99,9 +135,9 @@ class DreamerEmbeddingJobsTest {
                 }
             }
         }
-        val writes = recordEnqueues { assertEquals(0, worker.runOnce(preferences)) }
+        val writes = recordInserts { assertEquals(0, worker.runOnce(preferences)) }
 
-        assertEquals(0, writes.prepares)
+        assertTrue(writes.values.all { it.prepares == 0 })
         connection { connection ->
             assertEquals(6, connection.count("memory_facts", "status = 'ACTIVE'"))
             assertEquals(0, connection.count("memory_fact_supersedes"))
@@ -167,12 +203,13 @@ class DreamerEmbeddingJobsTest {
                         kind = MemoryFactKind.SEMANTIC,
                         title = "Replacement $index",
                         body = "Compact fact $index.",
-                        canonicalKey = null,
+                        canonicalKey = if (index % 2 == 0) "project.rule.replacement$index" else null,
                         confidence = 0.9f,
-                        sourceFactIds = sources.map { it.fact.id },
-                        evidenceSourceEventIds = sources.flatMap { it.evidence.map { it.sourceEvent.id } },
+                        importance = 0.7f,
+                        sourceFactIds = sources.map { it.fact.id }.let { it + it.first() },
+                        evidenceSourceEventIds = sources.flatMap { it.evidence.map { it.sourceEvent.id } }.let { it + it.first() },
                     )
-                }
+                }.also { candidates = it }
             }
         },
     )
@@ -186,8 +223,24 @@ class DreamerEmbeddingJobsTest {
             .filter { it.status == MemoryFactStatus.ACTIVE }
         assertEquals(replacements, active.size)
         active.forEach { fact ->
+            val candidate = candidates.single { it.title == fact.title }
             assertEquals("dreamer", fact.createdBy)
-            assertEquals(2, repository.getFactDetails(fact.id)?.evidence?.size)
+            assertEquals(owner, fact.ownerId)
+            assertEquals(scope, fact.scope)
+            assertEquals(candidate.kind, fact.kind)
+            assertEquals(candidate.body, fact.body)
+            assertEquals(candidate.canonicalKey, fact.canonicalKey)
+            assertEquals(MemoryRetention.DURABLE, fact.retention)
+            assertEquals(candidate.confidence, fact.confidence)
+            assertEquals(candidate.importance, fact.importance)
+            assertEquals(false, fact.pinned)
+            assertEquals(candidate.sourceFactIds.first(), fact.supersedesFactId)
+            assertEquals(fact.createdAt, fact.updatedAt)
+            assertEquals(stableMemoryContentHash(fact.title, fact.body, fact.kind, fact.canonicalKey), fact.contentHash)
+            val evidence = repository.getFactDetails(fact.id)!!.evidence
+            assertEquals(candidate.evidenceSourceEventIds.toSet(), evidence.map { it.sourceEvent.id }.toSet())
+            assertEquals(2, evidence.size)
+            evidence.forEach { assertEquals(it.sourceEvent.text, it.evidence.evidenceText) }
         }
         connection { connection ->
             assertEquals(replacements * 2, connection.count("memory_facts", "status = 'RETIRED'"))
@@ -229,7 +282,7 @@ class DreamerEmbeddingJobsTest {
 
     private fun <T> connection(block: (Connection) -> T): T = DriverManager.getConnection(jdbcUrl).use(block)
 
-    private class Enqueues {
+    private class Inserts {
         var prepares = 0
         var updates = 0
         var batchEntries = 0
@@ -237,8 +290,8 @@ class DreamerEmbeddingJobsTest {
     }
 
     // Delegate to real SQLite so these counts cover the worker's actual transaction and SQL.
-    private suspend fun recordEnqueues(block: suspend () -> Unit): Enqueues {
-        val writes = Enqueues()
+    private suspend fun recordInserts(block: suspend () -> Unit): Map<String, Inserts> {
+        val writes = listOf("memory_facts", "memory_fact_evidence", "memory_index_jobs").associateWith { Inserts() }
         mockkStatic(DriverManager::class)
         try {
             every { DriverManager.getConnection(jdbcUrl) } answers {
@@ -246,21 +299,24 @@ class DreamerEmbeddingJobsTest {
                 object : Connection by connection {
                     override fun prepareStatement(sql: String): PreparedStatement {
                         val statement = connection.prepareStatement(sql)
-                        if (!sql.startsWith("insert into memory_index_jobs(")) return statement
-                        writes.prepares++
+                        val table = writes.keys.firstOrNull {
+                            sql.startsWith("insert into $it(") || sql.startsWith("insert or ignore into $it(")
+                        } ?: return statement
+                        val calls = writes.getValue(table)
+                        calls.prepares++
                         return object : PreparedStatement by statement {
                             override fun executeUpdate(): Int {
-                                writes.updates++
+                                calls.updates++
                                 return statement.executeUpdate()
                             }
 
                             override fun addBatch() {
-                                writes.batchEntries++
+                                calls.batchEntries++
                                 statement.addBatch()
                             }
 
                             override fun executeBatch(): IntArray {
-                                writes.batches++
+                                calls.batches++
                                 return statement.executeBatch()
                             }
                         }

@@ -398,16 +398,7 @@ class MemoryMaintenanceWorker(
         )
         if (jobUpdated == 0) return 0
         retireFacts(replacedFactIds, now)
-        val insertedFacts = candidates.map { candidate ->
-            insertDreamerFact(
-                ownerId = ownerId,
-                scope = scope,
-                candidate = candidate,
-                supersedesFactId = candidate.sourceFactIds.firstOrNull(),
-                evidenceTextBySourceEventId = evidenceTextBySourceEventId,
-                now = now,
-            )
-        }
+        val insertedFacts = insertDreamerFacts(ownerId, scope, candidates, evidenceTextBySourceEventId, now)
         insertedFacts.zip(candidates).forEach { (fact, candidate) ->
             insertSupersedes(
                 replacementFactId = fact.first,
@@ -441,16 +432,18 @@ class MemoryMaintenanceWorker(
         }
     }
 
-    private fun Connection.insertDreamerFact(
+    private fun Connection.insertDreamerFacts(
         ownerId: MemoryOwnerId,
         scope: MemoryScope,
-        candidate: MemoryConsolidationCandidate,
-        supersedesFactId: String?,
+        candidates: List<MemoryConsolidationCandidate>,
         evidenceTextBySourceEventId: Map<String, String>,
         now: String,
-    ): Pair<String, String> {
-        val factId = UUID.randomUUID().toString()
-        val contentHash = stableMemoryContentHash(candidate.title, candidate.body, candidate.kind, candidate.canonicalKey)
+    ): List<Pair<String, String>> {
+        if (candidates.isEmpty()) return emptyList()
+        val insertedFacts = candidates.map { candidate ->
+            UUID.randomUUID().toString() to
+                stableMemoryContentHash(candidate.title, candidate.body, candidate.kind, candidate.canonicalKey)
+        }
         prepareStatement(
             """
             insert into memory_facts(
@@ -460,29 +453,50 @@ class MemoryMaintenanceWorker(
             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent()
         ).use { statement ->
-            statement.setString(1, factId)
-            statement.setString(2, ownerId.value)
-            statement.setString(3, scope.type)
-            statement.setString(4, scope.id)
-            statement.setString(5, candidate.kind.name)
-            statement.setString(6, candidate.title)
-            statement.setString(7, candidate.body)
-            statement.setString(8, candidate.canonicalKey)
-            statement.setString(9, candidate.canonicalKey)
-            statement.setString(10, MemoryFactStatus.ACTIVE.name)
-            statement.setString(11, retentionForScope(scope).name)
-            statement.setFloat(12, candidate.confidence)
-            statement.setFloat(13, candidate.importance)
-            statement.setInt(14, 0)
-            statement.setString(15, "dreamer")
-            statement.setString(16, contentHash)
-            statement.setString(17, now)
-            statement.setString(18, now)
-            statement.setString(19, supersedesFactId)
-            statement.executeUpdate()
+            insertedFacts.zip(candidates).forEach { (fact, candidate) ->
+                statement.setString(1, fact.first)
+                statement.setString(2, ownerId.value)
+                statement.setString(3, scope.type)
+                statement.setString(4, scope.id)
+                statement.setString(5, candidate.kind.name)
+                statement.setString(6, candidate.title)
+                statement.setString(7, candidate.body)
+                statement.setString(8, candidate.canonicalKey)
+                statement.setString(9, candidate.canonicalKey)
+                statement.setString(10, MemoryFactStatus.ACTIVE.name)
+                statement.setString(11, retentionForScope(scope).name)
+                statement.setFloat(12, candidate.confidence)
+                statement.setFloat(13, candidate.importance)
+                statement.setInt(14, 0)
+                statement.setString(15, "dreamer")
+                statement.setString(16, fact.second)
+                statement.setString(17, now)
+                statement.setString(18, now)
+                statement.setString(19, candidate.sourceFactIds.firstOrNull())
+                statement.addBatch()
+            }
+            statement.executeBatch()
         }
-        insertEvidence(factId, candidate.evidenceSourceEventIds.distinct(), evidenceTextBySourceEventId)
-        return factId to contentHash
+        // Insert parents before evidence; both batches remain in the replacement transaction.
+        if (candidates.any { it.evidenceSourceEventIds.isNotEmpty() }) {
+            prepareStatement(
+                """
+                insert or ignore into memory_fact_evidence(fact_id, source_event_id, evidence_text)
+                values (?, ?, ?)
+                """.trimIndent()
+            ).use { statement ->
+                insertedFacts.zip(candidates).forEach { (fact, candidate) ->
+                    candidate.evidenceSourceEventIds.distinct().forEach { sourceEventId ->
+                        statement.setString(1, fact.first)
+                        statement.setString(2, sourceEventId)
+                        statement.setString(3, evidenceTextBySourceEventId.getValue(sourceEventId))
+                        statement.addBatch()
+                    }
+                }
+                statement.executeBatch()
+            }
+        }
+        return insertedFacts
     }
 
     private fun Connection.insertSupersedes(
@@ -537,28 +551,6 @@ class MemoryMaintenanceWorker(
                 statement.setString(5, now)
                 statement.setString(6, now)
                 statement.setString(7, now)
-                statement.addBatch()
-            }
-            statement.executeBatch()
-        }
-    }
-
-    private fun Connection.insertEvidence(
-        factId: String,
-        sourceEventIds: List<String>,
-        evidenceTextBySourceEventId: Map<String, String>,
-    ) {
-        if (sourceEventIds.isEmpty()) return
-        prepareStatement(
-            """
-            insert or ignore into memory_fact_evidence(fact_id, source_event_id, evidence_text)
-            values (?, ?, ?)
-            """.trimIndent()
-        ).use { statement ->
-            sourceEventIds.forEach { sourceEventId ->
-                statement.setString(1, factId)
-                statement.setString(2, sourceEventId)
-                statement.setString(3, evidenceTextBySourceEventId.getValue(sourceEventId))
                 statement.addBatch()
             }
             statement.executeBatch()
