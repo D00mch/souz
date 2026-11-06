@@ -1,5 +1,7 @@
 package ru.souz.tool.textReplace
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import ru.souz.llms.ToolInvocationMeta
 
 import ru.souz.tool.FewShotExample
@@ -25,8 +27,8 @@ class ToolTextUnderSelection(
         properties = mapOf("result" to ReturnProperty("string", "The selected text in quotes")),
     )
 
-    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        return getDataFromSelectionWithKeys(meta)
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String = ClipboardTransactions.run {
+        getDataFromSelectionWithKeys(meta)
     }
 
     private fun getDataFromSelectionWithKeys(meta: ToolInvocationMeta): String {
@@ -35,6 +37,7 @@ class ToolTextUnderSelection(
         val marker = "SOUZ_SELECTION_MARKER_${UUID.randomUUID()}"
         runCatching { clipboard.setContents(StringSelection(marker), null) }
 
+        var copySettled = false
         return try {
             bash.apple(SCRIPT)
 
@@ -42,11 +45,17 @@ class ToolTextUnderSelection(
                 Thread.sleep(COPY_RETRY_DELAY_MS)
                 val current = toolGetClipboard.invoke(ToolGetClipboard.Input, meta)
                 if (current == NO_SELECTION_ERROR) return@repeat
-                if (current != marker) return current
+                if (current != marker) {
+                    copySettled = true
+                    return current
+                }
             }
 
+            copySettled = true
             NO_SELECTION_ERROR
         } finally {
+            // Cmd+C may still complete after interruption of the command or clipboard polling.
+            if (!copySettled) ClipboardTransactions.settle(COPY_RETRY_ATTEMPTS * COPY_RETRY_DELAY_MS)
             if (previousContent != null) {
                 runCatching { clipboard.setContents(previousContent, null) }
             }
@@ -59,7 +68,8 @@ class ToolTextUnderSelection(
         private const val COPY_RETRY_DELAY_MS = 30L
     }
 
-    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String =
+        runInterruptible(Dispatchers.IO) { invoke(input, meta) }
 }
 
 private const val SCRIPT = """tell application "System Events"

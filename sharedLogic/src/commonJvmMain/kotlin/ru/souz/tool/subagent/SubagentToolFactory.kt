@@ -38,7 +38,7 @@ class SubagentToolFactory(
     private val commandToolNamesProvider: (AgentToolCatalog) -> Set<String> = { emptySet() },
     private val commandInstructions: String = "",
 ) {
-    fun create(parentSettings: AgentSettings): LLMToolSetup {
+    fun create(parentSettings: AgentSettings): SubagentTool {
         val models = configuredModels + (parentSettings.model to parentSettings.provider)
         return SubagentTool(createAgent, models.keys.toList()) { input, meta ->
             val model = input.model ?: parentSettings.model

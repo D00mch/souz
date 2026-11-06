@@ -13,7 +13,7 @@ import org.slf4j.LoggerFactory
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.hooks.HookLlmBudget
-import ru.souz.backend.hooks.HookLlmBudget.Companion.withProviderCall
+import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.metrics.metricOutcome
 import ru.souz.backend.metrics.responseMetricOutcome
@@ -42,6 +42,7 @@ import ru.souz.llms.openai.OpenAICompatibleChatAPI
 /** Execution-scoped LLM routing, credentials, retries, and usage over process-owned transports. */
 internal class BackendExecutionLlmChatApi(
     private val userId: String,
+    private val executionQuotas: ExecutionQuotaManager,
     private val settingsProvider: SettingsProvider,
     private val credentialResolver: ProviderCredentialResolver,
     private val retryPolicy: BackendProviderRetryPolicy,
@@ -144,7 +145,7 @@ internal class BackendExecutionLlmChatApi(
             shouldRetry = { it is LLMResponse.Embeddings.Error },
             delayBeforeRetry = { attempt, _ -> delayMillis(250L * (attempt + 1)) },
         ) {
-            withProviderCall(hookBudget, model.provider) {
+            withProviderCall(model.provider) {
                 measureAttempt(model.provider, request.model) { outcome ->
                     api.embeddings(request).also {
                         outcome(responseMetricOutcome((it as? LLMResponse.Embeddings.Error)?.status))
@@ -157,7 +158,7 @@ internal class BackendExecutionLlmChatApi(
     override suspend fun uploadFile(file: File): LLMResponse.UploadFile {
         val provider = currentProvider()
         val api = apiFor(provider, currentNamedModel())
-        return withProviderCall(hookBudget, provider) { api.uploadFile(file) }
+        return withProviderCall(provider) { api.uploadFile(file) }
     }
 
     override suspend fun downloadFile(fileId: String): String? =
@@ -278,7 +279,7 @@ internal class BackendExecutionLlmChatApi(
 
     private suspend fun callProvider(provider: LlmProvider, body: LLMRequest.Chat, api: LLMChatAPI): LLMResponse.Chat {
         val request = hookBudget?.limitRequest(body) ?: body
-        return withProviderCall(hookBudget, provider) {
+        return withProviderCall(provider) {
             measureAttempt(provider, request.model) { outcome ->
                 api.message(request).also { response ->
                     outcome(responseMetricOutcome((response as? LLMResponse.Chat.Error)?.status))
@@ -297,7 +298,7 @@ internal class BackendExecutionLlmChatApi(
             flow {
                 val request = hookBudget?.limitRequest(body) ?: body
                 var previousUsage = ZERO_USAGE
-                withProviderCall(hookBudget, provider) {
+                withProviderCall(provider) {
                     measureAttempt(provider, request.model) { outcome ->
                         api.messageStream(request).collect { response ->
                             if (response is LLMResponse.Chat.Error) outcome(responseMetricOutcome(response.status))
@@ -316,8 +317,20 @@ internal class BackendExecutionLlmChatApi(
     private suspend fun recordUsage(provider: LlmProvider, model: String, delta: LLMResponse.Usage) {
         usageMutex.withLock { usage = usage.plus(delta) }
         metrics?.llmUsage(provider, model, delta)
+        executionQuotas.recordTokenUsage(userId, delta.totalTokens)
         hookBudget?.recordUsage(delta.totalTokens)
     }
+
+    // Shared by parents, children and LLM-backed tools, including every retry.
+    internal suspend fun <T> withProviderCall(provider: LlmProvider, call: suspend () -> T): T =
+        executionQuotas.withExecutionPermit(userId) {
+            executionQuotas.withProviderPermit(provider) {
+                executionQuotas.checkRequestRate(userId)
+                executionQuotas.checkTokenQuota(userId)
+                hookBudget?.reserveCall()
+                call()
+            }
+        }
 
     // Accounting must run before cancellation propagates from a provider or collector.
     @Suppress("SuspendFunSwallowedCancellation")

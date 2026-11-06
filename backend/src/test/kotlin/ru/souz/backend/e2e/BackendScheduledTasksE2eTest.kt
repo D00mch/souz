@@ -1,5 +1,6 @@
 package ru.souz.backend.e2e
 
+import ru.souz.backend.app.BackendLlmLimits
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import java.time.Instant
@@ -233,7 +234,9 @@ class BackendScheduledTasksE2eTest {
 
     @Test
     fun `create rejects invalid schedules and schedules beyond the daily run budget shared by active tasks`() {
-        backendE2eTest(schemaPrefix = "e2e_scheduled_validation", scheduledTasks = ScheduledTaskConfig(runsPerUserPerDay = 25)) {
+        // This workflow intentionally makes more than 30 provider attempts in a minute.
+        backendE2eTest(schemaPrefix = "e2e_scheduled_validation", scheduledTasks = ScheduledTaskConfig(runsPerUserPerDay = 25),
+            llmLimits = BackendLlmLimits(perUserRequestsPerMinute = 100)) {
             val userId = UUID.randomUUID().toString()
             val chatId = scheduledTaskSetup(userId)
             val base = mapOf("title" to "Task", "prompt" to "Do it.")

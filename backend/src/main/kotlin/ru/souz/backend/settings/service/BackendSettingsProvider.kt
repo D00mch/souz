@@ -2,6 +2,7 @@ package ru.souz.backend.settings.service
 
 import com.fasterxml.jackson.module.kotlin.readValue
 import ru.souz.agent.AgentId
+import ru.souz.agent.runtime.DEFAULT_SUBAGENT_TASK_TIMEOUT
 import ru.souz.backend.config.NamedLlmConfig
 import ru.souz.backend.config.loadNamedModels
 import ru.souz.backend.config.BackendConfigSource
@@ -24,6 +25,8 @@ import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.findLLMModel
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.local.LocalEmbeddingProfiles
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 class BackendSettingsProvider(
     private val preferenceStore: BackendServerPreferenceStore,
@@ -31,6 +34,12 @@ class BackendSettingsProvider(
     private val source: BackendConfigSource = SystemBackendConfigSource,
     namedModels: NamedLlmConfig = source.loadNamedModels(),
 ) : SettingsProvider {
+    override val subagentTaskTimeout: Duration = source.value(SUBAGENT_TASK_TIMEOUT_MS, SUBAGENT_TASK_TIMEOUT_MS)?.let { value ->
+        requireNotNull(value.trim().toLongOrNull()?.milliseconds?.takeIf { it.isPositive() && it.isFinite() }) {
+            "SUBAGENT_TASK_TIMEOUT_MS must be a positive integer of milliseconds representing a finite duration."
+        }
+    } ?: DEFAULT_SUBAGENT_TASK_TIMEOUT
+
     override val subagentModels: Map<String, LlmProvider> = parseSubagentModels(
         source.value(SUBAGENT_MODELS_JSON, SUBAGENT_MODELS_JSON),
         BackendLlmSupport.chatProviders,
@@ -237,6 +246,7 @@ class BackendSettingsProvider(
         const val ONBOARDING_COMPLETED = "ONBOARDING_COMPLETED"
         const val REQUEST_TIMEOUT_MILLIS = "REQUEST_TIMEOUT_MILLIS"
         const val CONTEXT_SIZE = "CONTEXT_SIZE"
+        const val SUBAGENT_TASK_TIMEOUT_MS = "SUBAGENT_TASK_TIMEOUT_MS"
         const val INITIAL_WINDOW_WIDTH_DP = "INITIAL_WINDOW_WIDTH_DP"
         const val INITIAL_WINDOW_HEIGHT_DP = "INITIAL_WINDOW_HEIGHT_DP"
         const val TEMPERATURE = "TEMPERATURE"

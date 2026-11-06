@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.tool.SelectionApprovalSource
@@ -34,6 +36,7 @@ class PermissionsUseCase(
     private val l = LoggerFactory.getLogger(PermissionsUseCase::class.java)
     private var onboardingSpeechStartedAt: Long? = null
     private var permissionWatcherJob: Job? = null
+    private val selectionDialogMutex = Mutex()
     private val selectionApprovalSourcesById: Map<String, SelectionApprovalSource> =
         selectionApprovalSources.associateBy { it.sourceId }
 
@@ -60,29 +63,38 @@ class PermissionsUseCase(
         selectionApprovalSourcesById.values.forEach { source ->
             scope.launch {
                 source.requests.collect { request ->
-                    if (settingsProvider.notificationSoundEnabled) {
-                        speechUseCase.playMacPingMsgSafely(scope)
-                    }
-                    emitState {
-                        copy(
-                            selectionDialog = SelectionDialogData(
-                                sourceId = request.sourceId,
-                                requestId = request.requestId,
-                                title = request.title,
-                                message = request.message,
-                                confirmText = request.confirmText,
-                                cancelText = request.cancelText,
-                                candidates = request.candidates.map { candidate ->
-                                    SelectionDialogCandidateUi(
-                                        id = candidate.id,
-                                        title = candidate.title,
-                                        badge = candidate.badge,
-                                        meta = candidate.meta,
-                                        preview = candidate.preview,
-                                    )
-                                },
+                    selectionDialogMutex.withLock {
+                        if (request.completion.isCompleted) return@withLock
+                        if (settingsProvider.notificationSoundEnabled) {
+                            speechUseCase.playMacPingMsgSafely(scope)
+                        }
+                        emitState {
+                            copy(
+                                selectionDialog = SelectionDialogData(
+                                    sourceId = request.sourceId,
+                                    requestId = request.requestId,
+                                    title = request.title,
+                                    message = request.message,
+                                    confirmText = request.confirmText,
+                                    cancelText = request.cancelText,
+                                    candidates = request.candidates.map { candidate ->
+                                        SelectionDialogCandidateUi(
+                                            id = candidate.id,
+                                            title = candidate.title,
+                                            badge = candidate.badge,
+                                            meta = candidate.meta,
+                                            preview = candidate.preview,
+                                        )
+                                    },
+                                )
                             )
-                        )
+                        }
+                        request.completion.join()
+                        emitState {
+                            if (selectionDialog?.sourceId == request.sourceId &&
+                                selectionDialog?.requestId == request.requestId
+                            ) copy(selectionDialog = null) else this
+                        }
                     }
                 }
             }
@@ -92,7 +104,9 @@ class PermissionsUseCase(
     suspend fun resolveToolPermission(requestId: Long?, approved: Boolean) {
         if (requestId == null) return
         toolPermissionBroker.resolve(requestId, approved)
-        emitState { copy(toolPermissionDialog = null) }
+        emitState {
+            if (toolPermissionDialog?.requestId == requestId) copy(toolPermissionDialog = null) else this
+        }
     }
 
     suspend fun resolveSelectionDialog(
@@ -102,7 +116,6 @@ class PermissionsUseCase(
     ) {
         if (sourceId == null || requestId == null) return
         selectionApprovalSourcesById[sourceId]?.resolve(requestId, selectedCandidateId)
-        emitState { copy(selectionDialog = null) }
     }
 
     suspend fun runOnboardingIfNeeded() {

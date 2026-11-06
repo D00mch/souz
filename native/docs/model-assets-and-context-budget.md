@@ -8,6 +8,10 @@ Projectors share the chat model's storage directory. `mmproj-F16.gguf` is the ca
 
 `LLMRequest.Chat.contextSize` explicitly carries the configured local window; `maxTokens` is only the output limit. An explicit context size is used unchanged for every model, including vision and summarization. Profile defaults and caps apply only to requests without an explicit context size. Completion budget is reserved from tokenized prompt size, and multimodal generation recalculates it after `mtmd_tokenize` using the actual text-and-image token count.
 
+## Request ownership
+
+Parent and subagent calls share one native runtime. Chat, embeddings and preload serialize their full model-handle lifetime through a coroutine mutex, including blocking bridge cleanup after cancellation. A waiting caller can be cancelled without cancelling the active caller. Model replacement and shutdown wait for the owning request to release the runtime; cancellation remains cooperative with the bridge.
+
 ## Why this is fragile
 
 Checking only the main GGUF makes a model appear ready before embeddings or vision can work. Storing an auxiliary asset under its own profile ID prevents runtime discovery beside the chat model. Estimating a media prompt as text-only, or as zero tokens, can overflow the native context after images are expanded.

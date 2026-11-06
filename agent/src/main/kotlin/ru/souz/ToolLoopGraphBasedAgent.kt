@@ -38,7 +38,8 @@ class ToolLoopGraphBasedAgent(
 
     private val nodesLLM = NodesLLM(llmApi, settingsProvider, attachmentHistoryLimit = attachmentHistoryLimit)
     private val toolExecutor = AgentToolExecutor(telemetry)
-    private val executionDelegate = GraphExecutionDelegate(logObjectMapper, ToolLoopGraphBasedAgent::class.java)
+    private val executionDelegate = GraphExecutionDelegate(logObjectMapper, ToolLoopGraphBasedAgent::class.java,
+        settingsProvider.subagentTaskTimeout)
     override val sideEffects = nodesLLM.sideEffects
 
     override suspend fun cancelActiveJob() = executionDelegate.cancelActiveJob()

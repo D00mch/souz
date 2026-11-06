@@ -32,7 +32,6 @@ import ru.souz.backend.client.CLIENT_TOOL_DISCOVERY_NAME
 import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.common.backendLogContext
 import ru.souz.backend.hooks.HookLlmBudget
-import ru.souz.backend.hooks.HookLlmBudget.Companion.withProviderCall
 import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.config.NamedLlmConfig
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
@@ -144,10 +143,11 @@ internal class BackendConversationRuntimeFactory(
 
         val testApi = testLlmApiFactory?.invoke(settingsProvider)
         val hookBudget = request.executionId?.let { id -> hookStore.find(key.userId, UUID.fromString(id)) }
-            ?.let { HookLlmBudget(it, hookStore, executionQuotas) }
+            ?.let { HookLlmBudget(it, hookStore) }
         val executionApi = BackendExecutionLlmChatApi(
             llmConfig = llmConfig,
             userId = key.userId,
+            executionQuotas = executionQuotas,
             settingsProvider = settingsProvider,
             credentialResolver = credentialResolver,
             retryPolicy = retryPolicy,
@@ -181,7 +181,7 @@ internal class BackendConversationRuntimeFactory(
             webResearchClient = webResearchClient,
             visionGateway = visionGateway,
             imageGenerationGateway = ImageGenerationGateway { input ->
-                withProviderCall(hookBudget, LlmProvider.OPENAI) { imageGenerationGateway.generate(input) }
+                executionApi.withProviderCall(LlmProvider.OPENAI) { imageGenerationGateway.generate(input) }
             },
         )
         val serverNames = toolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet() +
@@ -268,7 +268,7 @@ internal class BackendConversationRuntimeFactory(
                 searchKnowledge = searchKnowledgeTool,
                 searchMemory = searchMemoryTool,
                 runtimeCommand = runtimeCommandTool,
-                spawnSubagent = subagentTools::create,
+                subagentTools = { subagentTools.create(it).tools },
                 forgetMemory = forgetMemoryTools.takeIf { request.memoryMutationAllowed }.orEmpty(),
             ),
             knowledgeStore = knowledgeStore,

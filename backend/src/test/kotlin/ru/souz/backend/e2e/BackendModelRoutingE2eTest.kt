@@ -40,14 +40,21 @@ class BackendModelRoutingE2eTest {
             if (last == "child task") children += model
             // A parent asked to delegate spawns a child without choosing its model.
             val delegate = last.startsWith("Delegate") && body.path("tools").any { it["function"]["name"].asText() == "SpawnSubagent" }
+            val subagentId = runCatching { restJsonMapper.readTree(last)?.get("subagentId")?.asText() }.getOrNull()
+            val waitForChild = subagentId != null && !last.contains("\"status\"")
             val message = if (delegate) {
                 """{"role":"assistant","tool_calls":[{"index":0,"id":"spawn","type":"function",""" +
                     """"function":{"name":"SpawnSubagent","arguments":"{\"task\":\"child task\"}"}}]}"""
+            } else if (waitForChild) {
+                restJsonMapper.writeValueAsString(mapOf("role" to "assistant", "tool_calls" to listOf(mapOf(
+                    "index" to 0, "id" to "wait", "type" to "function", "function" to mapOf("name" to "WaitSubagent",
+                        "arguments" to restJsonMapper.writeValueAsString(mapOf("subagentId" to subagentId, "timeoutMs" to 30000))),
+                ))))
             } else {
                 """{"role":"assistant","content":"$model answer"}"""
             }
             respond(
-                """{"choices":[{"index":0,"message":$message,"finish_reason":"${if (delegate) "tool_calls" else "stop"}"}],"created":1}""",
+                """{"choices":[{"index":0,"message":$message,"finish_reason":"${if (delegate || waitForChild) "tool_calls" else "stop"}"}],"created":1}""",
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }) { providerHttpClientDefaults() }

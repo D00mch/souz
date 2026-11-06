@@ -18,8 +18,25 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LocalModelAvailability
 import ru.souz.db.SUBAGENT_MODELS_JSON
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 
 class BackendSettingsProviderTest {
+    @Test
+    fun `subagent deadline uses deploy precedence and rejects invalid values at startup`() {
+        val key = "SUBAGENT_TASK_TIMEOUT_MS"
+        assertEquals(10.minutes, provider().subagentTaskTimeout)
+        assertEquals(1.milliseconds, provider(env = mapOf(key to "1")).subagentTaskTimeout)
+        assertEquals(3000.milliseconds, provider(properties = mapOf(key to "3000")).subagentTaskTimeout)
+        assertEquals(1250.milliseconds, provider(env = mapOf(key to " 1250 "),
+            properties = mapOf(key to "3000")).subagentTaskTimeout)
+        for (value in listOf("0", "-1", "1.5", "invalid", "", " ", "9223372036854775807", "9223372036854775808")) {
+            val error = assertFailsWith<IllegalArgumentException> { provider(env = mapOf(key to value)) }
+            assertTrue(key in error.message.orEmpty())
+            assertFailsWith<IllegalArgumentException> { provider(properties = mapOf(key to value)) }
+        }
+    }
+
     @Test
     fun `one server context window is loaded and validated at startup`() {
         assertEquals(125_000, provider().contextSize)

@@ -1,5 +1,6 @@
 package ru.souz.backend.e2e
 
+import ru.souz.backend.app.BackendLlmLimits
 import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.request.post
 import io.ktor.http.HttpStatusCode
@@ -132,7 +133,8 @@ class BackendClientToolRegistrationE2eTest {
 
     @Test
     fun `discovery belongs to its provider and is shared with empty chats without overriding other providers`() =
-        backendE2eTest("e2e_discovery_refresh") {
+        // This workflow intentionally makes more than 30 provider attempts in a minute.
+        backendE2eTest("e2e_discovery_refresh", llmLimits = BackendLlmLimits(perUserRequestsPerMinute = 100)) {
             val owner = UUID.randomUUID().toString()
             val source = createPublicChat(owner)
             val first = createPublicChat(owner, "first", tools = "[$definition]")
@@ -271,6 +273,9 @@ class BackendClientToolRegistrationE2eTest {
                     "null", "[null]", "[$definition,$definition]",
                     "[${definition.replace("speaker.say", "ConnectOAuthProvider")}]",
                     "[${definition.replace("speaker.say", "SafeApiCall")}]",
+                    "[${definition.replace("speaker.say", "SpawnSubagent")}]",
+                    "[${definition.replace("speaker.say", "WaitSubagent")}]",
+                    "[${definition.replace("speaker.say", "CancelSubagent")}]",
                     "[${definition.replace("speaker.say", "RunSkillCommand")}]",
                     "[${definition.replace("speaker.say", "personality.update")}]",
                     "[${definition.replace("speaker.say", "ExtractTextFromFile")}]",

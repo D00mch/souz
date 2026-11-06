@@ -1,6 +1,7 @@
 package ru.souz.service.telegram
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -13,6 +14,7 @@ data class SelectionRequest<TId, TCandidate>(
     val id: Long,
     val query: String,
     val candidates: List<TCandidate>,
+    val completion: Job,
 )
 
 open class SelectionBroker<TId, TCandidate> {
@@ -30,17 +32,19 @@ open class SelectionBroker<TId, TCandidate> {
             val id = requestId.incrementAndGet()
             val deferred = CompletableDeferred<TId?>()
             pendingSelections[id] = deferred
-            requestsChannel.send(
-                SelectionRequest(
-                    id = id,
-                    query = query,
-                    candidates = candidates,
-                )
-            )
             try {
+                requestsChannel.send(
+                    SelectionRequest(
+                        id = id,
+                        query = query,
+                        candidates = candidates,
+                        completion = deferred,
+                    )
+                )
                 deferred.await()
             } finally {
                 pendingSelections.remove(id)
+                deferred.cancel()
             }
         }
     }

@@ -134,10 +134,10 @@ fun MainScreenContent(
     onClearContext: () -> Unit = {},
     onToggleToolModifyReviewSelection: (String, Long) -> Unit = { _, _ -> },
     onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit = { _, _ -> },
-    onApproveToolPermission: () -> Unit = {},
-    onRejectToolPermission: () -> Unit = {},
-    onSelectApprovalCandidate: (Long) -> Unit = {},
-    onCancelSelectionDialog: () -> Unit = {},
+    onApproveToolPermission: (Long) -> Unit = {},
+    onRejectToolPermission: (Long) -> Unit = {},
+    onSelectApprovalCandidate: (String, Long, Long) -> Unit = { _, _, _ -> },
+    onCancelSelectionDialog: (String, Long) -> Unit = { _, _ -> },
     onOpenPath: (String) -> Unit = {},
     onUpdateChatSearchQuery: (String) -> Unit = {},
     onSelectNextChatSearchResult: () -> Unit = {},
@@ -457,21 +457,24 @@ fun MainScreenContent(
                     },
                     confirmText = stringPermissionAllow,
                     cancelText = stringPermissionDeny,
-                    onConfirm = onApproveToolPermission,
-                    onDismiss = onRejectToolPermission
+                    onConfirm = { onApproveToolPermission(dialog.requestId) },
+                    onDismiss = { onRejectToolPermission(dialog.requestId) }
                 )
             }
 
             state.selectionDialog?.let { dialog ->
                 SelectionDialog(
+                    sourceId = dialog.sourceId,
                     requestId = dialog.requestId,
                     title = dialog.title,
                     message = dialog.message,
                     candidates = dialog.candidates,
                     confirmText = dialog.confirmText,
                     cancelText = dialog.cancelText,
-                    onConfirmSelection = onSelectApprovalCandidate,
-                    onDismiss = onCancelSelectionDialog,
+                    onConfirmSelection = { candidateId ->
+                        onSelectApprovalCandidate(dialog.sourceId, dialog.requestId, candidateId)
+                    },
+                    onDismiss = { onCancelSelectionDialog(dialog.sourceId, dialog.requestId) },
                 )
             }
 
@@ -495,6 +498,7 @@ fun MainScreenContent(
 
 @Composable
 private fun SelectionDialog(
+    sourceId: String,
     requestId: Long,
     title: String,
     message: String,
@@ -504,7 +508,7 @@ private fun SelectionDialog(
     onConfirmSelection: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var selectedId by remember(requestId) { mutableStateOf<Long?>(null) }
+    var selectedId by remember(sourceId, requestId) { mutableStateOf<Long?>(null) }
 
     ConfirmDialog(
         type = ConfirmDialogType.WARNING,

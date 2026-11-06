@@ -20,6 +20,8 @@ Mail preview chunks and the approval prompt are paced one second apart, followin
 
 ## Why it is fragile
 
+`PermissionsUseCase` queues selection prompts across all approval sources. A broker request's completion follows resolution or caller cancellation; cancelled queued requests are skipped, and cancellation of the displayed request releases the dialog for the next source. Source ID and request ID together identify a prompt because broker IDs can overlap. Confirmation and dismissal events capture both IDs from the rendered dialog; the ViewModel resolves those IDs so a delayed event cannot act on a promoted request. Remembered candidate selection resets on either ID changing.
+
 Authorization, TDLib updates, cache fetches, bot polling, and UI selections are asynchronous. Bypassing their owners can create stale histories, duplicate polling, unresolved selection continuations, or destructive actions without a visible approval step.
 
 ## Safe-change guidance

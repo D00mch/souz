@@ -21,6 +21,7 @@ class TelegramContactSelectionApprovalSource(
         SelectionApprovalRequest(
             sourceId = sourceId,
             requestId = request.id,
+            completion = request.completion,
             title = getString(Res.string.telegram_contact_select_title),
             message = getString(Res.string.telegram_contact_select_message).format(request.query),
             confirmText = getString(Res.string.telegram_contact_select_choose),
@@ -59,6 +60,7 @@ class TelegramChatSelectionApprovalSource(
         SelectionApprovalRequest(
             sourceId = sourceId,
             requestId = request.id,
+            completion = request.completion,
             title = getString(Res.string.telegram_chat_select_title),
             message = getString(Res.string.telegram_chat_select_message).format(request.query),
             confirmText = getString(Res.string.telegram_chat_select_choose),

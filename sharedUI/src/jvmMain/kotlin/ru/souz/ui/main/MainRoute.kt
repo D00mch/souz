@@ -71,10 +71,14 @@ fun MainScreen(
         onResolveToolModifyReview = { messageId, action ->
             viewModel.send(MainEvent.ResolveToolModifyReview(messageId, action))
         },
-        onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
-        onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
-        onSelectApprovalCandidate = { viewModel.send(MainEvent.SelectApprovalCandidate(it)) },
-        onCancelSelectionDialog = { viewModel.send(MainEvent.CancelSelectionDialog) },
+        onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission(it)) },
+        onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission(it)) },
+        onSelectApprovalCandidate = { sourceId, requestId, candidateId ->
+            viewModel.send(MainEvent.SelectApprovalCandidate(sourceId, requestId, candidateId))
+        },
+        onCancelSelectionDialog = { sourceId, requestId ->
+            viewModel.send(MainEvent.CancelSelectionDialog(sourceId, requestId))
+        },
         onOpenPath = { viewModel.send(MainEvent.OpenPath(it)) },
         onUpdateChatSearchQuery = { viewModel.send(MainEvent.UpdateChatSearchQuery(it)) },
         onSelectNextChatSearchResult = { viewModel.send(MainEvent.SelectNextChatSearchResult) },

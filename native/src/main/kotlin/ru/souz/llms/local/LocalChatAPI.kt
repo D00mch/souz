@@ -23,6 +23,8 @@ class LocalChatAPI(
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings = try {
         LocalEmbeddingProfiles.embeddings(body, runtime.nativeEmbeddings(body))
+    } catch (error: CancellationException) {
+        throw error
     } catch (error: Exception) {
         LLMResponse.Embeddings.Error(-1, "Local provider error: ${error.message}")
     }

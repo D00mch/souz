@@ -94,12 +94,15 @@ class SubagentSkillExecutionTest {
                 }
             }
             val meta = ToolInvocationMeta("owner", "conversation", attributes = mapOf("client" to "session"))
-            val settings = mockk<AgentSettingsProvider> { every { useStreaming } returns false }
+            val settings = mockk<AgentSettingsProvider> {
+                every { useStreaming } returns false
+                every { subagentTaskTimeout } returns ru.souz.agent.runtime.DEFAULT_SUBAGENT_TASK_TIMEOUT
+            }
             val spawn = SubagentToolFactory(
                 { maxTurns -> ToolLoopGraphBasedAgent(api, settings, maxTurns) },
                 { catalog }, filter, registry, commands, approval,
             ).create(AgentSettings(LLMModel.Max.alias, LLMModel.Max.provider, 0.5f, AgentTools(emptyMap())))
-            val result = spawn.invoke(
+            val result = spawn.spawnAndWait(
                 LLMResponse.FunctionCall(spawn.fn.name, mapOf("task" to "Run the skill", "skillIds" to listOf("loose"))), meta,
             )
             assertEquals("ready", restJsonMapper.readTree(result.content)["result"].asText())

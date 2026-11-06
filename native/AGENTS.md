@@ -15,6 +15,8 @@ Before changing this module, read the relevant pain-point topics below.
 - Preserve an explicitly configured context size across model profiles. Reserve completion space from actual token counts; multimodal requests must use the `mtmd` prompt/image count.
 - Keep Metal residency disabled by default on macOS; opt back in only through the documented debugging override.
 
+- Serialize native request preparation, model use and cancellation cleanup through one request mutex. Join bridge work before releasing a cancelled request so it cannot unload a sibling's model or cancel a sibling's generation. See [model ownership](docs/model-assets-and-context-budget.md#request-ownership).
+
 ## Pain points
 
 - [Bridge build and packaging](docs/bridge-build-and-packaging.md) — vendor sources, local patches, ABI synchronization, packaged binaries, and Metal defaults.

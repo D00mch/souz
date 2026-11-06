@@ -17,10 +17,12 @@ import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.runtime.AgentToolExecutor
+import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentTelemetry
+import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
 import ru.souz.agent.session.GraphSessionRepository
@@ -109,6 +111,8 @@ fun agentDiModule(
             nodesToolUseWithKnowledge = instance(),
             nodesMemory = instance(),
             coreTools = instance(),
+            executionDelegate = GraphExecutionDelegate(instance<ObjectMapper>(tag = logObjectMapperTag),
+                GraphBasedAgent::class.java, instance<AgentSettingsProvider>().subagentTaskTimeout),
         )
     }
     bindSingleton {
@@ -121,6 +125,8 @@ fun agentDiModule(
             nodesSkillInventory = instance(),
             nodesToolUseWithKnowledge = instance(),
             coreTools = instance(),
+            executionDelegate = GraphExecutionDelegate(instance<ObjectMapper>(tag = logObjectMapperTag),
+                SkillsGraphBasedAgent::class.java, instance<AgentSettingsProvider>().subagentTaskTimeout),
         )
     }
     bindSingleton {
