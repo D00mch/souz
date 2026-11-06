@@ -112,20 +112,17 @@ internal class SqliteMemorySchema(
         }
     }
 
-    private fun Connection.ownerTables(): List<String> =
-        OWNER_TABLES.filter { table -> hasTable(table) }
-
-    private fun Connection.hasTable(table: String): Boolean =
-        prepareStatement(
-            """
-            select 1
-            from sqlite_master
-            where type = 'table' and name = ?
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, table)
-            statement.executeQuery().use { it.next() }
+    private fun Connection.ownerTables(): List<String> {
+        val existingTables = prepareStatement("select name from sqlite_master where type = 'table'").use { statement ->
+            statement.executeQuery().use { rs ->
+                buildSet {
+                    while (rs.next()) add(rs.getString("name"))
+                }
+            }
         }
+        // Preserve the allowlist order and refresh at each call: migrations can create owner tables.
+        return OWNER_TABLES.filter { it in existingTables }
+    }
 
     private fun normalizeLegacyCanonicalKeys(connection: Connection) {
         val rows = connection.prepareStatement(
