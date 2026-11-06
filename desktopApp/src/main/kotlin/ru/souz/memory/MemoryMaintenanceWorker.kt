@@ -3,6 +3,8 @@ package ru.souz.memory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.sqlite.SQLiteErrorCode
+import org.sqlite.SQLiteException
 import java.nio.file.Path
 import java.sql.Connection
 import java.sql.DriverManager
@@ -128,26 +130,37 @@ class MemoryMaintenanceWorker(
         if (candidates.isEmpty()) return completeWithoutReplacement(job)
         val evaluation = qualityGate.evaluate(input, candidates)
         if (!evaluation.accepted) return completeWithoutReplacement(job)
-        val regionFactIds = region.map { it.fact.id }
-        if (hasExternalCanonicalConflict(ownerId, scope, regionFactIds, candidates)) {
-            return completeWithoutReplacement(job)
-        }
         val evidenceTextBySourceEventId = region
             .flatMap { it.evidence }
             .mapNotNull { detail -> detail.evidence.evidenceText?.let { detail.sourceEvent.id to it } }
             .toMap()
 
-        val inserted = withConnection { connection ->
-            connection.inTransaction {
-                commitDreamerReplacement(
-                    job,
-                    ownerId,
-                    scope,
-                    candidates,
-                    evidenceTextBySourceEventId,
-                    Instant.now().toString(),
-                )
+        val inserted = try {
+            withConnection { connection ->
+                connection.inTransaction {
+                    commitDreamerReplacement(
+                        job,
+                        ownerId,
+                        scope,
+                        candidates,
+                        evidenceTextBySourceEventId,
+                        Instant.now().toString(),
+                    )
+                }
             }
+        } catch (error: SQLiteException) {
+            // The active canonical unique index already checks every insert. Only a rejected
+            // insert needs the external-vs-in-region distinction, after the whole write rolls back.
+            if (error.resultCode != SQLiteErrorCode.SQLITE_CONSTRAINT_UNIQUE ||
+                !error.message.orEmpty().contains(
+                    "UNIQUE constraint failed: memory_facts.owner_id, memory_facts.scope_type, " +
+                        "memory_facts.scope_id, memory_facts.canonical_key"
+                ) ||
+                !hasExternalCanonicalConflict(ownerId, scope, region.map { it.fact.id }, candidates)
+            ) {
+                throw error
+            }
+            return completeWithoutReplacement(job)
         }
         return if (inserted > 0) 1 else 0
     }
