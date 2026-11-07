@@ -65,8 +65,7 @@ internal fun Route.pluginRoutes(service: PluginAdministration?) {
     }
     post("$PLUGIN_ADMIN_PATH/install") {
         val admin = call.admin(service)
-        val temporary = withContext(Dispatchers.IO) { staging { Files.createTempFile("souz-plugin-upload-", ".jar") } }
-        try {
+        withPluginUploadFile { temporary ->
             val revision = withTimeoutOrNull(admin.config.uploadMillis) {
                 try { call.uploadPlugin(temporary) }
                 catch (cancelled: CancellationException) { throw cancelled }
@@ -75,10 +74,7 @@ internal fun Route.pluginRoutes(service: PluginAdministration?) {
             }
                 ?: throw pluginHttpError(408, "plugin_upload_timeout", "Plugin upload deadline exceeded.")
             call.respond(HttpStatusCode.Accepted, admin.install(temporary, revision))
-        } finally { withContext(NonCancellable + Dispatchers.IO) {
-            try { Files.deleteIfExists(temporary) }
-            catch (_: IOException) { LoggerFactory.getLogger("PluginUpload").warn("Temporary plugin upload cleanup failed.") }
-        } }
+        }
     }.describePublic("installPlugin", "Plugins", "Upload and select a plugin JAR",
         "Authenticates before receiving bytes. Stores an immutable JAR in S3 and commits desired state; replicas apply it asynchronously.") {
         adminSecurity()
@@ -125,6 +121,24 @@ internal fun Route.pluginRoutes(service: PluginAdministration?) {
     }.describePublic("reenablePluginVersion", "Plugins", "Clear version quarantine and severe-incident count") {
         adminSecurity(); pluginParameters(version = true)
         requestBody { jsonBody<PluginRevisionRequest>() }; acceptedResponse()
+    }
+}
+
+internal suspend fun <T> withPluginUploadFile(
+    create: () -> Path = { staging { Files.createTempFile("souz-plugin-upload-", ".jar") } },
+    block: suspend (Path) -> T,
+): T {
+    var temporary: Path? = null
+    try {
+        withContext(Dispatchers.IO) { temporary = create() }
+        return block(requireNotNull(temporary))
+    } finally {
+        withContext(NonCancellable + Dispatchers.IO) {
+            temporary?.let { path ->
+                try { Files.deleteIfExists(path) }
+                catch (_: IOException) { LoggerFactory.getLogger("PluginUpload").warn("Temporary plugin upload cleanup failed.") }
+            }
+        }
     }
 }
 
