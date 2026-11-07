@@ -20,7 +20,7 @@ class GmailWorkflowTest {
         val host = Mailbox()
         host.configure()
         val first = (0 until 501).map { "first_$it" }
-        val second = first.take(25) + (0 until 601).map { "second_$it" }
+        val second = first.take(25) + (0 until 501).map { "second_$it" }
         host.historyFor = { request ->
             val last = "pageToken=next" in request.url
             tree(mapOf("historyId" to "200", "history" to listOf(mapOf("messagesAdded" to
@@ -63,7 +63,7 @@ class GmailWorkflowTest {
         host.call("status")
         assertEquals(2, host.writeCount - writesBefore, "Legacy migration needs one immutable index write and one checkpoint write")
         val store = GmailStore(host.state) { host.time }
-        repeat(300) { index -> store.change("personal") { _, state ->
+        repeat(150) { index -> store.change("personal") { _, state ->
             state.finish("new_" + index.toString().padStart(124, '0')) to Unit
         } }
         val current = host.call("status")

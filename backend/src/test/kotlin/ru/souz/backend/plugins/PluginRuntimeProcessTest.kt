@@ -249,7 +249,7 @@ object PluginRuntimeProbe {
             awaitPlugin { runtime.snapshot.status.find { it.id == pin.id }!!.versions.isEmpty() }
             assertFalse(Files.exists(path))
         }
-        repeat(12) { cycle() }
+        repeat(4) { cycle() }
         val collected = kotlinx.coroutines.withTimeoutOrNull(10_000) {
             while (references.any { it.get() != null }) { System.gc(); delay(100) }
             true

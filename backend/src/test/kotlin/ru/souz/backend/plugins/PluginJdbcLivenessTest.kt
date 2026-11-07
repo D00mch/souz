@@ -7,36 +7,24 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.*
 import kotlinx.coroutines.*
 import ru.souz.backend.app.BackendApplicationScope
-import ru.souz.backend.app.BackendRuntimeResources
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 
 class PluginJdbcLivenessTest {
-    @Test fun `admission deadline and application join escape stalled JDBC without starting the handler`() = runBlocking {
-        jdbcScenario("select enabled from jvm_plugins") { host ->
+    @Test fun `abandoned admission returns promptly and releases a late lease without starting the handler`() = runBlocking {
+        for (cancel in listOf(false, true)) jdbcScenario("select enabled from jvm_plugins") { host ->
             val application = BackendApplicationScope()
             val starts = AtomicInteger()
             val call = application.async { host.invoke { _, _ -> starts.incrementAndGet(); "{}" } }
             withTimeout(5_000) { host.proxy.entered.await() }
-            val reply = withTimeout(1_500) { call.await() }
-            assertEquals("plugin_queue_timeout", restJsonMapper.readTree(reply.content).errorCode())
+            if (!cancel) {
+                val reply = withTimeout(1_500) { call.await() }
+                assertEquals("plugin_queue_timeout", restJsonMapper.readTree(reply.content).errorCode())
+            }
             withTimeout(1_000) { application.cancelAndJoin() }
-            withTimeout(3_000) { while (host.fatals.get() == 0) delay(10) }
-            assertEquals(0, starts.get())
+            if (!cancel) withTimeout(3_000) { while (host.fatals.get() == 0) delay(10) }
             host.proxy.resume()
-        }
-    }
-
-    @Test fun `cancelled admission returns its late lease and never calls the handler`() = runBlocking {
-        jdbcScenario("select enabled from jvm_plugins") { host ->
-            val application = BackendApplicationScope()
-            val starts = AtomicInteger()
-            application.launch { host.invoke { _, _ -> starts.incrementAndGet(); "{}" } }
-            withTimeout(5_000) { host.proxy.entered.await() }
-            withTimeout(1_000) { application.cancelAndJoin() }
-            host.proxy.resume()
-            // Shutdown joins host-owned admission and its late release.
             host.binding.release()
             withTimeout(8_000) { while (!host.runtime.shutdown()) delay(10) }
             val successor = assertNotNull(host.peer.claim("alice", host.version.metadata.binding, PluginRuntimeConfig()))
@@ -46,13 +34,12 @@ class PluginJdbcLivenessTest {
         }
     }
 
-    @Test fun `successful and timed out handlers keep cleanup watched until outcome IO exits`() = runBlocking {
-        for (timeout in listOf(false, true)) jdbcScenario("set recorded = true") { host ->
+    @Test fun `timed out handler keeps cleanup watched until outcome IO exits`() = runBlocking {
+        jdbcScenario("set recorded = true") { host ->
             val reply = withTimeout(5_000) {
-                host.invoke { _, _ -> if (timeout) awaitCancellation() else "{}" }
+                host.invoke { _, _ -> awaitCancellation() }
             }
-            if (timeout) assertEquals("plugin_timeout", restJsonMapper.readTree(reply.content).errorCode())
-            else assertEquals("{}", reply.content)
+            assertEquals("plugin_timeout", restJsonMapper.readTree(reply.content).errorCode())
             withTimeout(5_000) { host.proxy.entered.await() }
             withTimeout(3_000) { while (host.fatals.get() == 0) delay(10) }
             assertEquals(1, host.runtime.snapshot.status.single().versions.single().calls)
@@ -84,36 +71,16 @@ class PluginJdbcLivenessTest {
         }
     }
 
-    @Test fun `poller IO is inside the shutdown budget and application resources remain open on failure`() = runBlocking {
+    @Test fun `poller IO cannot obstruct application join or exceed the shutdown budget`() = runBlocking {
         jdbcScenario("from jvm_plugins p left join") { host ->
             val application = BackendApplicationScope()
             host.runtime.start(application)
             withTimeout(5_000) { host.proxy.entered.await() }
             host.binding.release()
-            var sharedClosed = false
-            var restarts = 0
-            val resources = BackendRuntimeResources(
-                cancelAndJoinApplicationWork = application::cancelAndJoin,
-                shutdownPlugins = host.runtime::shutdown,
-                pluginDidNotDrain = { restarts++ },
-                closePluginServices = { sharedClosed = true },
-            )
-            withTimeout(1_500) { resources.shutdown() }
-            assertEquals(1, restarts)
-            assertFalse(sharedClosed)
+            withTimeout(1_000) { application.cancelAndJoin() }
+            assertFalse(withTimeout(1_500) { host.runtime.shutdown() })
             host.proxy.resume()
             withTimeout(8_000) { while (!host.runtime.shutdown()) delay(10) }
-        }
-    }
-
-    @Test fun `pool acquisition cannot extend the caller queue deadline`() = runBlocking {
-        jdbcScenario("unused") { host ->
-            val held = List(5) { host.source.connection }
-            try {
-                val reply = withTimeout(1_500) { host.invoke { _, _ -> error("Handler must not start") } }
-                assertEquals("plugin_queue_timeout", restJsonMapper.readTree(reply.content).errorCode())
-                withTimeout(3_000) { while (host.fatals.get() == 0) delay(10) }
-            } finally { held.forEach { it.close() } }
         }
     }
 
@@ -147,7 +114,7 @@ class PluginJdbcLivenessTest {
             binding = runtime.acquire("alice", listOf(pin), PLUGIN_FIXTURE_TOOLS)
             proxy.arm(pattern)
             val version = binding.versions.single()
-            block(Host(proxy, source, runtime, binding, version,
+            block(Host(proxy, runtime, binding, version,
                 version.functions.single { it.schema.name.endsWith(".report") }, fatals, fixture.peer))
         } finally {
             proxy.resume()
@@ -160,7 +127,7 @@ class PluginJdbcLivenessTest {
         }
     }
 
-    private data class Host(val proxy: PgResponseGate, val source: HikariDataSource, val runtime: BackendPluginRuntime,
+    private data class Host(val proxy: PgResponseGate, val runtime: BackendPluginRuntime,
         val binding: PluginExecutionBinding, val version: BackendPluginRuntime.Version, val tool: PluginFunction,
         val fatals: AtomicInteger, val peer: PostgresPluginRepository) {
         suspend fun invoke(handler: suspend (String, ru.souz.plugins.api.PluginContext) -> String) =

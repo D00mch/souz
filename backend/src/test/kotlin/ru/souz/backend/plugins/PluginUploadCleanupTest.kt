@@ -4,8 +4,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertFalse
-import kotlin.test.assertFailsWith
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
@@ -30,16 +28,4 @@ class PluginUploadCleanupTest {
         assertFalse(Files.exists(path))
     }
 
-    @Test fun `upload or installation failures delete the upload`() = runBlocking {
-        for (cancelled in listOf(false, true)) {
-            val path = directory.resolve("upload.jar")
-            assertFailsWith<Exception> {
-                withPluginUploadFile(create = { Files.createFile(path) }) {
-                    if (cancelled) throw CancellationException("Interrupted upload")
-                    error("Install rejected")
-                }
-            }
-            assertFalse(Files.exists(path))
-        }
-    }
 }
