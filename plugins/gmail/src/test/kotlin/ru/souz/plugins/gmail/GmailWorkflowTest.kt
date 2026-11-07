@@ -16,6 +16,68 @@ import kotlinx.coroutines.yield
 import ru.souz.plugins.api.*
 
 class GmailWorkflowTest {
+    @Test fun `large history pages make durable lossless progress across page restarts`() = runTest {
+        val host = Mailbox()
+        host.configure()
+        val first = (0 until 501).map { "first_$it" }
+        val second = first.take(25) + (0 until 601).map { "second_$it" }
+        host.historyFor = { request ->
+            val last = "pageToken=next" in request.url
+            tree(mapOf("historyId" to "200", "history" to listOf(mapOf("messagesAdded" to
+                (if (last) second else first).map { mapOf("message" to mapOf("id" to it)) }))) +
+                (if (last) emptyMap() else mapOf("nextPageToken" to "next"))).toString()
+        }
+        val delivered = mutableSetOf<String>()
+        var restarted = false
+        for (attempt in 0 until first.size + second.size + 10) {
+            val sync = host.call("sync")
+            if (!sync["message"].isNull) {
+                val inputs = sync["message"].fieldsMap()
+                assertTrue(delivered.add(inputs.getValue("message").toString()), "A completed message was claimed twice")
+                host.call("read", inputs)
+                host.call("deliver", inputs)
+            }
+            if (!restarted && host.call("status")["pageToken"].asText() == "next") {
+                val revision = host.call("status")["revision"].asLong()
+                host.call("restart_pages", mapOf("revision" to revision))
+                restarted = true
+            }
+            if (delivered.size == (first + second).distinct().size && sync["message"].isNull && !sync["moreHistory"].asBoolean()) break
+        }
+        assertEquals((first + second).toSet(), delivered)
+        assertTrue(restarted)
+        assertEquals("200", host.call("status")["historyCursor"].asText())
+        assertEquals(delivered.size, host.sent.size)
+        assertTrue(host.largestState <= PluginApi.MAX_JSON_BYTES)
+    }
+
+    @Test fun `near limit legacy state migrates before long pagination and retains evicted deduplication`() = runTest {
+        val host = Mailbox()
+        host.configure()
+        val old = (0 until 10_000).map { "old_" + it.toString().padStart(96, '0') }
+        val saved = json.readValue(host.state.get("connection:personal"), GmailRecord::class.java)
+        host.state.put("connection:personal", json.writeValueAsString(saved.copy(state = GmailState(
+            status = Phase.ready, historyCursor = "100", startedAtMillis = 1, pageToken = "next", done = old))))
+        assertTrue(host.largestState > 1_000_000)
+        val writesBefore = host.writeCount
+        host.call("status")
+        assertEquals(2, host.writeCount - writesBefore, "Legacy migration needs one immutable index write and one checkpoint write")
+        val store = GmailStore(host.state) { host.time }
+        repeat(300) { index -> store.change("personal") { _, state ->
+            state.finish("new_" + index.toString().padStart(124, '0')) to Unit
+        } }
+        val current = host.call("status")
+        assertTrue(current["done"].size() <= 2_000)
+        assertEquals("next", current["pageToken"].asText())
+        assertTrue(store.unseen("personal", old + listOf("fresh"), store.snapshot("personal").state) == listOf("fresh"))
+        assertTrue(host.state.get("connection:personal")!!.toByteArray().size < 400_000)
+        host.history = tree(mapOf("historyId" to "200", "history" to listOf(mapOf("messagesAdded" to
+            (old.take(2001) + "fresh").map { mapOf("message" to mapOf("id" to it)) })))).toString()
+        repeat(20) { assertTrue(host.call("sync")["message"].isNull) }
+        assertEquals(2000, host.call("status")["pageOffset"].asInt())
+        assertEquals("fresh", host.call("sync")["message"]["message"].asText())
+    }
+
     @Test fun `failed reads retry and expired unsent claims fence stale callers`() = runTest {
         val host = Mailbox()
         host.configure()
@@ -244,6 +306,9 @@ private class Mailbox : PluginContext {
     var time = 1_000L
     var history = """{"historyId":"101","history":[{"messagesAdded":[{"message":{"id":"m1"}}]}]}"""
     var historyCode = 200
+    var historyFor: ((PluginOAuthRequest) -> String)? = null
+    var largestState = 0
+    var writeCount = 0
     var readFails = false
     var reconnect = false
     var rejectWrites = false
@@ -283,6 +348,10 @@ private class Mailbox : PluginContext {
         override suspend fun get(key: String): String? = records[key]
         override suspend fun put(key: String, json: String) {
             if (rejectWrites) throw PluginException("plugin_lease_lost", "Invocation is no longer owned")
+            val size = json.toByteArray().size
+            require(size <= PluginApi.MAX_JSON_BYTES)
+            largestState = maxOf(largestState, size)
+            writeCount++
             records[key] = json
         }
         override suspend fun delete(key: String): Boolean = records.remove(key) != null
@@ -299,7 +368,7 @@ private class Mailbox : PluginContext {
         val path = request.url.substringBefore('?')
         return when {
             path.endsWith("/profile") -> PluginOAuthResponse(200, """{"emailAddress":"owner@example.com","historyId":"100"}""")
-            path.endsWith("/history") -> PluginOAuthResponse(historyCode, history)
+            path.endsWith("/history") -> PluginOAuthResponse(historyCode, historyFor?.invoke(request) ?: history)
             path.endsWith("/watch") -> PluginOAuthResponse(200, """{"historyId":"999","expiration":"9999999999"}""")
             "/attachments/" in path -> PluginOAuthResponse(200, tree(mapOf("size" to (attachmentSize ?: attachment.size), "data" to Base64.getUrlEncoder().encodeToString(attachment))).toString())
             else -> PluginOAuthResponse(if (readFails) 503 else 200, tree(mapOf("id" to "m1", "internalDate" to "9999999999999", "labelIds" to listOf("INBOX"),

@@ -36,8 +36,18 @@ Call `sync`, then `read` with its message and claim. Process at most two history
 pages and two messages per hook run. Sync verifies the mailbox and establishes an
 initial baseline before watch, preventing historical-mail notifications. It keeps
 the base cursor through pagination, detects stale fetches, and stops on history
-gaps or account mismatch. `watch` changes only expiry; `restart_pages` requires the
-revision from `status` and clears only the page token. Neither repairs a history gap.
+gaps or account mismatch. Large pages fill a bounded batch of up to 100 pending messages;
+sync drains that batch before rereading the same page. A persisted offset and content digest
+bound each scan, including replay of completed IDs; changed page content restarts the scan
+with durable deduplication. The page token advances only after every ID has been accepted
+or completed. Completion markers live in separate
+owner/config-scoped state records; `done` in status shows only the last 2000 completions.
+Markers are retained to deduplicate page retries and `restart_pages`; they have no automatic GC.
+Legacy completion lists are saved in one immutable record before the connection record is
+trimmed, including during import. A fresh index namespace isolates interrupted imports.
+Delivery reservations remain in the connection until settlement or manual uncertainty resolution.
+`watch` changes only expiry; `restart_pages` requires the
+revision from `status` and clears only the page checkpoint. Neither repairs a history gap.
 
 `read` returns `prepared` or `compose`, plus `inputs` containing config/message/claim.
 For fixed modes the server stores the prepared text. Pass `inputs` to `deliver`

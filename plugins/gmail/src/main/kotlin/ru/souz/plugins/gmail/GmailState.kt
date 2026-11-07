@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import java.util.UUID
 import ru.souz.plugins.api.PluginException
 import ru.souz.plugins.api.PluginState
+import ru.souz.plugins.api.PluginApi
 
 internal enum class Mode { signal, subject, summary, assistant }
 internal enum class Phase { needs_profile, ready, resync_required }
@@ -26,6 +27,9 @@ internal data class GmailState(
     val watchExpiresAt: Long = 0,
     val pending: Map<String, Claim> = emptyMap(),
     val done: List<String> = emptyList(),
+    val doneIndex: String? = null,
+    val pageOffset: Int = 0,
+    val pageDigest: String? = null,
 ) {
     fun expire(now: Long): GmailState = copy(pending = pending.mapValues { (_, item) ->
         if (item.expiresAt > now) item else when (item.status) {
@@ -52,11 +56,20 @@ internal class GmailStore(private val data: PluginState, private val now: () -> 
     suspend fun <R> change(config: String, block: (Connection, GmailState) -> Pair<GmailState, R>): R {
         val record = data.get(key(config))?.let { json.readValue(it, GmailRecord::class.java) }
             ?: throw PluginException("gmail_connection_missing", "Configure or import this connection first")
-        val expired = record.state.expire(now())
+        // Index legacy completion history before pruning its bounded status view.
+        // If interrupted, the old record is intact and these idempotent writes can repeat.
+        val index = record.state.doneIndex ?: UUID.randomUUID().toString()
+        if (record.state.doneIndex == null) indexLegacy(config, index, record.state.done)
+        val expired = record.state.copy(done = record.state.done.takeLast(DONE_VIEW_LIMIT), doneIndex = index).expire(now())
         val current = if (expired == record.state) expired else expired.copy(revision = record.state.revision + 1)
         val (next, output) = block(record.connection, current)
-        val updated = if (next == record.state) record else record.copy(state = next.copy(revision = record.state.revision + 1))
-        if (updated != record) data.put(key(config), json.writeValueAsString(updated))
+        if (next.done != current.done) {
+            val previous = current.done.toHashSet()
+            indexDone(config, index, next.done.filter { it !in previous })
+        }
+        val bounded = next.copy(done = next.done.takeLast(DONE_VIEW_LIMIT), doneIndex = index)
+        val updated = if (bounded == record.state) record else record.copy(state = bounded.copy(revision = record.state.revision + 1))
+        if (updated != record) save(config, updated)
         return output
     }
 
@@ -66,9 +79,38 @@ internal class GmailStore(private val data: PluginState, private val now: () -> 
         val existing = data.get(key(config))
         gmailRequire(existing == null || allowIdentical && json.readValue(existing, GmailRecord::class.java).connection == record.connection,
             "connection_exists", "Connection already exists; use another name")
-        if (existing == null) data.put(key(config), json.writeValueAsString(record))
+        if (existing == null) {
+            val index = UUID.randomUUID().toString()
+            indexLegacy(config, index, record.state.done)
+            save(config, record.copy(state = record.state.copy(done = record.state.done.takeLast(DONE_VIEW_LIMIT), doneIndex = index)))
+        }
+    }
+
+    suspend fun unseen(config: String, messages: List<String>, state: GmailState): List<String> {
+        val index = requireNotNull(state.doneIndex)
+        val legacy = data.get(legacyDoneKey(config, index))?.let { json.readValue(it, Array<String>::class.java).toSet() }.orEmpty()
+        val recent = state.done.toHashSet()
+        return messages.filter { it !in state.pending && it !in recent && it !in legacy && data.get(doneKey(config, index, it)) == null }
+    }
+
+    private suspend fun indexLegacy(config: String, index: String, messages: List<String>) {
+        if (messages.isNotEmpty()) data.put(legacyDoneKey(config, index), json.writeValueAsString(messages))
+    }
+
+    private suspend fun indexDone(config: String, index: String, messages: List<String>) {
+        for (message in messages) data.put(doneKey(config, index, message), "true")
+    }
+
+    private suspend fun save(config: String, record: GmailRecord) {
+        val encoded = json.writeValueAsString(record)
+        gmailRequire(encoded.toByteArray().size <= PluginApi.MAX_JSON_BYTES, "state_full", "Settle pending claims before preparing more messages")
+        data.put(key(config), encoded)
     }
 }
+
+private const val DONE_VIEW_LIMIT = 2000
+private fun doneKey(config: String, index: String, message: String) = "${key(config)}:done:$index:message:${messageId(message)}"
+private fun legacyDoneKey(config: String, index: String) = "${key(config)}:done:$index:legacy"
 
 internal fun validate(connection: Connection) {
     gmailRequire(connection.mailboxEmail.length <= 320 && '@' in connection.mailboxEmail,

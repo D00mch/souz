@@ -3,6 +3,7 @@ package ru.souz.plugins.gmail
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
+import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -46,7 +47,7 @@ internal class GmailFlow(private val context: PluginContext, private val now: ()
         "download_attachment" -> downloadAttachment(api, context.files, args)
         "restart_pages" -> store.change(args.text("config")) { _, state ->
             if (state.revision != args.path("revision").asLong()) state to result("conflict")
-            else state.copy(pageToken = null) to result(state.status.name)
+            else state.copy(pageToken = null, pageOffset = 0, pageDigest = null) to result(state.status.name)
         }
         "resolve_uncertain" -> store.change(args.text("config")) { _, state ->
             val message = messageId(args.text("message"))
@@ -85,20 +86,35 @@ internal class GmailFlow(private val context: PluginContext, private val now: ()
 
     private suspend fun sync(config: String): JsonNode {
         val base = profile(config).state
+        // Drain accepted IDs before rereading a partial history page. Completions are
+        // indexed separately, so replaying that page (or restart_pages) is lossless.
+        if (base.pending.values.any { it.status == ClaimPhase.pending }) {
+            return store.change(config) { _, current ->
+                val (next, message) = current.claimNext(now())
+                next to next.syncResult(message, moreHistory = true, now = now())
+            }
+        }
         val cursor = requireNotNull(base.historyCursor)
         val page = try {
             api.request("/history", listOf("startHistoryId" to cursor, "historyTypes" to "messageAdded", "labelId" to "INBOX", "maxResults" to "25") +
                 listOfNotNull(base.pageToken?.let { "pageToken" to it })).let(::historyPage)
         } catch (e: GmailApiFailure) { if (e.status == 404) null else throw e }
+        val offset = if (page != null && page.digest == base.pageDigest) base.pageOffset.coerceIn(0, page.messages.size) else 0
+        val capacity = (HISTORY_BATCH_SIZE - base.pending.size).coerceAtLeast(0)
+        val window = page?.messages?.let { it.subList(offset, minOf(it.size, offset + capacity)) }.orEmpty()
+        val nextOffset = offset + window.size
+        val partial = page != null && nextOffset < page.messages.size
+        val unseenPage = page?.copy(messages = store.unseen(config, window, base))
         return store.change(config) { _, current ->
             when {
                 current.status != Phase.ready -> current to result(current.status.name)
-                current.historyCursor != cursor || current.pageToken != base.pageToken -> current to result("conflict")
-                page == null -> current.copy(status = Phase.resync_required) to result("resync_required")
+                current.historyCursor != cursor || current.pageToken != base.pageToken ||
+                    current.pageOffset != base.pageOffset || current.pageDigest != base.pageDigest -> current to result("conflict")
+                unseenPage == null -> current.copy(status = Phase.resync_required) to result("resync_required")
                 else -> {
-                    val accepted = current.acceptPage(page)
-                    val (next, message) = (accepted ?: current).claimNext(now())
-                    next to next.syncResult(message, moreHistory = accepted == null || next.pageToken != null, now = now())
+                    val (accepted, moreHistory) = current.acceptPage(unseenPage, nextOffset, partial)
+                    val (next, message) = accepted.claimNext(now())
+                    next to next.syncResult(message, moreHistory, now = now())
                 }
             }
         }
@@ -173,25 +189,30 @@ internal class GmailFlow(private val context: PluginContext, private val now: ()
 
 internal class GmailPaused(val status: String) : RuntimeException()
 
-private data class HistoryPage(val messages: List<String>, val nextToken: String?, val finalCursor: String?)
+private const val HISTORY_BATCH_SIZE = 100
+private data class HistoryPage(val messages: List<String>, val nextToken: String?, val finalCursor: String?, val digest: String)
 
 private fun historyPage(response: JsonNode): HistoryPage {
     val token = response.path("nextPageToken").asText("").takeIf { it.isNotEmpty() }
     val messages = response.path("history").flatMap { entry ->
         entry.path("messagesAdded").map { messageId(it.path("message").text("id")) }
     }.distinct()
-    return HistoryPage(messages, token, if (token == null) historyId(response.text("historyId")) else null)
+    val finalCursor = if (token == null) historyId(response.text("historyId")) else null
+    val digest = MessageDigest.getInstance("SHA-256").digest((messages + listOf(token.orEmpty(), finalCursor.orEmpty())).joinToString("\n").toByteArray())
+        .joinToString("") { "%02x".format(it) }
+    return HistoryPage(messages, token, finalCursor, digest)
 }
 
-/** Reject the whole page under backpressure; advance the cursor only on the final page. */
-private fun GmailState.acceptPage(page: HistoryPage): GmailState? {
+/** Keep the page checkpoint until all its IDs are pending or durably completed. */
+private fun GmailState.acceptPage(page: HistoryPage, offset: Int, partial: Boolean): Pair<GmailState, Boolean> {
     val unseen = page.messages.filter { it !in pending && it !in done }
-    if (pending.size + unseen.size > 500) return null
     return copy(
-        pending = pending + unseen.associateWith { Claim() }, pageToken = page.nextToken,
-        historyCursor = page.finalCursor?.let { maxOf(requireNotNull(historyCursor).toBigInteger(), it.toBigInteger()).toString() } ?: historyCursor,
-        done = if (page.nextToken == null) done.takeLast(2000) else done,
-    )
+        pending = pending + unseen.associateWith { Claim() }, pageToken = if (partial) pageToken else page.nextToken,
+        pageOffset = if (partial) offset else 0, pageDigest = if (partial) page.digest else null,
+        historyCursor = if (partial) historyCursor else page.finalCursor?.let {
+            maxOf(requireNotNull(historyCursor).toBigInteger(), it.toBigInteger()).toString()
+        } ?: historyCursor,
+    ) to (partial || page.nextToken != null)
 }
 
 private fun GmailState.claimNext(now: Long): Pair<GmailState, String?> {
