@@ -9,6 +9,9 @@ import io.ktor.client.request.setBody
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import java.util.UUID
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -33,8 +36,42 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
+import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
+import ru.souz.runtime.sandbox.RuntimeSandboxModeResolver
 
 class BackendPluginExecutionE2eTest {
+    @Test
+    fun `plugin only HTTP turn needs no user workspace or Docker runtime`() {
+        val root = Files.createTempDirectory(Path.of("build"), "plugin-no-sandbox-").toAbsolutePath()
+        val workspace = root.resolve("unprovisioned")
+        val runtimeStarts = AtomicInteger(0)
+        try {
+            val artifacts = pluginArtifactConfig()
+            backendE2eTest(
+                schemaPrefix = "e2e_plugin_no_sandbox",
+                llm = E2eLlmApi(::reportReply),
+                configureApp = { it.copy(pluginArtifacts = artifacts, pluginAdminToken = ADMIN_TOKEN) },
+                sandboxFactory = { settings -> DefaultRuntimeSandboxFactory(
+                    settings, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = workspace,
+                    dockerSandboxCreator = { _, _, _, _ ->
+                        runtimeStarts.incrementAndGet()
+                        error("Plugin-only turns must not create a Docker runtime")
+                    },
+                ) },
+            ) {
+                installPlugin("kotlin-v1", 0)
+                val owner = UUID.randomUUID().toString()
+                val chat = createPublicChat(owner)
+                val execution = submitPluginRequest(owner, chat, "run the plugin without a sandbox")
+                backend.awaitExecution(execution)
+                assertEquals(AgentExecutionStatus.COMPLETED, backend.executionRepository.get(owner, execution)?.status)
+                assertEquals("reported-v1", lastAssistant(owner, chat))
+                assertEquals(0, runtimeStarts.get())
+                assertFalse(Files.exists(workspace))
+            }
+        } finally { root.toFile().deleteRecursively() }
+    }
+
     @Test
     fun `packaged Gmail runs through the production catalog and restores owner scoped state on another backend`() {
         assertFailsWith<ClassNotFoundException> { Class.forName("ru.souz.plugins.gmail.GmailPlugin") }

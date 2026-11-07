@@ -21,7 +21,13 @@ import ru.souz.db.SettingsProvider
 import ru.souz.runtime.paths.SandboxSouzPaths
 import ru.souz.paths.SouzPaths
 import ru.souz.runtime.sandbox.RuntimeSandbox
+import ru.souz.runtime.sandbox.RuntimeSandboxFactory
+import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
+import ru.souz.runtime.sandbox.FactoryBackedToolInvocationRuntimeSandboxResolver
+import ru.souz.runtime.sandbox.RuntimeSandboxModeResolver
+import ru.souz.runtime.sandbox.SandboxFileSystem
 import ru.souz.runtime.sandbox.SandboxScope
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.runtime.sandbox.docker.DockerRuntimeSandbox
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.paths.DefaultSouzPaths
@@ -33,6 +39,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -46,6 +53,40 @@ class FileSystemSkillRegistryRepositoryTest {
             runCatching { path.toFile().deleteRecursively() }
         }
         createdPaths.clear()
+    }
+
+    @Test
+    fun `discovery reads existing local and Docker skills without provisioning runtime or missing directories`() = runTest {
+        for (mode in listOf("local", "docker")) {
+            val root = createTempDirectory("skill-discovery-$mode-").resolve("unprovisioned")
+            val storage = DefaultRuntimeSandboxFactory(
+                settingsProvider = mockk<SettingsProvider> { every { forbiddenFolders } returns emptyList() },
+                modeResolver = RuntimeSandboxModeResolver { mode },
+                localHomePath = root, localStateRoot = root.resolve("state"), localWorkspaceRoot = root.resolve("workspace"),
+                dockerHostRoot = root,
+            )
+            val resolver = FactoryBackedToolInvocationRuntimeSandboxResolver(
+                object : RuntimeSandboxFactory {
+                    override fun create(scope: SandboxScope): RuntimeSandbox = error("Discovery must not provision a runtime")
+                    override fun fileSystem(scope: SandboxScope): SandboxFileSystem = storage.fileSystem(scope)
+                },
+                { SandboxScope(it.userId) },
+            )
+            val registry = FileSystemSkillRegistryRepository(resolver)
+            assertTrue(registry.listSkillInventoryIds("owner").isEmpty())
+            assertTrue(registry.listSkillDescriptions("owner").isEmpty())
+            assertTrue(registry.listSkills("owner").isEmpty())
+            assertFalse(root.exists())
+
+            val fs = resolver.fileSystem(ToolInvocationMeta("owner"))
+            val skillRoot = fs.runtimePaths.skillsDirPath + "/installed"
+            fs.writeText(fs.resolvePath("$skillRoot/SKILL.md"), "---\nname: installed\ndescription: Installed skill\n---\nInstructions.")
+            assertEquals(listOf(SkillId("installed")), registry.listSkillInventoryIds("owner"))
+            assertEquals(mapOf(SkillId("installed") to "Installed skill"), registry.listSkillDescriptions("owner"))
+            assertEquals(listOf(SkillId("installed")), registry.listSkills("owner").map { it.skillId })
+            if (mode == "docker") assertTrue(registry.listSkillInventoryIds("another-owner").isEmpty())
+            assertFailsWith<IllegalStateException> { registry.loadSkillBundle("owner", SkillId("installed")) }
+        }
     }
 
     @Test

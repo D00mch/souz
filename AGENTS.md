@@ -20,6 +20,8 @@ Backend [attachment contracts](backend/docs/attachments.md) carry owner-scoped f
 
 Client commands share one live-only dispatcher, permit concurrent correlated calls, and have no durable result receipts or command replay.
 
+File-backed Skill discovery reads existing storage without provisioning a user runtime. Stored-file reply selection uses owner-scoped storage metadata; workspace transfers and script execution retain LOCAL/DOCKER runtime boundaries.
+
 ## Development principles
 
 - Prefer composition to inheritance.

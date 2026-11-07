@@ -248,7 +248,10 @@ class BackendAttachmentContractsE2eTest {
             }
         }
         try {
-            backendE2eTest("attachment_limits", attachments = storageConfig(), llm = llm, sandboxFactory = dockerSandboxes(root)) {
+            backendE2eTest("attachment_limits", attachments = storageConfig(), llm = llm, sandboxFactory = { settings ->
+                DefaultRuntimeSandboxFactory(settings, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = root.resolve("sandboxes"),
+                    dockerSandboxCreator = { _, _, _, _ -> error("Stored-file replies must not create a Docker runtime") })
+            }) {
                 val user = UUID.randomUUID().toString()
                 val chat = UUID.fromString(createPublicChat(user))
                 client.patch(BackendHttpRoutes.SETTINGS) {
@@ -270,6 +273,7 @@ class BackendAttachmentContractsE2eTest {
                 val answer = client.get(BackendHttpRoutes.chatMessages(chat.toString())) { trusted(user) }.jsonBody()["items"].last()
                 assertEquals("Here are your charts", answer["content"].asText())
                 assertEquals(files.subList(1, MAX_MESSAGE_FILES).map { it.fileId }, answer["attachments"].map { it["fileId"].asText() })
+                assertTrue(Files.notExists(root.resolve("sandboxes")))
             }
         } finally {
             root.toFile().deleteRecursively()
@@ -277,7 +281,7 @@ class BackendAttachmentContractsE2eTest {
     }
 
     @Test
-    fun `local sandboxes share one workspace so attachment tools refuse to run there`() {
+    fun `stored files can be selected and detached in local mode while workspace transfers still require Docker`() {
         val root = Files.createTempDirectory(Path.of("build"), "attachment-local-").toAbsolutePath()
         try {
             backendE2eTest("attachment_local", attachments = storageConfig(), sandboxFactory = { settings ->
@@ -286,12 +290,23 @@ class BackendAttachmentContractsE2eTest {
                 val user = UUID.randomUUID().toString()
                 val stored = backend.attachmentStorage.save(user, "input", "secret.md", "# Secret".byteInputStream())
                 val meta = ToolInvocationMeta(user, UUID.randomUUID().toString(), UUID.randomUUID().toString())
-                for (tool in listOf(ToolPrepareAttachment(backend.attachmentAccess), ToolAttachFileToReply(backend.attachmentAccess),
-                    ToolDetachFileFromReply(backend.attachmentAccess))) {
-                    val result = tool.invoke(LLMResponse.FunctionCall(tool.fn.name, mapOf("fileId" to stored.id.toString())), meta)
+                val attach = ToolAttachFileToReply(backend.attachmentAccess)
+                val selected = attach.invoke(LLMResponse.FunctionCall(attach.fn.name, mapOf("fileId" to stored.id.toString())), meta)
+                assertEquals(listOf(stored.id.toString()), selected.replyFiles.map { it.fileId })
+                val foreign = attach.invoke(LLMResponse.FunctionCall(attach.fn.name, mapOf("fileId" to stored.id.toString())), meta.copy(userId = "foreign"))
+                assertEquals("attachment_not_found", restJsonMapper.readTree(foreign.content)["error"].asText())
+                for (arguments in listOf(mapOf("fileId" to stored.id.toString()), mapOf("path" to "secret.md"))) {
+                    val tool = if ("path" in arguments) attach else ToolPrepareAttachment(backend.attachmentAccess)
+                    val result = tool.invoke(LLMResponse.FunctionCall(tool.fn.name, arguments), meta)
                     assertEquals("attachment_sandbox_unsupported", restJsonMapper.readTree(result.content)["error"].asText())
                     assertTrue(result.replyFiles.isEmpty() && result.detachedReplyFiles.isEmpty())
                 }
+                sql { connection -> connection.prepareStatement("update stored_attachments set expires_at = now() - interval '1 second' where id = ?").use {
+                    it.setObject(1, stored.id); it.executeUpdate()
+                } }
+                val detach = ToolDetachFileFromReply()
+                val detached = detach.invoke(LLMResponse.FunctionCall(detach.fn.name, mapOf("fileId" to stored.id.toString())), meta)
+                assertEquals(listOf(stored.id.toString()), detached.detachedReplyFiles)
                 assertTrue(Files.notExists(root.resolve("workspace/attachments")))
             }
         } finally {
