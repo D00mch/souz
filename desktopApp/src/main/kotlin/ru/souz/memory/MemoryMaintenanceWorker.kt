@@ -412,14 +412,7 @@ class MemoryMaintenanceWorker(
         if (jobUpdated == 0) return 0
         retireFacts(replacedFactIds, now)
         val insertedFacts = insertDreamerFacts(ownerId, scope, candidates, evidenceTextBySourceEventId, now)
-        insertedFacts.zip(candidates).forEach { (fact, candidate) ->
-            insertSupersedes(
-                replacementFactId = fact.first,
-                supersededFactIds = candidate.sourceFactIds,
-                ownerId = ownerId,
-                now = now,
-            )
-        }
+        insertSupersedes(insertedFacts, candidates, ownerId, now)
         enqueueEmbeddingJobs(insertedFacts, ownerId, now)
         return insertedFacts.size
     }
@@ -513,12 +506,12 @@ class MemoryMaintenanceWorker(
     }
 
     private fun Connection.insertSupersedes(
-        replacementFactId: String,
-        supersededFactIds: List<String>,
+        insertedFacts: List<Pair<String, String>>,
+        candidates: List<MemoryConsolidationCandidate>,
         ownerId: MemoryOwnerId,
         now: String,
     ) {
-        if (supersededFactIds.isEmpty()) return
+        if (candidates.none { it.sourceFactIds.isNotEmpty() }) return
         prepareStatement(
             """
             insert or ignore into memory_fact_supersedes(
@@ -526,13 +519,15 @@ class MemoryMaintenanceWorker(
             ) values (?, ?, ?, ?, ?)
             """.trimIndent()
         ).use { statement ->
-            supersededFactIds.distinct().forEach { supersededFactId ->
-                statement.setString(1, replacementFactId)
-                statement.setString(2, supersededFactId)
-                statement.setString(3, ownerId.value)
-                statement.setString(4, MEMORY_MAINTENANCE_REASON_DREAMER_REGION_REWRITE)
-                statement.setString(5, now)
-                statement.addBatch()
+            insertedFacts.zip(candidates).forEach { (fact, candidate) ->
+                candidate.sourceFactIds.distinct().forEach { supersededFactId ->
+                    statement.setString(1, fact.first)
+                    statement.setString(2, supersededFactId)
+                    statement.setString(3, ownerId.value)
+                    statement.setString(4, MEMORY_MAINTENANCE_REASON_DREAMER_REGION_REWRITE)
+                    statement.setString(5, now)
+                    statement.addBatch()
+                }
             }
             statement.executeBatch()
         }

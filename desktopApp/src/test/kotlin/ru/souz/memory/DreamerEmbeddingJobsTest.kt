@@ -35,7 +35,7 @@ class DreamerEmbeddingJobsTest {
 
     @ParameterizedTest
     @ValueSource(ints = [1, 12])
-    fun `replacement batches facts evidence and embeddings with one statement each`(replacements: Int) = runTest {
+    fun `replacement batches facts evidence supersession and embeddings with one statement each`(replacements: Int) = runTest {
         val repository = seed(replacements)
         val writes = recordInserts {
             assertEquals(1, worker(model).runOnce(preferences))
@@ -48,7 +48,11 @@ class DreamerEmbeddingJobsTest {
         writes.forEach { (table, calls) ->
             assertEquals(1, calls.prepares, table)
             assertEquals(0, calls.updates, table)
-            assertEquals(if (table == "memory_fact_evidence") replacements * 2 else replacements, calls.batchEntries, table)
+            val entriesPerReplacement = when (table) {
+                "memory_fact_evidence", "memory_fact_supersedes" -> 2
+                else -> 1
+            }
+            assertEquals(replacements * entriesPerReplacement, calls.batchEntries, table)
             assertEquals(1, calls.batches, table)
         }
     }
@@ -63,15 +67,15 @@ class DreamerEmbeddingJobsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ["memory_facts", "memory_fact_evidence"])
-    fun `later fact or evidence failure rolls back the complete replacement and permits retry`(table: String) = runTest {
+    @ValueSource(strings = ["memory_facts", "memory_fact_evidence", "memory_fact_supersedes"])
+    fun `later replacement insert failure rolls back the complete replacement and permits retry`(table: String) = runTest {
         val repository = seed(3)
         connection { connection ->
             connection.createStatement().use {
                 it.executeUpdate(
                     """
                     create trigger fail_later_insert before insert on $table
-                    when (select count(*) from $table) = 7
+                    when (select count(*) from $table) = ${if (table == "memory_fact_supersedes") 3 else 7}
                     begin select raise(abort, 'fixture insert failure'); end
                     """.trimIndent()
                 )
@@ -241,6 +245,23 @@ class DreamerEmbeddingJobsTest {
             assertEquals(candidate.evidenceSourceEventIds.toSet(), evidence.map { it.sourceEvent.id }.toSet())
             assertEquals(2, evidence.size)
             evidence.forEach { assertEquals(it.sourceEvent.text, it.evidence.evidenceText) }
+            connection { connection ->
+                connection.prepareStatement(
+                    "select * from memory_fact_supersedes where replacement_fact_id = ?"
+                ).use { statement ->
+                    statement.setString(1, fact.id)
+                    statement.executeQuery().use { rs ->
+                        val supersededIds = mutableSetOf<String>()
+                        while (rs.next()) {
+                            supersededIds += rs.getString("superseded_fact_id")
+                            assertEquals(owner.value, rs.getString("owner_id"))
+                            assertEquals(MEMORY_MAINTENANCE_REASON_DREAMER_REGION_REWRITE, rs.getString("reason"))
+                            assertEquals(fact.createdAt.toString(), rs.getString("created_at"))
+                        }
+                        assertEquals(candidate.sourceFactIds.toSet(), supersededIds)
+                    }
+                }
+            }
         }
         connection { connection ->
             assertEquals(replacements * 2, connection.count("memory_facts", "status = 'RETIRED'"))
@@ -291,7 +312,8 @@ class DreamerEmbeddingJobsTest {
 
     // Delegate to real SQLite so these counts cover the worker's actual transaction and SQL.
     private suspend fun recordInserts(block: suspend () -> Unit): Map<String, Inserts> {
-        val writes = listOf("memory_facts", "memory_fact_evidence", "memory_index_jobs").associateWith { Inserts() }
+        val writes = listOf("memory_facts", "memory_fact_evidence", "memory_fact_supersedes", "memory_index_jobs")
+            .associateWith { Inserts() }
         mockkStatic(DriverManager::class)
         try {
             every { DriverManager.getConnection(jdbcUrl) } answers {
