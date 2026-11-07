@@ -127,7 +127,7 @@ internal class SqliteMemorySchema(
     private fun normalizeLegacyCanonicalKeys(connection: Connection) {
         val rows = connection.prepareStatement(
             """
-            select id, owner_id, scope_type, scope_id, kind, title, body, slot_key, status
+            select id, owner_id, scope_type, scope_id, kind, title, body, slot_key, canonical_key, status
             from memory_facts
             where slot_key is not null
             order by updated_at desc, id asc
@@ -146,6 +146,7 @@ internal class SqliteMemorySchema(
                                 title = rs.getString("title"),
                                 body = rs.getString("body"),
                                 slotKey = rs.getString("slot_key"),
+                                canonicalKey = rs.getString("canonical_key"),
                                 status = rs.getString("status"),
                             )
                         )
@@ -154,52 +155,54 @@ internal class SqliteMemorySchema(
             }
         }
 
-        rows.forEach { row ->
-            val canonicalKey = normalizeCanonicalKey(row.slotKey)
-                ?.takeUnless { key ->
-                    row.status == MemoryFactStatus.ACTIVE.name &&
-                        connection.hasActiveCanonicalKeyConflict(row, key)
+        if (rows.isEmpty()) return
+        // V2's unique index gives each active owner/scope/key at most one fact.
+        // Include facts without legacy slots: they can block normalization too.
+        val activeKeys = connection.prepareStatement(
+            """
+            select id, owner_id, scope_type, scope_id, canonical_key
+            from memory_facts
+            where status = 'ACTIVE' and canonical_key is not null
+            """.trimIndent()
+        ).use { statement ->
+            statement.executeQuery().use { rs ->
+                val keys = mutableMapOf<ActiveCanonicalKey, String>()
+                while (rs.next()) {
+                    keys[ActiveCanonicalKey(
+                        rs.getString("owner_id"), rs.getString("scope_type"),
+                        rs.getString("scope_id"), rs.getString("canonical_key"),
+                    )] = rs.getString("id")
                 }
-            connection.prepareStatement(
-                """
-                update memory_facts
-                set canonical_key = ?,
-                    content_hash = ?
-                where id = ?
-                """.trimIndent()
-            ).use { statement ->
+                keys
+            }
+        }
+        connection.prepareStatement(
+            """
+            update memory_facts
+            set canonical_key = ?,
+                content_hash = ?
+            where id = ?
+            """.trimIndent()
+        ).use { statement ->
+            rows.forEach { row ->
+                val active = row.status == MemoryFactStatus.ACTIVE.name
+                val canonicalKey = normalizeCanonicalKey(row.slotKey)?.takeUnless { key ->
+                    active && activeKeys[row.activeKey(key)]?.let { it != row.id } == true
+                }
+                // Mirror the original ordered updates, including releasing a changed/null key.
+                // A key held by a later row still blocks this row even if it is released later.
+                if (active) {
+                    row.canonicalKey?.let { activeKeys.remove(row.activeKey(it)) }
+                    canonicalKey?.let { activeKeys[row.activeKey(it)] = row.id }
+                }
                 statement.setString(1, canonicalKey)
                 statement.setString(2, stableMemoryContentHash(row.title, row.body, row.kind, canonicalKey))
                 statement.setString(3, row.id)
-                statement.executeUpdate()
+                statement.addBatch()
             }
+            statement.executeBatch()
         }
     }
-
-    private fun Connection.hasActiveCanonicalKeyConflict(
-        row: LegacyCanonicalKeyRow,
-        canonicalKey: String,
-    ): Boolean =
-        prepareStatement(
-            """
-            select 1 from memory_facts
-            where id != ?
-              and owner_id = ?
-              and scope_type = ?
-              and scope_id = ?
-              and canonical_key = ?
-              and status = ?
-            limit 1
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, row.id)
-            statement.setString(2, row.ownerId)
-            statement.setString(3, row.scopeType)
-            statement.setString(4, row.scopeId)
-            statement.setString(5, canonicalKey)
-            statement.setString(6, MemoryFactStatus.ACTIVE.name)
-            statement.executeQuery().use { it.next() }
-        }
 
     private fun ensureTypedMemoryColumns(connection: Connection) {
         connection.addColumnIfMissing("memory_source_events", "owner_id", "text not null default '$LEGACY_OWNER_ID'")
@@ -245,7 +248,17 @@ internal class SqliteMemorySchema(
         val title: String,
         val body: String,
         val slotKey: String,
+        val canonicalKey: String?,
         val status: String,
+    ) {
+        fun activeKey(key: String) = ActiveCanonicalKey(ownerId, scopeType, scopeId, key)
+    }
+
+    private data class ActiveCanonicalKey(
+        val ownerId: String,
+        val scopeType: String,
+        val scopeId: String,
+        val key: String,
     )
 
     private companion object {
