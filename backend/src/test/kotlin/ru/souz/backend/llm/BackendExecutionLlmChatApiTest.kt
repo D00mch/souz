@@ -96,12 +96,18 @@ class BackendExecutionLlmChatApiTest {
                 assertEquals(requests.first(), request)
                 return ok(request.model)
             }
-            facadeFixture(attachmentStorage = storage, retryPolicy = BackendProviderRetryPolicy(max429Retries = 1),
+            facadeFixture(settingsProvider = LlmSettingsStub().apply { contextSize = 64_000 },
+                attachmentStorage = storage, retryPolicy = BackendProviderRetryPolicy(max429Retries = 1),
                 providerApiOverride = { StubChatApi(message = ::respond, stream = { flowOf(respond(it)) }) },
             ).use { fixture ->
                 val input = chat(LLMModel.OpenAIGpt52.alias).copy(messages = listOf(
                     LLMRequest.Message(LLMMessageRole.user, "inspect", files = sources.map { it.toContent() }),
                 ))
+                val oversized = input.copy(messages = input.messages + LLMRequest.Message(LLMMessageRole.function, "x".repeat(100_000)))
+                assertFalse(oversized.exceedsContextBudget(64_000, includeImageReferences = false))
+                assertIs<LLMResponse.Chat.Error>(if (streaming) fixture.api.messageStream(oversized).toList().single()
+                    else fixture.api.message(oversized))
+                assertTrue(requests.isEmpty())
                 val result = if (streaming) fixture.api.messageStream(input).toList().single() else fixture.api.message(input)
                 assertIs<LLMResponse.Chat.Ok>(result)
                 assertEquals(2, requests.size)
@@ -155,7 +161,7 @@ class BackendExecutionLlmChatApiTest {
         facadeFixture(settingsProvider = LlmSettingsStub().apply { contextSize = 24_000 },
             attachmentStorage = storage, visionModel = "AnthropicSonnet45",
             providerApiOverride = { StubChatApi(message = { request ->
-                assertFalse(request.exceedsContextBudget(24_000))
+                assertFalse(request.exceedsContextBudget(24_000, includeImageReferences = false))
                 if (request.provider == LlmProvider.ANTHROPIC) {
                     visionCalls++
                     val message = request.messages.single()

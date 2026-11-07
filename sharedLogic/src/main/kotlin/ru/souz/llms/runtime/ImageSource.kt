@@ -5,6 +5,7 @@ import com.drew.metadata.exif.ExifReader
 import com.drew.metadata.exif.ExifIFD0Directory
 import java.awt.geom.AffineTransform
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.MAX_INPUT_IMAGES
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.awt.image.DataBuffer
@@ -43,7 +44,7 @@ class ImageSource private constructor(
     companion object {
         const val MAX_BYTES = 20_000_000
         const val ANTHROPIC_ENCODED_LIMIT = 10_000_000
-        const val MAX_IMAGES = 5
+        const val MAX_IMAGES = MAX_INPUT_IMAGES
         const val MAX_ENCODED_BYTES = (MAX_BYTES + 2) / 3 * 4
         val MIME_TYPES: Set<String> = setOf("image/png", "image/jpeg", "image/webp")
         private const val VISION_EDGE = 2048

@@ -285,7 +285,7 @@ internal class BackendExecutionLlmChatApi(
 
     private suspend fun callProvider(provider: LlmProvider, body: LLMRequest.Chat, api: LLMChatAPI): LLMResponse.Chat {
         val request = hookBudget?.limitRequest(body) ?: body
-        if (request.exceedsContextBudget(settingsProvider.contextSize)) return contextBudgetError()
+        if (request.exceedsContextBudget(settingsProvider.contextSize, includeImageReferences = false)) return contextBudgetError()
         return withProviderCall(hookBudget, provider) {
             measureAttempt(provider, request.model) { outcome ->
                 api.message(request).also { response ->
@@ -301,7 +301,7 @@ internal class BackendExecutionLlmChatApi(
     private fun retryingStream(provider: LlmProvider, api: LLMChatAPI, body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
         val prepared = prepareImages(body)
         val request = hookBudget?.limitRequest(prepared) ?: prepared
-        if (request.exceedsContextBudget(settingsProvider.contextSize)) {
+        if (request.exceedsContextBudget(settingsProvider.contextSize, includeImageReferences = false)) {
             emit(contextBudgetError())
             return@flow
         }
