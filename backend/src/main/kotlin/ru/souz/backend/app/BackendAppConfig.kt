@@ -1,5 +1,6 @@
 package ru.souz.backend.app
 
+import ru.souz.llms.runtime.DEFAULT_IMAGE_MODEL
 import java.net.URI
 import ru.souz.agent.DEFAULT_ATTACHMENT_HISTORY_LIMIT
 import ru.souz.backend.attachments.AttachmentStorageConfig
@@ -157,6 +158,8 @@ data class BackendAppConfig(
     val scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     val attachments: AttachmentStorageConfig? = null,
     val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
+    val imageModel: String = DEFAULT_IMAGE_MODEL,
+    val visionModel: String? = null,
     val policyPrompt: String? = null,
 ) {
     fun validate(): BackendAppConfig {
@@ -217,6 +220,8 @@ data class BackendAppConfig(
                         ?: throw BackendConfigurationException("JEV_WAIT_CATEGORY_THRESHOLD must be a number within [0, 1].")
                 } ?: 0.5,
                 attachments = AttachmentStorageConfig.load(source),
+                imageModel = source.value("SOUZ_IMAGE_MODEL", "souz.image.model")?.trim() ?: DEFAULT_IMAGE_MODEL,
+                visionModel = source.value("SOUZ_ATTACHMENTS_VISION_MODEL", "souz.attachments.visionModel")?.trim(),
                 attachmentHistoryLimit = source.intValue("SOUZ_ATTACHMENTS_HISTORY_LIMIT", "souz.attachments.historyLimit", DEFAULT_ATTACHMENT_HISTORY_LIMIT),
                 hooks = HookConfig(
                     owners = source.value("SOUZ_HOOK_OWNERS", "souz.hooks.owners")

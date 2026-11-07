@@ -274,12 +274,16 @@ class BackendHooksE2eTest {
     fun `image generation holds provider capacity through HTTP completion without charging rejected calls`() {
         writeHook()
         writeHook(id = "second", directory = "second")
+        val png = java.io.ByteArrayOutputStream().also {
+            javax.imageio.ImageIO.write(java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", it)
+        }.toByteArray()
+        val encoded = java.util.Base64.getEncoder().encodeToString(png)
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val http = HttpClient(MockEngine {
             entered.complete(Unit)
             release.await()
-            respond("""{"data":[{"b64_json":"aW1hZ2U="}]}""",
+            respond("""{"data":[{"b64_json":"$encoded"}]}""",
                 headers = headersOf(HttpHeaders.ContentType, "application/json"))
         }) { providerHttpClientDefaults() }
         val settings = object : BackendConfigSource {
@@ -302,7 +306,7 @@ class BackendHooksE2eTest {
             }
             assertEquals(4, awaitStatus(first, "completed")["llmCalls"].asInt())
             assertEquals(4, awaitStatus(invoke(id = "second").jsonBody()["receiptId"].asText(), "completed")["llmCalls"].asInt())
-            assertEquals("image", Files.readString(workspace.resolve("tree.png")))
+            kotlin.test.assertContentEquals(png, Files.readAllBytes(workspace.resolve("tree.png")))
         }
     }
 

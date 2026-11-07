@@ -13,6 +13,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.slf4j.MDCContext
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -44,6 +48,7 @@ internal data class HandledClientFrame(
     val statusFeedback: ThreadStatusFeedback? = null,
     val onSendFailure: () -> Unit = {},
     val afterSend: suspend () -> Unit = {},
+    val prepare: suspend () -> Unit = {},
 )
 
 internal data class ThreadStatusFeedback(val threadId: UUID, val requestId: String)
@@ -56,6 +61,7 @@ internal class PublicClientService(
     private val registry: ClientThreadRuntimeRegistry,
     private val applicationScope: CoroutineScope,
     private val namedModelNames: Set<String> = emptySet(),
+    private val clientImages: ClientImages? = null,
     private val attachmentStorage: AttachmentStorage? = null,
     private val mapper: ObjectMapper = jacksonObjectMapper().registerKotlinModule(),
 ) {
@@ -173,15 +179,46 @@ internal class PublicClientService(
         }
         val context = ToolCallContext(chat.userId, chat.id.toString(), threadId.toString(), toolCallId)
         registry.acceptChannelTool(context, now)?.let { pending ->
+            var normalized = ClientToolOutcome(status, frame.result, frame.error)
+            fun fail() {
+                pending.result.complete(ClientToolOutcome(
+                    "failed", null, ClientError("client_tool_failed", "Could not finish client tool result."),
+                ))
+            }
+            val reception = currentCoroutineContext().job.invokeOnCompletion { cause -> if (cause != null) fail() }
+            pending.result.invokeOnCompletion { reception.dispose() }
             return HandledClientFrame(
                 response = acceptedTool(chat.id, threadId, toolCallId, duplicate = false, now),
-                afterSend = { pending.result.complete(ClientToolOutcome(status, frame.result, frame.error)) },
-                onSendFailure = { pending.result.complete(ClientToolOutcome(
-                    "failed", null, ClientError("client_tool_failed", "Could not acknowledge client tool result."),
-                )) },
+                prepare = {
+                    @Suppress("SuspendFunSwallowedCancellation") // Synchronous reservation cleanup; every failure is rethrown.
+                    try {
+                        coroutineScope {
+                            val cancellation = pending.result.invokeOnCompletion { cause ->
+                                if (cause is CancellationException) cancel(cause)
+                            }
+                            try {
+                                normalized = normalizeImages(chat.userId, "$threadId:$toolCallId", normalized)
+                            } finally {
+                                cancellation.dispose()
+                            }
+                        }
+                    } catch (failure: Throwable) {
+                        fail() // Reservation disables the result deadline: every exit must release the waiter.
+                        throw failure
+                    }
+                },
+                afterSend = { pending.result.complete(normalized) },
+                onSendFailure = ::fail,
             )
         }
         return rejectedTool(chat.id, threadId, toolCallId, "tool_call_not_found", "Tool call is not pending.", now)
+    }
+
+    private suspend fun normalizeImages(userId: String, key: String, outcome: ClientToolOutcome): ClientToolOutcome {
+        clientImages?.let { return it.store(userId, key, outcome) }
+        if (outcome.result?.get("content")?.any(::isImageContent) == true)
+            return ClientToolOutcome("failed", null, ClientError("tool_image_unavailable", "Image storage is not configured."))
+        return outcome.withoutClientAttachments()
     }
 
     suspend fun handleCancel(chat: Chat, frame: ThreadCancelFrame): HandledClientFrame {

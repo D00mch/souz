@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import ru.souz.llms.FileContent
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntime
 import ru.souz.backend.client.repository.ClientRequestResult
 import ru.souz.backend.toolcall.repository.ToolCallContext
@@ -19,6 +20,7 @@ internal data class ClientToolOutcome(
     val status: String,
     val result: JsonNode?,
     val error: ClientError?,
+    val files: List<FileContent> = emptyList(),
 )
 
 internal class PendingChannelTool(private val deadlineAt: Instant) {

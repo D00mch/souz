@@ -22,6 +22,8 @@ import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
+import ru.souz.llms.FileContent
+import ru.souz.llms.FilePresentation
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMException
 import ru.souz.llms.LLMMessageRole
@@ -105,7 +107,12 @@ class SubagentToolTest {
             attributes = mapOf("clientSessionId" to "client-session", "connectionId" to "connection"),
         )
         var toolCalls = 0
-        val selected = tool("Selected") { assertSame(meta, it); toolCalls += 1; "tool result" }
+        val file = FileContent("image-id", "image.png", "image/png", 100, FilePresentation.image)
+        val delegate = tool("Selected") { assertSame(meta, it); toolCalls += 1; "tool result" }
+        val selected = object : LLMToolSetup by delegate {
+            override suspend fun invoke(functionCall: LLMResponse.FunctionCall, meta: ToolInvocationMeta) =
+                delegate.invoke(functionCall, meta).copy(files = listOf(file), replyFiles = listOf(file))
+        }
         var requests = 0
         val categories = mutableListOf<String?>()
         val subagent = subagent(
@@ -123,11 +130,14 @@ class SubagentToolTest {
                 assertEquals("tool result", result.content)
                 assertEquals("Selected", result.name)
                 assertEquals("call-1", result.functionsStateId)
+                assertEquals(listOf(file), result.files)
                 response("child answer")
             }
         }
 
-        assertEquals("child answer", subagent.call(meta = meta)["result"].asText())
+        val result = subagent.call(meta = meta)
+        assertEquals("child answer", result["result"].asText())
+        assertEquals(file.fileId, result["files"].single()["fileId"].asText())
         assertEquals(1, toolCalls)
         assertEquals(ToolCategory.FILES.name, categories.single())
     }

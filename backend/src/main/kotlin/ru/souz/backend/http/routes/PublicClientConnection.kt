@@ -18,6 +18,8 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -67,8 +69,11 @@ internal class PublicClientConnection(
     private val service = deps.publicClientService
     private val subscriptions = mutableMapOf<UUID, Job>()
     private val sendMutex = Mutex()
+    private val resultSlots = Semaphore(16)
 
     suspend fun run(afterSeq: Long) = coroutineScope {
+        val resultJobs = Job(coroutineContext[Job])
+        val results = CoroutineScope(coroutineContext + resultJobs)
         try {
             if (boundChat != null) {
                 withBackendLogContext("userId" to boundChat.userId, "chatId" to boundChat.id) {
@@ -79,17 +84,18 @@ internal class PublicClientConnection(
             }
             for (frame in socket.incoming) {
                 if (frame is Frame.Text) {
-                    if (!processFrame(frame, this)) break
+                    if (!processFrame(frame, this, results)) break
                 } else {
                     socketLogger.warn("WebSocket frame ignored frameType={}", frame.frameType)
                 }
             }
         } finally {
             subscriptions.values.forEach { it.cancel() }
+            withContext(NonCancellable) { resultJobs.cancelAndJoin() }
         }
     }
 
-    private suspend fun processFrame(frame: Frame.Text, scope: CoroutineScope): Boolean {
+    private suspend fun processFrame(frame: Frame.Text, scope: CoroutineScope, results: CoroutineScope): Boolean {
         val started = TimeSource.Monotonic.markNow()
         var stage = "decode"
         var logNode: JsonNode? = null
@@ -200,6 +206,34 @@ internal class PublicClientConnection(
                         }
                         rejectedFor(node, kind, error)
                     }
+                }
+                if (kind == "tool.result") {
+                    val handled = handle() // Reserve before scheduling image IO or waiting for a socket write.
+                    onSendFailure = handled.onSendFailure
+                    if (!resultSlots.tryAcquire()) {
+                        handled.onSendFailure()
+                        sendMutex.withLock {
+                            socket.sendClient(rejectedFor(node, kind,
+                                ClientError("client_tool_failed", "Too many results being prepared.")).response)
+                        }
+                    } else {
+                        results.launch(mdcContext(), start = CoroutineStart.UNDISPATCHED) {
+                            try {
+                                yield() // Install cleanup now, but never normalize on the receive loop.
+                                handled.prepare()
+                                sendMutex.withLock {
+                                    socket.sendClient(handled.response)
+                                    handled.afterSend()
+                                }
+                                socketLogger.info("WebSocket tool result acknowledged")
+                            } finally {
+                                handled.onSendFailure()
+                                resultSlots.release()
+                            }
+                        }
+                    }
+                    onSendFailure = null
+                    return@withContext
                 }
                 // Joining a subscription sender must happen outside the lock it uses to write.
                 val subscriptionReply = if (kind == "chat.subscribe" || kind == "chat.unsubscribe") handle() else null

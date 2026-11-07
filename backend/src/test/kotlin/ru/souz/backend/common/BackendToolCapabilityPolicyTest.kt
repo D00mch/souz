@@ -15,7 +15,7 @@ class BackendToolCapabilityPolicyTest {
 
         assertFalse(ToolCategory.WEB_SEARCH in BackendToolCapabilityPolicy.safeCategories)
         assertEquals(
-            setOf("ReadFile", "ListActiveChannels", "SendMessageToChannel", "ViewImage", "GenerateImage", "personality.update"),
+            setOf("ReadFile", "ListActiveChannels", "SendMessageToChannel", "ViewImage", "GenerateImage", "GenerateAttachmentImage", "personality.update"),
             names,
         )
     }

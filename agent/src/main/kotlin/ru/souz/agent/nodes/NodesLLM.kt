@@ -25,6 +25,7 @@ import ru.souz.agent.spi.RoutedModel
 import ru.souz.agent.spi.TaskComplexityClassifier
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.exceedsContextBudget
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup

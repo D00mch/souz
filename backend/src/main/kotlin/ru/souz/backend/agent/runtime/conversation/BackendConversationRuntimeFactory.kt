@@ -1,5 +1,9 @@
 package ru.souz.backend.agent.runtime.conversation
 
+import ru.souz.backend.llm.ImageModelRoute
+import ru.souz.backend.attachments.ToolGenerateAttachmentImage
+import ru.souz.backend.attachments.AttachmentStorage
+import ru.souz.backend.attachments.ImageGeneration
 import com.fasterxml.jackson.databind.ObjectMapper
 import java.util.Locale
 import java.util.UUID
@@ -31,7 +35,6 @@ import ru.souz.backend.client.CLIENT_TOOL_DISCOVERY_NAME
 import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.common.backendLogContext
 import ru.souz.backend.hooks.HookLlmBudget
-import ru.souz.backend.hooks.HookLlmBudget.Companion.withProviderCall
 import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.config.NamedLlmConfig
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
@@ -49,13 +52,8 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.anthropic.AnthropicVisionGateway
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.ProviderHttpClients
-import ru.souz.llms.openai.OpenAIImageGenerationGateway
-import ru.souz.llms.openai.OpenAIVisionGateway
-import ru.souz.llms.runtime.LLMCapabilityResolver
-import ru.souz.llms.runtime.ImageGenerationGateway
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.RuntimePassThroughToolsFilter
@@ -107,6 +105,10 @@ internal class BackendConversationRuntimeFactory(
     private val llmConfig: NamedLlmConfig = NamedLlmConfig(),
     private val providerApiOverride: ((LlmProvider) -> LLMChatAPI?)? = null,
     private val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
+    private val imageModel: ImageModelRoute,
+    private val visionModel: String?,
+    private val imageGeneration: ImageGeneration? = null,
+    private val attachmentStorage: AttachmentStorage? = null,
 ) {
     private val modelFailures = ModelFailureMemory()
 
@@ -154,32 +156,31 @@ internal class BackendConversationRuntimeFactory(
             metrics = metrics,
             fallbackModels = effectiveSettingsResolver.fallbackModels(key.userId, Locale.forLanguageTag(request.locale)),
             failureMemory = modelFailures,
+            attachmentStorage = attachmentStorage,
+            visionModel = visionModel,
         )
-        val visionGateway = LLMCapabilityResolver(
-            settingsProvider = settingsProvider,
-            openAiGateway = OpenAIVisionGateway(settingsProvider, executionApi),
-            anthropicGateway = AnthropicVisionGateway(settingsProvider, executionApi),
+        val imageGenerationGateway = imageModel.gateway(
+            settingsProvider, providerHttpClients, codexOAuthService, executionApi, hookBudget,
         )
-        val imageGenerationGateway = OpenAIImageGenerationGateway(
-            settingsProvider = settingsProvider,
-            client = providerHttpClients.openAi,
-            apiKeyProvider = { executionApi.credentialFor(LlmProvider.OPENAI) },
-        )
+        val attachmentImages = imageGeneration?.let { service ->
+            ToolGenerateAttachmentImage { meta, prompt, ids ->
+                service.generate(meta, prompt, ids, imageModel.identity, imageGenerationGateway)
+            }
+        }
         val executionLlmToolCatalog = LlmBackedToolCatalog(
             llmApi = executionApi,
             settingsProvider = settingsProvider,
             filesToolUtil = filesToolUtil,
             webResearchClient = webResearchClient,
-            visionGateway = visionGateway,
-            imageGenerationGateway = ImageGenerationGateway { input ->
-                withProviderCall(hookBudget, LlmProvider.OPENAI) { imageGenerationGateway.generate(input) }
-            },
+            visionGateway = executionApi.visionGateway,
+            imageGenerationGateway = imageGenerationGateway,
         )
         val serverNames = toolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet() +
             BackendToolCapabilityPolicy.executionBoundToolNames
         val baseCatalog = backendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
             executionLlmToolCatalog = AgentToolCatalog.compose(executionLlmToolCatalog.catalog,
+                AgentToolCatalog(mapOf(ToolCategory.IMAGE_GENERATION to listOfNotNull(attachmentImages))),
                 AgentToolCatalog(mapOf(ToolCategory.CONFIG to listOf(
                     PersonalityTool(userSettingsRepository, personalitySync, executionApi, settingsProvider, agentBackgroundScope),
                 ))),

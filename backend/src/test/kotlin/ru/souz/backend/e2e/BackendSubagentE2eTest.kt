@@ -74,14 +74,19 @@ class BackendSubagentE2eTest {
 
     @Test
     fun `parent and children share a channel with independent calls and selective cancellation`() {
+        val imageBase64 = java.util.Base64.getEncoder().encodeToString(java.io.ByteArrayOutputStream().also {
+            javax.imageio.ImageIO.write(java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", it)
+        }.toByteArray())
         for (cancelFirst in listOf(false, true)) {
             val bothStarted = CompletableDeferred<Unit>()
             var step = 0
+            var childFile: ru.souz.llms.FileContent? = null
             var firstId = ""
             var secondId = ""
             val survivor = if (cancelFirst) "second" else "first"
             backendE2eTest(
                 schemaPrefix = "e2e_subagent_parallel",
+                attachments = ru.souz.backend.attachments.AttachmentMinio.config(),
                 llm = E2eLlmApi { request ->
                     val result = request.messages.lastOrNull { it.role == LLMMessageRole.function }
                     if (request.functions.map { it.name } == listOf("RunSkillCommand")) {
@@ -92,6 +97,8 @@ class BackendSubagentE2eTest {
                             ))
                         } else {
                             assertEquals(child, restJsonMapper.readTree(result.content)["answer"].asText())
+                            childFile = result.files.single()
+                            assertTrue(result.replyFiles.isEmpty())
                             reply(request, "$child done")
                         }
                     } else when (step++) {
@@ -127,6 +134,9 @@ class BackendSubagentE2eTest {
                             val done = restJsonMapper.readTree(result!!.content)
                             assertEquals("completed", done["status"].asText())
                             assertEquals("$survivor done", done["result"].asText())
+                            assertTrue(childFile != null)
+                            assertTrue(result.files.isEmpty(), "Unselected child screenshots are not reply attachments")
+                            assertTrue(result.replyFiles.isEmpty())
                             reply(request, "parent and $survivor finished")
                         }
                     }
@@ -162,7 +172,10 @@ class BackendSubagentE2eTest {
                     val remaining = calls.getValue(survivor)
                     for (call in if (cancelFirst) listOf(parent, remaining) else listOf(remaining, parent)) {
                         val question = call["payload"]["arguments"]["question"].asText()
-                        session.send(Frame.Text(toolResultFrame(call, "succeeded", mapOf("answer" to question))))
+                        val content = if (question == "parent") emptyList() else listOf(mapOf(
+                            "type" to "image", "mimeType" to "image/png", "data" to imageBase64,
+                        ))
+                        session.send(Frame.Text(toolResultFrame(call, "succeeded", mapOf("answer" to question, "content" to content))))
                         assertEquals("accepted", readJson(session)["status"].asText())
                     }
                     val terminal = readJson(session)
