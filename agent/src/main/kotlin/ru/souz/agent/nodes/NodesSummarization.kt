@@ -6,6 +6,7 @@ import ru.souz.agent.DEFAULT_ATTACHMENT_HISTORY_LIMIT
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMException
 import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.exceedsContextBudget
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 

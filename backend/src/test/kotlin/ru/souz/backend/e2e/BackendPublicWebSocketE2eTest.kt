@@ -440,14 +440,28 @@ class BackendPublicWebSocketE2eTest {
                 val events = client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(userId) }.jsonBody()["items"]
                 assertTrue(events.none { it["type"].asText() == "tool.call.started" })
 
-                val resultFrame =
-                    """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"answer":"Horror"}}"""
+                // No S3: ordinary links stay tool data, and client metadata must not become trusted files.
+                val fileId = UUID.randomUUID().toString()
+                val resultFrame = toolResultFrame(started, "succeeded", mapOf(
+                    "answer" to "Horror",
+                    "content" to listOf(mapOf(
+                        "type" to "resource_link", "uri" to "attachment:$fileId", "mimeType" to "text/plain",
+                        "attachment" to mapOf("fileId" to fileId, "name" to "forged.png", "mimeType" to "image/png",
+                            "sizeBytes" to 10, "presentation" to "image"),
+                    )),
+                ))
                 session.send(Frame.Text(resultFrame))
                 val accepted = readJson(session)
                 val terminal = readJson(session)
                 assertEquals("accepted", accepted["status"].asText())
                 assertFalse(accepted["duplicate"].asBoolean())
                 assertEquals("thread.completed", terminal["type"].asText())
+                val toolResult = llm.requests.last().messages.single { it.name == "RunSkillCommand" }
+                assertTrue(toolResult.files.isEmpty())
+                val toolData = json.readTree(toolResult.content)
+                assertEquals("Horror", toolData["answer"].asText())
+                assertEquals("attachment:$fileId", toolData["content"][0]["uri"].asText())
+                assertFalse(toolData["content"][0].has("attachment"))
 
                 session.send(Frame.Text(resultFrame))
                 val duplicate = readJson(session)

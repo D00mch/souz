@@ -20,9 +20,6 @@ import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
 import kotlin.io.path.extension
 
 class FilesToolUtil(
@@ -246,34 +243,6 @@ class FilesToolUtil(
             return block(tempFile)
         } finally {
             Files.deleteIfExists(tempFile)
-        }
-    }
-
-    suspend fun <T> withReadableLocalPathSuspend(
-        path: SandboxPathInfo,
-        meta: ToolInvocationMeta,
-        prefix: String = "souz-read-",
-        suffix: String = path.name.safeTempSuffix(),
-        block: suspend (Path) -> T,
-    ): T {
-        withContext(Dispatchers.IO) { localPathOrNull(path, meta) }?.let { return block(it) }
-
-        var tempFile: Path? = null
-        try {
-            withContext(Dispatchers.IO) {
-                val file = Files.createTempFile(scratchDirectory(meta), prefix, suffix)
-                tempFile = file
-                openInputStream(path, meta).use { input ->
-                    Files.newOutputStream(file).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-            }
-            return block(checkNotNull(tempFile))
-        } finally {
-            tempFile?.let { file ->
-                withContext(NonCancellable + Dispatchers.IO) { Files.deleteIfExists(file) }
-            }
         }
     }
 

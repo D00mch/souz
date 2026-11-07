@@ -4,7 +4,7 @@
 
 `AgentToolCatalog` in `:agent` owns immutable tool membership and name indexing. Construction, filtering, transformation, and composition preserve `ToolCategory.entries` order and reject duplicate function names. Tool instances retain their invocation behavior; catalog immutability applies to the outer and inner maps.
 
-Runtime factories expose their catalog through `.catalog`. Execution-bound LLM tools use the current execution's model and provider; process-owned runtime catalogs do not retain execution settings.
+Runtime factories expose their catalog through `.catalog`. Execution-bound LLM tools use the current execution's model and provider unless an explicit capability route is configured, such as the [vision model](../../backend/docs/images.md#model-input) for `ViewImage`; process-owned runtime catalogs do not retain execution settings.
 
 Skill lookup, invocation, and subagent selection read a host-supplied catalog provider. Each operation resolves one immutable snapshot; children retain only the capabilities selected at spawn, independently of later parent catalog changes.
 
