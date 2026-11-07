@@ -1,6 +1,8 @@
 package fixture
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.core.JsonFactory
+import com.fasterxml.jackson.core.util.JsonRecyclerPools
 import java.io.StringReader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -33,20 +35,20 @@ class ReferencePlugin : SouzPlugin {
             val rows = CSVFormat.DEFAULT.parse(StringReader("a,b\nc,d")).use { it.records.size }
             val provider = ServiceLoader.load(Supplier::class.java).single().get()
             val hostVisible = Thread.currentThread().contextClassLoader.getResource("ru/souz/backend/app/BackendRuntime.class") != null
-            ObjectMapper().writeValueAsString(mapOf("version" to version, "rows" to rows, "provider" to provider, "hostVisible" to hostVisible))
+            mapper().writeValueAsString(mapOf("version" to version, "rows" to rows, "provider" to provider, "hostVisible" to hostVisible))
         },
         PluginTool("state", "Increment isolated state", """{"type":"object","properties":{"wait":{"type":"integer"}},"additionalProperties":false}""", "MAIL") { input, context ->
             val value = context.state.get("count")?.toInt() ?: 0
-            delay(ObjectMapper().readTree(input).path("wait").asLong(30).coerceIn(1, 1000))
+            delay(mapper().readTree(input).path("wait").asLong(30).coerceIn(1, 1000))
             context.state.put("count", (value + 1).toString())
             """{"count":${value + 1},"version":"${version()}"}"""
         },
         PluginTool("fetch", "Use bounded host HTTP", """{"type":"object","properties":{"url":{"type":"string"}},"required":["url"],"additionalProperties":false}""", "MAIL") { input, context ->
-            val url = ObjectMapper().readTree(input)["url"].asText()
+            val url = mapper().readTree(input)["url"].asText()
             context.http.execute(PluginHttpRequest(url)).body.toString(Charsets.UTF_8)
         },
         PluginTool("fail", "Return a classified failure", """{"type":"object","properties":{"kind":{"type":"string"}},"required":["kind"],"additionalProperties":false}""", "MAIL") { input, _ ->
-            val kind = ObjectMapper().readTree(input)["kind"].asText()
+            val kind = mapper().readTree(input)["kind"].asText()
             if (kind == "unexpected") error("Private data that must not reach the tool result")
             if (kind == "assertion") throw AssertionError("Private assertion data that must not reach the tool result")
             throw PluginException("fixture_failure", "Fixture operation failed", PluginFailureKind.valueOf(kind))
@@ -67,6 +69,8 @@ class ReferencePlugin : SouzPlugin {
             """{"version":"$value"}"""
         },
     )
+
+    private fun mapper() = ObjectMapper(JsonFactory.builder().recyclerPool(JsonRecyclerPools.nonRecyclingPool()).build())
 
     private fun version(): String = requireNotNull(javaClass.classLoader.getResourceAsStream("fixture-version.txt"))
         .bufferedReader().use { it.readText().trim() }

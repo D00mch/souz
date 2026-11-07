@@ -8,7 +8,11 @@ Plugin context classloaders follow coroutine suspension. Local JAR resource hand
 
 The backend uses one concrete PostgreSQL repository for registry, state, leases and incidents.
 `BackendPluginRuntime` owns versions, execution references and actual calls; polling, renewals and
-failure deadlines run independently. `PluginServices` creates one revocable owner-bound context per
+failure deadlines use reserved control threads independently of shared Default CPU work and foreign IO workers.
+Lifecycle deadlines include time queued for a worker. Cancellation callbacks run outside the coordinator
+and control threads, with recovery observation armed before cancellation.
+Invocation deadlines also belong to control, so they do not require a starved caller to resume.
+`PluginServices` creates one revocable owner-bound context per
 invocation. A dedicated administration service coordinates authenticated REST mutations
 with the repository and immutable artifact store.
 
@@ -86,6 +90,10 @@ stays open throughout plugin execution. Each admission has a unique fencing toke
 current unexpired ownership atomically; other services check ownership before dispatch.
 
 State is owner/plugin-scoped JSON with 1 MiB records and paginated listing. It exposes no callbacks or CAS.
+Plugin JDBC operations bound socket reads, including transaction completion, to five seconds;
+pool acquisition retains the datasource's configured bound. Admission IO belongs to the runtime,
+so queue timeout or caller cancellation stops waiting promptly and never starts a late handler.
+Late acquired leases are released by the host and stalled admission triggers recovery.
 HTTP accepts any HTTP(S) destination with bounded metadata and 1 MiB bodies, cancellation, and no inherited
 credentials, redirects, cookies or automatic retries. OAuth keeps tokens host-owned and permits bounded
 streaming responses up to 36 MiB for Gmail. Workspace files use the host sandbox adapter; owner-scoped
@@ -98,6 +106,8 @@ retains resource accounting until it exits. Renewal continues while timed-out co
 ownership is lost. Lease expiry may admit another invocation while old code still runs; dispatched external
 effects cannot be undone by fencing. Never automatically replay a call. Queue timeout means the handler
 did not start; invocation timeout means its outcome may be unknown.
+The grace watchdog remains active through outcome persistence, renewal shutdown and lease release,
+including successful calls. The reply can precede this cleanup; accounting ends only when cleanup exits.
 
 All numeric settings use `SOUZ_PLUGINS_` plus these suffixes (milliseconds unless stated):
 
@@ -118,11 +128,16 @@ The user/plugin breaker is database-coordinated; the version breaker is replica-
 one ordinary invocation probes recovery. Authorization, validation, business errors and caller cancellation
 do not count as technical failures. Stuck work beyond grace or unrecoverable cleanup creates an idempotent
 durable severe incident. Successful calls do not reset the count; explicit re-enable does.
+Admission and reconciliation prune expired version-failure history, including idle loaded versions.
 
 Unrecoverable incidents stop intake, persist diagnostics/quarantine, and trigger bounded process shutdown.
 A process watchdog forces failure exit if shutdown stalls. Shared services remain open beneath live plugin
 code. Deploy with restart-on-failure, as in the repository Compose service. Routine updates and retirement
 do not restart the backend. Plugin leases do not implement general agent-execution failover.
+Runtime-owned polling cannot hold up the earlier application-work join. Every shutdown phase, including
+poller/work/control joins and filesystem cleanup, shares the shutdown budget. Concurrent and repeated
+shutdown callers observe one drain task; a budget expiry returns false while actual work remains owned.
+These guarantees localize defective trusted plugins; arbitrary in-process code can still exhaust process resources.
 
 ## Verification
 

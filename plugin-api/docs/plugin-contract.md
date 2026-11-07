@@ -37,6 +37,11 @@ and their resources/SPI in a flat JAR. External manifest `Class-Path` dependenci
 are unsupported. Private dependencies never fall back to the backend classpath.
 The context classloader follows calls across suspension. Library reflection caches
 and plugin-specific serializers remain private to the loaded version.
+Private libraries must not leave plugin objects in shared-worker thread locals.
+For Jackson factories, use `JsonRecyclerPools.nonRecyclingPool()`; the default
+thread-local buffer recycler can retain retired classloaders through soft references.
+Serialize nodes through that configured mapper: `JsonNode.toString()` and
+`toPrettyString()` use Jackson's separate internal default mapper and recycler pool.
 
 Upload the JAR through the authenticated operator API in Swagger. Upload validates
 the archive without constructing its provider. A successful upload acknowledges

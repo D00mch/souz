@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature
 import java.sql.Connection
 import java.sql.ResultSet
 import javax.sql.DataSource
-import ru.souz.backend.storage.postgres.read
-import ru.souz.backend.storage.postgres.write
+import ru.souz.backend.storage.postgres.read as postgresRead
+import ru.souz.backend.storage.postgres.write as postgresWrite
 import ru.souz.llms.restJsonMapper
 import ru.souz.plugins.api.PluginApi
 import ru.souz.plugins.api.PluginState
@@ -206,3 +206,8 @@ private fun <T> Connection.rows(sql: String, vararg values: Any?, read: (ResultS
     statement(sql, values).use { it.executeQuery().use { rows -> buildList { while (rows.next()) add(read(rows)) } } }
 internal fun registryError(code: String): Nothing = throw PluginRegistryException(code)
 internal fun unavailable(code: String): Nothing = throw PluginUnavailableException(code)
+
+// Bounds PostgreSQL socket reads, including COMMIT/rollback replies. Coroutine timers alone
+// cannot interrupt JDBC. Hikari restores networkTimeout when the connection returns to its pool.
+private suspend fun <T> DataSource.read(block: (Connection) -> T): T = postgresRead(networkTimeoutMillis = 5_000, block = block)
+private suspend fun <T> DataSource.write(block: (Connection) -> T): T = postgresWrite(networkTimeoutMillis = 5_000, block = block)

@@ -17,6 +17,18 @@ import org.junit.jupiter.api.io.TempDir
 class BackendPluginRuntimeTest {
     @TempDir lateinit var directory: Path
 
+    @Test fun `concurrent and repeated raw shutdown shares one filesystem cleanup`(): Unit = runtimeTest {
+        val pin = install("kotlin-v1", 0)
+        repeat(4) {
+            val local = runtime()
+            local.reconcile()
+            awaitPlugin { local.snapshot.defaultBindings == listOf(pin) }
+            val results = coroutineScope { List(8) { async { local.shutdown() } }.awaitAll() }
+            assertTrue(results.all { it })
+            assertTrue(local.shutdown())
+        }
+    }
+
     @Test
     fun `nonretired versions stay ready and retired exact pins reload after draining`(): Unit = runtimeTest {
         val first = install("kotlin-v1", 0)

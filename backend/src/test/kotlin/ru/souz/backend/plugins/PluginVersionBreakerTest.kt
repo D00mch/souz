@@ -7,6 +7,14 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class PluginVersionBreakerTest {
+    @Test fun `admission prunes expired owner history without waiting for another outcome`() {
+        val breaker = PluginVersionBreaker(config.copy(versionFailureThreshold = 100_000))
+        repeat(1_000) { breaker.record(assertNotNull(breaker.admit(1)), "owner-$it", PluginCallOutcome.TECHNICAL_FAILURE, 1) }
+        assertNotNull(breaker.admit(101))
+        val field = PluginVersionBreaker::class.java.getDeclaredField("failures").apply { isAccessible = true }
+        assertTrue((field.get(breaker) as Collection<*>).isEmpty())
+    }
+
     private val config = PluginRuntimeConfig(versionFailureThreshold = 3, versionMinimumUsers = 2,
         versionWindowMillis = 100, cooldownMillis = 20)
 

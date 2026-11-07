@@ -55,7 +55,7 @@ class GmailPlugin : SouzPlugin {
                 }
             }
             catch (_: IllegalArgumentException) { throw PluginException("gmail_operation_rejected", "Invalid Gmail operation arguments") }
-        output.toString()
+        json.writeValueAsString(output)
     }
 }
 

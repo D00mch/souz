@@ -9,6 +9,7 @@ internal class PluginVersionBreaker(private val config: PluginRuntimeConfig) {
     class Permit internal constructor(val probe: Boolean)
 
     fun admit(now: Long): Permit? {
+        prune(now)
         if (now < openUntil || probe != null) return null
         return Permit(openUntil != 0L).also { if (it.probe) probe = it }
     }
@@ -32,9 +33,12 @@ internal class PluginVersionBreaker(private val config: PluginRuntimeConfig) {
         }
     }
 
-    fun isOpen(now: Long): Boolean = now < openUntil || probe != null
+    fun isOpen(now: Long): Boolean {
+        prune(now)
+        return now < openUntil || probe != null
+    }
 
-    private fun prune(now: Long) {
+    fun prune(now: Long) {
         while (failures.firstOrNull()?.let { now - it.first >= config.versionWindowMillis } == true) failures.removeFirst()
     }
 }

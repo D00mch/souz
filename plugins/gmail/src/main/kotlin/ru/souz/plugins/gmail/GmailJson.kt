@@ -1,11 +1,13 @@
 package ru.souz.plugins.gmail
 
 import com.fasterxml.jackson.core.StreamReadConstraints
+import com.fasterxml.jackson.core.util.JsonRecyclerPools
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 
 internal val json = jacksonObjectMapper().apply {
+    factory.setRecyclerPool(JsonRecyclerPools.nonRecyclingPool())
     factory.setStreamReadConstraints(StreamReadConstraints.builder().maxStringLength(36 * 1024 * 1024).build())
 }
 internal fun result(status: String): ObjectNode = json.createObjectNode().put("status", status)

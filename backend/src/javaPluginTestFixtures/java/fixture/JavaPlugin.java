@@ -1,6 +1,8 @@
 package fixture;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.util.JsonRecyclerPools;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -24,7 +26,7 @@ public final class JavaPlugin implements SouzPlugin {
 
     private Object invoke(String input, PluginContext context, Continuation<? super String> continuation) {
         final String url;
-        try { url = new ObjectMapper().readTree(input).get("url").asText(); }
+        try { url = new ObjectMapper(JsonFactory.builder().recyclerPool(JsonRecyclerPools.nonRecyclingPool()).build()).readTree(input).get("url").asText(); }
         catch (Exception failure) { throw new IllegalArgumentException(failure); }
         var next = new Continuation<PluginHttpResponse>() {
             public CoroutineContext getContext() { return continuation.getContext(); }

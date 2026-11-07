@@ -16,7 +16,7 @@ internal class GmailApi(private val oauth: PluginOAuth) {
             "${URLEncoder.encode(it.first, UTF_8)}=${URLEncoder.encode(it.second, UTF_8)}"
         }
         return when (val response = oauth.call("google", setOf("https://www.googleapis.com/auth/gmail.readonly"), PluginOAuthRequest(
-            if (body == null) "GET" else "POST", "https://www.googleapis.com/gmail/v1/users/me$path$suffix", body?.toString(),
+            if (body == null) "GET" else "POST", "https://www.googleapis.com/gmail/v1/users/me$path$suffix", body?.let(json::writeValueAsString),
             maxResponseBytes = 36 * 1024 * 1024,
         ))) {
             is PluginReconnectRequired -> throw GmailApiFailure(authorizationUrl = response.authorizationUrl)

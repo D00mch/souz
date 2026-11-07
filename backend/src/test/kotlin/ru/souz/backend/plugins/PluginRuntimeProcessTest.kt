@@ -25,6 +25,16 @@ class PluginRuntimeProcessTest {
     @TempDir lateinit var directory: Path
 
     @Test
+    fun `retired reference and packaged Gmail loaders collect with normal GC policy`(): Unit = runtimeTest {
+        // Coverage instrumentation retains instrumented classes; observe production retention in an uninstrumented JVM.
+        for ((index, name) in listOf("kotlin-v1", "gmail").withIndex()) {
+            val pin = install(name, 0)
+            repository.retire(pin.id, pin.version, 1)
+            runProbe(this, pin, "collect", 0, index)
+        }
+    }
+
+    @Test
     fun `isolated processes preserve actual work and recover from stuck preparation or cleanup`() {
         for (mode in listOf("drain", "lost", "prepare", "cleanup")) runtimeTest {
             val source = if (mode == "prepare") repackagePlugin(pluginFixture("kotlin-v1"), directory.resolve("stuck-provider.jar"),
@@ -79,6 +89,8 @@ class PluginRuntimeProcessTest {
             setProperty("accessKey", fixture.artifactConfig.accessKey)
             setProperty("secretKey", fixture.artifactConfig.secretKey)
             setProperty("digest", binding.digest)
+            setProperty("id", binding.id)
+            setProperty("version", binding.version)
         }
         Files.newOutputStream(config).use { properties.store(it, null) }
         val output = root.resolve("process.log")
@@ -125,13 +137,14 @@ object PluginRuntimeProbe {
         val artifacts = S3PluginArtifacts(S3PluginArtifactConfig(properties.getProperty("endpoint"), properties.getProperty("bucket"),
             properties.getProperty("accessKey"), properties.getProperty("secretKey")))
         val services = runtimeServices(repository)
-        val binding = PluginBinding("reference", "v1", properties.getProperty("digest"))
+        val binding = PluginBinding(properties.getProperty("id"), properties.getProperty("version"), properties.getProperty("digest"))
         val preparing = args[1] == "prepare"
         val cleanup = args[1] == "cleanup"
         val fatal = args[1] == "fatal" || preparing || cleanup
         val lost = args[1] == "lost"
+        val collecting = args[1] == "collect"
         System.setProperty("plugin.fixture.gate", root.toString())
-        val config = PluginRuntimeConfig(queueMillis = 300, callMillis = if (lost) 10_000 else 300, leaseMillis = 1_000, renewMillis = 100,
+        val config = PluginRuntimeConfig(queueMillis = 300, callMillis = if (collecting) 5_000 else if (lost) 10_000 else 300, leaseMillis = 1_000, renewMillis = 100,
             graceMillis = if (fatal) 200 else 10_000, shutdownMillis = 1_000, prepareMillis = if (preparing) 5_000 else 15_000)
         val workDirectory = Files.createDirectories(root.resolve("loader"))
         val runtime = BackendPluginRuntime(repository, artifacts, services, config, onFatal = {
@@ -143,6 +156,11 @@ object PluginRuntimeProbe {
         var cleanupObstruction: AutoCloseable? = null
         try {
             runtime.reconcile()
+            if (collecting) {
+                collectRetiredLoaders(runtime, binding, datasource)
+                Files.writeString(root.resolve("verified"), "normal GC collects retired loaders and cleanup releases JARs/connections")
+                return@runBlocking
+            }
             if (preparing) {
                 awaitPlugin { Files.exists(root.resolve("entered")) }
                 awaitCancellation()
@@ -211,5 +229,32 @@ object PluginRuntimeProbe {
             runtime.shutdown(); peer.shutdown()
             services.close(); artifacts.close(); datasource.close()
         }
+    }
+
+    private suspend fun collectRetiredLoaders(runtime: BackendPluginRuntime, pin: PluginBinding, datasource: HikariDataSource) {
+        val references = mutableListOf<java.lang.ref.WeakReference<ClassLoader>>()
+        suspend fun cycle() {
+            val gmail = pin.id == "gmail"
+            val name = if (gmail) "plugin.gmail.configure" else "plugin.reference.report"
+            val binding = runtime.acquire("alice", listOf(pin), setOf(name))
+            references += java.lang.ref.WeakReference(binding.versions.single().code!!.loader)
+            val path = binding.versions.single().path
+            val tool = binding.catalog.toolsByCategory.values.flatMap { it.values }.single()
+            val arguments = if (gmail) mapOf("config" to "gc", "mailboxEmail" to "gc@example.com",
+                "topicName" to "projects/gc/topics/mail", "channelType" to "chat", "channelId" to "owned") else emptyMap()
+            val reply = tool.invoke(ru.souz.llms.LLMResponse.FunctionCall(name, arguments), ru.souz.llms.ToolInvocationMeta("alice"))
+            val result = ru.souz.llms.restJsonMapper.readTree(reply.content)
+            assertEquals(if (gmail) "configured" else "v1", result.path(if (gmail) "status" else "version").asText())
+            binding.release()
+            awaitPlugin { runtime.snapshot.status.find { it.id == pin.id }!!.versions.isEmpty() }
+            assertFalse(Files.exists(path))
+        }
+        repeat(12) { cycle() }
+        val collected = kotlinx.coroutines.withTimeoutOrNull(10_000) {
+            while (references.any { it.get() != null }) { System.gc(); delay(100) }
+            true
+        }
+        assertTrue(collected == true, "${pin.id} retained ${references.count { it.get() != null }} loaders")
+        assertEquals(0, datasource.hikariPoolMXBean.activeConnections)
     }
 }

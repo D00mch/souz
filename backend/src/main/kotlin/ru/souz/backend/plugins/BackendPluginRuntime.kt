@@ -7,6 +7,7 @@ import io.micrometer.core.instrument.MeterRegistry
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
+import java.util.concurrent.Executors
 import kotlin.random.Random
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,7 +35,10 @@ internal class BackendPluginRuntime(
     private val polling = Mutex()
     // Foreign blocking code cannot occupy DB/control IO. This dispatcher is not an invocation quota.
     private val work = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(64))
-    private val control = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val control = CoroutineScope(SupervisorJob() + controlDispatcher)
+    private val shutdownScope = CoroutineScope(SupervisorJob() + controlDispatcher)
+    private var shutdownTask: Deferred<Unit>? = null
+    private val admissions = mutableSetOf<Admission>()
     private val versions = linkedMapOf<PluginBinding, Version>()
     private var registrations = emptyList<PluginRegistration>()
     private val published = MutableStateFlow(PluginSnapshot())
@@ -49,7 +53,8 @@ internal class BackendPluginRuntime(
 
     suspend fun start(scope: CoroutineScope) = mutex.withLock {
         check(!stopping)
-        if (poller == null) poller = scope.launch {
+        scope.coroutineContext.ensureActive()
+        if (poller == null) poller = control.launch {
             while (true) {
                 reconcile()
                 delay(config.pollMillis + if (config.jitterMillis == 0L) 0 else random.nextLong(config.jitterMillis + 1))
@@ -74,7 +79,7 @@ internal class BackendPluginRuntime(
                         }
                     }
                 }
-                versions.values.toList().forEach(::retire)
+                versions.values.toList().forEach { it.breaker.prune(now()); retire(it) }
                 publish()
             }
         } catch (cancelled: CancellationException) {
@@ -159,34 +164,34 @@ internal class BackendPluginRuntime(
         val json = restJsonMapper.writeValueAsString(call.arguments)
         if (json.toByteArray().size > PluginApi.MAX_JSON_BYTES) return pluginError(call.name, "plugin_input_too_large")
         clientArgumentsError(tool.schema.parameters, restJsonMapper.readTree(json))?.let { return pluginError(call.name, "plugin_invalid_arguments") }
-        var lease: PluginCallLease? = null
+        val admission = mutex.withLock {
+            if (stopping || binding.released) return pluginError(call.name, "plugin_disabled")
+            admit(binding.owner, version.metadata.binding)
+        }
         try {
             val admitted = withTimeoutOrNull(config.queueMillis) {
-                // Waiting callers own no plugin work until their database lease is acquired.
-                while (lease == null) {
-                    currentCoroutineContext().ensureActive()
-                    mutex.withLock { if (stopping || binding.released) unavailable("plugin_disabled") }
-                    // A cancelled JDBC handoff must still return ownership to this finally block.
-                    withContext(NonCancellable) { lease = repository.claim(binding.owner, version.metadata.binding, config) }
-                    if (lease == null) delay(100)
-                }
-                true
+                admission.ready.await()
             }
             if (admitted != true) return pluginError(call.name, "plugin_queue_timeout", "The handler did not start.")
             val entry = mutex.withLock {
                 currentCoroutineContext().ensureActive()
                 if (stopping || binding.released || version.phase != Phase.READY) unavailable("plugin_disabled")
                 val permit = version.breaker.admit(now()) ?: unavailable("plugin_version_circuit_open")
-                Invocation(version, requireNotNull(lease), call.name, permit).also { entry ->
+                Invocation(version, requireNotNull(admission.lease), call.name, permit).also { entry ->
                     version.calls += entry
                     entry.job = work.launch(start = CoroutineStart.ATOMIC) { execute(entry, tool, json, meta) }
-                    lease = null // Ownership has transferred to execute() and its finally block.
+                    control.launch {
+                        if (withTimeoutOrNull(config.callMillis) { entry.reply.await(); true } != true) {
+                            stop(entry, "plugin_timeout", PluginCallOutcome.TECHNICAL_FAILURE)
+                        }
+                    }
+                    admission.lease = null // Ownership transfers under the same coordinator lock.
+                    admission.handoff.complete(Unit)
                     publish()
                 }
             }
             return try {
-                withTimeoutOrNull(config.callMillis) { entry.reply.await() }
-                    ?: stop(entry, "plugin_timeout", PluginCallOutcome.TECHNICAL_FAILURE)
+                entry.reply.await()
             } finally {
                 if (!entry.reply.isCompleted) withContext(NonCancellable) { stop(entry, "plugin_cancelled", PluginCallOutcome.IGNORED) }
             }
@@ -194,7 +199,44 @@ internal class BackendPluginRuntime(
             throw cancelled
         }
         catch (known: PluginUnavailableException) { return pluginError(call.name, known.code) }
-        finally { withContext(NonCancellable) { lease?.let { repository.release(it) } } }
+        finally { admission.handoff.complete(Unit) }
+    }
+
+    /** The host owns JDBC and late leases; a caller only waits for the handoff. */
+    private fun admit(owner: String, binding: PluginBinding): Admission {
+        val entry = Admission()
+        admissions += entry
+        val expires = now() + config.queueMillis
+        val task = control.launch(start = CoroutineStart.ATOMIC) {
+            try {
+                while (!entry.handoff.isCompleted && now() < expires) {
+                    withContext(NonCancellable) { entry.lease = repository.claim(owner, binding, config) }
+                    if (entry.lease != null) {
+                        entry.ready.complete(true)
+                        entry.handoff.await()
+                        break
+                    }
+                    delay(100)
+                }
+                entry.ready.complete(false)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                entry.ready.completeExceptionally(failure)
+            } finally {
+                entry.ready.cancel()
+                withContext(NonCancellable) {
+                    try { entry.lease?.let { repository.release(it) } }
+                    finally { mutex.withLock { admissions -= entry } }
+                }
+            }
+        }
+        control.launch {
+            if (withTimeoutOrNull(config.queueMillis + config.graceMillis) { task.join(); true } != true) {
+                severe(binding, entry.incident, "plugin_admission_stalled")
+            }
+        }
+        return entry
     }
 
     private suspend fun execute(
@@ -241,7 +283,7 @@ internal class BackendPluginRuntime(
         } finally {
             withContext(NonCancellable) {
                 finish(entry, PluginCallOutcome.IGNORED, pluginError(entry.name, "plugin_cancelled"))
-                entry.grace?.cancel()
+                mutex.withLock { watchInvocation(entry) }
                 entry.accounting?.join()
                 renewal.cancelAndJoin()
                 try {
@@ -279,35 +321,43 @@ internal class BackendPluginRuntime(
     private suspend fun stop(entry: Invocation, code: String, outcome: PluginCallOutcome): LLMRequest.Message {
         val response = pluginError(entry.name, code, "The invocation outcome may be unknown. Do not automatically retry.")
         finish(entry, outcome, response)
-        mutex.withLock {
-            entry.job.cancel()
-            if (entry.grace == null) entry.grace = control.launch {
-                if (withTimeoutOrNull(config.graceMillis) { entry.job.join(); true } != true) {
-                    severe(entry.lease.binding, entry.lease.token.toString(), "plugin_call_stalled")
-                }
-            }
-        }
+        mutex.withLock { watchInvocation(entry) }
+        requestCancellation(entry.job)
         return entry.reply.await()
     }
+
+    private fun watchInvocation(entry: Invocation) {
+        if (entry.grace == null) entry.grace = control.launch {
+            if (withTimeoutOrNull(config.graceMillis) { entry.job.join(); true } != true) {
+                severe(entry.lease.binding, entry.lease.token.toString(), "plugin_call_stalled")
+            }
+        }
+    }
+
+    // Job.cancel can execute arbitrary synchronous plugin callbacks. Never run it on control.
+    private fun requestCancellation(job: Job) { work.launch { job.cancel() } }
 
     private fun load(metadata: PluginVersion): Version {
         val entry = Version(metadata, directory.resolve(UUID.randomUUID().toString() + ".jar"), PluginVersionBreaker(config))
         versions[metadata.binding] = entry
-        entry.job = work.launch(start = CoroutineStart.ATOMIC) {
-            val task = currentCoroutineContext().job
-            val deadline = control.launch {
-                delay(config.prepareMillis)
-                val timedOut = mutex.withLock {
-                    if (entry.phase != Phase.PREPARING) false else {
-                        entry.ready.completeExceptionally(PluginUnavailableException("plugin_restore_timeout"))
-                        task.cancel()
-                        true
-                    }
+        val expires = now() + config.prepareMillis
+        val deadline = control.launch(start = CoroutineStart.LAZY) {
+            delay((expires - now()).coerceAtLeast(0))
+            val timedOut = mutex.withLock {
+                if (entry.phase != Phase.PREPARING) false else {
+                    entry.ready.completeExceptionally(PluginUnavailableException("plugin_restore_timeout"))
+                    true
                 }
-                if (timedOut && withTimeoutOrNull(config.graceMillis) { task.join(); true } != true) {
+            }
+            if (timedOut) {
+                requestCancellation(entry.job)
+                if (withTimeoutOrNull(config.graceMillis) { entry.job.join(); true } != true) {
                     severe(metadata.binding, entry.incident, "plugin_prepare_stalled")
                 }
             }
+        }
+        entry.job = work.launch(start = CoroutineStart.ATOMIC) {
+            val task = currentCoroutineContext().job
             var ready = false
             try {
                 artifacts.download(metadata.binding, entry.path)
@@ -335,11 +385,13 @@ internal class BackendPluginRuntime(
                         entry.error = entry.error ?: "plugin_preparation_cancelled"
                         entry.retryAt = now() + config.retryMillis
                         entry.ready.completeExceptionally(PluginUnavailableException("plugin_restore_failed"))
-                        dispose(entry, task)
+                        val cleanupWatch = watchCleanup(entry, task)
+                        try { dispose(entry) } finally { cleanupWatch.cancel() }
                     }
                 }
             }
         }
+        deadline.start()
         return entry
     }
 
@@ -352,19 +404,21 @@ internal class BackendPluginRuntime(
             (stopping || entry.metadata.retired || entry.metadata.quarantined)) {
             entry.phase = Phase.CLOSING
             entry.job = work.launch(start = CoroutineStart.ATOMIC) {
-                val task = currentCoroutineContext().job
-                withContext(NonCancellable) { dispose(entry, task) }
+                withContext(NonCancellable) { dispose(entry) }
             }
+            watchCleanup(entry, entry.job)
         }
     }
 
-    private suspend fun dispose(entry: Version, task: Job) {
-        mutex.withLock { entry.phase = Phase.CLOSING; publish() }
-        val deadline = control.launch {
-            delay(config.cleanupMillis)
-            task.cancel()
+    private fun watchCleanup(entry: Version, task: Job): Job = control.launch {
+        if (withTimeoutOrNull(config.cleanupMillis) { task.join(); true } != true) {
+            requestCancellation(task)
             if (withTimeoutOrNull(config.graceMillis) { task.join(); true } != true) severe(entry.metadata.binding, entry.incident, "plugin_cleanup_stalled")
         }
+    }
+
+    private suspend fun dispose(entry: Version) {
+        mutex.withLock { entry.phase = Phase.CLOSING; publish() }
         try {
             entry.code?.close()
             Files.deleteIfExists(entry.path)
@@ -385,7 +439,7 @@ internal class BackendPluginRuntime(
                 publish()
             }
             control.launch { delay(config.graceMillis); severe(entry.metadata.binding, entry.incident, "plugin_cleanup_failed") }
-        } finally { deadline.cancel() }
+        }
     }
 
     private suspend fun severe(binding: PluginBinding, incident: String, code: String) {
@@ -409,22 +463,32 @@ internal class BackendPluginRuntime(
     }
 
     suspend fun shutdown(): Boolean {
-        val calls = mutex.withLock {
+        val task = mutex.withLock {
             if (closed) return true
+            shutdownTask ?: shutdownScope.async(Dispatchers.IO) { drain() }.also { shutdownTask = it }
+        }
+        // This observer runs independently of every join, cancellation callback and filesystem IO.
+        return shutdownScope.async {
+            withTimeoutOrNull(config.shutdownMillis) { task.await(); true } ?: false
+        }.await()
+    }
+
+    private suspend fun drain() {
+        val calls = mutex.withLock {
             stopping = true
-            versions.values.filter { it.phase == Phase.PREPARING }.forEach { it.job.cancel() }
+            versions.values.filter { it.phase == Phase.PREPARING }.forEach { requestCancellation(it.job) }
+            admissions.forEach { it.handoff.complete(Unit) }
             versions.values.toList().forEach(::retire)
             publish()
             versions.values.flatMap { it.calls }.toList()
         }
-        poller?.cancelAndJoin()
         calls.forEach { stop(it, "plugin_cancelled", PluginCallOutcome.IGNORED) }
-        if (withTimeoutOrNull(config.shutdownMillis) { while (mutex.withLock { versions.isNotEmpty() }) delay(10); true } != true) return false
+        poller?.cancelAndJoin()
+        while (mutex.withLock { versions.isNotEmpty() || admissions.isNotEmpty() }) delay(10)
         work.coroutineContext.job.cancelAndJoin()
         control.coroutineContext.job.cancelAndJoin()
         withContext(Dispatchers.IO) { Files.deleteIfExists(directory) }
         mutex.withLock { closed = true }
-        return true
     }
 
     private fun appliedVersion(row: PluginRegistration): Version? {
@@ -510,8 +574,18 @@ internal class BackendPluginRuntime(
         var grace: Job? = null
         var accounting: Job? = null
     }
+    private class Admission {
+        val ready = CompletableDeferred<Boolean>()
+        val handoff = CompletableDeferred<Unit>()
+        val incident = UUID.randomUUID().toString()
+        var lease: PluginCallLease? = null
+    }
     internal enum class Phase { PREPARING, READY, CLOSING, DISPOSED, FAILED, CLEANUP_FAILED }
     private companion object {
+        // Reserved process-wide capacity: neither shared Default CPU work nor foreign IO uses it.
+        val controlDispatcher = Executors.newScheduledThreadPool(2) { task ->
+            Thread(task, "souz-plugin-control").apply { isDaemon = true }
+        }.asCoroutineDispatcher()
         val log = LoggerFactory.getLogger(BackendPluginRuntime::class.java)
         fun now() = System.nanoTime() / 1_000_000
         fun diagnostic(code: String, failure: Throwable) = code + ": " + failure.javaClass.name.take(160)
