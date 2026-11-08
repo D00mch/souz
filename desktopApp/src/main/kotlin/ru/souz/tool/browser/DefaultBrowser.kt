@@ -2,6 +2,9 @@ package ru.souz.tool.browser
 
 import ru.souz.tool.ToolRunBashCommand
 
+private val httpHandlerRolePattern =
+    "<key>LSHandlerRoleAll</key>\\s*<string>(.*?)</string>".toRegex(RegexOption.DOT_MATCHES_ALL)
+
 fun ToolRunBashCommand.detectDefaultBrowser(): BrowserType {
     val cmd = "plutil -convert xml1 -o - ~/Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist"
     val xmlOutput = sh(cmd)
@@ -22,8 +25,7 @@ private fun parsePlistForHttpHandler(xml: String): String? {
         if (dict.contains("<key>LSHandlerURLScheme</key>") &&
             dict.contains("<string>http</string>")) {
 
-            val pattern = "<key>LSHandlerRoleAll</key>\\s*<string>(.*?)</string>".toRegex(RegexOption.DOT_MATCHES_ALL)
-            val match = pattern.find(dict)
+            val match = httpHandlerRolePattern.find(dict)
 
             if (match != null) {
                 return match.groupValues[1]
