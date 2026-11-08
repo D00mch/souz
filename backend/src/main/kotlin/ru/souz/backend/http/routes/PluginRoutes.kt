@@ -26,6 +26,8 @@ import io.ktor.utils.io.readRemaining
 import java.nio.file.Files
 import java.nio.file.Path
 import java.io.IOException
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 import org.slf4j.LoggerFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -66,7 +68,7 @@ internal fun Route.pluginRoutes(service: PluginAdministration?) {
     post("$PLUGIN_ADMIN_PATH/install") {
         val admin = call.admin(service)
         withPluginUploadFile { temporary ->
-            val revision = withTimeoutOrNull(admin.config.uploadMillis) {
+            val revision = withTimeoutOrNull(admin.config.uploadMillis.milliseconds) {
                 try { call.uploadPlugin(temporary) }
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (known: BackendV1Exception) { throw known }
@@ -189,8 +191,9 @@ private suspend fun ApplicationCall.uploadPlugin(path: Path): Long {
 }
 
 private suspend fun ApplicationCall.pluginBody(): JsonNode {
-    val bytes = withTimeoutOrNull(5_000) { receiveChannel().readRemaining(16_385).use { it.readByteArray() } }
-        ?: throw pluginHttpError(408, "plugin_request_timeout", "Request body deadline exceeded.")
+    val bytes = withTimeoutOrNull(5.seconds) {
+        receiveChannel().readRemaining(16_385).use { it.readByteArray() }
+    } ?: throw pluginHttpError(408, "plugin_request_timeout", "Request body deadline exceeded.")
     if (bytes.size > 16_384) throw tooLarge()
     return try { restJsonMapper.readerFor(JsonNode::class.java).with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
         .readValue<JsonNode>(bytes)?.takeIf(JsonNode::isObject) ?: throw IllegalArgumentException() }

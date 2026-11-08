@@ -8,6 +8,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.ServiceLoader
 import java.util.function.Supplier
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 import org.apache.commons.csv.CSVFormat
 import ru.souz.plugins.api.PluginException
@@ -39,7 +40,7 @@ class ReferencePlugin : SouzPlugin {
         },
         PluginTool("state", "Increment isolated state", """{"type":"object","properties":{"wait":{"type":"integer"}},"additionalProperties":false}""", "MAIL") { input, context ->
             val value = context.state.get("count")?.toInt() ?: 0
-            delay(mapper().readTree(input).path("wait").asLong(30).coerceIn(1, 1000))
+            delay(mapper().readTree(input).path("wait").asLong(30).coerceIn(1, 1000).milliseconds)
             context.state.put("count", (value + 1).toString())
             """{"count":${value + 1},"version":"${version()}"}"""
         },

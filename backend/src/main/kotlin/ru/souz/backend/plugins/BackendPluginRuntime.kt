@@ -9,6 +9,7 @@ import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.Executors
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -57,7 +58,8 @@ internal class BackendPluginRuntime(
         if (poller == null) poller = control.launch {
             while (true) {
                 reconcile()
-                delay(config.pollMillis + if (config.jitterMillis == 0L) 0 else random.nextLong(config.jitterMillis + 1))
+                val jitter = if (config.jitterMillis == 0L) 0 else random.nextLong(config.jitterMillis + 1)
+                delay((config.pollMillis + jitter).milliseconds)
             }
         }
     }
@@ -130,9 +132,9 @@ internal class BackendPluginRuntime(
                         entry to (entry.phase == Phase.CLOSING)
                     }
                     if (closing) {
-                        if (withTimeoutOrNull(config.prepareMillis) { version.disposed.await(); true } != true) unavailable("plugin_restore_timeout")
+                        if (withTimeoutOrNull(config.prepareMillis.milliseconds) { version.disposed.await(); true } != true) unavailable("plugin_restore_timeout")
                     } else {
-                        if (withTimeoutOrNull(config.prepareMillis) { version.ready.await(); true } != true) unavailable("plugin_restore_timeout")
+                        if (withTimeoutOrNull(config.prepareMillis.milliseconds) { version.ready.await(); true } != true) unavailable("plugin_restore_timeout")
                         break
                     }
                 }
@@ -169,7 +171,7 @@ internal class BackendPluginRuntime(
             admit(binding.owner, version.metadata.binding)
         }
         try {
-            val admitted = withTimeoutOrNull(config.queueMillis) {
+            val admitted = withTimeoutOrNull(config.queueMillis.milliseconds) {
                 admission.ready.await()
             }
             if (admitted != true) return pluginError(call.name, "plugin_queue_timeout", "The handler did not start.")
@@ -181,7 +183,7 @@ internal class BackendPluginRuntime(
                     version.calls += entry
                     entry.job = work.launch(start = CoroutineStart.ATOMIC) { execute(entry, tool, json, meta) }
                     control.launch {
-                        if (withTimeoutOrNull(config.callMillis) { entry.reply.await(); true } != true) {
+                        if (withTimeoutOrNull(config.callMillis.milliseconds) { entry.reply.await(); true } != true) {
                             stop(entry, "plugin_timeout", PluginCallOutcome.TECHNICAL_FAILURE)
                         }
                     }
@@ -216,7 +218,7 @@ internal class BackendPluginRuntime(
                         entry.handoff.await()
                         break
                     }
-                    delay(100)
+                    delay(100.milliseconds)
                 }
                 entry.ready.complete(false)
             } catch (cancelled: CancellationException) {
@@ -232,7 +234,7 @@ internal class BackendPluginRuntime(
             }
         }
         control.launch {
-            if (withTimeoutOrNull(config.queueMillis + config.graceMillis) { task.join(); true } != true) {
+            if (withTimeoutOrNull((config.queueMillis + config.graceMillis).milliseconds) { task.join(); true } != true) {
                 severe(binding, entry.incident, "plugin_admission_stalled")
             }
         }
@@ -247,7 +249,7 @@ internal class BackendPluginRuntime(
     ) {
         val renewal = control.launch {
             while (true) {
-                delay(config.renewMillis)
+                delay(config.renewMillis.milliseconds)
                 val owned = try { repository.renew(entry.lease, config.leaseMillis) }
                 catch (cancelled: CancellationException) {
             throw cancelled
@@ -328,7 +330,7 @@ internal class BackendPluginRuntime(
 
     private fun watchInvocation(entry: Invocation) {
         if (entry.grace == null) entry.grace = control.launch {
-            if (withTimeoutOrNull(config.graceMillis) { entry.job.join(); true } != true) {
+            if (withTimeoutOrNull(config.graceMillis.milliseconds) { entry.job.join(); true } != true) {
                 severe(entry.lease.binding, entry.lease.token.toString(), "plugin_call_stalled")
             }
         }
@@ -342,7 +344,7 @@ internal class BackendPluginRuntime(
         versions[metadata.binding] = entry
         val expires = now() + config.prepareMillis
         val deadline = control.launch(start = CoroutineStart.LAZY) {
-            delay((expires - now()).coerceAtLeast(0))
+            delay((expires - now()).coerceAtLeast(0).milliseconds)
             val timedOut = mutex.withLock {
                 if (entry.phase != Phase.PREPARING) false else {
                     entry.ready.completeExceptionally(PluginUnavailableException("plugin_restore_timeout"))
@@ -351,7 +353,7 @@ internal class BackendPluginRuntime(
             }
             if (timedOut) {
                 requestCancellation(entry.job)
-                if (withTimeoutOrNull(config.graceMillis) { entry.job.join(); true } != true) {
+                if (withTimeoutOrNull(config.graceMillis.milliseconds) { entry.job.join(); true } != true) {
                     severe(metadata.binding, entry.incident, "plugin_prepare_stalled")
                 }
             }
@@ -411,9 +413,9 @@ internal class BackendPluginRuntime(
     }
 
     private fun watchCleanup(entry: Version, task: Job): Job = control.launch {
-        if (withTimeoutOrNull(config.cleanupMillis) { task.join(); true } != true) {
+        if (withTimeoutOrNull(config.cleanupMillis.milliseconds) { task.join(); true } != true) {
             requestCancellation(task)
-            if (withTimeoutOrNull(config.graceMillis) { task.join(); true } != true) severe(entry.metadata.binding, entry.incident, "plugin_cleanup_stalled")
+            if (withTimeoutOrNull(config.graceMillis.milliseconds) { task.join(); true } != true) severe(entry.metadata.binding, entry.incident, "plugin_cleanup_stalled")
         }
     }
 
@@ -438,7 +440,7 @@ internal class BackendPluginRuntime(
                 entry.error = diagnostic("plugin_cleanup_failed", failure)
                 publish()
             }
-            control.launch { delay(config.graceMillis); severe(entry.metadata.binding, entry.incident, "plugin_cleanup_failed") }
+            control.launch { delay(config.graceMillis.milliseconds); severe(entry.metadata.binding, entry.incident, "plugin_cleanup_failed") }
         }
     }
 
@@ -458,7 +460,7 @@ internal class BackendPluginRuntime(
         }
             catch (failure: Exception) { log.error("Plugin incident persistence failed: {}", failure.javaClass.name) }
         }
-        withTimeoutOrNull(config.cleanupMillis) { record.await() }
+        withTimeoutOrNull(config.cleanupMillis.milliseconds) { record.await() }
         if (first) onFatal()
     }
 
@@ -469,7 +471,7 @@ internal class BackendPluginRuntime(
         }
         // This observer runs independently of every join, cancellation callback and filesystem IO.
         return shutdownScope.async {
-            withTimeoutOrNull(config.shutdownMillis) { task.await(); true } ?: false
+            withTimeoutOrNull(config.shutdownMillis.milliseconds) { task.await(); true } ?: false
         }.await()
     }
 
@@ -484,7 +486,7 @@ internal class BackendPluginRuntime(
         }
         calls.forEach { stop(it, "plugin_cancelled", PluginCallOutcome.IGNORED) }
         poller?.cancelAndJoin()
-        while (mutex.withLock { versions.isNotEmpty() || admissions.isNotEmpty() }) delay(10)
+        while (mutex.withLock { versions.isNotEmpty() || admissions.isNotEmpty() }) delay(10.milliseconds)
         work.coroutineContext.job.cancelAndJoin()
         control.coroutineContext.job.cancelAndJoin()
         withContext(Dispatchers.IO) { Files.deleteIfExists(directory) }
