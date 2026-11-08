@@ -6,6 +6,7 @@ import com.github.kwhat.jnativehook.NativeHookException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -43,7 +44,9 @@ class ActiveSoundRecorderImpl(
     private var prepared = false
     private var captureJob: Job? = null
     private var line: TargetDataLine? = null
-    private var activeChannel: Channel<ByteArray>? = null
+    // Lifecycle changes stay under stateMutex; the native capture loop only needs a
+    // thread-safe snapshot. Do not hold the lifecycle mutex across blocking reads.
+    private val activeChannel = MutableStateFlow<Channel<ByteArray>?>(null)
 
     override fun prepare() {
         lockedBlocking {
@@ -61,10 +64,10 @@ class ActiveSoundRecorderImpl(
         val ch = Channel<ByteArray>(capacity = 3072)
         val localLine = lockedBlocking {
             val localLine = line ?: throw IllegalStateException("Recorder is not prepared")
-            if (activeChannel != null) {
+            if (activeChannel.value != null) {
                 throw IllegalStateException("Microphone capture is already active")
             }
-            activeChannel = ch
+            activeChannel.value = ch
             localLine
         }
 
@@ -74,8 +77,8 @@ class ActiveSoundRecorderImpl(
             startCaptureLoopIfNeeded(localLine)
         } catch (error: Throwable) {
             lockedBlocking {
-                if (activeChannel == ch) {
-                    activeChannel = null
+                if (activeChannel.value == ch) {
+                    activeChannel.value = null
                 }
             }
             ch.close()
@@ -96,7 +99,7 @@ class ActiveSoundRecorderImpl(
                 if (filled == buf.size) {
                     val frame = buf.copyOf()
                     filled = 0
-                    stateMutex.withLock { activeChannel }?.trySend(frame)
+                    activeChannel.value?.trySend(frame)
                 }
             }
         }
@@ -104,7 +107,7 @@ class ActiveSoundRecorderImpl(
 
     override suspend fun stopRecording(): ByteArray {
         val ch = stateMutex.withLock {
-            activeChannel.also { activeChannel = null }
+            activeChannel.value.also { activeChannel.value = null }
         } ?: return ByteArray(0)
         line?.stop()
         line?.flush()
@@ -124,7 +127,7 @@ class ActiveSoundRecorderImpl(
     }
 
     override fun frames(): Flow<ByteArray> = flow {
-        val ch = stateMutex.withLock { activeChannel }
+        val ch = stateMutex.withLock { activeChannel.value }
             ?: throw IllegalStateException("Microphone capture is not active")
         for (frame in ch) {
             emit(frame)
@@ -134,7 +137,7 @@ class ActiveSoundRecorderImpl(
     /** Optional: call when app exits to release the mic. */
     suspend fun close() {
         stateMutex.withLock {
-            activeChannel.also { activeChannel = null }
+            activeChannel.value.also { activeChannel.value = null }
         }?.close()
         line?.apply {
             stop()
