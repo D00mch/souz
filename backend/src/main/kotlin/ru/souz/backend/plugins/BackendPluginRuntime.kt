@@ -22,7 +22,6 @@ import ru.souz.llms.*
 import ru.souz.plugins.api.*
 
 /** One coordinator owns versions. Foreign work and control timers use independent dispatchers. */
-@OptIn(ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class)
 internal class BackendPluginRuntime(
     private val repository: PostgresPluginRepository,
     private val artifacts: S3PluginArtifacts,
@@ -34,7 +33,7 @@ internal class BackendPluginRuntime(
     private val random: Random = Random.Default,
 ) {
     private val stateMutex = Mutex()
-    private val polling = Mutex()
+    private val pollingMutex = Mutex() // only for `reconcile`
     // Foreign blocking code cannot occupy DB/control IO. This dispatcher is not an invocation quota.
     private val work = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(64))
     private val control = CoroutineScope(SupervisorJob() + controlDispatcher)
@@ -65,18 +64,22 @@ internal class BackendPluginRuntime(
         }
     }
 
-    suspend fun reconcile() = polling.withLock {
+    /**
+     * Applies the PSQL registry to this replica,
+     * scheduling version loads, cleanup, and publishing the tool catalog.
+     */
+    suspend fun reconcile() = pollingMutex.withLock {
         try {
-            val rows = repository.registry()
+            val rows: List<PluginRegistration> = repository.registry()
             stateMutex.withLock {
                 if (stopping) return@withLock
                 registrations = rows
                 registryError = null
-                for (row in rows) {
-                    meters(row.id)
-                    for (metadata in row.versions) {
+                for ((pluginId: String, _, isPluginEnabled, _, pluginVersions: List<PluginVersion>) in rows) {
+                    meters(pluginId)
+                    for (metadata: PluginVersion in pluginVersions) {
                         versions[metadata.binding]?.metadata = metadata
-                        if (row.enabled && !metadata.retired && !metadata.quarantined) {
+                        if (isPluginEnabled && !metadata.retired && !metadata.quarantined) {
                             val existing = versions[metadata.binding]
                             if (existing == null || existing.disposed.isCompleted && now() >= existing.retryAt) {
                                 load(metadata)
