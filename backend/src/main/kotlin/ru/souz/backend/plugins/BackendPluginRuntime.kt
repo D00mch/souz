@@ -424,6 +424,7 @@ internal class BackendPluginRuntime(
         mutex.withLock { entry.phase = Phase.CLOSING; publish() }
         try {
             entry.code?.close()
+            @Suppress("BlockingMethodInNonBlockingContext") // This runs cleanup on the plugin work IO dispatcher.
             Files.deleteIfExists(entry.path)
             mutex.withLock {
                 entry.code = null
