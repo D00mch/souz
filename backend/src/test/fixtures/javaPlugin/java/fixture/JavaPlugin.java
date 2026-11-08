@@ -7,9 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import kotlin.ResultKt;
 import kotlin.coroutines.Continuation;
-import kotlin.coroutines.CoroutineContext;
 import kotlin.coroutines.intrinsics.IntrinsicsKt;
 import org.jetbrains.annotations.NotNull;
 import ru.souz.plugins.api.PluginContext;
@@ -35,19 +33,7 @@ public final class JavaPlugin implements SouzPlugin {
         } catch (Exception failure) {
             throw new IllegalArgumentException(failure);
         }
-        var next = new Continuation<PluginHttpResponse>() {
-            @Override
-            public @NotNull CoroutineContext getContext() { return continuation.getContext(); }
-            @Override
-            public void resumeWith(@NotNull Object result) {
-                try {
-                    ResultKt.throwOnFailure(result);
-                    continuation.resumeWith(content((PluginHttpResponse) result));
-                } catch (Throwable failure) {
-                    continuation.resumeWith(ResultKt.createFailure(failure));
-                }
-            }
-        };
+        var next = FixtureContinuation.mapResult(continuation, JavaPlugin::content);
         Object response = context.getHttp().execute(new PluginHttpRequest(url, "GET", Map.of(), new byte[0]), next);
         if (response == IntrinsicsKt.getCOROUTINE_SUSPENDED()) return response;
         return content(Objects.requireNonNull((PluginHttpResponse) response));
