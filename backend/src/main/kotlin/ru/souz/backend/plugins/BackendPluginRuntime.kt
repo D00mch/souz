@@ -110,8 +110,11 @@ internal class BackendPluginRuntime(
         } catch (_: Exception) {
             unavailable("plugin_registry_unavailable")
         }
-        val eligible = rows.filter { it.enabled }.flatMap { it.versions }
-            .filter { !it.retired && !it.quarantined }.map { it.binding }.toSet()
+        val eligible = rows.asSequence().filter { it.enabled }
+            .flatMap { it.versions }
+            .filter { !it.retired && !it.quarantined }
+            .map { it.binding }
+            .toSet()
         val pins = current.defaultBindings.filter { it in eligible }
         return current.copy(defaultBindings = pins, catalog = current.catalog.filter { _, tool ->
             pins.any { tool.fn.name.startsWith("plugin." + it.id + ".") }
@@ -283,7 +286,7 @@ internal class BackendPluginRuntime(
             throw cancelled
         }
         catch (failure: Throwable) {
-            if (failure is VirtualMachineError || failure is ThreadDeath) throw failure
+            if (failure is VirtualMachineError) throw failure
             val known = failure as? PluginException
             val ignored = failure is PluginUnavailableException || known?.kind?.let { it != PluginFailureKind.TECHNICAL } == true
             val code = (failure as? PluginUnavailableException)?.code ?: known?.code
@@ -388,7 +391,7 @@ internal class BackendPluginRuntime(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {
-                if (failure is VirtualMachineError || failure is ThreadDeath) throw failure
+                if (failure is VirtualMachineError) throw failure
                 entry.error = diagnostic("plugin_preparation_failed", failure)
             } finally {
                 withContext(NonCancellable) {
