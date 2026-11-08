@@ -6,10 +6,12 @@ import com.fasterxml.jackson.core.util.JsonRecyclerPools;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import kotlin.ResultKt;
 import kotlin.coroutines.Continuation;
 import kotlin.coroutines.CoroutineContext;
 import kotlin.coroutines.intrinsics.IntrinsicsKt;
+import org.jetbrains.annotations.NotNull;
 import ru.souz.plugins.api.PluginContext;
 import ru.souz.plugins.api.PluginHttpRequest;
 import ru.souz.plugins.api.PluginHttpResponse;
@@ -18,7 +20,8 @@ import ru.souz.plugins.api.SouzPlugin;
 
 /** Java uses the same continuation ABI, including asynchronously completed host services. */
 public final class JavaPlugin implements SouzPlugin {
-    public List<PluginTool> getTools() {
+    @Override
+    public @NotNull List<PluginTool> getTools() {
         return List.of(new PluginTool("fetch", "Fetch through the host HTTP service",
             "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\"}},\"required\":[\"url\"],\"additionalProperties\":false}",
             "MAIL", this::invoke));
@@ -26,11 +29,17 @@ public final class JavaPlugin implements SouzPlugin {
 
     private Object invoke(String input, PluginContext context, Continuation<? super String> continuation) {
         final String url;
-        try { url = new ObjectMapper(JsonFactory.builder().recyclerPool(JsonRecyclerPools.nonRecyclingPool()).build()).readTree(input).get("url").asText(); }
-        catch (Exception failure) { throw new IllegalArgumentException(failure); }
+        try {
+            JsonFactory jf = JsonFactory.builder().recyclerPool(JsonRecyclerPools.nonRecyclingPool()).build();
+            url = new ObjectMapper(jf).readTree(input).get("url").asText();
+        } catch (Exception failure) {
+            throw new IllegalArgumentException(failure);
+        }
         var next = new Continuation<PluginHttpResponse>() {
-            public CoroutineContext getContext() { return continuation.getContext(); }
-            public void resumeWith(Object result) {
+            @Override
+            public @NotNull CoroutineContext getContext() { return continuation.getContext(); }
+            @Override
+            public void resumeWith(@NotNull Object result) {
                 try {
                     ResultKt.throwOnFailure(result);
                     continuation.resumeWith(content((PluginHttpResponse) result));
@@ -41,7 +50,7 @@ public final class JavaPlugin implements SouzPlugin {
         };
         Object response = context.getHttp().execute(new PluginHttpRequest(url, "GET", Map.of(), new byte[0]), next);
         if (response == IntrinsicsKt.getCOROUTINE_SUSPENDED()) return response;
-        return content((PluginHttpResponse) response);
+        return content(Objects.requireNonNull((PluginHttpResponse) response));
     }
 
     private static String content(PluginHttpResponse response) {

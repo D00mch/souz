@@ -14,6 +14,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.client.clientArgumentsError
@@ -588,7 +589,7 @@ internal class BackendPluginRuntime(
         val controlDispatcher = Executors.newScheduledThreadPool(2) { task ->
             Thread(task, "souz-plugin-control").apply { isDaemon = true }
         }.asCoroutineDispatcher()
-        val log = LoggerFactory.getLogger(BackendPluginRuntime::class.java)
+        val log: Logger = LoggerFactory.getLogger(BackendPluginRuntime::class.java)
         fun now() = System.nanoTime() / 1_000_000
         fun diagnostic(code: String, failure: Throwable) = code + ": " + failure.javaClass.name.take(160)
     }

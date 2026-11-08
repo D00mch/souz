@@ -6,6 +6,7 @@ import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import java.util.UUID
 import kotlinx.coroutines.*
+import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import ru.souz.backend.attachments.*
 import ru.souz.backend.channels.ChannelProviderRegistry
@@ -142,7 +143,7 @@ internal class PluginServices(
     }
     override fun close() = http.close()
     private companion object {
-        val log = LoggerFactory.getLogger(PluginServices::class.java)
+        val log: Logger = LoggerFactory.getLogger(PluginServices::class.java)
         const val OAUTH_BYTES = 36 * 1024 * 1024
         val attachmentInputErrors = setOf("attachment_not_found", "attachment_expired", "attachment_not_ready",
             "attachment_too_large", "attachment_idempotency_conflict", "invalid_attachment_object_key")
