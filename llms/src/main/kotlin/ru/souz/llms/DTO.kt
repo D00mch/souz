@@ -179,7 +179,12 @@ enum class LLMModel(
     AnthropicOpus46("Claude Opus 4.6", "claude-opus-4-6", LlmProvider.ANTHROPIC),
     AnthropicSonnet45("Claude Sonnet 4.5", "claude-sonnet-4-5-20250929", LlmProvider.ANTHROPIC),
     AnthropicHaiku45("Claude Haiku 4.5", "claude-haiku-4-5-20251001", LlmProvider.ANTHROPIC),
-    LocalQwen3_4B_Instruct_2507("Local Qwen3 4B Instruct", "local-qwen3-4b-instruct-2507", LlmProvider.LOCAL),
+    // Keep the enum name for persisted settings and per-model system prompts.
+    LocalQwen3_4B_Instruct_2507(
+        "Local Qwen3.5 4B", "local-qwen3.5-4b", LlmProvider.LOCAL,
+        setOf("local-qwen3-4b-instruct-2507"),
+    ),
+    LocalQwen35_9B("Local Qwen3.5 9B", "local-qwen3.5-9b", LlmProvider.LOCAL),
     LocalGemma4_E2B_It("Local Gemma 4 E2B Instruct", "local-gemma-4-e2b-it", LlmProvider.LOCAL),
     LocalGemma4_E4B_It("Local Gemma 4 E4B Instruct", "local-gemma-4-e4b-it", LlmProvider.LOCAL),
     CodexGpt6Astra("GPT-6 Astra (Codex)", "gpt-6-astra", LlmProvider.CODEX),

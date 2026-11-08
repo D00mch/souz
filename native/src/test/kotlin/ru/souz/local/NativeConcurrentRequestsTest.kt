@@ -37,8 +37,8 @@ import kotlin.test.assertTrue
 class NativeConcurrentRequestsTest {
     @Test
     fun `cancelled child joins native cleanup before another model uses the runtime`() = runBlocking {
-        for (streaming in listOf(false, true)) withTimeout(10_000) {
-            val first = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507
+        val profiles = listOf(LocalModelProfiles.QWEN35_4B, LocalModelProfiles.QWEN35_9B)
+        for (first in profiles) for (streaming in listOf(false, true)) withTimeout(10_000) {
             val second = LocalModelProfiles.GEMMA4_E2B_IT
             val started = CompletableDeferred<Unit>()
             val cancelled = CompletableDeferred<Unit>()

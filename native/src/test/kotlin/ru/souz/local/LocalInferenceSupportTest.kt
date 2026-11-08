@@ -111,6 +111,7 @@ class LocalInferenceSupportTest {
         assertEquals(
             listOf(
                 LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
+                LocalModelProfiles.QWEN35_9B,
                 LocalModelProfiles.GEMMA4_E2B_IT,
                 LocalModelProfiles.GEMMA4_E4B_IT,
             ),
@@ -184,8 +185,8 @@ class LocalInferenceSupportTest {
         assertFalse(chat.prefersPlainTextLocalOutput())
         assertTrue(prompt.startsWith("<|im_start|>system"))
         assertTrue(prompt.contains("Return exactly one JSON object and nothing else."))
-        assertTrue(prompt.contains("<|im_start|>user\nПроверь календарь\n<|im_end|>"))
-        assertTrue(prompt.endsWith("<|im_start|>assistant\n"))
+        assertTrue(prompt.contains("<|im_start|>user\nПроверь календарь<|im_end|>"))
+        assertTrue(prompt.endsWith("<|im_start|>assistant\n<think>\n\n</think>\n\n"))
     }
 
     @Test
@@ -1089,7 +1090,7 @@ class LocalInferenceSupportTest {
 
         val error = assertIs<LLMResponse.Chat.Error>(result)
         assertEquals(
-            "Local model Local Qwen3 4B Instruct 2507 does not support image input.",
+            "Local model Local Qwen3.5 4B does not support image input.",
             error.message,
         )
         val unknown = LLMRequest.Chat(model = "unknown-deployment", provider = LlmProvider.LOCAL, messages = emptyList())

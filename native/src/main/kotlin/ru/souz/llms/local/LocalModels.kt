@@ -10,6 +10,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LocalModelAvailability
+import ru.souz.llms.findLLMModel
 
 data class LocalLicenseRequirements(
     val summary: String,
@@ -39,7 +40,7 @@ interface LocalDownloadableProfile {
 }
 
 enum class LocalPromptFamily {
-    QWEN_CHATML,
+    QWEN35,
     GEMMA4,
 }
 
@@ -195,17 +196,17 @@ class LocalHostInfoProvider {
 }
 
 object LocalModelProfiles {
-    val QWEN3_4B_INSTRUCT_2507 = LocalModelProfile(
+    val QWEN35_4B = LocalModelProfile(
         gigaModel = LLMModel.LocalQwen3_4B_Instruct_2507,
-        id = "local-qwen3-4b-instruct-2507",
-        displayName = "Local Qwen3 4B Instruct 2507",
-        huggingFaceRepoId = "unsloth/Qwen3-4B-Instruct-2507-GGUF",
-        ggufFilename = "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+        id = "local-qwen3.5-4b",
+        displayName = "Local Qwen3.5 4B",
+        huggingFaceRepoId = "unsloth/Qwen3.5-4B-GGUF",
+        ggufFilename = "Qwen3.5-4B-Q4_K_M.gguf",
         quantization = "Q4_K_M",
         minRamGb = 8,
         defaultContextSize = 8192,
-        maxContextSize = 8192,
-        promptFamily = LocalPromptFamily.QWEN_CHATML,
+        maxContextSize = 32_768,
+        promptFamily = LocalPromptFamily.QWEN35,
         samplingDefaults = LocalSamplingDefaults(
             temperature = 0.2f,
             topP = 0.9f,
@@ -215,6 +216,18 @@ object LocalModelProfiles {
             summary = "Apache 2.0",
             requiresManualAcceptance = false,
         ),
+    )
+
+    // Source compatibility for callers; the old GGUF is never reused for Qwen3.5.
+    val QWEN3_4B_INSTRUCT_2507: LocalModelProfile = QWEN35_4B
+
+    val QWEN35_9B = QWEN35_4B.copy(
+        gigaModel = LLMModel.LocalQwen35_9B,
+        id = "local-qwen3.5-9b",
+        displayName = "Local Qwen3.5 9B",
+        huggingFaceRepoId = "unsloth/Qwen3.5-9B-GGUF",
+        ggufFilename = "Qwen3.5-9B-Q4_K_M.gguf",
+        minRamGb = 16,
     )
 
     val GEMMA4_E2B_IT = LocalModelProfile(
@@ -276,13 +289,15 @@ object LocalModelProfiles {
     )
 
     val all: List<LocalModelProfile> = listOf(
-        QWEN3_4B_INSTRUCT_2507,
+        QWEN35_4B,
+        QWEN35_9B,
         GEMMA4_E2B_IT,
         GEMMA4_E4B_IT,
     )
 
-    fun forAlias(alias: String): LocalModelProfile? = all.firstOrNull { profile ->
-        profile.id.equals(alias, ignoreCase = true) || profile.gigaModel.alias.equals(alias, ignoreCase = true)
+    fun forAlias(alias: String): LocalModelProfile? {
+        val model = findLLMModel(alias)
+        return all.firstOrNull { it.gigaModel == model }
     }
 
     fun availableForRam(totalRamGb: Int): List<LocalModelProfile> = all.filter { profile ->
