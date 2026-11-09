@@ -18,6 +18,7 @@ data class UserMcpServer(
     val enabled: Boolean,
     val command: String? = null,
     val url: String? = null,
+    val description: String = "",
 )
 
 data class UserSettings(

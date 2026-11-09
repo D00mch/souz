@@ -13,6 +13,7 @@ Before changing this module, read the relevant pain-point topics below.
 - Public WebSocket messages import completed S3 uploads by opaque `objectKey` and assign independent internal UUIDs. Resolve accepted receipts before import; preserve structured files in initial and follow-up input. Capture reply `{objectKey, name, presentation}` under attachment-row locks in the final transaction and retain the snapshot in message metadata. Terminal and forwarded events persist descriptors so replay needs no storage access. Revalidate follow-up attachments before any acceptance mutations. File selection is transport-independent; destinations validate file support and ownership.
 - Enrich declared known client tools with bundled `skills/client` instructions, categories, and deadlines. Preserve their exact names, persisted descriptions, and input schemas. Custom client tools use a one-minute deadline.
 - Build every turn with the backend's single request-scoped steerable `AgentId.SKILLS_GRAPH`. Advertise only its fixed core Skill tools and discover catalog capabilities through Skill inventory.
+- Remote MCP HTTP settings belong to the owner. Preserve all enabled server discovery hints regardless of classification, compose loaded tools with compiled/plugin/channel catalogues, and close execution-owned SDK sessions after agent/child cleanup. `LoadMcpTools` joins the core only when servers are configured; MCP schemas and calls use the Skill path. See [MCP servers](docs/mcp.md).
 - Reuse the application-owned Jev HTTP/1.1 client across users and executions; provider resources close it after application work stops. See [provider HTTP lifecycle](../sharedLogic/docs/provider-http-lifecycle.md).
 - Synchronize personality only through owned, unarchived connected channels that declare or discover `prompt.personality.set`. Prefer the current channel, then another eligible receiver; do not broadcast. Reconnect sync requires support on the reconnecting channel. Save independently of discovery; no known eligible receiver returns `sync: skipped`. Keep control commands hidden from model tools.
 - Keep product messages, thread lifecycle, agent continuation state, idempotency receipts, and replay events in their existing ownership layers. Client commands share one live-only dispatcher and independently correlated waiters; resume only after the result ACK. Commands have no durable receipt or replay.
@@ -29,6 +30,8 @@ Before changing this module, read the relevant pain-point topics below.
 - Backend owns execution, capacity, LLM, and tool metrics; `:job-impl` owns queue metrics and binds them to the shared registry at composition. Restrict `/metrics` at ingress; its [metric reference](docs/metrics.md) defines accounting and replica semantics.
 
 ## Pain points
+
+- [MCP servers](docs/mcp.md) — HTTP configuration, classifier preloading, explicit discovery, Skill execution and session ownership.
 
 - [JVM plugins](docs/jvm-plugins.md) — artifact uploads, isolation, replica reconciliation, durable pins, invocation leases and process recovery.
 - [Personality settings](docs/personality-settings.md) — validated user style, conversational scope and Orion snapshots.

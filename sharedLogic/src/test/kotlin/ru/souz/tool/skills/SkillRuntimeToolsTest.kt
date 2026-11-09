@@ -215,8 +215,12 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
-    fun `missing or disabled plugins cannot resolve persisted file backed declarations`() = runTest {
-        val pluginName = "plugin.reference.report"
+    fun `missing or disabled host tools cannot resolve persisted file backed declarations`() = runTest {
+        assertUnavailableHostTool("plugin.reference.report")
+        assertUnavailableHostTool("mcp.Y2FsZW5kYXI.Y3JlYXRlX2V2ZW50")
+    }
+
+    private suspend fun assertUnavailableHostTool(pluginName: String) {
         val compiled = RecordingTool(pluginName)
         val repository = repository(bundle(pluginName, body = "Spoofed plugin instructions."))
         val pluginCatalog = catalog(ToolCategory.MAIL to listOf(compiled))

@@ -14,6 +14,8 @@ import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.mcp.McpServerConfig
+import ru.souz.mcp.McpToolCatalog
 import ru.souz.agent.spi.TaskComplexityClassifier
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
@@ -177,9 +179,16 @@ internal class BackendConversationRuntimeFactory(
                 withProviderCall(hookBudget, LlmProvider.OPENAI) { imageGenerationGateway.generate(input) }
             },
         )
+        val mcp = McpToolCatalog(key.userId,
+            userSettingsRepository.get(key.userId)?.mcp.orEmpty().mapNotNull { (id, server) ->
+                server.url?.takeIf { server.enabled }?.let { url ->
+                    McpServerConfig(id, server.description.ifBlank { id }, url)
+                }
+            }, providerHttpClients.standard, request.requestTimeoutMillis ?: settingsProvider.requestTimeoutMillis)
         val pluginCatalog = pluginBinding?.catalog ?: AgentToolCatalog()
         val serverNames = toolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet() +
-            BackendToolCapabilityPolicy.executionBoundToolNames + pluginCatalog.toolsByCategory.values.flatMap { it.keys }
+            BackendToolCapabilityPolicy.executionBoundToolNames + pluginCatalog.toolsByCategory.values.flatMap { it.keys } +
+            McpToolCatalog.LOAD_TOOL_NAME
         val baseCatalog = backendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
             executionLlmToolCatalog = AgentToolCatalog.compose(executionLlmToolCatalog.catalog,
@@ -199,18 +208,19 @@ internal class BackendConversationRuntimeFactory(
                 clientSkills.catalog(key.userId, serverNames, ::refreshClientCatalogue))
         }
         refreshClientCatalogue()
+        fun currentToolCatalog(): AgentToolCatalog = AgentToolCatalog.compose(executionToolCatalog, mcp.catalog)
         val channelInstructions = "Current conversation channelId: ${key.conversationId}."
         val toolTelemetry = metrics?.toolTelemetry(executionToolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet())
             ?: AgentTelemetry.NONE
         val requestToolsFilter = RuntimePassThroughToolsFilter
         val getSkillByNameTool = ToolGetSkillByName(
-            catalogProvider = { executionToolCatalog },
+            catalogProvider = ::currentToolCatalog,
             toolsFilter = requestToolsFilter,
             skillBundleProvider = skillBundleProvider,
             approvalGate = null,
         )
         val getSkillsNamesByCategoryTool = ToolGetSkillsNamesByCategory(
-            catalogProvider = { executionToolCatalog },
+            catalogProvider = ::currentToolCatalog,
             toolsFilter = requestToolsFilter,
         )
         val getSkillsByCategoryTool = ToolGetSkillsByCategory(
@@ -218,7 +228,7 @@ internal class BackendConversationRuntimeFactory(
             getSkillsNamesByCategory = getSkillsNamesByCategoryTool,
         )
         val runtimeCommandTool = ToolInvokeSkill(
-            catalogProvider = { executionToolCatalog },
+            catalogProvider = ::currentToolCatalog,
             toolsFilter = requestToolsFilter,
             loadBundle = skillBundleProvider::loadSkillBundle,
             commandExecutor = commandExecutor,
@@ -235,7 +245,7 @@ internal class BackendConversationRuntimeFactory(
                     attachmentHistoryLimit = attachmentHistoryLimit,
                 )
             },
-            catalogProvider = { executionToolCatalog.filter { _, tool -> tool.fn.name != CLIENT_TOOL_DISCOVERY_NAME } },
+            catalogProvider = { currentToolCatalog().filter { _, tool -> tool.fn.name != CLIENT_TOOL_DISCOVERY_NAME } },
             toolsFilter = requestToolsFilter,
             skillBundleProvider = skillBundleProvider,
             commandExecutor = commandExecutor,
@@ -248,6 +258,8 @@ internal class BackendConversationRuntimeFactory(
             logObjectMapper = logObjectMapper,
             settingsProvider = settingsProvider,
             toolCatalog = executionToolCatalog,
+            toolCatalogProvider = ::currentToolCatalog,
+            toolServerSource = mcp.takeIf { it.servers.isNotEmpty() },
             toolsFilter = requestToolsFilter,
             skillBundleProvider = skillBundleProvider,
             runtimeEnvironment = BackendRequestRuntimeEnvironment(
@@ -264,6 +276,7 @@ internal class BackendConversationRuntimeFactory(
                 runtimeCommand = runtimeCommandTool,
                 subagentTools = { subagentTools.create(it).tools },
                 forgetMemory = forgetMemoryTools,
+                additionalDiscoveryTools = listOf(mcp.discoveryTool).takeIf { mcp.servers.isNotEmpty() }.orEmpty(),
             ),
             knowledgeStore = knowledgeStore,
             telemetry = toolTelemetry,
@@ -293,6 +306,7 @@ internal class BackendConversationRuntimeFactory(
             persistedSession = persistedSession,
             initialMessages = initialMessages.messages,
             initialObservedMessageSeq = initialMessages.observedThroughSeq,
+            closeExecutionResources = mcp::close,
         )
     }
 }

@@ -35,6 +35,7 @@ internal class BackendConversationRuntime(
     private val persistedSession: AgentConversationSession?,
     private val initialMessages: List<LLMRequest.Message>,
     initialObservedMessageSeq: Long,
+    private val closeExecutionResources: suspend () -> Unit = {},
 ) {
     private val cursorMutex = Mutex()
     private var observedMessageSeq = initialObservedMessageSeq
@@ -43,6 +44,16 @@ internal class BackendConversationRuntime(
         request: BackendConversationTurnRequest,
         eventSink: AgentRuntimeEventSink? = null,
         onRuntimeReady: suspend () -> Unit = {},
+    ): BackendConversationExecution = try {
+        executeTurn(request, eventSink, onRuntimeReady)
+    } finally {
+        closeExecutionResources()
+    }
+
+    private suspend fun executeTurn(
+        request: BackendConversationTurnRequest,
+        eventSink: AgentRuntimeEventSink?,
+        onRuntimeReady: suspend () -> Unit,
     ): BackendConversationExecution {
         val previousSelection = persistedSession?.takeIf {
             request.executionId != null && it.attachmentExecutionId == request.executionId

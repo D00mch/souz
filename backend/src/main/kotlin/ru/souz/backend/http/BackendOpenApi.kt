@@ -250,6 +250,7 @@ internal object BackendOpenApiSchemas {
 
     fun settingsPatch(schema: JsonSchema): JsonSchema =
         schema
+            .withPropertyDescription("mcp", "Complete replacement of this user's MCP HTTP server map; an empty map removes all servers. Each entry requires a description of 1 to 240 characters and an HTTP(S) URL without user information or fragments. At most 64 servers; IDs use 1 to 64 letters, digits, underscores or hyphens. Supports Streamable HTTP; local commands and MCP authentication credentials are not accepted.")
             .withModelAliases("defaultModel")
             .withPropertyDescription("temperature", "Must be a finite JSON number.")
             .withNonBlankString("locale", "A recognized BCP 47 language tag.")
