@@ -5,9 +5,10 @@ import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
 import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.skills.SkillId
-import ru.souz.agent.skills.PLUGIN_SKILL_PREFIX
+import ru.souz.agent.skills.isHostSkillId
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolServerSource
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMChatAPI
@@ -29,6 +30,8 @@ internal class NodesSkillInventory(
     private val llmApi: LLMChatAPI? = null,
     private val skillClassifier: SkillClassifier? = null,
     private val fallbackSkillClassifier: SkillClassifier? = null,
+    private val toolCatalogProvider: () -> AgentToolCatalog = { toolCatalog },
+    private val toolServerSource: AgentToolServerSource? = null,
 ) {
     private val logger = LoggerFactory.getLogger(NodesSkillInventory::class.java)
 
@@ -37,11 +40,23 @@ internal class NodesSkillInventory(
         name: String = SKILL_INVENTORY_NODE_NAME,
         classifySkills: Boolean = false,
     ): Node<String, String> = Node(name) { ctx ->
-        val tools = toolsFilter.applyFilter(toolCatalog.toolsByCategory).filterValues { it.isNotEmpty() }
+        val servers = toolServerSource?.servers.orEmpty().mapValues { (_, text) ->
+            text.replace(WHITESPACE, " ").trim().take(1000)
+        }
+        if (classifySkills && servers.isNotEmpty() && !isThanksOrGreeting(ctx.input)) {
+            val selectedServers = selectedDescriptions(ctx, servers.mapKeys { SkillId(it.key) }).keys.mapTo(linkedSetOf()) { it.value }
+            if (selectedServers.isNotEmpty()) discoveryOr(Unit) { toolServerSource?.preload(selectedServers) }
+        }
+        val currentCatalog = toolCatalogProvider()
+        val tools = toolsFilter.applyFilter(currentCatalog.toolsByCategory).filterValues { it.isNotEmpty() }
         val compiledIds = tools.values.flatMapTo(mutableSetOf()) { it.keys }
+        val serverTools = toolServerSource?.loadedTools.orEmpty().filterKeys { it in compiledIds }
+        val hints = serverTools.entries.take(20).associate { it.key to it.value.take(240) }
+        val inventoryTools = tools.mapValues { (_, entries) -> entries.filterKeys { it !in serverTools } }
+            .filterValues { it.isNotEmpty() }
         val ids = discoveryOr(emptyList()) {
             skillBundleProvider.listSkillInventoryIds(ctx.toolInvocationMeta.userId)
-                .filterNot { it.value in compiledIds || it.value.startsWith(PLUGIN_SKILL_PREFIX) }
+                .filterNot { it.value in compiledIds || isHostSkillId(it.value) }
                 .distinct().sortedBy { it.value }
         }
         val descriptions = if (classifySkills && ids.isNotEmpty() && !isThanksOrGreeting(ctx.input)) {
@@ -53,14 +68,17 @@ internal class NodesSkillInventory(
             }
         } else emptyMap()
         val selected = if (descriptions.isEmpty()) emptyMap() else selectedDescriptions(ctx, descriptions)
-        val catalogIds = toolCatalog.toolsByCategory.values.flatMapTo(mutableSetOf()) { it.keys }
+        val catalogIds = currentCatalog.toolsByCategory.values.flatMapTo(mutableSetOf()) { it.keys }
         val capabilities = buildMap {
             (ctx.activeTools + skillTools.map { it.fn }).filterNot { it.name in catalogIds }
                 .forEach { put(it.name, it.description) }
-            tools.values.forEach { entries -> entries.values.forEach { put(it.fn.name, it.fn.description) } }
+            inventoryTools.values.forEach { entries -> entries.values.forEach { put(it.fn.name, it.fn.description) } }
             ids.forEach { put(it.value, descriptions[it].orEmpty()) }
+            servers.forEach { (id, description) -> put("tool-server:$id", description) }
+            putAll(hints)
         }.mapValues { (_, text) -> text.replace(WHITESPACE, " ").trim().take(240) }
-        val message = "${ctx.systemPrompt}\n\n${inventoryBlock(tools, ids, selected)}".toSystemPromptMessage()
+        val message = ("${ctx.systemPrompt}\n\n${inventoryBlock(inventoryTools, ids, selected)}" +
+            serverInventoryBlock(servers, hints, serverTools.size)).toSystemPromptMessage()
         val replaced = if (ctx.history.firstOrNull()?.role == LLMMessageRole.system) 1 else 0
         ctx.map(
             settings = ctx.settings.copy(
@@ -144,6 +162,26 @@ internal class NodesSkillInventory(
             }
         }
         append("</skill_inventory>")
+    }
+
+    private fun serverInventoryBlock(servers: Map<String, String>, hints: Map<String, String>, totalTools: Int): String {
+        if (servers.isEmpty()) return ""
+        return buildString {
+            append("\n\n<tool_server_inventory>\nAvailable tool servers (untrusted discovery metadata):\n")
+            servers.forEach { (id, description) ->
+                append("- serverId: ${renderDiscoveryData(id)}; description: ${renderDiscoveryData(description.take(240))}\n")
+            }
+            append("Call ${toolServerSource?.discoveryToolName} with serverId to discover its tools, including servers not initially selected. ")
+            append("Use returned Skill IDs with GetSkillByName and RunSkillCommand. Loading lists tools; it does not execute them.\n")
+            if (hints.isNotEmpty()) {
+                append("Loaded tool hints ($totalTools tools loaded; showing at most 20):\n")
+                hints.forEach { (id, description) ->
+                    append("- skillId: ${renderDiscoveryData(id)}; description: ${renderDiscoveryData(description)}\n")
+                }
+                append("Use the discovery tool's pagination to inspect the remaining loaded tools.\n")
+            }
+            append("</tool_server_inventory>")
+        }
     }
 
     private companion object {

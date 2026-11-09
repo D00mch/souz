@@ -9,6 +9,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolServerSource
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -17,6 +18,7 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.skills.SkillToolSchemas
+import org.slf4j.LoggerFactory
 
 data class McpServerConfig(val id: String, val description: String, val url: String)
 data class LoadedMcpTool(val skillId: String, val description: String)
@@ -27,9 +29,12 @@ class McpToolCatalog(
     servers: List<McpServerConfig>,
     private val httpClient: HttpClient,
     private val timeoutMillis: Long = 60_000,
-) {
+) : AgentToolServerSource {
     private val serversById = servers.associateBy { it.id }
-    val descriptions: Map<String, String> = serversById.mapValues { it.value.description }
+    override val servers: Map<String, String> = serversById.mapValues { it.value.description }
+    override val discoveryToolName: String = LOAD_TOOL_NAME
+    override val loadedTools: Map<String, String>
+        get() = catalog.toolsByCategory.values.flatMap { it.values }.associate { it.fn.name to it.fn.description }
     private val mutex = Mutex()
     private val sessions = linkedMapOf<String, McpHttpSession>()
     private val loaded = linkedMapOf<String, List<LLMToolSetup>>()
@@ -39,6 +44,19 @@ class McpToolCatalog(
 
     init {
         require(serversById.size == servers.size) { "MCP server IDs must be unique." }
+    }
+
+    override suspend fun preload(serverIds: Set<String>) {
+        for (id in serverIds) {
+            try {
+                load(id)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                LoggerFactory.getLogger(McpToolCatalog::class.java).warn("MCP preload failed serverId={} failure={}",
+                    id, failure.javaClass.simpleName)
+            }
+        }
     }
 
     suspend fun load(serverId: String): List<LoadedMcpTool> = mutex.withLock {
@@ -69,6 +87,8 @@ class McpToolCatalog(
             description = "Load tools from an available MCP server by its exact serverId. Returns Skill IDs for GetSkillByName and RunSkillCommand in this execution. Loading does not execute the remote tools.",
             parameters = LLMRequest.Parameters("object", mapOf(
                 "serverId" to LLMRequest.Property("string", "Exact server ID from the MCP server inventory."),
+                "offset" to LLMRequest.Property("integer", "Start position in the loaded tool list; default 0."),
+                "limit" to LLMRequest.Property("integer", "Number of tool summaries to return; default 20, maximum 50."),
             ), required = listOf("serverId"), additionalProperties = false),
         )
 
@@ -79,7 +99,19 @@ class McpToolCatalog(
             if (meta.userId != owner) return failure(fn.name, "mcp_identity_mismatch")
             val id = (functionCall.arguments["serverId"] as? String)?.trim()
                 ?: return failure(fn.name, "mcp_invalid_server")
-            return guarded(fn.name) { mapOf("serverId" to id, "tools" to load(id)) }
+            if (id !in serversById) return failure(fn.name, "mcp_server_unavailable")
+            val offset = functionCall.arguments["offset"] ?: 0
+            val limit = functionCall.arguments["limit"] ?: 20
+            if (offset !is Number || limit !is Number || offset.toLong() !in 0..10_000 ||
+                limit.toLong() !in 1..50 || offset.toDouble() != offset.toLong().toDouble() ||
+                limit.toDouble() != limit.toLong().toDouble()) return failure(fn.name, "mcp_invalid_arguments")
+            return guarded(fn.name) {
+                val tools = load(id)
+                val start = offset.toInt()
+                val page = tools.drop(start).take(limit.toInt())
+                mapOf("serverId" to id, "tools" to page, "totalTools" to tools.size,
+                    "nextOffset" to (start + page.size).takeIf { it < tools.size })
+            }
         }
     }
 

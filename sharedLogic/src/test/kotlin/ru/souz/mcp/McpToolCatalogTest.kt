@@ -53,6 +53,38 @@ class McpToolCatalogTest {
     }
 
     @Test
+    fun `discovery pages summaries and rejects unknown servers without repeating the listing`() = runBlocking {
+        val server = McpTestServer {
+            restJsonMapper.createObjectNode().apply {
+                val tools = putArray("tools")
+                repeat(23) { index -> tools.addObject().apply {
+                    put("name", "tool$index")
+                    putObject("inputSchema").put("type", "object")
+                } }
+            }
+        }
+        server.client.use { http ->
+            val catalog = McpToolCatalog("owner", listOf(McpServerConfig("calendar", "Calendar", URL)), http)
+            try {
+                suspend fun discover(arguments: Map<String, Any>) = restJsonMapper.readTree(catalog.discoveryTool.invoke(
+                    LLMResponse.FunctionCall(McpToolCatalog.LOAD_TOOL_NAME, arguments), ToolInvocationMeta(userId = "owner")).content)
+                val first = discover(mapOf("serverId" to "calendar"))
+                assertEquals(20, first.path("tools").size())
+                assertEquals(20, first.path("nextOffset").asInt())
+                assertEquals(23, first.path("totalTools").asInt())
+                val last = discover(mapOf("serverId" to "calendar", "offset" to 20))
+                assertEquals(3, last.path("tools").size())
+                assertTrue(last.path("nextOffset").isNull)
+                assertEquals("mcp_invalid_arguments", discover(mapOf("serverId" to "calendar", "limit" to 51))
+                    .path("error").path("code").asText())
+                assertEquals("mcp_server_unavailable", discover(mapOf("serverId" to "missing"))
+                    .path("error").path("code").asText())
+                assertEquals(1, server.recorded().count { it.path("method").asText() == "tools/list" })
+            } finally { catalog.close() }
+        }
+    }
+
+    @Test
     fun `server identity and tool identity cannot alias through separators`() {
         assertFalse(McpToolCatalog.toolId("a.b", "c") == McpToolCatalog.toolId("a", "b.c"))
         assertEquals(McpToolCatalog.toolId("calendar", "create"), McpToolCatalog.toolId("calendar", "create"))

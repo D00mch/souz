@@ -13,6 +13,7 @@ import ru.souz.agent.graph.RetryPolicy
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolServerSource
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -354,6 +355,64 @@ class NodesSkillInventoryTest {
         coVerify(exactly = 0) { repository.listSkillDescriptions(any()) }
     }
 
+    @Test
+    fun `server inventory preloads selected servers and bounds tool hints without widening native tools`() = runTest {
+        val source = TestServerSource()
+        val core = FixedTool("GetSkillByName")
+        val result = node(catalog(), source = source,
+            catalogProvider = { catalog(*source.loadedTools.keys.map { FixedTool(it) }.toTypedArray()) },
+            classifier = SkillClassifier { _, choices ->
+                assertEquals(setOf(SkillId("calendar"), SkillId("music")), choices.keys)
+                setOf(SkillId("calendar"), SkillId("unknown"))
+            }).node(listOf(core), classifySkills = true).execute(contextWithCatalog(), runtime())
+        val prompt = result.history.first().content
+        assertEquals(listOf(setOf("calendar")), source.calls)
+        assertContains(prompt, "serverId: \"calendar\"; description: \"Calendar events\"")
+        assertContains(prompt, "serverId: \"music\"; description: \"Music playback\"")
+        assertContains(prompt, "LoadMcpTools")
+        assertEquals(20, prompt.lineSequence().count { it.startsWith("- skillId:") })
+        assertFalse(prompt.contains("mcp.tool30"))
+        assertContains(prompt, "tool 0")
+        assertEquals(setOf(core.fn.name), result.settings.tools.byName.keys)
+        assertEquals("Music playback", result.routingCapabilities["tool-server:music"])
+        assertEquals(PROVIDED_SYSTEM_PROMPT, result.systemPrompt)
+    }
+
+    @Test
+    fun `negative server selection leaves every server discoverable without preloading`() = runTest {
+        val source = TestServerSource()
+        val result = node(catalog(), source = source, classifier = SkillClassifier { _, _ -> emptySet() })
+            .node(emptyList(), classifySkills = true).execute(contextWithCatalog(), runtime())
+        assertTrue(source.calls.isEmpty())
+        assertContains(result.history.first().content, "serverId: \"calendar\"")
+        assertContains(result.history.first().content, "serverId: \"music\"")
+        assertEquals("Calendar events", result.routingCapabilities["tool-server:calendar"])
+    }
+
+    @Test
+    fun `server selection uses the fallback classifier and propagates preload cancellation`() = runTest {
+        val source = TestServerSource(cancel = true)
+        val inventory = node(catalog(), source = source,
+            classifier = SkillClassifier { _, _ -> error("JEV unavailable") },
+            fallbackClassifier = SkillClassifier { _, _ -> setOf(SkillId("calendar")) })
+        assertFailsWith<CancellationException> {
+            inventory.node(emptyList(), classifySkills = true).execute(contextWithCatalog(), runtime())
+        }
+        assertEquals(listOf(setOf("calendar")), source.calls)
+    }
+
+    private class TestServerSource(private val cancel: Boolean = false) : AgentToolServerSource {
+        override val servers = mapOf("calendar" to "Calendar events", "music" to "Music playback")
+        override var loadedTools: Map<String, String> = emptyMap()
+        override val discoveryToolName = "LoadMcpTools"
+        val calls = mutableListOf<Set<String>>()
+        override suspend fun preload(serverIds: Set<String>) {
+            calls.add(serverIds)
+            if (cancel) throw CancellationException("cancelled")
+            loadedTools = (0..30).associate { "mcp.tool$it" to "tool $it" }
+        }
+    }
+
     private fun node(
         catalog: AgentToolCatalog,
         toolsFilter: AgentToolsFilter = PassThroughToolsFilter,
@@ -361,6 +420,8 @@ class NodesSkillInventoryTest {
         classifier: SkillClassifier? = null,
         fallbackClassifier: SkillClassifier? = null,
         llmApi: LLMChatAPI? = null,
+        source: AgentToolServerSource? = null,
+        catalogProvider: () -> AgentToolCatalog = { catalog },
     ): NodesSkillInventory = NodesSkillInventory(
         toolCatalog = catalog,
         toolsFilter = toolsFilter,
@@ -368,6 +429,8 @@ class NodesSkillInventoryTest {
         skillClassifier = classifier,
         fallbackSkillClassifier = fallbackClassifier,
         llmApi = llmApi,
+        toolServerSource = source,
+        toolCatalogProvider = catalogProvider,
     )
 
     private fun contextWithCatalog(vararg tools: LLMToolSetup): AgentContext<String> = AgentContext(
