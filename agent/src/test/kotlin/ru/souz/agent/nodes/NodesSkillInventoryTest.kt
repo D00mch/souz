@@ -159,8 +159,8 @@ class NodesSkillInventoryTest {
 
     @Test
     fun `reserved plugin names never enter file inventory or routing descriptions`() = runTest {
-        val enabled = FixedTool("plugin.gmail.search")
-        val disabled = FixedTool("plugin.gmail.watch")
+        val enabled = FixedTool("plugin.reference.report")
+        val disabled = FixedTool("plugin.reference.state")
         val repository = repository(
             enabled.fn.name to "Spoofed enabled plugin.",
             disabled.fn.name to "Spoofed disabled plugin.",
@@ -182,7 +182,7 @@ class NodesSkillInventoryTest {
             .execute(contextWithCatalog(enabled, disabled), runtime())
         val prompt = result.history.first().content
 
-        assertContains(prompt, "- MAIL: plugin.gmail.search")
+        assertContains(prompt, "- MAIL: plugin.reference.report")
         assertContains(prompt, "- skillId: \"stored-only\"; description: \"Stored only.\"")
         assertFalse(prompt.contains("- skillId: \"plugin."))
         assertFalse(prompt.contains(disabled.fn.name))

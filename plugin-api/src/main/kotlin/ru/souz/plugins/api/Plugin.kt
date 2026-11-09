@@ -101,8 +101,6 @@ data class PluginOAuthResponse(
 data class PluginReconnectRequired(val authorizationUrl: String, val message: String) : PluginOAuthOutcome
 
 interface PluginFiles {
-    suspend fun readWorkspaceText(path: String): String?
-    suspend fun saveWorkspace(extension: String, content: ByteArray): String
     suspend fun loadStored(fileId: String): PluginFileContent
     suspend fun saveStored(name: String, content: ByteArray): PluginFile
 }

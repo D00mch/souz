@@ -16,6 +16,6 @@ state in the host's state service and await structured work before returning.
 ## Verification
 
 ```bash
-./gradlew :plugin-api:check :plugin-api:publishToMavenLocal :plugins:gmail:test :plugins:gmail:jar
+./gradlew :plugin-api:check :plugin-api:publishToMavenLocal :backend:test
 ./gradlew -p plugin-api/examples/hello jar
 ```

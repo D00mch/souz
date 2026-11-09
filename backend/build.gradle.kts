@@ -92,9 +92,6 @@ tasks.test {
     systemProperty("java.awt.headless", "true")
     dependsOn(writePluginProbeClasspath)
     systemProperty("plugin.host.classpath.file", probeClasspathFile.absolutePath)
-    // Exercise the production artifact without adding Gmail or its private libraries to the host.
-    dependsOn(":plugins:gmail:jar")
-    systemProperty("plugin.fixture.gmail", project(":plugins:gmail").layout.buildDirectory.file("libs/gmail.jar").get().asFile.absolutePath)
 }
 
 tasks.processTestResources {

@@ -65,9 +65,7 @@ Arguments never select the storage owner or OAuth user.
   host. Provider scopes and HTTPS host restrictions apply; tokens never cross the
   boundary. `PluginReconnectRequired` carries a consent URL. Responses are bounded
   while streaming, at most 36 MiB; `maxResponseBytes` can request a smaller bound.
-- `files.readWorkspaceText` reads bounded UTF-8 text through the invoking user's
-  filesystem. `saveWorkspace` writes under a fresh host-generated path; supply an
-  extension, not a destination path. `loadStored` and `saveStored` use owner-scoped
+- `files.loadStored` and `files.saveStored` use owner-scoped
   S3 file IDs and the existing file-storage size and expiry policy, without resolving
   a sandbox.
 - `channels.send` uses the user's channel providers. A false result, exception or

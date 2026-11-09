@@ -25,13 +25,11 @@ class PluginRuntimeProcessTest {
     @TempDir lateinit var directory: Path
 
     @Test
-    fun `retired reference and packaged Gmail loaders collect with normal GC policy`(): Unit = runtimeTest {
+    fun `retired reference loaders collect with normal GC policy`(): Unit = runtimeTest {
         // Coverage instrumentation retains instrumented classes; observe production retention in an uninstrumented JVM.
-        for ((index, name) in listOf("kotlin-v1", "gmail").withIndex()) {
-            val pin = install(name, 0)
-            repository.retire(pin.id, pin.version, 1)
-            runProbe(this, pin, "collect", 0, index)
-        }
+        val pin = install("kotlin-v1", 0)
+        repository.retire(pin.id, pin.version, 1)
+        runProbe(this, pin, "collect", 0)
     }
 
     @Test
@@ -234,17 +232,14 @@ object PluginRuntimeProbe {
     private suspend fun collectRetiredLoaders(runtime: BackendPluginRuntime, pin: PluginBinding, datasource: HikariDataSource) {
         val references = mutableListOf<java.lang.ref.WeakReference<ClassLoader>>()
         suspend fun cycle() {
-            val gmail = pin.id == "gmail"
-            val name = if (gmail) "plugin.gmail.configure" else "plugin.reference.report"
+            val name = "plugin.reference.report"
             val binding = runtime.acquire("alice", listOf(pin), setOf(name))
             references += java.lang.ref.WeakReference(binding.versions.single().code!!.loader)
             val path = binding.versions.single().path
             val tool = binding.catalog.toolsByCategory.values.flatMap { it.values }.single()
-            val arguments = if (gmail) mapOf("config" to "gc", "mailboxEmail" to "gc@example.com",
-                "topicName" to "projects/gc/topics/mail", "channelType" to "chat", "channelId" to "owned") else emptyMap()
-            val reply = tool.invoke(ru.souz.llms.LLMResponse.FunctionCall(name, arguments), ru.souz.llms.ToolInvocationMeta("alice"))
+            val reply = tool.invoke(ru.souz.llms.LLMResponse.FunctionCall(name, emptyMap()), ru.souz.llms.ToolInvocationMeta("alice"))
             val result = ru.souz.llms.restJsonMapper.readTree(reply.content)
-            assertEquals(if (gmail) "configured" else "v1", result.path(if (gmail) "status" else "version").asText())
+            assertEquals("v1", result.path("version").asText())
             binding.release()
             awaitPlugin { runtime.snapshot.status.find { it.id == pin.id }!!.versions.isEmpty() }
             assertFalse(Files.exists(path))

@@ -96,7 +96,7 @@ so queue timeout or caller cancellation stops waiting promptly and never starts 
 Late acquired leases are released by the host and stalled admission triggers recovery.
 HTTP accepts any HTTP(S) destination with bounded metadata and 1 MiB bodies, cancellation, and no inherited
 credentials, redirects, cookies or automatic retries. OAuth keeps tokens host-owned and permits bounded
-streaming responses up to 36 MiB for Gmail. Workspace files use the host sandbox adapter; owner-scoped
+streaming responses up to 36 MiB. Owner-scoped
 S3 file IDs use existing attachment limits and retention without resolving a sandbox. Channel sends use
 existing owner-scoped providers; failed/interrupted delivery may have an unknown outcome. Log only bounded
 operational messages, never credentials, arguments or stored user data.
@@ -141,9 +141,8 @@ These guarantees localize defective trusted plugins; arbitrary in-process code c
 
 ## Verification
 
-Run `./gradlew :backend:test :plugin-api:check :plugins:gmail:test :plugins:gmail:jar` with Java 21 and Docker.
-The backend tests compile independent Java/Kotlin JARs and use PostgreSQL and MinIO. The packaged Gmail
-JAR also runs through the production catalog, including owner isolation and state restoration on another backend. Non-cooperative code
+Run `./gradlew :backend:test :plugin-api:check` with Java 21 and Docker.
+The backend tests compile independent Java/Kotlin JARs and use PostgreSQL and MinIO.
+Reference artifacts run through the production catalog, including owner isolation and state restoration on another backend. Non-cooperative code
 and process termination are checked only in disposable JVMs. Build the independent SDK example using
-the [SDK instructions](../../plugin-api/docs/plugin-contract.md). See [Gmail](../../plugins/gmail/docs/gmail-workflow.md)
-for synchronization, attachment import and durable notification reservations.
+the [SDK instructions](../../plugin-api/docs/plugin-contract.md).

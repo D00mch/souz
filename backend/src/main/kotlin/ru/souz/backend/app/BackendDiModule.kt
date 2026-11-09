@@ -177,7 +177,7 @@ fun backendDiModule(
     appConfig.pluginArtifacts?.let { config ->
         bindSingleton { PostgresPluginRepository(instance<HikariDataSource>()) }
         bindSingleton { S3PluginArtifacts(config) }
-        bindSingleton { PluginServices(instance(), instanceOrNull(), instance(), instance(), instanceOrNull()) }
+        bindSingleton { PluginServices(instance(), instanceOrNull(), instance(), instanceOrNull()) }
         bindSingleton {
             val failure = instance<PluginFailureSignal>()
             BackendPluginRuntime(instance(), instance(), instance(), appConfig.plugins,

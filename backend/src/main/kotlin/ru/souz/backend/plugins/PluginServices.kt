@@ -1,11 +1,6 @@
 package ru.souz.backend.plugins
 
 import com.fasterxml.jackson.core.JsonProcessingException
-import java.nio.ByteBuffer
-import java.nio.charset.CharacterCodingException
-import java.nio.charset.CodingErrorAction
-import java.util.UUID
-import kotlinx.coroutines.*
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import ru.souz.backend.attachments.*
@@ -13,11 +8,7 @@ import ru.souz.backend.channels.ChannelProviderRegistry
 import ru.souz.backend.channels.ChannelSendResult
 import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.http.BackendV1Exception
-import ru.souz.llms.ToolInvocationMeta
 import ru.souz.plugins.api.*
-import ru.souz.runtime.sandbox.SandboxFileSystem
-import ru.souz.runtime.sandbox.SandboxPathInfo
-import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.skilloauth.*
 import ru.souz.tool.BadInputException
 
@@ -26,14 +17,12 @@ internal class PluginServices(
     private val repository: PostgresPluginRepository,
     private val oauth: SkillOAuthGateway?,
     private val channels: ChannelProviderRegistry,
-    private val sandboxes: ToolInvocationRuntimeSandboxResolver,
     private val storage: AttachmentStorage?,
 ) : AutoCloseable {
     private val http = PluginHttpClient()
     fun context(lease: PluginCallLease, identity: PluginInvocationMeta, checkActive: suspend () -> Unit): PluginContext {
         require(identity.userId == lease.ownerId)
         val partition = repository.state(lease)
-        val invocationMeta = ToolInvocationMeta(identity.userId, identity.conversationId, identity.requestId, identity.locale, identity.timeZone)
         suspend fun active() { checkActive(); repository.assertOwned(lease); checkActive() }
         return object : PluginContext {
             override val meta = identity
@@ -64,47 +53,6 @@ internal class PluginServices(
                 }
             }
             override val files = object : PluginFiles {
-                override suspend fun readWorkspaceText(path: String): String? = service {
-                    active()
-                    runInterruptible(Dispatchers.IO) {
-                        val fs = sandboxes.resolve(invocationMeta).fileSystem
-                        val file = fs.resolvePath(path)
-                        require(fs.isPathSafe(file) && !file.isSymbolicLink)
-                        if (!file.exists) return@runInterruptible null
-                        require(file.isRegularFile && (file.sizeBytes ?: Long.MAX_VALUE) <= PluginApi.MAX_JSON_BYTES)
-                        val bytes = fs.openInputStream(file).use { it.readNBytes(PluginApi.MAX_JSON_BYTES + 1) }
-                        require(bytes.size <= PluginApi.MAX_JSON_BYTES)
-                        Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString()
-                    }
-                }
-                override suspend fun saveWorkspace(extension: String, content: ByteArray): String = service {
-                    active()
-                    require(extension.matches(Regex("[a-z0-9]{1,12}")) && content.size <= 25 * PluginApi.MAX_JSON_BYTES)
-                    var created: Pair<SandboxFileSystem, SandboxPathInfo>? = null
-                    var returned = false
-                    try {
-                        val path = runInterruptible(Dispatchers.IO) {
-                            val fs = sandboxes.resolve(invocationMeta).fileSystem
-                            val root = fs.resolvePath(fs.runtimePaths.homePath.trimEnd('/') + "/Documents/souz/plugin-files/" + UUID.randomUUID())
-                            require(fs.isPathSafe(root) && !root.exists)
-                            created = fs to root
-                            fs.createDirectory(root)
-                            val file = fs.resolvePath(root.path + "/attachment." + extension)
-                            fs.writeBytes(file, content)
-                            file.path
-                        }
-                        returned = true
-                        path
-                    } finally {
-                        if (!returned) withContext(NonCancellable + Dispatchers.IO) {
-                            created?.let { (fs, path) ->
-                                try { fs.delete(fs.resolvePath(path.path), recursively = true) }
-                                catch (cancelled: CancellationException) { throw cancelled }
-                                catch (_: Exception) { log.warn("Plugin workspace cleanup failed plugin={}", lease.binding.id) }
-                            }
-                        }
-                    }
-                }
                 override suspend fun loadStored(fileId: String): PluginFileContent = service {
                     active()
                     val (file, bytes) = (storage ?: missing("File storage")).load(lease.ownerId, attachmentId(fileId))
@@ -129,7 +77,6 @@ internal class PluginServices(
     private suspend fun <T> service(block: suspend () -> T): T = try { block() }
     catch (_: IllegalArgumentException) { invalid() }
     catch (_: JsonProcessingException) { invalid() }
-    catch (_: CharacterCodingException) { invalid() }
     catch (_: BadInputException) { invalid() }
     catch (_: SkillOAuthValidationException) { invalid() }
     catch (failure: AttachmentException) {

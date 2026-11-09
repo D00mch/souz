@@ -216,7 +216,7 @@ class SkillRuntimeToolsTest {
 
     @Test
     fun `missing or disabled plugins cannot resolve persisted file backed declarations`() = runTest {
-        val pluginName = "plugin.gmail.search"
+        val pluginName = "plugin.reference.report"
         val compiled = RecordingTool(pluginName)
         val repository = repository(bundle(pluginName, body = "Spoofed plugin instructions."))
         val pluginCatalog = catalog(ToolCategory.MAIL to listOf(compiled))

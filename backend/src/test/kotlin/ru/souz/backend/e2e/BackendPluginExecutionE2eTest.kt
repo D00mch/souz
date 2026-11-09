@@ -73,42 +73,39 @@ class BackendPluginExecutionE2eTest {
     }
 
     @Test
-    fun `packaged Gmail runs through the production catalog and restores owner scoped state on another backend`() {
-        assertFailsWith<ClassNotFoundException> { Class.forName("ru.souz.plugins.gmail.GmailPlugin") }
+    fun `isolated plugin runs through the production catalog and restores owner scoped state on another backend`() {
+        assertFailsWith<ClassNotFoundException> { Class.forName("fixture.ReferencePlugin") }
         val artifacts = pluginArtifactConfig()
         backendE2eTest(
-            schemaPrefix = "e2e_plugin_gmail",
+            schemaPrefix = "e2e_plugin_state",
             configureApp = { it.copy(pluginArtifacts = artifacts, pluginAdminToken = ADMIN_TOKEN) },
         ) {
-            val gmail = installPlugin("gmail", 0)
+            val plugin = installPlugin("kotlin-v1", 0)
             val owner = UUID.randomUUID().toString()
             val chat = createPublicChat(owner)
-            val config = mapOf<String, Any>("config" to "primary")
-            llm.requestSkillForPrompt("configure Gmail", "plugin.gmail.configure", config + mapOf(
-                "mailboxEmail" to "owner@example.com", "topicName" to "projects/example/topics/mail",
-                "channelType" to "orion", "channelId" to chat,
-            ), "plugin.gmail.status" to config)
-            backend.awaitExecution(submitPluginRequest(owner, chat, "configure Gmail"))
+            val arguments = emptyMap<String, Any>()
+            llm.requestSkillForPrompt("increment plugin state", "plugin.reference.state", arguments,
+                "plugin.reference.state" to arguments)
+            backend.awaitExecution(submitPluginRequest(owner, chat, "increment plugin state"))
             val outputs = llm.requests.last().messages.filter { it.name == "RunSkillCommand" }
                 .map { json.readTree(it.content) }
-            assertEquals(listOf("configured", "needs_profile"), outputs.map { it["status"].asText() })
+            assertEquals(listOf(1, 2), outputs.map { it["count"].asInt() })
 
             val stranger = UUID.randomUUID().toString()
             val strangerChat = createPublicChat(stranger)
-            llm.requestSkillForPrompt("inspect other mailbox", "plugin.gmail.status", config)
-            backend.awaitExecution(submitPluginRequest(stranger, strangerChat, "inspect other mailbox"))
-            assertEquals("gmail_connection_missing", json.readTree(llm.requests.last().messages
-                .last { it.name == "RunSkillCommand" }.content)["error"]["code"].asText())
+            llm.requestSkillForPrompt("increment separate state", "plugin.reference.state", arguments)
+            backend.awaitExecution(submitPluginRequest(stranger, strangerChat, "increment separate state"))
+            assertEquals(1, json.readTree(llm.requests.last().messages
+                .last { it.name == "RunSkillCommand" }.content)["count"].asInt())
             backend.shutdown()
 
-            val resumed = E2eLlmApi().apply { requestSkillForPrompt("restore Gmail", "plugin.gmail.status", config) }
+            val resumed = E2eLlmApi().apply { requestSkillForPrompt("restore plugin state", "plugin.reference.state", arguments) }
             withPeerBackend(resumed) { peer -> with(peer) {
                 backend.pluginRuntime.reconcile()
-                awaitPlugin(gmail)
-                backend.awaitExecution(submitPluginRequest(owner, chat, "restore Gmail"))
+                awaitPlugin(plugin)
+                backend.awaitExecution(submitPluginRequest(owner, chat, "restore plugin state"))
                 val status = json.readTree(resumed.requests.last().messages.last { it.name == "RunSkillCommand" }.content)
-                assertEquals("needs_profile", status["status"].asText())
-                assertEquals(0, status["pending"].size())
+                assertEquals(3, status["count"].asInt())
             } }
         }
     }

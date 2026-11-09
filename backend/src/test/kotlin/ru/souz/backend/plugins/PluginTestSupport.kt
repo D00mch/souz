@@ -10,7 +10,6 @@ import ru.souz.backend.channels.ChannelProviderRegistry
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
-import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 
 /** A private bucket and scoped credentials on the shared real S3-compatible test service. */
 internal fun pluginArtifactConfig(): S3PluginArtifactConfig = AttachmentMinio.config().let {
@@ -58,8 +57,7 @@ internal class PluginFixture {
 
 internal val PLUGIN_FIXTURE_TOOLS = setOf("report", "state", "fetch", "fail", "block").map { "plugin.reference.$it" }.toSet()
 internal fun runtimeServices(repository: PostgresPluginRepository): PluginServices =
-    PluginServices(repository, null, ChannelProviderRegistry(emptyList()),
-        ToolInvocationRuntimeSandboxResolver { error("The fixture must not resolve a sandbox.") }, null)
+    PluginServices(repository, null, ChannelProviderRegistry(emptyList()), null)
 internal suspend fun PluginExecutionBinding.call(name: String, arguments: Map<String, Any> = emptyMap(), owner: String = "alice"): JsonNode {
     val tool = catalog.toolsByCategory.values.flatMap { it.values }.single { it.fn.name == "plugin.reference.$name" }
     return restJsonMapper.readTree(tool.invoke(LLMResponse.FunctionCall(tool.fn.name, arguments), ToolInvocationMeta(owner)).content)
