@@ -101,6 +101,41 @@ class McpHttpSessionTest {
     }
 
     @Test
+    fun `cancellation terminates the session and a stalled termination cannot hold local cleanup`() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val terminating = CompletableDeferred<Unit>()
+        val terminationCancelled = CompletableDeferred<Unit>()
+        val server = McpTestServer(terminate = {
+            terminating.complete(Unit)
+            try {
+                awaitCancellation()
+            } finally {
+                terminationCancelled.complete(Unit)
+            }
+        }) {
+            started.complete(Unit)
+            awaitCancellation()
+        }
+        server.client.use { http ->
+            val session = McpHttpSession.connect(http, URL)
+            val call = async {
+                try {
+                    session.callTool("wait", emptyMap())
+                } finally {
+                    session.close()
+                }
+            }
+            started.await()
+            call.cancelAndJoin()
+            assertTrue(call.isCancelled)
+            assertTrue(terminating.isCompleted)
+            assertTrue(terminationCancelled.isCompleted)
+            // A closed session must not close the host-owned client.
+            McpHttpSession.connect(http, URL).close()
+        }
+    }
+
+    @Test
     fun `a repeating pagination cursor fails instead of returning an incomplete catalogue`() = runBlocking {
         val server = McpTestServer { json("""{"tools":[],"nextCursor":"same"}""") }
         server.client.use { http ->

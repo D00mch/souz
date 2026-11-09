@@ -13,10 +13,14 @@ import kotlinx.coroutines.sync.withLock
 import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.restJsonMapper
 
-internal class McpTestServer(reply: suspend (JsonNode) -> JsonNode) {
+internal class McpTestServer(terminate: suspend () -> Unit = {}, reply: suspend (JsonNode) -> JsonNode) {
     private val requests = mutableListOf<JsonNode>()
     private val mutex = Mutex()
     val client = HttpClient(MockEngine { request ->
+        if (request.method == HttpMethod.Delete) {
+            terminate()
+            return@MockEngine respond("", HttpStatusCode.OK)
+        }
         if (request.method != HttpMethod.Post) return@MockEngine respond("", HttpStatusCode.MethodNotAllowed)
         val rpc = restJsonMapper.readTree((request.body as TextContent).text)
         mutex.withLock { requests.add(rpc) }
@@ -33,7 +37,8 @@ internal class McpTestServer(reply: suspend (JsonNode) -> JsonNode) {
                 } else reply(rpc))
             }
         }
-        respond(response.toString(), headers = headersOf("Content-Type", "application/json"))
+        respond(response.toString(), headers = headersOf("Content-Type" to listOf("application/json"),
+            "Mcp-Session-Id" to listOf("fixture")))
     }) { providerHttpClientDefaults() }
 
     suspend fun recorded(): List<JsonNode> = mutex.withLock { requests.toList() }

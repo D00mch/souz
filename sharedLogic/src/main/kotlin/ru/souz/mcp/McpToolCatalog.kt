@@ -7,7 +7,6 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolServerSource
 import ru.souz.llms.LLMMessageRole
@@ -64,6 +63,7 @@ class McpToolCatalog(
         val server = requireNotNull(serversById[serverId]) { "MCP server is unavailable." }
         val tools = loaded[serverId] ?: run {
             val session = McpHttpSession.connect(httpClient, server.url, timeoutMillis)
+            var published = false
             try {
                 val definitions = session.listTools()
                 val discovered = definitions.map { definition -> tool(server, definition, session) }
@@ -72,10 +72,10 @@ class McpToolCatalog(
                 sessions[serverId] = session
                 loaded[serverId] = discovered
                 catalog = replacement
+                published = true
                 discovered
-            } catch (failure: Throwable) {
-                closeSession(session)
-                throw failure
+            } finally {
+                if (!published) session.close()
             }
         }
         tools.map { LoadedMcpTool(it.fn.name, it.fn.description.take(240)) }
@@ -119,7 +119,7 @@ class McpToolCatalog(
         mutex.withLock {
             if (closed) return@withLock
             closed = true
-            sessions.values.forEach { closeSession(it) }
+            sessions.values.forEach { it.close() }
             sessions.clear()
             loaded.clear()
             catalog = AgentToolCatalog()
@@ -168,8 +168,3 @@ private suspend fun guarded(name: String, operation: suspend () -> Any): LLMRequ
 private fun failure(name: String, code: String, message: String = "MCP capability is unavailable.") =
     LLMRequest.Message(LLMMessageRole.function,
         restJsonMapper.writeValueAsString(mapOf("error" to mapOf("code" to code, "message" to message))), name = name)
-
-private suspend fun closeSession(session: McpHttpSession) = withContext(NonCancellable) {
-    withTimeoutOrNull(5_000) { runCatching { session.close() } }
-    Unit
-}

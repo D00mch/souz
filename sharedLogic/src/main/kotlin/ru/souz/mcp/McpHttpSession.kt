@@ -11,12 +11,13 @@ import io.modelcontextprotocol.kotlin.sdk.types.ListToolsRequest
 import io.modelcontextprotocol.kotlin.sdk.types.McpJson
 import io.modelcontextprotocol.kotlin.sdk.types.PaginatedRequestParams
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import org.slf4j.LoggerFactory
 import ru.souz.llms.restJsonMapper
 
 data class McpToolDefinition(
@@ -31,6 +32,7 @@ class McpTimeoutException : Exception("MCP request timed out; the remote outcome
 /** One execution's MCP session. The host owns the borrowed HTTP client. */
 class McpHttpSession private constructor(
     private val client: Client,
+    private val transport: StreamableHttpClientTransport,
     private val timeoutMillis: Long,
 ) {
     private val listing = Mutex()
@@ -64,7 +66,13 @@ class McpHttpSession private constructor(
         restJsonMapper.readTree(McpJson.encodeToString(CallToolResult.serializer(), result))
     }
 
-    suspend fun close() = client.close()
+    suspend fun close() = withContext(NonCancellable) {
+        try {
+            closeStep { transport.terminateSession() }
+        } finally {
+            closeStep { client.close() }
+        }
+    }
 
     companion object {
         suspend fun connect(httpClient: HttpClient, url: String, timeoutMillis: Long = 60_000): McpHttpSession {
@@ -72,14 +80,14 @@ class McpHttpSession private constructor(
             val client = Client(Implementation(name = "souz", version = "1.0"))
             val transport = StreamableHttpClientTransport(httpClient, url,
                 requestBuilder = { timeout { requestTimeoutMillis = timeoutMillis } })
+            val session = McpHttpSession(client, transport, timeoutMillis)
+            var connected = false
             try {
                 bounded(timeoutMillis) { client.connect(transport) }
-                return McpHttpSession(client, timeoutMillis)
-            } catch (failure: Throwable) {
-                withContext(NonCancellable) {
-                    runCatching { withTimeout(5_000) { client.close() } }.exceptionOrNull()?.let(failure::addSuppressed)
-                }
-                throw failure
+                connected = true
+                return session
+            } finally {
+                if (!connected) session.close()
             }
         }
     }
@@ -90,3 +98,14 @@ private fun schemaJson(schema: ToolSchema): JsonNode =
 
 private suspend fun <T : Any> bounded(timeoutMillis: Long, block: suspend () -> T): T =
     withTimeoutOrNull(timeoutMillis) { block() } ?: throw McpTimeoutException()
+
+private suspend fun closeStep(block: suspend () -> Unit) {
+    try {
+        withTimeoutOrNull(2_000) { block() }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        LoggerFactory.getLogger(McpHttpSession::class.java).warn("MCP cleanup failed failure={}",
+            failure.javaClass.simpleName)
+    }
+}

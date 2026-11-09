@@ -10,4 +10,6 @@ Tool results retain the SDK's content blocks, structured content, metadata and `
 
 `LoadMcpTools` lists 20 summaries by default, accepts an `offset` and a `limit` from 1 to 50, and returns `totalTools` and `nextOffset`. Pagination reads the already-loaded execution catalogue without repeating MCP discovery. Preload failures leave their servers discoverable for an explicit retry; cancellation propagates.
 
+SDK `Client.close()` closes local transport resources. The adapter separately calls `StreamableHttpClientTransport.terminateSession()` before local closure, so session-bearing servers receive DELETE. Remote termination and local close each have a two-second bound. Local close still runs when termination fails or stalls. Servers without session IDs require no termination request; HTTP 405 is accepted by the SDK. Cleanup runs independently of parent cancellation.
+
 SDK 0.16.0 represents tool schema roots using `type`, `properties`, `required`, `$schema` and `$defs`. Other root keywords, including root `additionalProperties`, are not retained by its decoder. Nested property schemas remain JSON objects and preserve their keywords. Souz retains the SDK schema as JSON rather than narrowing it through its compiled-tool parameter DTO. The remote server remains responsible for argument validation. Full JSON Schema root fidelity requires an SDK change.
