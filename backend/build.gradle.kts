@@ -150,6 +150,6 @@ fun pluginFixture(name: String, directory: String, id: String, version: String, 
         }, artifact.flatMap { it.archiveFile }.get().asFile.absolutePath)
     }
 }
-pluginFixture("java", "javaPluginTestFixtures", "java_reference", "v1")
-pluginFixture("kotlinV1", "kotlinPluginTestFixtures", "reference", "v1", "1.10.0")
-pluginFixture("kotlinV2", "kotlinPluginTestFixtures", "reference", "v2", "1.9.0")
+pluginFixture("java", "test/fixtures/javaPlugin", "java_reference", "v1")
+pluginFixture("kotlinV1", "test/fixtures/kotlinPlugin", "reference", "v1", "1.10.0")
+pluginFixture("kotlinV2", "test/fixtures/kotlinPlugin", "reference", "v2", "1.9.0")

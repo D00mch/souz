@@ -8,6 +8,7 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
+import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import ru.souz.backend.http.BackendV1Exception
 
@@ -75,7 +76,9 @@ internal class PluginAdministration(
         id, versions.firstOrNull { it.binding.digest == defaultDigest }?.binding?.version, defaultDigest, revision, enabled,
     )
 
-    private companion object { val logger = LoggerFactory.getLogger(PluginAdministration::class.java) }
+    private companion object {
+        val logger: Logger = LoggerFactory.getLogger(PluginAdministration::class.java)
+    }
 }
 
 internal fun pluginHttpError(status: Int, code: String, message: String) = BackendV1Exception(HttpStatusCode.fromValue(status), code, message)

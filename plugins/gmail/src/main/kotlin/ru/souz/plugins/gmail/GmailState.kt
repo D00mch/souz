@@ -1,3 +1,5 @@
+@file:Suppress("EnumEntryName")
+
 package ru.souz.plugins.gmail
 
 import com.fasterxml.jackson.databind.JsonNode

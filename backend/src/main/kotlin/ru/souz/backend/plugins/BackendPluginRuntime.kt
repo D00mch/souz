@@ -9,10 +9,12 @@ import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.Executors
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.client.clientArgumentsError
@@ -20,7 +22,6 @@ import ru.souz.llms.*
 import ru.souz.plugins.api.*
 
 /** One coordinator owns versions. Foreign work and control timers use independent dispatchers. */
-@OptIn(ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class)
 internal class BackendPluginRuntime(
     private val repository: PostgresPluginRepository,
     private val artifacts: S3PluginArtifacts,
@@ -31,8 +32,8 @@ internal class BackendPluginRuntime(
     private val directory: Path = Files.createTempDirectory("souz-plugins-"),
     private val random: Random = Random.Default,
 ) {
-    private val mutex = Mutex()
-    private val polling = Mutex()
+    private val stateMutex = Mutex()
+    private val pollingMutex = Mutex() // only for `reconcile`
     // Foreign blocking code cannot occupy DB/control IO. This dispatcher is not an invocation quota.
     private val work = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(64))
     private val control = CoroutineScope(SupervisorJob() + controlDispatcher)
@@ -51,31 +52,38 @@ internal class BackendPluginRuntime(
     val replicaId: String = UUID.randomUUID().toString()
     val snapshot: PluginSnapshot get() = published.value
 
-    suspend fun start(scope: CoroutineScope) = mutex.withLock {
+    suspend fun start(scope: CoroutineScope) = stateMutex.withLock {
         check(!stopping)
         scope.coroutineContext.ensureActive()
         if (poller == null) poller = control.launch {
             while (true) {
                 reconcile()
-                delay(config.pollMillis + if (config.jitterMillis == 0L) 0 else random.nextLong(config.jitterMillis + 1))
+                val jitter = if (config.jitterMillis == 0L) 0 else random.nextLong(config.jitterMillis + 1)
+                delay((config.pollMillis + jitter).milliseconds)
             }
         }
     }
 
-    suspend fun reconcile() = polling.withLock {
+    /**
+     * Applies the PSQL registry to this replica,
+     * scheduling version loads, cleanup, and publishing the tool catalog.
+     */
+    suspend fun reconcile() = pollingMutex.withLock {
         try {
-            val rows = repository.registry()
-            mutex.withLock {
+            val rows: List<PluginRegistration> = repository.registry()
+            stateMutex.withLock {
                 if (stopping) return@withLock
                 registrations = rows
                 registryError = null
-                for (row in rows) {
-                    meters(row.id)
-                    for (metadata in row.versions) {
+                for ((pluginId: String, _, isPluginEnabled, _, pluginVersions: List<PluginVersion>) in rows) {
+                    meters(pluginId)
+                    for (metadata: PluginVersion in pluginVersions) {
                         versions[metadata.binding]?.metadata = metadata
-                        if (row.enabled && !metadata.retired && !metadata.quarantined) {
+                        if (isPluginEnabled && !metadata.retired && !metadata.quarantined) {
                             val existing = versions[metadata.binding]
-                            if (existing == null || existing.disposed.isCompleted && now() >= existing.retryAt) load(metadata)
+                            if (existing == null || existing.disposed.isCompleted && now() >= existing.retryAt) {
+                                load(metadata)
+                            }
                         }
                     }
                 }
@@ -84,8 +92,12 @@ internal class BackendPluginRuntime(
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (failure: Exception) {
+            stateMutex.withLock {
+                registryError = diagnostic("plugin_registry_unavailable", failure)
+                publish()
+            }
         }
-        catch (failure: Exception) { mutex.withLock { registryError = diagnostic("plugin_registry_unavailable", failure); publish() } }
     }
 
     /** Selection uses the applied catalog, with lifecycle bans checked at request admission. */
@@ -98,8 +110,11 @@ internal class BackendPluginRuntime(
         } catch (_: Exception) {
             unavailable("plugin_registry_unavailable")
         }
-        val eligible = rows.filter { it.enabled }.flatMap { it.versions }
-            .filter { !it.retired && !it.quarantined }.map { it.binding }.toSet()
+        val eligible = rows.asSequence().filter { it.enabled }
+            .flatMap { it.versions }
+            .filter { !it.retired && !it.quarantined }
+            .map { it.binding }
+            .toSet()
         val pins = current.defaultBindings.filter { it in eligible }
         return current.copy(defaultBindings = pins, catalog = current.catalog.filter { _, tool ->
             pins.any { tool.fn.name.startsWith("plugin." + it.id + ".") }
@@ -122,7 +137,7 @@ internal class BackendPluginRuntime(
                 } ?: unavailable("plugin_restore_missing")
                 if (metadata.quarantined) unavailable("plugin_quarantined")
                 while (true) {
-                    val (version, closing) = mutex.withLock {
+                    val (version, closing) = stateMutex.withLock {
                         check(!stopping)
                         val entry = versions[pin]?.takeUnless { it.disposed.isCompleted } ?: load(metadata)
                         if (entry.phase == Phase.CLEANUP_FAILED) unavailable("plugin_restore_failed")
@@ -130,9 +145,9 @@ internal class BackendPluginRuntime(
                         entry to (entry.phase == Phase.CLOSING)
                     }
                     if (closing) {
-                        if (withTimeoutOrNull(config.prepareMillis) { version.disposed.await(); true } != true) unavailable("plugin_restore_timeout")
+                        if (withTimeoutOrNull(config.prepareMillis.milliseconds) { version.disposed.await(); true } != true) unavailable("plugin_restore_timeout")
                     } else {
-                        if (withTimeoutOrNull(config.prepareMillis) { version.ready.await(); true } != true) unavailable("plugin_restore_timeout")
+                        if (withTimeoutOrNull(config.prepareMillis.milliseconds) { version.ready.await(); true } != true) unavailable("plugin_restore_timeout")
                         break
                     }
                 }
@@ -140,12 +155,12 @@ internal class BackendPluginRuntime(
             return PluginExecutionBinding(this, owner, acquired.toList(), selectedNames).also { transferred = true }
         } finally {
             if (!transferred) withContext(NonCancellable) {
-                mutex.withLock { acquired.forEach { it.roots--; retire(it) }; publish() }
+                stateMutex.withLock { acquired.forEach { it.roots--; retire(it) }; publish() }
             }
         }
     }
 
-    internal suspend fun release(binding: PluginExecutionBinding) = mutex.withLock {
+    internal suspend fun release(binding: PluginExecutionBinding) = stateMutex.withLock {
         if (!binding.released) {
             binding.released = true
             binding.versions.forEach { it.roots--; retire(it) }
@@ -164,16 +179,16 @@ internal class BackendPluginRuntime(
         val json = restJsonMapper.writeValueAsString(call.arguments)
         if (json.toByteArray().size > PluginApi.MAX_JSON_BYTES) return pluginError(call.name, "plugin_input_too_large")
         clientArgumentsError(tool.schema.parameters, restJsonMapper.readTree(json))?.let { return pluginError(call.name, "plugin_invalid_arguments") }
-        val admission = mutex.withLock {
+        val admission = stateMutex.withLock {
             if (stopping || binding.released) return pluginError(call.name, "plugin_disabled")
             admit(binding.owner, version.metadata.binding)
         }
         try {
-            val admitted = withTimeoutOrNull(config.queueMillis) {
+            val admitted = withTimeoutOrNull(config.queueMillis.milliseconds) {
                 admission.ready.await()
             }
             if (admitted != true) return pluginError(call.name, "plugin_queue_timeout", "The handler did not start.")
-            val entry = mutex.withLock {
+            val entry = stateMutex.withLock {
                 currentCoroutineContext().ensureActive()
                 if (stopping || binding.released || version.phase != Phase.READY) unavailable("plugin_disabled")
                 val permit = version.breaker.admit(now()) ?: unavailable("plugin_version_circuit_open")
@@ -181,7 +196,7 @@ internal class BackendPluginRuntime(
                     version.calls += entry
                     entry.job = work.launch(start = CoroutineStart.ATOMIC) { execute(entry, tool, json, meta) }
                     control.launch {
-                        if (withTimeoutOrNull(config.callMillis) { entry.reply.await(); true } != true) {
+                        if (withTimeoutOrNull(config.callMillis.milliseconds) { entry.reply.await(); true } != true) {
                             stop(entry, "plugin_timeout", PluginCallOutcome.TECHNICAL_FAILURE)
                         }
                     }
@@ -216,7 +231,7 @@ internal class BackendPluginRuntime(
                         entry.handoff.await()
                         break
                     }
-                    delay(100)
+                    delay(100.milliseconds)
                 }
                 entry.ready.complete(false)
             } catch (cancelled: CancellationException) {
@@ -227,12 +242,12 @@ internal class BackendPluginRuntime(
                 entry.ready.cancel()
                 withContext(NonCancellable) {
                     try { entry.lease?.let { repository.release(it) } }
-                    finally { mutex.withLock { admissions -= entry } }
+                    finally { stateMutex.withLock { admissions -= entry } }
                 }
             }
         }
         control.launch {
-            if (withTimeoutOrNull(config.queueMillis + config.graceMillis) { task.join(); true } != true) {
+            if (withTimeoutOrNull((config.queueMillis + config.graceMillis).milliseconds) { task.join(); true } != true) {
                 severe(binding, entry.incident, "plugin_admission_stalled")
             }
         }
@@ -247,7 +262,7 @@ internal class BackendPluginRuntime(
     ) {
         val renewal = control.launch {
             while (true) {
-                delay(config.renewMillis)
+                delay(config.renewMillis.milliseconds)
                 val owned = try { repository.renew(entry.lease, config.leaseMillis) }
                 catch (cancelled: CancellationException) {
             throw cancelled
@@ -259,7 +274,7 @@ internal class BackendPluginRuntime(
         try {
             currentCoroutineContext().ensureActive()
             val context = services.context(entry.lease, PluginInvocationMeta(entry.lease.ownerId, meta.conversationId, meta.requestId, meta.locale, meta.timeZone)) {
-                mutex.withLock { if (!entry.active) throw CancellationException("Plugin invocation has ended.") }
+                stateMutex.withLock { if (!entry.active) throw CancellationException("Plugin invocation has ended.") }
             }
             val result = withContext(PluginClassLoaderContext(requireNotNull(entry.version.code).loader)) {
                 coroutineScope { tool.handler(json, context) }
@@ -271,7 +286,7 @@ internal class BackendPluginRuntime(
             throw cancelled
         }
         catch (failure: Throwable) {
-            if (failure is VirtualMachineError || failure is ThreadDeath) throw failure
+            if (failure is VirtualMachineError) throw failure
             val known = failure as? PluginException
             val ignored = failure is PluginUnavailableException || known?.kind?.let { it != PluginFailureKind.TECHNICAL } == true
             val code = (failure as? PluginUnavailableException)?.code ?: known?.code
@@ -283,7 +298,7 @@ internal class BackendPluginRuntime(
         } finally {
             withContext(NonCancellable) {
                 finish(entry, PluginCallOutcome.IGNORED, pluginError(entry.name, "plugin_cancelled"))
-                mutex.withLock { watchInvocation(entry) }
+                stateMutex.withLock { watchInvocation(entry) }
                 entry.accounting?.join()
                 renewal.cancelAndJoin()
                 try {
@@ -293,7 +308,7 @@ internal class BackendPluginRuntime(
                 } catch (failure: Exception) {
                     log.warn("Plugin lease release failed: {}", failure.javaClass.name)
                 } finally {
-                    mutex.withLock {
+                    stateMutex.withLock {
                         entry.version.calls -= entry
                         retire(entry.version)
                         publish()
@@ -303,7 +318,7 @@ internal class BackendPluginRuntime(
         }
     }
 
-    private suspend fun finish(entry: Invocation, outcome: PluginCallOutcome, response: LLMRequest.Message) = mutex.withLock {
+    private suspend fun finish(entry: Invocation, outcome: PluginCallOutcome, response: LLMRequest.Message) = stateMutex.withLock {
         if (entry.reply.complete(response)) {
             entry.active = false
             entry.version.breaker.record(entry.permit, entry.lease.ownerId, outcome, now())
@@ -321,14 +336,14 @@ internal class BackendPluginRuntime(
     private suspend fun stop(entry: Invocation, code: String, outcome: PluginCallOutcome): LLMRequest.Message {
         val response = pluginError(entry.name, code, "The invocation outcome may be unknown. Do not automatically retry.")
         finish(entry, outcome, response)
-        mutex.withLock { watchInvocation(entry) }
+        stateMutex.withLock { watchInvocation(entry) }
         requestCancellation(entry.job)
         return entry.reply.await()
     }
 
     private fun watchInvocation(entry: Invocation) {
         if (entry.grace == null) entry.grace = control.launch {
-            if (withTimeoutOrNull(config.graceMillis) { entry.job.join(); true } != true) {
+            if (withTimeoutOrNull(config.graceMillis.milliseconds) { entry.job.join(); true } != true) {
                 severe(entry.lease.binding, entry.lease.token.toString(), "plugin_call_stalled")
             }
         }
@@ -342,8 +357,8 @@ internal class BackendPluginRuntime(
         versions[metadata.binding] = entry
         val expires = now() + config.prepareMillis
         val deadline = control.launch(start = CoroutineStart.LAZY) {
-            delay((expires - now()).coerceAtLeast(0))
-            val timedOut = mutex.withLock {
+            delay((expires - now()).coerceAtLeast(0).milliseconds)
+            val timedOut = stateMutex.withLock {
                 if (entry.phase != Phase.PREPARING) false else {
                     entry.ready.completeExceptionally(PluginUnavailableException("plugin_restore_timeout"))
                     true
@@ -351,7 +366,7 @@ internal class BackendPluginRuntime(
             }
             if (timedOut) {
                 requestCancellation(entry.job)
-                if (withTimeoutOrNull(config.graceMillis) { entry.job.join(); true } != true) {
+                if (withTimeoutOrNull(config.graceMillis.milliseconds) { entry.job.join(); true } != true) {
                     severe(metadata.binding, entry.incident, "plugin_prepare_stalled")
                 }
             }
@@ -364,7 +379,7 @@ internal class BackendPluginRuntime(
                 entry.code = PluginCode(entry.path, metadata.binding)
                 val functions = requireNotNull(entry.code).functions()
                 currentCoroutineContext().ensureActive()
-                mutex.withLock {
+                stateMutex.withLock {
                     currentCoroutineContext().ensureActive()
                     entry.functions = functions
                     entry.phase = Phase.READY
@@ -376,7 +391,7 @@ internal class BackendPluginRuntime(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {
-                if (failure is VirtualMachineError || failure is ThreadDeath) throw failure
+                if (failure is VirtualMachineError) throw failure
                 entry.error = diagnostic("plugin_preparation_failed", failure)
             } finally {
                 withContext(NonCancellable) {
@@ -411,18 +426,19 @@ internal class BackendPluginRuntime(
     }
 
     private fun watchCleanup(entry: Version, task: Job): Job = control.launch {
-        if (withTimeoutOrNull(config.cleanupMillis) { task.join(); true } != true) {
+        if (withTimeoutOrNull(config.cleanupMillis.milliseconds) { task.join(); true } != true) {
             requestCancellation(task)
-            if (withTimeoutOrNull(config.graceMillis) { task.join(); true } != true) severe(entry.metadata.binding, entry.incident, "plugin_cleanup_stalled")
+            if (withTimeoutOrNull(config.graceMillis.milliseconds) { task.join(); true } != true) severe(entry.metadata.binding, entry.incident, "plugin_cleanup_stalled")
         }
     }
 
     private suspend fun dispose(entry: Version) {
-        mutex.withLock { entry.phase = Phase.CLOSING; publish() }
+        stateMutex.withLock { entry.phase = Phase.CLOSING; publish() }
         try {
             entry.code?.close()
+            @Suppress("BlockingMethodInNonBlockingContext") // This runs cleanup on the plugin work IO dispatcher.
             Files.deleteIfExists(entry.path)
-            mutex.withLock {
+            stateMutex.withLock {
                 entry.code = null
                 entry.functions = emptyList()
                 entry.disposed.complete(Unit)
@@ -433,17 +449,17 @@ internal class BackendPluginRuntime(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            mutex.withLock {
+            stateMutex.withLock {
                 entry.phase = Phase.CLEANUP_FAILED
                 entry.error = diagnostic("plugin_cleanup_failed", failure)
                 publish()
             }
-            control.launch { delay(config.graceMillis); severe(entry.metadata.binding, entry.incident, "plugin_cleanup_failed") }
+            control.launch { delay(config.graceMillis.milliseconds); severe(entry.metadata.binding, entry.incident, "plugin_cleanup_failed") }
         }
     }
 
     private suspend fun severe(binding: PluginBinding, incident: String, code: String) {
-        val first = mutex.withLock {
+        val first = stateMutex.withLock {
             val first = !fatal
             fatal = true
             stopping = true
@@ -458,23 +474,23 @@ internal class BackendPluginRuntime(
         }
             catch (failure: Exception) { log.error("Plugin incident persistence failed: {}", failure.javaClass.name) }
         }
-        withTimeoutOrNull(config.cleanupMillis) { record.await() }
+        withTimeoutOrNull(config.cleanupMillis.milliseconds) { record.await() }
         if (first) onFatal()
     }
 
     suspend fun shutdown(): Boolean {
-        val task = mutex.withLock {
+        val task = stateMutex.withLock {
             if (closed) return true
             shutdownTask ?: shutdownScope.async(Dispatchers.IO) { drain() }.also { shutdownTask = it }
         }
         // This observer runs independently of every join, cancellation callback and filesystem IO.
         return shutdownScope.async {
-            withTimeoutOrNull(config.shutdownMillis) { task.await(); true } ?: false
+            withTimeoutOrNull(config.shutdownMillis.milliseconds) { task.await(); true } ?: false
         }.await()
     }
 
     private suspend fun drain() {
-        val calls = mutex.withLock {
+        val calls = stateMutex.withLock {
             stopping = true
             versions.values.filter { it.phase == Phase.PREPARING }.forEach { requestCancellation(it.job) }
             admissions.forEach { it.handoff.complete(Unit) }
@@ -484,11 +500,11 @@ internal class BackendPluginRuntime(
         }
         calls.forEach { stop(it, "plugin_cancelled", PluginCallOutcome.IGNORED) }
         poller?.cancelAndJoin()
-        while (mutex.withLock { versions.isNotEmpty() || admissions.isNotEmpty() }) delay(10)
+        while (stateMutex.withLock { versions.isNotEmpty() || admissions.isNotEmpty() }) delay(10.milliseconds)
         work.coroutineContext.job.cancelAndJoin()
         control.coroutineContext.job.cancelAndJoin()
         withContext(Dispatchers.IO) { Files.deleteIfExists(directory) }
-        mutex.withLock { closed = true }
+        stateMutex.withLock { closed = true }
     }
 
     private fun appliedVersion(row: PluginRegistration): Version? {
@@ -586,7 +602,7 @@ internal class BackendPluginRuntime(
         val controlDispatcher = Executors.newScheduledThreadPool(2) { task ->
             Thread(task, "souz-plugin-control").apply { isDaemon = true }
         }.asCoroutineDispatcher()
-        val log = LoggerFactory.getLogger(BackendPluginRuntime::class.java)
+        val log: Logger = LoggerFactory.getLogger(BackendPluginRuntime::class.java)
         fun now() = System.nanoTime() / 1_000_000
         fun diagnostic(code: String, failure: Throwable) = code + ": " + failure.javaClass.name.take(160)
     }

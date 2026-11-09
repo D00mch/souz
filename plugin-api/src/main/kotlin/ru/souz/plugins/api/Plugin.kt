@@ -58,9 +58,26 @@ data class PluginHttpRequest(
     val method: String = "GET",
     val headers: Map<String, List<String>> = emptyMap(),
     val body: ByteArray = byteArrayOf(),
-)
+) {
+    override fun equals(other: Any?): Boolean = this === other ||
+        (other is PluginHttpRequest && url == other.url && method == other.method &&
+            headers == other.headers && body.contentEquals(other.body))
 
-data class PluginHttpResponse(val status: Int, val headers: Map<String, List<String>>, val body: ByteArray)
+    override fun hashCode(): Int {
+        var result = url.hashCode()
+        result = 31 * result + method.hashCode()
+        result = 31 * result + headers.hashCode()
+        return 31 * result + body.contentHashCode()
+    }
+}
+
+data class PluginHttpResponse(val status: Int, val headers: Map<String, List<String>>, val body: ByteArray) {
+    override fun equals(other: Any?): Boolean = this === other ||
+        (other is PluginHttpResponse && status == other.status && headers == other.headers &&
+            body.contentEquals(other.body))
+
+    override fun hashCode(): Int = 31 * (31 * status + headers.hashCode()) + body.contentHashCode()
+}
 
 fun interface PluginOAuth {
     suspend fun call(provider: String, scopes: Set<String>, request: PluginOAuthRequest): PluginOAuthOutcome
@@ -91,7 +108,12 @@ interface PluginFiles {
 }
 
 data class PluginFile(val id: String, val name: String, val mimeType: String, val sizeBytes: Long)
-data class PluginFileContent(val file: PluginFile, val bytes: ByteArray)
+data class PluginFileContent(val file: PluginFile, val bytes: ByteArray) {
+    override fun equals(other: Any?): Boolean = this === other ||
+        (other is PluginFileContent && file == other.file && bytes.contentEquals(other.bytes))
+
+    override fun hashCode(): Int = 31 * file.hashCode() + bytes.contentHashCode()
+}
 
 interface PluginChannels {
     /** False, exceptions, and cancellation can mean uncertain delivery. */

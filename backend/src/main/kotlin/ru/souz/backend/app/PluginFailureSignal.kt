@@ -17,6 +17,7 @@ internal suspend fun exitAfterPluginFailure(
     shutdownRuntime: suspend () -> Unit,
 ) {
     Thread.ofPlatform().daemon(true).name("souz-plugin-exit-watchdog").start {
+        @Suppress("BlockingMethodInNonBlockingContext") // This Runnable runs on the dedicated watchdog thread.
         Thread.sleep(drainMillis)
         Runtime.getRuntime().halt(1)
     }
