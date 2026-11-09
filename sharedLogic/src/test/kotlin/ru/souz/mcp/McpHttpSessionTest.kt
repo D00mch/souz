@@ -1,25 +1,14 @@
 package ru.souz.mcp
 
 import com.fasterxml.jackson.databind.JsonNode
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
-import io.ktor.http.HttpMethod
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.content.TextContent
-import io.ktor.http.headersOf
 import io.modelcontextprotocol.kotlin.sdk.types.McpException
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
-import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.restJsonMapper
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -31,7 +20,7 @@ class McpHttpSessionTest {
     @Test
     fun `SDK initialization and pagination preserve supported schemas and borrow the HTTP client`() = runBlocking {
         val schema = json("""{"type":"object","properties":{"value":{"anyOf":[{"type":"integer"},{"type":"null"}]},"options":{"type":"object","additionalProperties":false}},"required":["value"],"${'$'}defs":{"value":{"type":"integer"}}}""")
-        val server = Server { request ->
+        val server = McpTestServer { request ->
             if (request.path("params").path("cursor").asText() == "next") {
                 json("""{"tools":[{"name":"second","inputSchema":{"type":"object"}}]}""")
             } else {
@@ -64,7 +53,7 @@ class McpHttpSessionTest {
 
     @Test
     fun `SDK returns structured content images and tool failures without replaying protocol failures`() = runBlocking {
-        val server = Server { request ->
+        val server = McpTestServer { request ->
             val failure = request.path("params").path("name").asText() == "tool_error"
             json("""{"content":[{"type":"text","text":"Result"},{"type":"image","data":"AA==","mimeType":"image/png"}],"structuredContent":{"count":2},"isError":$failure,"_meta":{"example/source":"fixture"}}""")
         }
@@ -93,14 +82,14 @@ class McpHttpSessionTest {
     @Test
     fun `timeout and caller cancellation propagate instead of becoming tool results`() = runBlocking {
         val secondStarted = CompletableDeferred<Unit>()
-        val server = Server { request ->
+        val server = McpTestServer { request ->
             if (request.path("params").path("name").asText() == "wait_again") secondStarted.complete(Unit)
             awaitCancellation()
         }
         server.client.use { http ->
             val session = McpHttpSession.connect(http, URL, timeoutMillis = 2_000)
             try {
-                assertFailsWith<TimeoutCancellationException> { session.callTool("wait", emptyMap()) }
+                assertFailsWith<McpTimeoutException> { session.callTool("wait", emptyMap()) }
                 val call = async { session.callTool("wait_again", emptyMap()) }
                 secondStarted.await()
                 call.cancelAndJoin()
@@ -113,7 +102,7 @@ class McpHttpSessionTest {
 
     @Test
     fun `a repeating pagination cursor fails instead of returning an incomplete catalogue`() = runBlocking {
-        val server = Server { json("""{"tools":[],"nextCursor":"same"}""") }
+        val server = McpTestServer { json("""{"tools":[],"nextCursor":"same"}""") }
         server.client.use { http ->
             val session = McpHttpSession.connect(http, URL)
             try {
@@ -123,34 +112,6 @@ class McpHttpSessionTest {
                 session.close()
             }
         }
-    }
-
-    private class Server(reply: suspend (JsonNode) -> JsonNode) {
-        private val requests = mutableListOf<JsonNode>()
-        private val mutex = Mutex()
-        val client = HttpClient(MockEngine { request ->
-            if (request.method != HttpMethod.Post) {
-                return@MockEngine respond("", HttpStatusCode.MethodNotAllowed)
-            }
-            val rpc = json((request.body as TextContent).text)
-            mutex.withLock { requests.add(rpc) }
-            val method = rpc.path("method").asText()
-            if (method.startsWith("notifications/")) return@MockEngine respond("", HttpStatusCode.Accepted)
-            val response = restJsonMapper.createObjectNode().apply {
-                put("jsonrpc", "2.0")
-                set<JsonNode>("id", rpc["id"])
-                if (rpc.path("params").path("name").asText() == "protocol_error") {
-                    set<JsonNode>("error", json("""{"code":-32602,"message":"Unknown tool"}"""))
-                } else {
-                    set<JsonNode>("result", if (method == "initialize") {
-                        json("""{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"fixture","version":"1"}}""")
-                    } else reply(rpc))
-                }
-            }
-            respond(response.toString(), headers = headersOf("Content-Type", "application/json"))
-        }) { providerHttpClientDefaults() }
-
-        suspend fun recorded(): List<JsonNode> = mutex.withLock { requests.toList() }
     }
 
     companion object {

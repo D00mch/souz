@@ -1,6 +1,7 @@
 package ru.souz.tool.skills
 
 import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.databind.JsonNode
 import kotlinx.coroutines.CancellationException
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
@@ -113,8 +114,9 @@ internal fun LLMToolSetup.toDetail(): ToolSkillDetail = ToolSkillDetail(
     skillId = fn.name,
     name = fn.name,
     description = fn.description,
-    inputSchema = fn.parameters,
-    returnSchema = fn.returnParameters,
+    inputSchema = (this as? SkillToolSchemas)?.skillInputSchema ?: restJsonMapper.valueToTree(fn.parameters),
+    returnSchema = (this as? SkillToolSchemas)?.skillReturnSchema
+        ?: fn.returnParameters?.let { restJsonMapper.valueToTree(it) },
     fewShotExamples = fn.fewShotExamples.orEmpty(),
 )
 
@@ -154,8 +156,8 @@ internal data class ToolSkillDetail(
     override val skillId: String,
     val name: String,
     val description: String,
-    val inputSchema: LLMRequest.Parameters,
-    val returnSchema: LLMRequest.Parameters?,
+    val inputSchema: JsonNode,
+    val returnSchema: JsonNode?,
     val fewShotExamples: List<LLMRequest.FewShotExample>,
 ) : SkillDetail
 

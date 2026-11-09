@@ -16,6 +16,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.llms.restJsonMapper
 
 data class McpToolDefinition(
@@ -25,6 +26,8 @@ data class McpToolDefinition(
     val outputSchema: JsonNode?,
 )
 
+class McpTimeoutException : Exception("MCP request timed out; the remote outcome may be unknown.")
+
 /** One execution's MCP session. The host owns the borrowed HTTP client. */
 class McpHttpSession private constructor(
     private val client: Client,
@@ -33,7 +36,7 @@ class McpHttpSession private constructor(
     private val listing = Mutex()
 
     suspend fun listTools(): List<McpToolDefinition> = listing.withLock {
-        withTimeout(timeoutMillis) {
+        bounded(timeoutMillis) {
             val definitions = linkedMapOf<String, McpToolDefinition>()
             val cursors = mutableSetOf<String>()
             var cursor: String? = null
@@ -56,7 +59,7 @@ class McpHttpSession private constructor(
     }
 
     /** Tool-level isError is data; protocol and transport failures remain exceptions. */
-    suspend fun callTool(name: String, arguments: Map<String, Any?>): JsonNode = withTimeout(timeoutMillis) {
+    suspend fun callTool(name: String, arguments: Map<String, Any?>): JsonNode = bounded(timeoutMillis) {
         val result = client.callTool(name, arguments)
         restJsonMapper.readTree(McpJson.encodeToString(CallToolResult.serializer(), result))
     }
@@ -70,7 +73,7 @@ class McpHttpSession private constructor(
             val transport = StreamableHttpClientTransport(httpClient, url,
                 requestBuilder = { timeout { requestTimeoutMillis = timeoutMillis } })
             try {
-                withTimeout(timeoutMillis) { client.connect(transport) }
+                bounded(timeoutMillis) { client.connect(transport) }
                 return McpHttpSession(client, timeoutMillis)
             } catch (failure: Throwable) {
                 withContext(NonCancellable) {
@@ -84,3 +87,6 @@ class McpHttpSession private constructor(
 
 private fun schemaJson(schema: ToolSchema): JsonNode =
     restJsonMapper.readTree(McpJson.encodeToString(ToolSchema.serializer(), schema))
+
+private suspend fun <T : Any> bounded(timeoutMillis: Long, block: suspend () -> T): T =
+    withTimeoutOrNull(timeoutMillis) { block() } ?: throw McpTimeoutException()
