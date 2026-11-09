@@ -19,7 +19,7 @@ data class PreparedAttachment(val attachment: FileContent, val path: String)
 
 /**
  * Moves owner-scoped stored files between S3 and the invoking user's sandbox.
- * Only Docker sandboxes isolate users' workspaces, so every operation rejects other sandbox modes.
+ * Workspace transfers require Docker isolation; stored-file selection uses owner-scoped storage directly.
  */
 class BackendAttachmentAccess(
     private val storage: AttachmentStorage,
@@ -57,12 +57,7 @@ class BackendAttachmentAccess(
     }
 
     suspend fun select(meta: ToolInvocationMeta, fileId: String, presentation: FilePresentation): FileContent = safely("select") {
-        requireSupportedSandbox(meta)
         storage.get(meta.userId, attachmentId(fileId)).toContent(presentation)
-    }
-
-    fun requireSupportedSandbox(meta: ToolInvocationMeta) {
-        isolatedFileSystem(meta)
     }
 
     private fun isolatedFileSystem(meta: ToolInvocationMeta): SandboxFileSystem {

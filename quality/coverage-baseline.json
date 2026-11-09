@@ -9,6 +9,7 @@
     ":job-api": 0,
     ":job-impl": 99.3865,
     ":llms": 41.6058,
+    ":plugin-api": 0,
     ":sharedLogic": 74.1287,
     ":skill-oauth-api": 0,
     ":skill-oauth-impl": 94.6067

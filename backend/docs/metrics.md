@@ -30,6 +30,10 @@ scrape_configs:
 | `souz_tool_calls_total` | Counter | `category`, `outcome` | Compiled tools and client transports, including Skill helper calls. |
 | `souz_tool_duration_seconds` | Histogram | `category`, `outcome` | Tool latency, including client-result waits. |
 | `souz_pending_tool_calls` | Gauge | — | Outstanding compiled tools and client transports on this instance. |
+| `souz_plugin_calls_total` | Counter | `plugin`, `outcome` | Plugin invocation completions on this replica: `success`, `technical_failure`, `ignored`. |
+| `souz_plugin_versions_loaded` | Gauge | `plugin` | Versions held by this replica, including preparation and draining work. |
+| `souz_plugin_observed_revision` | Gauge | `plugin` | Last registry revision observed by this replica; admin status reports the separately applied digest. |
+| `souz_plugin_application_error` | Gauge | `plugin` | One when registry reconciliation or this plugin's activation has an error. |
 | `souz_memory_requests_total` | Counter | `operation`, `outcome` | Hindsight calls, including retain retries; [external memory diagnostics](external-memory.md#diagnostics) list the operations. |
 | `souz_memory_request_duration_seconds` | Histogram | `operation`, `outcome` | Hindsight call latency. |
 | `souz_history_memory_fragments` | Gauge | `state` | PostgreSQL counts of unfinished imported-history fragments: `waiting`, `processing` (claimed, including a crashed worker's claim until reclaimed), `retrying`. |

@@ -1,4 +1,4 @@
-    import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.bundling.AbstractArchiveTask
 import org.gradle.api.tasks.bundling.Jar
@@ -26,6 +26,7 @@ dependencies {
     implementation(project(":skill-oauth-impl"))
     implementation(project(":job-api"))
     implementation(project(":job-impl"))
+    implementation(project(":plugin-api"))
     implementation(kotlin("stdlib"))
     implementation(libs.kotlinx.coroutines)
     implementation(libs.kotlinx.coroutinesSlf4j)
@@ -40,6 +41,7 @@ dependencies {
     implementation("io.micrometer:micrometer-registry-prometheus:1.16.3")
     implementation(libs.ktor.openapiSchemaReflect)
     implementation(libs.ktor.clientCore)
+    implementation(libs.ktor.clientCio)
     implementation(libs.ktor.serializationJackson)
     implementation(libs.ktor.serverRoutingOpenapi)
     implementation(libs.ktor.serverSwagger)
@@ -72,9 +74,24 @@ application {
     applicationDefaultJvmArgs = listOf("-Djava.awt.headless=true")
 }
 
+val probeClasspath = sourceSets["test"].runtimeClasspath
+val probeClasspathFile = layout.buildDirectory.file("tmp/plugin-probe-classpath.txt").get().asFile
+val writePluginProbeClasspath = tasks.register("writePluginProbeClasspath") {
+    val files = probeClasspath
+    val destination = probeClasspathFile
+    inputs.files(files)
+    outputs.file(destination)
+    doLast {
+        destination.parentFile.mkdirs()
+        destination.writeText(files.asPath, Charsets.UTF_8)
+    }
+}
+
 tasks.test {
     useJUnitPlatform()
     systemProperty("java.awt.headless", "true")
+    dependsOn(writePluginProbeClasspath)
+    systemProperty("plugin.host.classpath.file", probeClasspathFile.absolutePath)
 }
 
 tasks.processTestResources {
@@ -94,3 +111,42 @@ tasks.withType<AbstractArchiveTask>().configureEach {
 tasks.named<Jar>("shadowJar") {
     isZip64 = true
 }
+
+// Compile independent artifacts; private dependencies never enter the host test classpath.
+val pluginSdkAbi = "2;kotlin=${libs.versions.kotlin.get()};coroutines=${libs.versions.kotlinx.coroutines.get()}"
+fun pluginFixture(name: String, directory: String, id: String, version: String, csv: String? = null) {
+    val fixture = sourceSets.create("${name}PluginTestFixtures") {
+        java.setSrcDirs(listOf("src/$directory/java"))
+        resources.setSrcDirs(listOf("src/$directory/resources"))
+    }
+    kotlin.sourceSets.getByName(fixture.name).kotlin.srcDir("src/$directory/kotlin")
+    dependencies.add(fixture.compileOnlyConfigurationName, project(":plugin-api"))
+    dependencies.add(fixture.implementationConfigurationName, libs.jackson.databind)
+    configurations[fixture.runtimeClasspathConfigurationName].apply {
+        exclude(group = "org.jetbrains.kotlin")
+        exclude(group = "org.jetbrains.kotlinx")
+    }
+    if (csv != null) dependencies.add(fixture.implementationConfigurationName, "org.apache.commons:commons-csv:$csv")
+    val artifact = tasks.register<Jar>("${name}PluginJar") {
+        archiveBaseName.set("plugin-$name")
+        from(fixture.output)
+        from(configurations[fixture.runtimeClasspathConfigurationName].map { zipTree(it) })
+        manifest.attributes(
+            "Souz-Plugin-Id" to id, "Souz-Plugin-Version" to version,
+            "Souz-Plugin-Api" to pluginSdkAbi, "Souz-Plugin-Jvm" to "21",
+        )
+        if (csv != null) from(resources.text.fromString(version)) { rename { "fixture-version.txt" } }
+        exclude("META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "META-INF/MANIFEST.MF")
+    }
+    tasks.test {
+        dependsOn(artifact)
+        systemProperty("plugin.fixture." + when (name) {
+            "kotlinV1" -> "kotlin-v1"
+            "kotlinV2" -> "kotlin-v2"
+            else -> name
+        }, artifact.flatMap { it.archiveFile }.get().asFile.absolutePath)
+    }
+}
+pluginFixture("java", "test/fixtures/javaPlugin", "java_reference", "v1")
+pluginFixture("kotlinV1", "test/fixtures/kotlinPlugin", "reference", "v1", "1.10.0")
+pluginFixture("kotlinV2", "test/fixtures/kotlinPlugin", "reference", "v2", "1.9.0")

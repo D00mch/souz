@@ -2,15 +2,20 @@ package ru.souz.skilloauth.impl
 
 import io.ktor.client.HttpClient
 import io.ktor.client.request.header
-import io.ktor.client.request.request
+import io.ktor.client.request.prepareRequest
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.URLProtocol
 import io.ktor.http.Url
 import io.ktor.http.content.TextContent
+import io.ktor.http.charset
+import io.ktor.utils.io.readAvailable
+import java.io.ByteArrayOutputStream
 import java.security.SecureRandom
 import java.time.Clock
 import java.util.Base64
@@ -21,6 +26,7 @@ import ru.souz.skilloauth.ApiCallResponse
 import ru.souz.skilloauth.AuthorizationState
 import ru.souz.skilloauth.SkillOAuthException
 import ru.souz.skilloauth.SkillOAuthGateway
+import ru.souz.skilloauth.SkillOAuthValidationException
 
 /** Only unrecoverable grants become reconnect outcomes; provider/configuration failures propagate. */
 internal class ReconnectRequiredException(message: String) : SkillOAuthException(message)
@@ -62,6 +68,7 @@ class SkillOAuthGatewayImpl(
         requiredScopes: Set<String>,
         request: ApiCallRequest,
     ): ApiCallOutcome {
+        request.maxResponseBytes?.let { require(it > 0) { "Response limit must be positive" } }
         val providerClient = requireProviderClient(provider)
         val credential = credentialRepository.find(userId, provider)
         val grantedScopes = credential?.grantedScopes.orEmpty().toSet()
@@ -88,7 +95,7 @@ class SkillOAuthGatewayImpl(
         val callerContentType = request.headers.entries
             .firstOrNull { (name, _) -> name.equals(HttpHeaders.ContentType, ignoreCase = true) }
             ?.value
-        val response = httpClient.request(request.url) {
+        return httpClient.prepareRequest(request.url) {
             method = HttpMethod.parse(request.method.uppercase())
             request.headers.forEach { (name, value) ->
                 if (!name.equals(HttpHeaders.Authorization, ignoreCase = true) &&
@@ -103,12 +110,14 @@ class SkillOAuthGatewayImpl(
                 val contentType = callerContentType?.let(ContentType::parse) ?: ContentType.Application.Json
                 setBody(TextContent(it, contentType))
             }
+        }.execute { response ->
+            val body = request.maxResponseBytes?.let { response.boundedBody(it) } ?: response.bodyAsText()
+            ApiCallResponse(
+                statusCode = response.status.value,
+                body = body,
+                headers = response.headers.entries().associate { (name, values) -> name to values.joinToString(", ") },
+            )
         }
-        return ApiCallResponse(
-            statusCode = response.status.value,
-            body = response.bodyAsText(),
-            headers = response.headers.entries().associate { (name, values) -> name to values.joinToString(", ") },
-        )
     }
 
     private suspend fun startAuthorization(
@@ -140,13 +149,13 @@ class SkillOAuthGatewayImpl(
         val url = try {
             Url(rawUrl)
         } catch (_: Exception) {
-            throw SkillOAuthException("Invalid API URL: $rawUrl")
+            throw SkillOAuthValidationException("Invalid API URL: $rawUrl")
         }
         if (url.protocol != URLProtocol.HTTPS) {
-            throw SkillOAuthException("Only HTTPS API URLs are allowed, got: $rawUrl")
+            throw SkillOAuthValidationException("Only HTTPS API URLs are allowed, got: $rawUrl")
         }
         if (url.host !in providerClient.allowedApiHosts) {
-            throw SkillOAuthException(
+            throw SkillOAuthValidationException(
                 "Host '${url.host}' is not an allowed API host for this provider. " +
                     "Allowed hosts: ${providerClient.allowedApiHosts}"
             )
@@ -233,7 +242,7 @@ class SkillOAuthGatewayImpl(
     }
 
     private fun requireProviderClient(provider: String): OAuthProviderClient =
-        providers[provider] ?: throw SkillOAuthException(
+        providers[provider] ?: throw SkillOAuthValidationException(
             "Unsupported OAuth provider: '$provider'. Configured providers: ${providers.keys.ifEmpty { setOf("none") }}"
         )
 
@@ -243,6 +252,19 @@ class SkillOAuthGatewayImpl(
         const val STATE_BYTES = 32
         val secureRandom = SecureRandom()
     }
+}
+
+private suspend fun HttpResponse.boundedBody(limit: Int): String {
+    val channel = bodyAsChannel()
+    val buffer = ByteArray(8192)
+    val output = ByteArrayOutputStream(minOf(limit, buffer.size))
+    while (true) {
+        val count = channel.readAvailable(buffer)
+        if (count < 0) break
+        if (count > limit - output.size()) throw SkillOAuthException("OAuth response exceeds $limit bytes")
+        output.write(buffer, 0, count)
+    }
+    return output.toString(charset() ?: Charsets.UTF_8)
 }
 
 internal sealed interface CallbackResult {

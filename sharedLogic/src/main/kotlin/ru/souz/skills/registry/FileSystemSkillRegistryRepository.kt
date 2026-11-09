@@ -37,12 +37,13 @@ import ru.souz.skills.filesystem.SkillBundleFsContext
  * Filesystem-backed [SkillRegistryRepository] for skill metadata, immutable bundles,
  * and validation records.
  *
- * Filesystem access stays behind [RuntimeSandbox] so the same repository works for local
- * and Docker-backed runtime paths.
+ * Filesystem access stays behind [SandboxFileSystem] so the same repository works for local
+ * and Docker-backed runtime paths. Discovery can read existing storage without provisioning a runtime.
  */
 class FileSystemSkillRegistryRepository(
     private val sandboxResolver: (String) -> RuntimeSandbox,
     private val clock: Clock = Clock.systemUTC(),
+    private val discoveryFileSystemResolver: ((String) -> SandboxFileSystem)? = null,
 ) : SkillRegistryRepository {
     constructor(
         sandbox: RuntimeSandbox,
@@ -58,12 +59,13 @@ class FileSystemSkillRegistryRepository(
     ) : this(
         sandboxResolver = { userId -> sandboxResolver.resolve(ToolInvocationMeta(userId = userId)) },
         clock = clock,
+        discoveryFileSystemResolver = { userId -> sandboxResolver.fileSystem(ToolInvocationMeta(userId = userId)) },
     )
 
     private val logger = LoggerFactory.getLogger(FileSystemSkillRegistryRepository::class.java)
 
     override suspend fun listSkills(userId: String): List<StoredSkill> = withContext(Dispatchers.IO) {
-        val store = storeFor(userId)
+        val store = discoveryStoreFor(userId)
         skillRoots(userId, store).mapNotNull { root ->
             readStoredSkillOrNull(store, store.resolveChildPath(root, STORED_SKILL_FILE_NAME))
                 ?: readLooseStoredSkillOrNull(store, userId, root)
@@ -71,7 +73,7 @@ class FileSystemSkillRegistryRepository(
     }
 
     override suspend fun listSkillInventoryIds(userId: String): List<SkillId> = withContext(Dispatchers.IO) {
-        val store = storeFor(userId)
+        val store = discoveryStoreFor(userId)
         skillRoots(userId, store).mapNotNull { root ->
             readStoredSkillOrNull(store, store.resolveChildPath(root, STORED_SKILL_FILE_NAME))?.skillId
                 ?: readLooseSkillInventoryIdOrNull(store, root)
@@ -79,7 +81,7 @@ class FileSystemSkillRegistryRepository(
     }
 
     override suspend fun listSkillDescriptions(userId: String): Map<SkillId, String> = withContext(Dispatchers.IO) {
-        val store = storeFor(userId)
+        val store = discoveryStoreFor(userId)
         val fileSystem = SandboxSkillBundleFileSystem(store.fileSystem)
         skillRoots(userId, store).mapNotNull { root ->
             try {
@@ -152,8 +154,8 @@ class FileSystemSkillRegistryRepository(
             )
         }
         logger.info(
-            "Skill bundle lookup skill={} user={} sandboxMode={} root={} found={} files={}",
-            skillId.value, userId, store.sandboxMode, root.path, bundle != null, bundle?.files?.size ?: 0,
+            "Skill bundle lookup skill={} user={} root={} found={} files={}",
+            skillId.value, userId, root.path, bundle != null, bundle?.files?.size ?: 0,
         )
         bundle
     }
@@ -400,14 +402,12 @@ class FileSystemSkillRegistryRepository(
         }
     }
 
-    private fun storeFor(userId: String): Store {
-        val sandbox = sandboxResolver(userId)
-        return Store(
-            paths = SandboxSouzPaths(sandbox.runtimePaths),
-            fileSystem = sandbox.fileSystem,
-            sandboxMode = sandbox.mode.name,
-        )
-    }
+    private fun storeFor(userId: String): Store = store(sandboxResolver(userId).fileSystem)
+
+    private fun discoveryStoreFor(userId: String): Store =
+        discoveryFileSystemResolver?.let { store(it(userId)) } ?: storeFor(userId)
+
+    private fun store(fileSystem: SandboxFileSystem) = Store(SandboxSouzPaths(fileSystem.runtimePaths), fileSystem)
 
     private fun skillRoot(
         paths: SouzPaths,
@@ -451,9 +451,9 @@ class FileSystemSkillRegistryRepository(
         skillsRoot: SandboxPathInfo,
     ) {
         logger.info(
-            "Skill registry root unavailable user={} sandboxMode={} root={} exists={} isDirectory={}",
+            "Skill registry root unavailable user={} fileSystem={} root={} exists={} isDirectory={}",
             userId,
-            store.sandboxMode,
+            store.fileSystem.javaClass.simpleName,
             skillsRoot.path,
             skillsRoot.exists,
             skillsRoot.isDirectory,
@@ -495,10 +495,10 @@ class FileSystemSkillRegistryRepository(
         storedSkill: StoredSkill,
     ) {
         logger.info(
-            "Skill registry saved skill={} user={} sandboxMode={} hash={} metadata={}",
+            "Skill registry saved skill={} user={} fileSystem={} hash={} metadata={}",
             storedSkill.skillId.value,
             userId,
-            store.sandboxMode,
+            store.fileSystem.javaClass.simpleName,
             storedSkill.bundleHash.take(12),
             metadataPath.path,
         )
@@ -510,11 +510,11 @@ class FileSystemSkillRegistryRepository(
         record: SkillValidationRecord,
     ) {
         logger.info(
-            "Skill registry saved validation skill={} user={} sandboxMode={} hash={} policy={} " +
+            "Skill registry saved validation skill={} user={} fileSystem={} hash={} policy={} " +
                     "approved={} findings={} path={}",
             record.skillId.value,
             record.userId,
-            store.sandboxMode,
+            store.fileSystem.javaClass.simpleName,
             record.bundleHash.take(12),
             record.policyVersion,
             record.approved,
@@ -526,7 +526,6 @@ class FileSystemSkillRegistryRepository(
     private data class Store(
         val paths: SouzPaths,
         val fileSystem: SandboxFileSystem,
-        val sandboxMode: String,
     ) {
         fun resolvePath(path: Path): SandboxPathInfo = fileSystem.resolvePath(path.invariantSeparatorsPathString)
 

@@ -92,7 +92,7 @@ class QualityGateTest {
     @Test
     fun `runtime main dependencies follow the backend JVM module graph`() {
         val modules = listOf("graph-engine", "llms", "agent", "sharedLogic", "skill-oauth-api", "skill-oauth-impl",
-            "job-api", "job-impl", "backend")
+            "job-api", "job-impl", "plugin-api", "backend")
         val projects = modules.map { ProjectDescriptor(":$it", it, "$it/build.gradle.kts") }
         fun edge(source: String, target: String) = DependencyEdge(
             ":$source", "implementation", "main", ":$target", "$source/build.gradle.kts",
