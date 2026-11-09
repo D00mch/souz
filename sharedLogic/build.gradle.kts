@@ -12,6 +12,7 @@ dependencies {
     implementation(libs.jackson)
     implementation(libs.ktor.serializationJackson)
     implementation(libs.bundles.ktorClient)
+    implementation(libs.mcp.client)
     implementation(libs.ktor.clientOkhttp)
     implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
     implementation(libs.jsoup)
