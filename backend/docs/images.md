@@ -8,7 +8,7 @@ Images let the assistant inspect user uploads, camera/screenshots and sandbox fi
 
 Keep image order and file IDs aligned. Select at most five images from user messages and current tool results. Bound source context, include the current question once, and validate prepared requests against the server context budget. Reserve 6,144 tokens per selected image before compaction; after projection count only supplied pixels. Reserve that space before copying dedicated-vision context; summaries reserve none. This allowance ignores base64 length and is not exact billing; configured models must fit it at 2,048 pixels (see [OpenAI](https://developers.openai.com/api/docs/guides/images-vision#calculating-costs) and [Claude](https://platform.claude.com/docs/en/build-with-claude/vision#image-limits-and-costs)). Unsupported, missing, expired, corrupt or oversized images become availability notes; cancellation and unexpected storage errors propagate.
 
-PNG/JPEG/WebP sources allow 20 MB, 40 million pixels and 16,384 pixels per edge. Validate decodability before storage or paid admission, with a 64 MiB original-raster budget and two concurrent decodes. Vision normalizes JPEG EXIF orientation, limits edges to 2,048 pixels and respects provider encoded-size limits. Editing retains original bytes. Processing stays headless.
+PNG, JPEG and still WebP sources allow 20 MB, 40 million pixels and 16,384 pixels per edge. Validate decodability before storage or paid admission, with a 64 MiB original-raster budget and two concurrent decodes. Vision normalizes JPEG EXIF orientation, limits edges to 2,048 pixels and respects provider encoded-size limits. Editing retains original bytes. WebP canvas and frame dimensions must agree before decoding. Processing stays headless.
 
 ## Generation and editing
 
@@ -20,9 +20,9 @@ Claim an execution-scoped receipt before the paid call. Identical successful req
 
 ## Client tool images
 
-Normalize MCP images and image links into owned references before ACK and persistence. Storage metadata decides owned-link type; preserve non-image links and distrust client attachment metadata. Allow five images and 20 MB total per result. Downloads require public addresses, pinned DNS, bounded bodies and no redirects, proxies or retries.
+Normalize MCP images and image links into owned references before ACK and persistence. Storage metadata decides owned-link type; preserve non-image links and distrust client attachment metadata. Allow 64 content blocks, 16 owned attachment links, five images and 20 MB of images per result. Resolve distinct attachment IDs in one owner-scoped query. Downloads require public addresses, pinned DNS, bounded bodies and no redirects, proxies or retries.
 
-Reserve each result once, then prepare it outside the socket receive loop and writer lock. Bound preparation jobs; ACK precedes caller completion. Every failed or cancelled reservation releases its waiter. File references survive Skills, composites and subagents; children never select the parent’s reply.
+Reserve each result once, then prepare it outside the socket receive loop and writer lock. Allow 16 result jobs per socket and eight attachment preparations per backend instance. Preparation has 20 seconds and ACK sending has five seconds. ACK precedes caller completion, including preparation timeout when the ACK can be sent. File references survive Skills, composites and subagents; children never select the parent’s reply.
 
 ## Verification
 

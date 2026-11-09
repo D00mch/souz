@@ -65,6 +65,7 @@ class ImageSource private constructor(
         }
 
         private fun decode(bytes: ByteArray, encodedLimit: Int): ImageSource = try {
+            val webpSize = webpDimensions(bytes)
             MemoryCacheImageInputStream(bytes.inputStream()).use { stream ->
                 val reader = ImageIO.getImageReaders(stream).asSequence().firstOrNull()
                     ?: throw InvalidImageException("image_format_unsupported")
@@ -76,11 +77,11 @@ class ImageSource private constructor(
                         "webp" -> "image/webp"
                         else -> throw InvalidImageException("image_format_unsupported")
                     }
-                    val width = reader.getWidth(0)
-                    val height = reader.getHeight(0)
+                    val (width, height) = webpSize ?: (reader.getWidth(0) to reader.getHeight(0))
                     if (width !in 1..16384 || height !in 1..16384 || width.toLong() * height > 40_000_000) {
                         throw InvalidImageException("image_dimensions_exceeded")
                     }
+                    require(webpSize == null || webpSize == (reader.getWidth(0) to reader.getHeight(0)))
                     val destination = reader.getImageTypes(0).asSequence().firstOrNull()
                         ?: throw InvalidImageException("image_format_unsupported")
                     val pixelBytes = maxOf(destination.pixelBytes(), reader.getRawImageType(0)?.pixelBytes() ?: 0)

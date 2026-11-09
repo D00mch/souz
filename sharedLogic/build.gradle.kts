@@ -43,6 +43,7 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
     systemProperty("java.awt.headless", "true")
+    doFirst { systemProperty("souz.test.runtimeClasspath", classpath.asPath) }
 }
 
 tasks.register<Exec>("buildRuntimeSandboxImage") {

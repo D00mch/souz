@@ -6,10 +6,12 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import java.net.InetAddress
 import java.net.Proxy
 import java.util.Base64
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Semaphore
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -24,22 +26,34 @@ internal class ClientImages(private val storage: AttachmentStorage) : AutoClosea
     private val client = OkHttpClient.Builder().proxy(Proxy.NO_PROXY).followRedirects(false)
         .followSslRedirects(false).retryOnConnectionFailure(false).callTimeout(10, TimeUnit.SECONDS).build()
 
+    private val preparations = Semaphore(8)
+
     suspend fun store(userId: String, key: String, outcome: ClientToolOutcome): ClientToolOutcome {
-        val normalized = outcome.withoutClientAttachments()
-        val items = normalized.result?.get("content") as? ArrayNode ?: return normalized
+        val content = outcome.result?.get("content") as? ArrayNode ?: return outcome
+        if (content.exceedsToolResultContentLimits()) return oversizedToolResult()
+        if (content.none { it.attachmentUri() != null || isImageContent(it) }) return outcome.withoutClientAttachments()
+        if (!preparations.tryAcquire()) {
+            return ClientToolOutcome("failed", null, ClientError("client_tool_failed", "Too many attachment results being prepared."))
+        }
         return try {
+            val normalized = outcome.withoutClientAttachments()
+            val items = normalized.result?.get("content") as ArrayNode
+            val references = items.map { item ->
+                item.attachmentUri()?.let { uri ->
+                    require(uri.length == ATTACHMENT_URI_PREFIX.length + 36)
+                    attachmentId(uri.removePrefix(ATTACHMENT_URI_PREFIX))
+                }
+            }
+            val owned = storage.getAll(userId, references.filterNotNull().toSet())
             val images = items.mapIndexedNotNull { index, item ->
-                val uri = item["uri"]?.asText().orEmpty()
-                val existing = if (item["type"]?.asText() == "resource_link" && uri.startsWith("attachment:")) {
-                    storage.get(userId, attachmentId(uri.removePrefix("attachment:"))).also {
-                        (item as ObjectNode).put("mimeType", it.mimeType)
-                    }
-                } else null
+                val existing = references[index]?.let(owned::getValue)
+                if (existing != null) (item as ObjectNode).put("mimeType", existing.mimeType)
                 val isImage = existing?.mimeType?.startsWith("image/") ?: isImageContent(item)
                 if (isImage) index to existing else null
             }
             require(images.size <= ImageSource.MAX_IMAGES)
             val files = mutableListOf<FileContent>()
+            val validated = mutableSetOf<UUID>()
             var remaining = ImageSource.MAX_BYTES
             for ((index, existing) in images) {
                 val item = items[index]
@@ -49,8 +63,9 @@ internal class ClientImages(private val storage: AttachmentStorage) : AutoClosea
                 }
                 val saved = if (existing != null) {
                     require(existing.sizeBytes <= remaining && existing.mimeType in ImageSource.MIME_TYPES)
-                    val source = ImageSource.read(storage.read(userId, existing.id))
-                    require(source.mimeType == existing.mimeType)
+                    if (validated.add(existing.id)) {
+                        require(ImageSource.read(storage.read(existing)).mimeType == existing.mimeType)
+                    }
                     existing
                 } else {
                     val bytes = if (item["type"]?.asText() == "image") {
@@ -74,6 +89,8 @@ internal class ClientImages(private val storage: AttachmentStorage) : AutoClosea
             throw cancelled
         } catch (_: Exception) {
             ClientToolOutcome("failed", null, ClientError("tool_image_unavailable", "Tool image could not be validated or stored."))
+        } finally {
+            preparations.release()
         }
     }
 
@@ -105,6 +122,18 @@ internal class ClientImages(private val storage: AttachmentStorage) : AutoClosea
         client.dispatcher.executorService.shutdown()
     }
 }
+
+private const val ATTACHMENT_URI_PREFIX = "attachment:"
+
+private fun JsonNode.attachmentUri(): String? =
+    takeIf { it["type"]?.asText() == "resource_link" }
+        ?.get("uri")?.asText()?.takeIf { it.startsWith(ATTACHMENT_URI_PREFIX) }
+
+internal fun JsonNode?.exceedsToolResultContentLimits(): Boolean =
+    this is ArrayNode && (size() > 64 || count { it.attachmentUri() != null } > 16)
+
+internal fun oversizedToolResult(): ClientToolOutcome =
+    ClientToolOutcome("failed", null, ClientError("client_tool_failed", "Tool result content limit exceeded."))
 
 /** Recognizes untrusted image content; attachment links require an owner-scoped metadata lookup. */
 internal fun isImageContent(item: JsonNode): Boolean =

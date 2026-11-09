@@ -325,11 +325,11 @@ internal class BackendE2eScope(
         }
     }
 
-    suspend fun awaitLockWait(table: String) {
+    suspend fun awaitLockWait(table: String, count: Int = 1) {
         eventually("database wait on $table") {
             sql { connection -> connection.createStatement().use { statement ->
                 statement.executeQuery("select count(*) from pg_locks where not granted and relation = '$table'::regclass")
-                    .use { rows -> rows.next() && rows.getInt(1) > 0 }
+                    .use { rows -> rows.next() && rows.getInt(1) >= count }
             } }.takeIf { it }
         }
     }

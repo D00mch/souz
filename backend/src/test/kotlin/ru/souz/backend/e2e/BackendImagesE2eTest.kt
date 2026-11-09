@@ -200,6 +200,62 @@ class BackendImagesE2eTest {
     }
 
     @Test
+    fun `attachment preparation times out and keeps capacity while database work is blocked`() = backendE2eTest(
+        "image_socket_limit", attachments = AttachmentMinio.config(),
+    ) {
+        backend.dataSource.maximumPoolSize = 12
+        val user = UUID.randomUUID().toString()
+        val chat = createPublicChat(user)
+        val peer = createPublicChat(user, requestId = "peer")
+        val service = backend.dependencies.publicClientService
+        val chatRecord = service.requireChat(UUID.fromString(chat), "backend")
+        val peerRecord = service.requireChat(UUID.fromString(peer), "backend")
+        val document = backend.attachmentStorage.save(user, "document", "report.txt", "report".byteInputStream())
+        val resource = mapOf("type" to "resource_link", "uri" to "attachment:${document.id}")
+        val link = mapOf("content" to listOf(resource))
+        val dispatcher = LiveClientToolDispatcher(backend.clientThreadRegistry, backend.dependencies.eventService)
+        val deadline = java.time.Duration.ofSeconds(45)
+        withPublicSocket(chat) { first ->
+            withPublicSocket(peer) { second ->
+                withTableLocked("stored_attachments", "access exclusive") {
+                    val calls = List(8) {
+                        val call = async { dispatcher.call(chatRecord, "document", emptyMap(), deadline) }
+                        val event = readJson(first)
+                        first.send(Frame.Text(toolResultFrame(event, "succeeded", link)))
+                        event["payload"]["toolCallId"].asText() to call
+                    }
+                    awaitLockWait("stored_attachments", count = calls.size)
+
+                    suspend fun peerResult(result: Map<String, Any>): ClientToolOutcome = withTimeout(5.seconds) {
+                        val call = async { dispatcher.call(peerRecord, "peer", emptyMap(), deadline) }
+                        val event = readJson(second)
+                        second.send(Frame.Text(toolResultFrame(event, "succeeded", result)))
+                        val ack = readJson(second)
+                        assertEquals("accepted", ack["status"].asText())
+                        assertEquals(event["payload"]["toolCallId"].asText(), ack["toolCallId"].asText())
+                        call.await()
+                    }
+
+                    assertEquals("client_tool_failed", peerResult(link).error?.code)
+                    assertEquals("Tool result content limit exceeded.",
+                        peerResult(mapOf("content" to List(1_000) { resource })).error?.message)
+                    assertEquals("succeeded", peerResult(mapOf("answer" to "ready")).status)
+                    withTimeout(30.seconds) {
+                        val acknowledged = List(calls.size) {
+                            val ack = readJson(first)
+                            assertEquals("accepted", ack["status"].asText())
+                            ack["toolCallId"].asText()
+                        }.toSet()
+                        assertEquals(calls.map { it.first }.toSet(), acknowledged)
+                        for ((_, call) in calls) assertEquals("client_tool_failed", call.await().error?.code)
+                    }
+                    assertEquals("client_tool_failed", peerResult(link).error?.code)
+                }
+            }
+        }
+    }
+
+    @Test
     fun `client screenshots and document links persist as trusted references`() = backendE2eTest(
         "image_client", attachments = AttachmentMinio.config(),
         llm = E2eLlmApi().apply { requestSkill("screen.capture", emptyMap()) },

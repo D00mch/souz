@@ -160,7 +160,7 @@ internal class PublicClientService(
         return handledReceipt(result, key, now)
     }
 
-    suspend fun handleToolResult(chat: Chat, frame: ToolResultFrame): HandledClientFrame {
+    suspend fun handleToolResult(chat: Chat, frame: ToolResultFrame, oversized: Boolean = false): HandledClientFrame {
         val now = Instant.now()
         val threadId = frame.threadId.uuid("threadId")
         val toolCallId = frame.toolCallId.required("toolCallId")
@@ -179,7 +179,7 @@ internal class PublicClientService(
         }
         val context = ToolCallContext(chat.userId, chat.id.toString(), threadId.toString(), toolCallId)
         registry.acceptChannelTool(context, now)?.let { pending ->
-            var normalized = ClientToolOutcome(status, frame.result, frame.error)
+            var normalized = if (oversized) oversizedToolResult() else ClientToolOutcome(status, frame.result, frame.error)
             fun fail() {
                 pending.result.complete(ClientToolOutcome(
                     "failed", null, ClientError("client_tool_failed", "Could not finish client tool result."),
@@ -190,21 +190,15 @@ internal class PublicClientService(
             return HandledClientFrame(
                 response = acceptedTool(chat.id, threadId, toolCallId, duplicate = false, now),
                 prepare = {
-                    @Suppress("SuspendFunSwallowedCancellation") // Synchronous reservation cleanup; every failure is rethrown.
-                    try {
-                        coroutineScope {
-                            val cancellation = pending.result.invokeOnCompletion { cause ->
-                                if (cause is CancellationException) cancel(cause)
-                            }
-                            try {
-                                normalized = normalizeImages(chat.userId, "$threadId:$toolCallId", normalized)
-                            } finally {
-                                cancellation.dispose()
-                            }
+                    coroutineScope {
+                        val cancellation = pending.result.invokeOnCompletion { cause ->
+                            if (cause is CancellationException) cancel(cause)
                         }
-                    } catch (failure: Throwable) {
-                        fail() // Reservation disables the result deadline: every exit must release the waiter.
-                        throw failure
+                        try {
+                            normalized = normalizeImages(chat.userId, "$threadId:$toolCallId", normalized)
+                        } finally {
+                            cancellation.dispose()
+                        }
                     }
                 },
                 afterSend = { pending.result.complete(normalized) },
@@ -216,7 +210,9 @@ internal class PublicClientService(
 
     private suspend fun normalizeImages(userId: String, key: String, outcome: ClientToolOutcome): ClientToolOutcome {
         clientImages?.let { return it.store(userId, key, outcome) }
-        if (outcome.result?.get("content")?.any(::isImageContent) == true)
+        val content = outcome.result?.get("content")
+        if (content.exceedsToolResultContentLimits()) return oversizedToolResult()
+        if (content?.any(::isImageContent) == true)
             return ClientToolOutcome("failed", null, ClientError("tool_image_unavailable", "Image storage is not configured."))
         return outcome.withoutClientAttachments()
     }

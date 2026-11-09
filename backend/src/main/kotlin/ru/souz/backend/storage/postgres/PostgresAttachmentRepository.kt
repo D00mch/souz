@@ -107,6 +107,16 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
 
     suspend fun get(userId: String, id: UUID): StoredAttachment? = lookup(userId, "id", id)
 
+    internal suspend fun getAll(userId: String, ids: Set<UUID>): Map<UUID, StoredAttachment> = dataSource.read { connection ->
+        connection.prepareStatement("select * from stored_attachments where user_id = ? and id = any(?)").use { statement ->
+            statement.setString(1, userId)
+            statement.setArray(2, connection.createArrayOf("uuid", ids.toTypedArray()))
+            statement.executeQuery().use { rows ->
+                buildMap { while (rows.next()) rows.attachment().let { put(it.id, it) } }
+            }
+        }
+    }
+
     /** Check ownership before an import can read an object already registered in the bucket. */
     suspend fun getByObjectKey(userId: String, objectKey: String): StoredAttachment? = dataSource.read { connection ->
         connection.prepareStatement("select * from stored_attachments where object_key = ?").use {

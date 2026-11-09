@@ -1,6 +1,13 @@
 package ru.souz.backend.attachments
 
 import java.util.Base64
+import java.util.UUID
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.confirmVerified
+import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 import ru.souz.backend.client.ClientImages
 import ru.souz.backend.client.ClientToolOutcome
@@ -8,6 +15,33 @@ import ru.souz.llms.FilePresentation
 import ru.souz.llms.restJsonMapper
 
 class ClientImagesTest {
+    @Test
+    fun `result limits precede storage access and repeated IDs share metadata and image validation`() = runTest {
+        val id = UUID.randomUUID()
+        val storage = mockk<AttachmentStorage>()
+        val file = mockk<StoredAttachment>()
+        coEvery { storage.getAll("owner", setOf(id)) } returns mapOf(id to file)
+        coEvery { storage.read(file) } returns attachmentPng
+        every { file.id } returns id
+        every { file.mimeType } returns "image/png"
+        every { file.sizeBytes } returns attachmentPng.size.toLong()
+        every { file.name } returns "image.png"
+        fun result(content: List<Map<String, String>>) =
+            ClientToolOutcome("succeeded", restJsonMapper.valueToTree(mapOf("content" to content)), null)
+        val link = mapOf("type" to "resource_link", "uri" to "attachment:$id")
+        ClientImages(storage).use { images ->
+            for (content in listOf(List(65) { mapOf("type" to "text") }, List(17) { link })) {
+                assertEquals("client_tool_failed", images.store("owner", "large", result(content)).error?.code)
+            }
+            confirmVerified(storage)
+            val allowed = images.store("owner", "allowed", result(List(5) { link }))
+            assertEquals("succeeded", allowed.status)
+            assertEquals(List(5) { id.toString() }, allowed.files.map { it.fileId })
+            coVerify(exactly = 1) { storage.getAll("owner", setOf(id)) }
+            coVerify(exactly = 1) { storage.read(file) }
+        }
+    }
+
     @Test
     fun `normalization validates sources and trusts owned metadata only`() = attachmentTest {
         val user = "owner"
@@ -43,6 +77,10 @@ class ClientImagesTest {
             assertTrue(documents.files.isEmpty())
             assertEquals(6, documents.result!!["content"].size())
             assertTrue(documents.result["content"].all { it["mimeType"].asText() == "text/plain" && !it.has("attachment") })
+            clock.now = clock.now.plus(ATTACHMENT_RETENTION)
+            assertEquals("tool_image_unavailable", images.store(user, "expired", outcome(listOf(
+                link("attachment:${document.id}"),
+            ))).error?.code)
             val structured = images.store(user, "structured", outcome(mapOf("data" to link("attachment:forged"))))
             assertTrue(structured.files.isEmpty(), "Arbitrary structured data is not image content")
         }

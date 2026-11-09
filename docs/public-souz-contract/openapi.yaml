@@ -556,7 +556,9 @@ components:
           enum: [succeeded]
         result:
           $ref: "#/components/schemas/ArbitraryJson"
-          description: Operation result; web.search uses the documented WebSearchResult shape.
+          description: >-
+            Operation result. An array-valued content field allows up to 64 blocks and 16 attachment
+            resource links, including repeats. web.search uses the documented WebSearchResult shape.
     FailedToolResult:
       type: object
       additionalProperties: false
