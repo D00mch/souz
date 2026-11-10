@@ -11,6 +11,7 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import java.time.Duration
 import java.time.Instant
+import java.util.Base64
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,6 +20,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import ru.souz.backend.attachments.attachmentPng
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.llms.LLMMessageRole
@@ -598,11 +600,20 @@ class BackendPublicWebSocketE2eTest {
         }
 
     @Test
-    fun `device mcp call_tool preserves successful and error results`() {
+    fun `device mcp call_tool preserves ordinary results and rejects images without storage`() {
+        val encoded = Base64.getEncoder().encodeToString(attachmentPng)
         listOf(
-            7 to """{"content":[{"type":"text","text":"Volume set to 7"}],"isError":false}""",
-            500 to """{"content":[{"type":"text","text":"level must be between 0 and 10"}],"isError":true}""",
-        ).forEach { (level, result) ->
+            Triple(7, """{"content":[{"type":"text","text":"Volume set to 7"}],"isError":false}""", null),
+            Triple(500, """{"content":[{"type":"text","text":"level must be between 0 and 10"}],"isError":true}""", null),
+            Triple(8, """{"content":[{"type":"image","mimeType":"image/png","data":"$encoded"}]}""", "tool_image_unavailable"),
+            Triple(9, """{"content":[{"type":"resource","resource":{"uri":"screen://capture","mimeType":"image/png","blob":"$encoded"}}]}""", "tool_image_unavailable"),
+            Triple(10, """{"content":[{"type":"resource_link","uri":"https://example.invalid/screen.png"}]}""", "tool_image_unavailable"),
+            Triple(11, """{"content":[
+                {"type":"resource","resource":{"uri":"file:///notes.txt","mimeType":"text/plain","text":"Notes"}},
+                {"type":"resource","resource":{"uri":"file:///report.pdf","mimeType":"application/pdf","blob":"ZG9jdW1lbnQ="}},
+                {"type":"resource_link","uri":"https://example.invalid/report.pdf","mimeType":"application/pdf"}
+            ]}""", null),
+        ).forEach { (level, result, error) ->
             backendE2eTest("e2e_ws_mcp_call_$level", llm = E2eLlmApi().apply {
                 requestSkill("device.mcp.call_tool", mapOf("name" to "set_volume", "arguments" to mapOf("level" to level)))
             }) {
@@ -627,7 +638,12 @@ class BackendPublicWebSocketE2eTest {
                     val returned = llm.requests.last().messages.single {
                         it.name == "RunSkillCommand" && it.role == LLMMessageRole.function
                     }
-                    assertEquals(json.readTree(result), json.readTree(returned.content), "level=$level")
+                    assertFalse(encoded in json.writeValueAsString(llm.requests.flatMap { it.messages }))
+                    val history = backend.agentStateRepository.get(userId, UUID.fromString(chatId))!!.history
+                    assertFalse(encoded in json.writeValueAsString(history))
+                    assertTrue(returned.files.isEmpty())
+                    if (error == null) assertEquals(json.readTree(result), json.readTree(returned.content), "level=$level")
+                    else assertEquals(error, json.readTree(returned.content)["error"]["code"].asText(), "level=$level")
                 }
             }
         }

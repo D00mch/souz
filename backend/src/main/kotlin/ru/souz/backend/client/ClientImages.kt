@@ -35,7 +35,7 @@ internal class ClientImages(private val storage: AttachmentStorage) : AutoClosea
         val items = normalized.result?.get("content") as ArrayNode
         items.forEachIndexed { index, item ->
             val resource = item["resource"]
-            if (item["type"]?.asText() == "resource" && resource?.get("mimeType")?.asText()?.startsWith("image/") == true) {
+            if (item["type"]?.asText() == "resource" && isImageContent(item)) {
                 items.set(index, restJsonMapper.createObjectNode().put("type", "image").put("mimeType", resource["mimeType"].asText())
                     .set<JsonNode>("data", resource["blob"]))
             }
@@ -146,6 +146,7 @@ internal fun oversizedToolResult(): ClientToolOutcome =
 internal fun isImageContent(item: JsonNode): Boolean =
     when (item["type"]?.asText()) {
         "image" -> true
+        "resource" -> item["resource"]?.get("mimeType")?.asText()?.startsWith("image/") == true
         "resource_link" -> item["mimeType"]?.asText()?.startsWith("image/") == true ||
             item["uri"]?.asText()?.substringBefore('?')?.lowercase()?.let { uri ->
                 listOf(".png", ".jpg", ".jpeg", ".webp").any(uri::endsWith)
