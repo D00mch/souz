@@ -21,6 +21,8 @@ The historical `LocalQwen3_4B_Instruct_2507` enum name preserves persisted setti
 
 Souz supplies its strict JSON final/tool-call envelope, including correlated tool-result history, instead of the models' native tool-call syntax. The [Qwen template](https://huggingface.co/Qwen/Qwen3.5-4B/blob/main/chat_template.jinja) uses its non-thinking assistant prefix. Native grammar remains disabled for these profiles.
 
+Final-answer recovery preserves bare JSON values, including numbers, objects and arrays, when a model omits the envelope. Objects containing tool-call fields (`calls`, `tool_calls`, `function_call` or `arguments`) still require valid tool-call structure; incomplete calls are errors. A legacy object containing only a textual `result` is unwrapped, while application objects with additional fields remain intact.
+
 ## Request ownership
 
 Parent and subagent calls share one native runtime. Chat, embeddings and preload serialize their full model-handle lifetime through a coroutine mutex, including blocking bridge cleanup after cancellation. A waiting caller can be cancelled without cancelling the active caller. Model replacement and shutdown wait for the owning request to release the runtime; cancellation remains cooperative with the bridge.

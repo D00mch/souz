@@ -463,6 +463,59 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `strict json parser preserves bare numeric and structured final answers`() {
+        val usage = LLMResponse.Usage(10, 5, 15, 0)
+        val answers = listOf(
+            "3247",
+            """{"first":703,"second":16169}""",
+            """[{"first":703},{"second":16169}]""",
+            """"A literal {brace}"""",
+            "true",
+            "null",
+            """{"name":"Ada","result":"ok","count":2}""",
+        )
+
+        answers.forEach { answer ->
+            val result = LocalStrictJsonParser().parse(
+                rawText = answer,
+                requestModel = LocalModelProfiles.QWEN35_9B.gigaModel.alias,
+                usage = usage,
+                nativeFinishReason = "length",
+            )
+
+            val ok = assertIs<LLMResponse.Chat.Ok>(result, answer)
+            val choice = ok.choices.single()
+            assertEquals(answer, choice.message.content)
+            assertNull(choice.message.functionCall)
+            assertEquals(LLMResponse.FinishReason.length, choice.finishReason)
+            assertEquals(usage, ok.usage)
+        }
+    }
+
+    @Test
+    fun `strict json parser does not disguise incomplete tool calls as final json`() {
+        val responses = listOf(
+            """{"calls":[{"name":"Calculator","arguments":{"expression":"191 * 17"}}]}""",
+            """{"name":"Calculator","arguments":{"expression":"191 * 17"}}""",
+            """{"id":"call_1","name":"Calculator","arguments":[]}""",
+            """{"arguments":{},"result":"not a final answer"}""",
+            """[{"name":"Calculator","arguments":{}}]""",
+            """{"type":"tool_calls","calls":[{"id":"call_1","name":"Calculator","arguments":[]}]}""",
+        )
+
+        responses.forEach { response ->
+            assertIs<LLMResponse.Chat.Error>(
+                LocalStrictJsonParser().parse(
+                    rawText = response,
+                    requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+                    usage = LLMResponse.Usage(10, 5, 15, 0),
+                ),
+                response,
+            )
+        }
+    }
+
+    @Test
     fun `strict json parser treats result object as final response`() {
         val parser = LocalStrictJsonParser()
 
