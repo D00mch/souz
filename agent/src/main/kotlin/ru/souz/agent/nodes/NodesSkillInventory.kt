@@ -24,13 +24,12 @@ internal const val SKILL_INVENTORY_NODE_NAME = "Skill Inventory"
 
 /** Installs core tools and renders discovery metadata; full bundles load only on demand. */
 internal class NodesSkillInventory(
-    private val toolCatalog: AgentToolCatalog,
+    private val toolCatalogProvider: () -> AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
     private val skillBundleProvider: SkillBundleProvider,
     private val llmApi: LLMChatAPI? = null,
     private val skillClassifier: SkillClassifier? = null,
     private val fallbackSkillClassifier: SkillClassifier? = null,
-    private val toolCatalogProvider: () -> AgentToolCatalog = { toolCatalog },
     private val toolServerSource: AgentToolServerSource? = null,
 ) {
     private val logger = LoggerFactory.getLogger(NodesSkillInventory::class.java)

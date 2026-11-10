@@ -441,7 +441,6 @@ class NodesSkillInventoryTest {
         source: AgentToolServerSource? = null,
         catalogProvider: () -> AgentToolCatalog = { catalog },
     ): NodesSkillInventory = NodesSkillInventory(
-        toolCatalog = catalog,
         toolsFilter = toolsFilter,
         skillBundleProvider = repository,
         skillClassifier = classifier,

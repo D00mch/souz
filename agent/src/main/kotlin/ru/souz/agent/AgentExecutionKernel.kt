@@ -60,7 +60,6 @@ class AgentExecutionKernelFactory(
             runtimeEnvironment = runtimeEnvironment,
         )
         val nodesSkillInventory = NodesSkillInventory(
-            toolCatalog = toolCatalog,
             toolsFilter = toolsFilter,
             skillBundleProvider = skillBundleProvider,
             llmApi = llmApi,
