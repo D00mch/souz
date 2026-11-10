@@ -44,6 +44,13 @@ class AttachmentStorage(
     suspend fun get(userId: String, id: UUID): StoredAttachment =
         available(repository.get(userId, id) ?: throw AttachmentException("attachment_not_found"))
 
+    internal suspend fun getAll(userId: String, ids: Set<UUID>): Map<UUID, StoredAttachment> {
+        if (ids.isEmpty()) return emptyMap()
+        val files = repository.getAll(userId, ids)
+        if (files.size != ids.size) throw AttachmentException("attachment_not_found")
+        return files.mapValues { available(it.value) }
+    }
+
     suspend fun importUpload(userId: String, objectKey: String, name: String): StoredAttachment = transfers.withPermit {
         validateAttachmentObjectKey(objectKey)
         val safeName = attachmentName(name)
@@ -78,8 +85,13 @@ class AttachmentStorage(
     /** Returns metadata and bytes from one row lookup, checking availability again after the transfer. */
     suspend fun load(userId: String, id: UUID): Pair<StoredAttachment, ByteArray> = transfers.withPermit {
         val file = get(userId, id)
-        file to objects.read(file).also { available(file) }
+        file to readAvailable(file)
     }
+
+    /** Read a file from an owner-scoped lookup already performed by this operation. */
+    internal suspend fun read(file: StoredAttachment): ByteArray = transfers.withPermit { readAvailable(available(file)) }
+
+    private suspend fun readAvailable(file: StoredAttachment): ByteArray = objects.read(file).also { available(file) }
 
     suspend fun cleanup(): Int {
         var removed = 0

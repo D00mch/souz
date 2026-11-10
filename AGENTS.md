@@ -58,6 +58,8 @@ Only these direct production project dependencies are allowed. Standard test-sou
 - `:sharedLogic` `main` → `:agent`, `:llms`, `:skill-oauth-api`.
 - `:backend` `main` → `:agent`, `:llms`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`, `:job-api`, `:job-impl`, `:plugin-api`.
 
+For [image support](backend/docs/images.md), persist references only and never automatically repeat uncertain paid generation.
+
 ## Verification
 
 - Use the Gradle wrapper and the Java 21 toolchain configured by the build.

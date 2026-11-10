@@ -30,6 +30,7 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.toMessage
 import kotlin.time.TimeSource
+import ru.souz.llms.exceedsContextBudget
 
 /**
  * Nodes with calls to LLM

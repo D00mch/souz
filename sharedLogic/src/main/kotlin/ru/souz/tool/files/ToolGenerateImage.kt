@@ -5,7 +5,6 @@ import java.time.Instant
 import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
 import ru.souz.llms.ToolInvocationMeta
-import ru.souz.llms.runtime.ImageFileFormats
 import ru.souz.llms.runtime.ImageGenerationGateway
 import ru.souz.llms.runtime.ImageGenerationInput
 import ru.souz.runtime.files.FilesToolUtil
@@ -15,6 +14,8 @@ import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
+import ru.souz.llms.runtime.ImageSource
+import ru.souz.runtime.sandbox.SandboxPathInfo
 
 class ToolGenerateImage(
     private val filesToolUtil: FilesToolUtil,
@@ -26,11 +27,13 @@ class ToolGenerateImage(
         val prompt: String,
         @InputParamDescription("Optional absolute output file path. Defaults to ~/Documents/souz/generated_image_<timestamp>.png")
         val outputPath: String? = null,
+        @InputParamDescription("Optional ordered source images for editing, up to five absolute sandbox paths.")
+        val imagePaths: List<String> = emptyList(),
     )
 
     override val name: String = NAME
     override val description: String =
-        "Generate a new image with the current provider, save it to a safe file path, and return the saved path."
+        "Generate or edit an image with the configured image model, save it to a safe file path, and return the saved path."
 
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(
@@ -55,21 +58,24 @@ class ToolGenerateImage(
             throw BadInputException("prompt must not be empty")
         }
 
+        require(input.imagePaths.size <= ImageSource.MAX_IMAGES) { "image_count_exceeded" }
+        val sources = input.imagePaths.map { path ->
+            val file = filesToolUtil.resolveSafeExistingFile(path, meta)
+            filesToolUtil.openInputStream(file, meta).use { ImageSource.read(it) }
+        }
         val generated = imageGenerationGateway.generate(
-            ImageGenerationInput(prompt = input.prompt.trim())
+            ImageGenerationInput(prompt = input.prompt.trim(), images = sources)
         )
         val target = resolveOutputPath(
             rawOutputPath = input.outputPath,
-            mimeType = generated.mimeType,
+            mimeType = generated.image.mimeType,
             meta = meta,
         )
-        filesToolUtil.withWritableLocalPath(target, meta) { localPath ->
-            java.nio.file.Files.write(localPath, generated.bytes)
-        }
+        filesToolUtil.writeBytes(target, generated.image.bytes, meta)
         return mapper.writeValueAsString(
             linkedMapOf(
                 "outputPath" to target.path,
-                "mimeType" to generated.mimeType,
+                "mimeType" to generated.image.mimeType,
                 "provider" to generated.provider,
                 "model" to generated.model,
             )
@@ -80,31 +86,15 @@ class ToolGenerateImage(
         rawOutputPath: String?,
         mimeType: String,
         meta: ToolInvocationMeta,
-    ) = if (!rawOutputPath.isNullOrBlank()) {
-        filesToolUtil.resolvePath(normalizeRequestedOutputPath(rawOutputPath, mimeType), meta)
-    } else {
-        val ext = ImageFileFormats.primaryExtensionForMimeType(mimeType)
-        filesToolUtil.resolvePath(
-            "${filesToolUtil.resolveSouzDocumentsDirectory(meta).path}/generated_image_${Instant.now().toEpochMilli()}.$ext",
-            meta,
-        )
-    }
-
-    private fun normalizeRequestedOutputPath(rawOutputPath: String, mimeType: String): String {
-        val expectedExtensions = ImageFileFormats.supportedExtensionsForMimeType(mimeType)
-        val requestedExtension = Path.of(rawOutputPath).fileName.toString()
-            .substringAfterLast('.', "")
-            .lowercase()
-
-        if (requestedExtension.isBlank()) {
-            return "$rawOutputPath.${expectedExtensions.first()}"
+    ): SandboxPathInfo {
+        val extensions = if (mimeType == "image/jpeg") listOf("jpg", "jpeg") else listOf(mimeType.substringAfter('/'))
+        val path = rawOutputPath?.takeIf { it.isNotBlank() }
+            ?: "${filesToolUtil.resolveSouzDocumentsDirectory(meta).path}/generated_image_${Instant.now().toEpochMilli()}.${extensions.first()}"
+        val requestedExtension = Path.of(path).fileName.toString().substringAfterLast('.', "").lowercase()
+        if (requestedExtension.isNotBlank() && requestedExtension !in extensions) {
+            throw BadInputException("outputPath extension .$requestedExtension does not match generated MIME type $mimeType")
         }
-        if (requestedExtension !in expectedExtensions) {
-            throw BadInputException(
-                "outputPath extension .$requestedExtension does not match generated MIME type $mimeType",
-            )
-        }
-        return rawOutputPath
+        return filesToolUtil.resolvePath(if (requestedExtension.isBlank()) "$path.${extensions.first()}" else path, meta)
     }
 
     companion object {

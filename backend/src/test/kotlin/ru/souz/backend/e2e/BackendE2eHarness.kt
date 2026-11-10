@@ -2,7 +2,6 @@ package ru.souz.backend.e2e
 
 import ru.souz.agent.spi.TaskComplexityClassifier
 import ru.souz.agent.skills.SkillClassifier
-
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.attachments.AttachmentStorage
@@ -330,11 +329,11 @@ internal class BackendE2eScope(
         }
     }
 
-    suspend fun awaitLockWait(table: String) {
+    suspend fun awaitLockWait(table: String, count: Int = 1) {
         eventually("database wait on $table") {
             sql { connection -> connection.createStatement().use { statement ->
                 statement.executeQuery("select count(*) from pg_locks where not granted and relation = '$table'::regclass")
-                    .use { rows -> rows.next() && rows.getInt(1) > 0 }
+                    .use { rows -> rows.next() && rows.getInt(1) >= count }
             } }.takeIf { it }
         }
     }
@@ -399,6 +398,7 @@ internal class BackendE2eBackend(
         llmLimits = llmLimits,
         policyPrompt = E2E_POLICY_PROMPT,
         attachments = attachments,
+        visionModel = settingsSource?.value("SOUZ_ATTACHMENTS_VISION_MODEL", "souz.attachments.visionModel")?.trim(),
     ).let(configureApp).validate()
     private val source = object : BackendConfigSource {
         override fun env(key: String): String? = settingsSource?.env(key) ?: when {
