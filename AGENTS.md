@@ -12,6 +12,8 @@ Backend provider attempts share per-user admission, request/token quotas and pro
 
 Desktop selection prompts queue across sources and expire with their callers; dialog events carry the displayed source and request IDs. Tool permission approval and denial events carry the displayed request ID so stale clicks cannot resolve or dismiss a replacement prompt. Clipboard tools share [transaction ownership](desktopApp/docs/clipboard-transactions.md) across parent and child agents.
 
+Desktop [local model profiles](native/docs/model-assets-and-context-budget.md#desktop-text-models) own download sets, RAM gates and model-specific prompt/output handling. The persisted Qwen3 4B selector resolves to Qwen3.5 4B without reusing the old GGUF.
+
 Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts. Revisioned snapshots go to the current connected channel if it declares `prompt.personality.set`, otherwise to another declaring channel. Settings save independently of discovery; no known receiver means synchronization is skipped.
 
 Backend [external memory](backend/docs/external-memory.md) exposes exact-fact forgetting and one-time confirmed bank deletion only on authenticated interactive owner turns when Hindsight is configured.

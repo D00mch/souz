@@ -8,6 +8,21 @@ Projectors share the chat model's storage directory. `mmproj-F16.gguf` is the ca
 
 `LLMRequest.Chat.contextSize` explicitly carries the configured local window; `maxTokens` is only the output limit. An explicit context size is used unchanged for every model, including vision and summarization. Profile defaults and caps apply only to requests without an explicit context size. Completion budget is reserved from tokenized prompt size, and multimodal generation recalculates it after `mtmd_tokenize` using the actual text-and-image token count.
 
+## Desktop text models
+
+| Model | GGUF | Minimum host RAM | Default / profile context cap | Completion cap |
+| --- | --- | --- | --- | --- |
+| Qwen3.5 4B | Unsloth Q4_K_M | 8 GiB | 8,192 / 32,768 | 1,024 |
+| Qwen3.5 9B | Unsloth Q4_K_M | 16 GiB | 8,192 / 32,768 | 1,024 |
+
+The RAM thresholds reserve space beyond the resident weights, including the linked embedding model and application. These operational context caps are below the upstream training windows; explicit configured windows retain the shared contract above. Qwen profiles expose text inference without a vision projector. Gemma's vision profiles retain their separate assets and budgets.
+
+The historical `LocalQwen3_4B_Instruct_2507` enum name preserves persisted settings and per-model system-prompt keys. Both that name and `local-qwen3-4b-instruct-2507` resolve to the Qwen3.5 4B selector `local-qwen3.5-4b`. Its storage ID and filename require the replacement weights; old Qwen3 downloads remain untouched and cannot satisfy readiness.
+
+Souz supplies its strict JSON final/tool-call envelope, including correlated tool-result history, instead of the models' native tool-call syntax. The [Qwen template](https://huggingface.co/Qwen/Qwen3.5-4B/blob/main/chat_template.jinja) uses its non-thinking assistant prefix. Native grammar remains disabled for these profiles.
+
+Final-answer recovery preserves bare JSON values, including numbers, objects and arrays, when a model omits the envelope. Objects containing tool-call fields (`calls`, `tool_calls`, `function_call` or `arguments`) still require valid tool-call structure; incomplete calls are errors. A legacy object containing only a textual `result` is unwrapped, while application objects with additional fields remain intact.
+
 ## Request ownership
 
 Parent and subagent calls share one native runtime. Chat, embeddings and preload serialize their full model-handle lifetime through a coroutine mutex, including blocking bridge cleanup after cancellation. A waiting caller can be cancelled without cancelling the active caller. Model replacement and shutdown wait for the owning request to release the runtime; cancellation remains cooperative with the bridge.

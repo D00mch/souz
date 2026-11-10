@@ -25,7 +25,7 @@ class LocalPromptRenderer {
             .map { toRenderedMessage(it, contextBudget) }
 
         return when (profile.promptFamily) {
-            LocalPromptFamily.QWEN_CHATML -> renderQwen(systemPrompt, messages)
+            LocalPromptFamily.QWEN35 -> renderQwen(systemPrompt, messages)
             LocalPromptFamily.GEMMA4 -> renderGemma4(systemPrompt, messages)
         }
     }
@@ -272,15 +272,17 @@ class LocalPromptRenderer {
     private fun renderQwen(systemPrompt: String, messages: List<RenderedMessage>): String = buildString {
         if (systemPrompt.isNotBlank()) {
             appendLine("<|im_start|>system")
-            appendLine(systemPrompt)
+            append(systemPrompt)
             appendLine("<|im_end|>")
         }
         messages.forEach { message ->
             appendLine("<|im_start|>${message.role}")
-            appendLine(message.content)
+            append(message.content)
             appendLine("<|im_end|>")
         }
         append("<|im_start|>assistant\n")
+        // Qwen3.5's non-thinking assistant prefix.
+        append("<think>\n\n</think>\n\n")
     }
 
     private fun renderGemma4(systemPrompt: String, messages: List<RenderedMessage>): String = buildString {

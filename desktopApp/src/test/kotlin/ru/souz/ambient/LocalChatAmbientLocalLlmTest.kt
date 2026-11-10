@@ -31,7 +31,7 @@ class LocalChatAmbientLocalLlmTest {
 
         llm.complete(systemPrompt = "system", userPrompt = "user")
 
-        assertEquals("local-qwen3-4b-instruct-2507", api.lastRequest?.model)
+        assertEquals("local-qwen3.5-4b", api.lastRequest?.model)
     }
 
     private class CapturingChatApi : LLMChatAPI {

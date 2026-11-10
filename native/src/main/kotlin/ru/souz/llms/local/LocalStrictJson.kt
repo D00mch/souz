@@ -41,7 +41,8 @@ object LocalStrictJsonContract {
         appendLine("Rules:")
         appendLine("- Never emit markdown, comments, XML, or prose outside the JSON object.")
         appendLine("- Never emit control tokens or wrappers such as <|...|>, <|turn>, <turn|>, <|tool_call>, <tool_call|>, <tool_call>, <tool_result>, or <think>.")
-        appendLine("- In a final response, \"content\" must be plain human-readable text, not another JSON object like {\"result\":\"...\"}.")
+        appendLine("- Always keep the outer response envelope, even when the user requests only a number or JSON.")
+        appendLine("- In a final response, \"content\" must be a string. Put requested JSON inside that string with escaped quotes.")
         appendLine("- Use \"tool_calls\" when any tool is required before answering.")
         appendLine("- Tool call ids must be unique within the response.")
         appendLine("- Each object inside \"calls\" may contain only \"id\", \"name\", and \"arguments\".")
@@ -128,6 +129,9 @@ class LocalStrictJsonParser {
                     created = created,
                 )
             }
+            if (!containsToolCallFields(node)) {
+                return plainTextFinal(trimmed, requestModel, usage, finishReason, created)
+            }
             return LLMResponse.Chat.Error(
                 -1,
                 "Local provider JSON does not contain the required \"type\" field. Raw preview: ${preview(trimmed)}",
@@ -148,10 +152,13 @@ class LocalStrictJsonParser {
     }
 
     private fun normalizeRawText(rawText: String): String {
-        val trimmed = rawText.trim()
+        val trimmed = stripStandaloneControlWrapperLines(rawText.trim())
         if (trimmed.isEmpty()) return trimmed
+        // An answer can itself be a JSON array or string containing objects.
+        // Extracting its first object would discard part of the requested value.
+        if (trimmed.startsWith('[') || trimmed.startsWith('"')) return trimmed
         extractFirstJsonObject(trimmed)?.let { return it }
-        return stripStandaloneControlWrapperLines(trimmed)
+        return trimmed
     }
 
     private fun looksLikeSingleToolCall(node: JsonNode): Boolean =
@@ -162,7 +169,14 @@ class LocalStrictJsonParser {
 
     private fun looksLikeResultObject(node: JsonNode): Boolean =
         node.isObject &&
+            node.size() == 1 &&
             node["result"]?.isTextual == true
+
+    private fun containsToolCallFields(node: JsonNode): Boolean = when {
+        node.isArray -> node.any(::containsToolCallFields)
+        node.isObject -> listOf("calls", "tool_calls", "function_call", "arguments").any(node::has)
+        else -> false
+    }
 
     private fun extractFirstJsonObject(text: String): String? {
         var start = -1

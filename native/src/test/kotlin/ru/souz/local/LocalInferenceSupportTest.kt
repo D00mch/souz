@@ -111,6 +111,7 @@ class LocalInferenceSupportTest {
         assertEquals(
             listOf(
                 LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
+                LocalModelProfiles.QWEN35_9B,
                 LocalModelProfiles.GEMMA4_E2B_IT,
                 LocalModelProfiles.GEMMA4_E4B_IT,
             ),
@@ -184,8 +185,8 @@ class LocalInferenceSupportTest {
         assertFalse(chat.prefersPlainTextLocalOutput())
         assertTrue(prompt.startsWith("<|im_start|>system"))
         assertTrue(prompt.contains("Return exactly one JSON object and nothing else."))
-        assertTrue(prompt.contains("<|im_start|>user\nПроверь календарь\n<|im_end|>"))
-        assertTrue(prompt.endsWith("<|im_start|>assistant\n"))
+        assertTrue(prompt.contains("<|im_start|>user\nПроверь календарь<|im_end|>"))
+        assertTrue(prompt.endsWith("<|im_start|>assistant\n<think>\n\n</think>\n\n"))
     }
 
     @Test
@@ -462,6 +463,50 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `strict json parser preserves bare numeric and structured final answers`() {
+        val answers = listOf(
+            "3247",
+            """{"first":703,"second":16169}""",
+            """[{"first":703},{"second":16169}]""",
+            """"A literal {brace}"""",
+            """{"name":"Ada","result":"ok","count":2}""",
+        )
+
+        answers.forEach { answer ->
+            val result = LocalStrictJsonParser().parse(
+                rawText = answer,
+                requestModel = LocalModelProfiles.QWEN35_9B.gigaModel.alias,
+                usage = LLMResponse.Usage(10, 5, 15, 0),
+            )
+
+            val ok = assertIs<LLMResponse.Chat.Ok>(result, answer)
+            val choice = ok.choices.single()
+            assertEquals(answer, choice.message.content)
+            assertNull(choice.message.functionCall)
+        }
+    }
+
+    @Test
+    fun `strict json parser does not disguise incomplete tool calls as final json`() {
+        val responses = listOf(
+            """{"calls":[{"name":"Calculator","arguments":{"expression":"191 * 17"}}]}""",
+            """{"arguments":{},"result":"not a final answer"}""",
+            """[{"name":"Calculator","arguments":{}}]""",
+        )
+
+        responses.forEach { response ->
+            assertIs<LLMResponse.Chat.Error>(
+                LocalStrictJsonParser().parse(
+                    rawText = response,
+                    requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+                    usage = LLMResponse.Usage(10, 5, 15, 0),
+                ),
+                response,
+            )
+        }
+    }
+
+    @Test
     fun `strict json parser treats result object as final response`() {
         val parser = LocalStrictJsonParser()
 
@@ -662,7 +707,11 @@ class LocalInferenceSupportTest {
     fun `download prompt is returned until both local chat and linked embeddings are available`() {
         val tempRoot = Files.createTempDirectory("souz-local-models-test")
         val store = LocalModelStore(rootDir = tempRoot)
-        val model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel
+        val oldDir = Files.createDirectories(tempRoot.resolve("local-qwen3-4b-instruct-2507"))
+        Files.writeString(oldDir.resolve("Qwen3-4B-Instruct-2507-Q4_K_M.gguf"), "old weights")
+        val replacement = LocalModelProfiles.forAlias("local-qwen3-4b-instruct-2507")
+        assertEquals(LocalModelProfiles.QWEN35_4B, replacement)
+        val model = assertNotNull(replacement).gigaModel
 
         val missingPrompt = store.downloadPromptFor(model)
         assertNotNull(missingPrompt)
@@ -676,6 +725,7 @@ class LocalInferenceSupportTest {
         )
 
         val storedPath = store.modelPath(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507)
+        assertEquals(tempRoot.resolve("local-qwen3.5-4b/Qwen3.5-4B-Q4_K_M.gguf"), storedPath)
         Files.createDirectories(storedPath.parent)
         Files.writeString(storedPath, "stub")
 
@@ -1089,7 +1139,7 @@ class LocalInferenceSupportTest {
 
         val error = assertIs<LLMResponse.Chat.Error>(result)
         assertEquals(
-            "Local model Local Qwen3 4B Instruct 2507 does not support image input.",
+            "Local model Local Qwen3.5 4B does not support image input.",
             error.message,
         )
         val unknown = LLMRequest.Chat(model = "unknown-deployment", provider = LlmProvider.LOCAL, messages = emptyList())
