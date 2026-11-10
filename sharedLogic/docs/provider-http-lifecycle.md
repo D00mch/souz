@@ -6,6 +6,7 @@
 - Credentials, selected models, endpoints, sessions, and timeouts are request state and are applied explicitly to each request.
 - Backend composition excludes Giga entirely and rejects its selectors explicitly.
 - The host that creates a provider transport closes it exactly once after in-flight application work is stopped.
+- Provider resources also own a dedicated MCP transport with operator-controlled DNS/endpoint policy and bounded responses. MCP never borrows a provider transport in production; see [MCP HTTP client](mcp-client.md).
 - OpenAI base URLs are normalized by `OpenAIEndpoint`. Only the semantically official HTTPS endpoint sends `stream_options.include_usage`; compatible custom endpoints omit that request option but still parse usage chunks they return.
 
 - Codex Responses requests map `LLMRequest.Chat.reasoningEffort` to `reasoning.effort`; omit the object when unset. Backend user settings persist the optional effort and pass it into each turn's agent settings.

@@ -75,7 +75,8 @@ class BackendMcpE2eTest {
                 }
             }
         }
-        backendE2eTest("e2e_mcp_$preload", llm = llm, providerClients = ProviderHttpClients(http, http),
+        val otherHttp = HttpClient(MockEngine { error("MCP requests must use their dedicated transport") })
+        backendE2eTest("e2e_mcp_$preload", llm = llm, providerClients = ProviderHttpClients(otherHttp, otherHttp, mcp = http),
             skillClassifier = SkillClassifier { _, descriptions ->
                 assertEquals(setOf(SkillId("calendar"), SkillId("music")), descriptions.keys)
                 if (preload) setOf(SkillId("calendar")) else emptySet()
@@ -112,6 +113,10 @@ class BackendMcpE2eTest {
             assertEquals("Calendar events", expected.path("calendar").path("description").asText())
             assertEquals(0, client.get(BackendHttpRoutes.SETTINGS) { trusted("other-owner") }.jsonBody().path("settings").path("mcp").size())
             val invalid = listOf(
+                mapOf("calendar" to mapOf("url" to "http://127.0.0.1:8765/mcp", "description" to "Internal")),
+                mapOf("calendar" to mapOf("url" to "http://[::1]/mcp", "description" to "Internal")),
+                mapOf("calendar" to mapOf("url" to "http://169.254.169.254/latest/meta-data/", "description" to "Internal")),
+                mapOf("calendar" to mapOf("url" to "http://10.0.0.1/admin", "description" to "Internal")),
                 mapOf("bad.id" to mapOf("url" to URL, "description" to "Bad ID")),
                 mapOf("calendar" to mapOf("url" to "file:///tmp/mcp", "description" to "Calendar")),
                 mapOf("calendar" to mapOf("url" to "https://user:secret@example.test/mcp", "description" to "Calendar")),

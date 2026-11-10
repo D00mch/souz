@@ -401,6 +401,24 @@ class NodesSkillInventoryTest {
         assertEquals(listOf(setOf("calendar")), source.calls)
     }
 
+    @Test
+    fun `64 servers retain every ID within a bounded escaped inventory`() = runTest {
+        val source = object : AgentToolServerSource {
+            override val servers = (1..64).associate { ("server" + it.toString().padStart(2, '0') + "x".repeat(56)) to "\u0001<&".repeat(80) }
+            override val loadedTools = (1..20).associate { "mcp." + it + "x".repeat(250) to "<&".repeat(120) }
+            override val discoveryToolName = "LoadMcpTools"
+            override suspend fun preload(serverIds: Set<String>) = Unit
+        }
+        val prompt = node(catalog(), source = source,
+            catalogProvider = { catalog(*source.loadedTools.keys.map { FixedTool(it) }.toTypedArray()) })
+            .node(emptyList()).execute(contextWithCatalog(), runtime()).history.first().content
+        val block = prompt.substringAfter("<tool_server_inventory>")
+        assertEquals(64, block.lineSequence().count { it.startsWith("- serverId:") })
+        source.servers.keys.forEach { assertContains(block, it) }
+        assertTrue(block.toByteArray(Charsets.UTF_8).size < 16_384)
+        assertFalse(block.contains("\u0001"))
+    }
+
     private class TestServerSource(private val cancel: Boolean = false) : AgentToolServerSource {
         override val servers = mapOf("calendar" to "Calendar events", "music" to "Music playback")
         override var loadedTools: Map<String, String> = emptyMap()

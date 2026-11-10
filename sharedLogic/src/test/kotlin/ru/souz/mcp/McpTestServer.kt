@@ -13,7 +13,11 @@ import kotlinx.coroutines.sync.withLock
 import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.restJsonMapper
 
-internal class McpTestServer(terminate: suspend () -> Unit = {}, reply: suspend (JsonNode) -> JsonNode) {
+internal class McpTestServer(
+    terminate: suspend () -> Unit = {},
+    notification: suspend (JsonNode) -> Unit = {},
+    reply: suspend (JsonNode) -> JsonNode,
+) {
     private val requests = mutableListOf<JsonNode>()
     private val mutex = Mutex()
     val client = HttpClient(MockEngine { request ->
@@ -25,7 +29,10 @@ internal class McpTestServer(terminate: suspend () -> Unit = {}, reply: suspend 
         val rpc = restJsonMapper.readTree((request.body as TextContent).text)
         mutex.withLock { requests.add(rpc) }
         val method = rpc.path("method").asText()
-        if (method.startsWith("notifications/")) return@MockEngine respond("", HttpStatusCode.Accepted)
+        if (method.startsWith("notifications/")) {
+            notification(rpc)
+            return@MockEngine respond("", HttpStatusCode.Accepted)
+        }
         val response = restJsonMapper.createObjectNode().apply {
             put("jsonrpc", "2.0")
             set<JsonNode>("id", rpc["id"])

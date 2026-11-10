@@ -21,16 +21,18 @@ import okhttp3.Protocol
 import kotlin.time.Duration.Companion.seconds
 import org.slf4j.LoggerFactory
 import ru.souz.llms.openai.openAiTlsDefaults
+import ru.souz.mcp.createMcpHttpClient
 
 /** Process-owned HTTP clients shared by provider adapters. */
 class ProviderHttpClients(
     val standard: HttpClient,
     val openAi: HttpClient,
     val jev: HttpClient = standard,
+    val mcp: HttpClient = standard,
 ) : AutoCloseable {
     constructor() : this(createProviderHttpClients())
 
-    private constructor(clients: List<HttpClient>) : this(clients[0], clients[1], clients[2])
+    private constructor(clients: List<HttpClient>) : this(clients[0], clients[1], clients[2], clients[3])
 
     private val closed = AtomicBoolean(false)
 
@@ -38,7 +40,7 @@ class ProviderHttpClients(
         if (!closed.compareAndSet(false, true)) return
 
         var failure: Throwable? = null
-        for (client in listOf(standard, openAi, jev).distinct()) {
+        for (client in listOf(standard, openAi, jev, mcp).distinct()) {
             try {
                 client.close()
             } catch (closeFailure: Throwable) {
@@ -59,6 +61,7 @@ private fun createProviderHttpClients(): List<HttpClient> {
         clients += createStandardProviderHttpClient()
         clients += createOpenAiProviderHttpClient()
         clients += createOkHttpProviderHttpClient()
+        clients += createMcpHttpClient()
         return clients
     } catch (failure: Throwable) {
         clients.forEach { client ->

@@ -184,7 +184,7 @@ internal class BackendConversationRuntimeFactory(
                 server.url?.takeIf { server.enabled }?.let { url ->
                     McpServerConfig(id, server.description.ifBlank { id }, url)
                 }
-            }, providerHttpClients.standard, request.requestTimeoutMillis ?: settingsProvider.requestTimeoutMillis)
+            }, providerHttpClients.mcp, request.requestTimeoutMillis ?: settingsProvider.requestTimeoutMillis)
         val pluginCatalog = pluginBinding?.catalog ?: AgentToolCatalog()
         val serverNames = toolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet() +
             BackendToolCapabilityPolicy.executionBoundToolNames + pluginCatalog.toolsByCategory.values.flatMap { it.keys } +
@@ -208,7 +208,8 @@ internal class BackendConversationRuntimeFactory(
                 clientSkills.catalog(key.userId, serverNames, ::refreshClientCatalogue))
         }
         refreshClientCatalogue()
-        fun currentToolCatalog(): AgentToolCatalog = AgentToolCatalog.compose(executionToolCatalog, mcp.catalog)
+        val composedCatalog = ComposedToolCatalog()
+        fun currentToolCatalog(): AgentToolCatalog = composedCatalog.get(executionToolCatalog, mcp.catalog)
         val channelInstructions = "Current conversation channelId: ${key.conversationId}."
         val toolTelemetry = metrics?.toolTelemetry(executionToolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet())
             ?: AgentTelemetry.NONE
@@ -306,7 +307,10 @@ internal class BackendConversationRuntimeFactory(
             persistedSession = persistedSession,
             initialMessages = initialMessages.messages,
             initialObservedMessageSeq = initialMessages.observedThroughSeq,
-            closeExecutionResources = mcp::close,
+            closeExecutionResources = {
+                try { mcp.close() }
+                finally { composedCatalog.clear() }
+            },
         )
     }
 }

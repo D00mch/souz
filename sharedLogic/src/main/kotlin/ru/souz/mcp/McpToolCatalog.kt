@@ -2,11 +2,15 @@ package ru.souz.mcp
 
 import io.ktor.client.HttpClient
 import java.util.Base64
+import java.util.Collections
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolServerSource
 import ru.souz.llms.LLMMessageRole
@@ -33,27 +37,35 @@ class McpToolCatalog(
     override val servers: Map<String, String> = serversById.mapValues { it.value.description }
     override val discoveryToolName: String = LOAD_TOOL_NAME
     override val loadedTools: Map<String, String>
-        get() = catalog.toolsByCategory.values.flatMap { it.values }.associate { it.fn.name to it.fn.description }
+        get() = published.hints
     private val mutex = Mutex()
+    private val closing = Mutex()
     private val sessions = linkedMapOf<String, McpHttpSession>()
     private val loaded = linkedMapOf<String, List<LLMToolSetup>>()
+    private val summaries = linkedMapOf<String, List<LoadedMcpTool>>()
+    private var retainedBytes = 0L
     private var closed = false
-    var catalog = AgentToolCatalog()
-        private set
+    @Volatile private var published = Snapshot(AgentToolCatalog(), emptyMap())
+    val catalog: AgentToolCatalog get() = published.catalog
+
+    private data class Snapshot(val catalog: AgentToolCatalog, val hints: Map<String, String>)
 
     init {
         require(serversById.size == servers.size) { "MCP server IDs must be unique." }
+        require(servers.size <= 64 && servers.all { McpLimits.SERVER_ID.matches(it.id) }) { "Invalid MCP server inventory." }
     }
 
     override suspend fun preload(serverIds: Set<String>) {
-        for (id in serverIds) {
-            try {
-                load(id)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                LoggerFactory.getLogger(McpToolCatalog::class.java).warn("MCP preload failed serverId={} failure={}",
-                    id, failure.javaClass.simpleName)
+        withTimeoutOrNull(McpLimits.PRELOAD_TIMEOUT_MS) {
+            for (id in serverIds) {
+                try {
+                    load(id)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    LoggerFactory.getLogger(McpToolCatalog::class.java).warn("MCP preload failed serverId={} failure={}",
+                        id, failure.javaClass.simpleName)
+                }
             }
         }
     }
@@ -61,24 +73,31 @@ class McpToolCatalog(
     suspend fun load(serverId: String): List<LoadedMcpTool> = mutex.withLock {
         check(!closed) { "MCP execution is closed." }
         val server = requireNotNull(serversById[serverId]) { "MCP server is unavailable." }
-        val tools = loaded[serverId] ?: run {
+        if (serverId !in loaded) {
             val session = McpHttpSession.connect(httpClient, server.url, timeoutMillis)
-            var published = false
+            var installed = false
             try {
                 val definitions = session.listTools()
+                val bytes = definitions.sumOf { it.retainedBytes }
+                check(retainedBytes + bytes <= McpLimits.CATALOG_BYTES) { "MCP execution catalogue exceeds the byte limit." }
+                check(loaded.values.sumOf { it.size } + definitions.size <= McpLimits.TOOLS) {
+                    "MCP execution catalogue exceeds the tool limit."
+                }
                 val discovered = definitions.map { definition -> tool(server, definition, session) }
                 val replacement = AgentToolCatalog(mapOf(ToolCategory.APPLICATIONS to
                     (loaded.values.flatten() + discovered)))
                 sessions[serverId] = session
                 loaded[serverId] = discovered
-                catalog = replacement
-                published = true
-                discovered
+                retainedBytes += bytes
+                summaries[serverId] = Collections.unmodifiableList(discovered.map { LoadedMcpTool(it.fn.name, it.fn.description.take(240)) })
+                published = Snapshot(replacement, replacement.toolsByCategory.values.flatMap { it.values }
+                    .associate { it.fn.name to it.fn.description.take(240) })
+                installed = true
             } finally {
-                if (!published) session.close()
+                if (!installed) session.close()
             }
         }
-        tools.map { LoadedMcpTool(it.fn.name, it.fn.description.take(240)) }
+        summaries.getValue(serverId)
     }
 
     val discoveryTool: LLMToolSetup = object : LLMToolSetup {
@@ -108,7 +127,14 @@ class McpToolCatalog(
             return guarded(fn.name) {
                 val tools = load(id)
                 val start = offset.toInt()
-                val page = tools.drop(start).take(limit.toInt())
+                val page = mutableListOf<LoadedMcpTool>()
+                var bytes = 512
+                for (tool in tools.asSequence().drop(start).take(limit.toInt())) {
+                    val size = restJsonMapper.writeValueAsBytes(tool).size + 1
+                    if (bytes + size > 16_384) break
+                    page += tool
+                    bytes += size
+                }
                 mapOf("serverId" to id, "tools" to page, "totalTools" to tools.size,
                     "nextOffset" to (start + page.size).takeIf { it < tools.size })
             }
@@ -116,13 +142,21 @@ class McpToolCatalog(
     }
 
     suspend fun close() = withContext(NonCancellable) {
-        mutex.withLock {
-            if (closed) return@withLock
-            closed = true
-            sessions.values.forEach { it.close() }
-            sessions.clear()
-            loaded.clear()
-            catalog = AgentToolCatalog()
+        closing.withLock {
+            val owned = mutex.withLock {
+                if (closed) return@withContext
+                closed = true
+                val owned = sessions.values.toList()
+                sessions.clear()
+                loaded.clear()
+                summaries.clear()
+                published = Snapshot(AgentToolCatalog(), emptyMap())
+                owned
+            }
+            // The inventory admits at most 64 sessions; every close has independent short step bounds.
+            coroutineScope {
+                owned.forEach { session -> launch { session.close() } }
+            }
         }
     }
 

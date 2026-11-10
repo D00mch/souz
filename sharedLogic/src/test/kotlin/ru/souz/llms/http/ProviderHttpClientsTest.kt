@@ -14,7 +14,8 @@ class ProviderHttpClientsTest {
         val standard = mockk<HttpClient>(relaxed = true)
         val openAi = mockk<HttpClient>(relaxed = true)
         val jev = mockk<HttpClient>(relaxed = true)
-        val clients = ProviderHttpClients(standard, openAi, jev)
+        val mcp = mockk<HttpClient>(relaxed = true)
+        val clients = ProviderHttpClients(standard, openAi, jev, mcp)
 
         clients.close()
         clients.close()
@@ -22,6 +23,7 @@ class ProviderHttpClientsTest {
         verify(exactly = 1) { standard.close() }
         verify(exactly = 1) { openAi.close() }
         verify(exactly = 1) { jev.close() }
+        verify(exactly = 1) { mcp.close() }
     }
 
     @Test

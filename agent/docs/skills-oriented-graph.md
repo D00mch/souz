@@ -31,6 +31,8 @@ and schedules memory capture; it does not summarize history.
 
 Tool results larger than 8,192 UTF-8 bytes are stored in conversation-scoped Knowledge and replaced with a compact JSON reference. A result of exactly 8,192 bytes stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results are always returned inline. `SearchMemory` has no always-inline exemption and a large result may be offloaded. Storage unavailability and persistence failures keep the original result inline; coroutine cancellation propagates.
 
+Host category discovery pages names and details with `offset`, `limit`, `totalSkills` and `nextOffset`. Detail pages resolve one catalogue/index and remain within 16 KiB. MCP server metadata has a bounded inventory representation; all server IDs remain discoverable.
+
 Knowledge entries use UTF-16 offsets and lengths because they retain Kotlin strings. `GetKnowledge` returns all retained content: a complete read returns its text, while a truncated read exposes the retained head and tail with their original ranges and the omitted range. `SearchKnowledge` searches retained segments independently, so it never matches across an omitted middle. A match without additional context omits its redundant excerpt and excerpt offsets. Knowledge is temporary and belongs to the exact tool-invocation conversation scope.
 
 ## Why this is fragile

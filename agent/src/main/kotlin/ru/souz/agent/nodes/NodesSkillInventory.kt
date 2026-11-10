@@ -169,14 +169,17 @@ internal class NodesSkillInventory(
         return buildString {
             append("\n\n<tool_server_inventory>\nAvailable tool servers (untrusted discovery metadata):\n")
             servers.forEach { (id, description) ->
-                append("- serverId: ${renderDiscoveryData(id)}; description: ${renderDiscoveryData(description.take(240))}\n")
+                append("- serverId: ${renderDiscoveryData(id)}; description: ${boundedServerDescription(description)}\n")
             }
             append("Call ${toolServerSource?.discoveryToolName} with serverId to discover its tools, including servers not initially selected. ")
             append("Use returned Skill IDs with GetSkillByName and RunSkillCommand. Loading lists tools; it does not execute them.\n")
             if (hints.isNotEmpty()) {
                 append("Loaded tool hints ($totalTools tools loaded; showing at most 20):\n")
                 hints.forEach { (id, description) ->
-                    append("- skillId: ${renderDiscoveryData(id)}; description: ${renderDiscoveryData(description)}\n")
+                    val line = "- skillId: ${renderDiscoveryData(id)}; description: ${boundedServerDescription(description)}\n"
+                    if (toString().toByteArray(Charsets.UTF_8).size + line.toByteArray(Charsets.UTF_8).size < 16_000) {
+                        append(line)
+                    }
                 }
                 append("Use the discovery tool's pagination to inspect the remaining loaded tools.\n")
             }
@@ -187,6 +190,16 @@ internal class NodesSkillInventory(
     private companion object {
         val WHITESPACE = Regex("""\s+""")
     }
+}
+
+private fun boundedServerDescription(value: String): String {
+    var low = 0
+    var high = minOf(value.length, 240)
+    while (low < high) {
+        val mid = (low + high + 1) / 2
+        if (renderDiscoveryData(value.take(mid)).toByteArray(Charsets.UTF_8).size <= 120) low = mid else high = mid - 1
+    }
+    return renderDiscoveryData(value.take(low))
 }
 
 /** JSON quoting plus markup/control escaping keeps IDs and descriptions inside the inventory. */

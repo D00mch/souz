@@ -28,6 +28,20 @@ import ru.souz.tool.web.ToolWebImageSearch
 
 class BackendExecutionToolCatalogTest {
     @Test
+    fun `composed snapshots are reused until either capability source changes`() {
+        val cache = ComposedToolCatalog()
+        val base = TestToolCatalog(ToolCategory.FILES to listOf("ReadFile"))
+        val remote = TestToolCatalog(ToolCategory.APPLICATIONS to listOf("mcp.first"))
+        val first = cache.get(base, remote)
+        repeat(1_000) { assertSame(first, cache.get(base, remote)) }
+        val refreshed = cache.get(base, TestToolCatalog(ToolCategory.APPLICATIONS to listOf("mcp.second")))
+        assertEquals(setOf("ReadFile", "mcp.second"), toolNames(refreshed))
+        assertEquals(setOf("ReadFile", "mcp.first"), toolNames(first))
+        val replaced = cache.get(TestToolCatalog(), remote)
+        assertEquals(setOf("mcp.first"), toolNames(replaced))
+    }
+
+    @Test
     fun `attachment preparation and reply selection respect enabled tools`() {
         val names = setOf("PrepareAttachment", "AttachFileToReply", "DetachFileFromReply")
         for (enabled in listOf(null, emptySet(), names)) {

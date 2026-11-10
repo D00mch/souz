@@ -33,3 +33,21 @@ internal fun backendExecutionToolCatalog(
     }
     return mergedTools.mapTools { _, tool -> tool.withoutFewShotExamples() }
 }
+
+/** Cache only the latest pair; old execution snapshots can be collected after discovery refreshes. */
+internal class ComposedToolCatalog {
+    private data class Snapshot(val base: AgentToolCatalog, val remote: AgentToolCatalog, val catalog: AgentToolCatalog)
+    @Volatile private var snapshot: Snapshot? = null
+
+    fun get(base: AgentToolCatalog, remote: AgentToolCatalog): AgentToolCatalog {
+        val current = snapshot
+        if (current?.base === base && current.remote === remote) return current.catalog
+        val replacement = Snapshot(base, remote, AgentToolCatalog.compose(base, remote))
+        snapshot = replacement
+        return replacement.catalog
+    }
+
+    fun clear() {
+        snapshot = null
+    }
+}

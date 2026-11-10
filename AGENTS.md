@@ -12,7 +12,7 @@ Subagents run asynchronously with admission limits and cooperative deadlines (`S
 
 Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts. Revisioned snapshots go to the current connected channel if it declares `prompt.personality.set`, otherwise to another declaring channel. Settings save independently of discovery; no known receiver means synchronization is skipped.
 
-Remote [MCP servers](backend/docs/mcp.md) are owner-configured HTTP connections. The skills graph keeps every enabled server discoverable, preloads classifier-selected servers, and exposes tools through `LoadMcpTools`, `GetSkillByName` and `RunSkillCommand`. MCP sessions and loaded catalogues are execution-scoped.
+Remote [MCP servers](backend/docs/mcp.md) are owner-configured HTTP connections subject to operator egress policy and bounded transport/discovery budgets. The skills graph keeps every enabled server discoverable, preloads classifier-selected servers, and exposes tools through `LoadMcpTools`, `GetSkillByName` and `RunSkillCommand`. MCP sessions and loaded catalogues are execution-scoped.
 
 Backend [attachment contracts](backend/docs/attachments.md) carry owner-scoped file references through messages, tools and sessions. Public WebSocket attachments use opaque bucket keys stored in `object_key`, independently of internal file UUIDs. Import completed uploads before acceptance, resolve accepted retries before storage access, and snapshot reply descriptors during the final transaction for terminal delivery and replay.
 
