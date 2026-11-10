@@ -31,13 +31,20 @@ internal class ClientImages(private val storage: AttachmentStorage) : AutoClosea
     suspend fun store(userId: String, key: String, outcome: ClientToolOutcome): ClientToolOutcome {
         val content = outcome.result?.get("content") as? ArrayNode ?: return outcome
         if (content.exceedsToolResultContentLimits()) return oversizedToolResult()
-        if (content.none { it.attachmentUri() != null || isImageContent(it) }) return outcome.withoutClientAttachments()
+        val normalized = outcome.withoutClientAttachments()
+        val items = normalized.result?.get("content") as ArrayNode
+        items.forEachIndexed { index, item ->
+            val resource = item["resource"]
+            if (item["type"]?.asText() == "resource" && resource?.get("mimeType")?.asText()?.startsWith("image/") == true) {
+                items.set(index, restJsonMapper.createObjectNode().put("type", "image").put("mimeType", resource["mimeType"].asText())
+                    .set<JsonNode>("data", resource["blob"]))
+            }
+        }
+        if (items.none { it.attachmentUri() != null || isImageContent(it) }) return normalized
         if (!preparations.tryAcquire()) {
             return ClientToolOutcome("failed", null, ClientError("client_tool_failed", "Too many attachment results being prepared."))
         }
         return try {
-            val normalized = outcome.withoutClientAttachments()
-            val items = normalized.result?.get("content") as ArrayNode
             val references = items.map { item ->
                 item.attachmentUri()?.let { uri ->
                     require(uri.length == ATTACHMENT_URI_PREFIX.length + 36)

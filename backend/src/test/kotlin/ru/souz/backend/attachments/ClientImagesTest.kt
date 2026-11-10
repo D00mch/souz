@@ -53,19 +53,30 @@ class ClientImagesTest {
         fun outcome(content: Any) = ClientToolOutcome("succeeded", restJsonMapper.valueToTree(mapOf("content" to content)), null)
         fun link(uri: String, mime: String = "image/png") = mapOf("type" to "resource_link", "uri" to uri,
             "mimeType" to mime, "attachment" to forged)
-        fun image(data: String, mime: String = "image/png") = mapOf("type" to "image", "mimeType" to mime, "data" to data)
         ClientImages(storage).use { images ->
-            val invalid = listOf(
-                listOf(link("http://127.0.0.1/private.png")),
-                listOf(link("http://[64:ff9b::7f00:1]/private.png")),
-                listOf(image(encoded, "image/jpeg")),
-                listOf(image(Base64.getEncoder().encodeToString(attachmentPng.copyOf(33)))),
-                List(6) { image(encoded) },
-                listOf(link("attachment:${saved.fileId}", "text/plain")),
-            )
-            for (content in invalid) {
-                assertEquals("tool_image_unavailable", images.store("foreign", "invalid", outcome(content)).error?.code)
-                assertNull(storage.find("foreign", "invalid:0"), "Invalid screenshots must not be stored")
+            for (embedded in listOf(false, true)) {
+                fun image(data: String, mime: String = "image/png") = if (embedded)
+                    mapOf("type" to "resource", "resource" to mapOf("uri" to "screen://capture", "mimeType" to mime, "blob" to data))
+                else mapOf("type" to "image", "mimeType" to mime, "data" to data)
+                val invalid = listOf(
+                    listOf(link("http://127.0.0.1/private.png")),
+                    listOf(link("http://[64:ff9b::7f00:1]/private.png")),
+                    listOf(image(encoded, "image/jpeg")),
+                    listOf(image("invalid-base64")),
+                    listOf(image(Base64.getEncoder().encodeToString(attachmentPng.copyOf(33)))),
+                    List(6) { image(encoded) },
+                    listOf(link("attachment:${saved.fileId}", "text/plain")),
+                )
+                for (content in invalid) {
+                    assertEquals("tool_image_unavailable", images.store("foreign", "invalid", outcome(content)).error?.code)
+                    assertNull(storage.find("foreign", "invalid:0"), "Invalid screenshots must not be stored")
+                }
+                val screenshot = images.store(user, "screenshot-$embedded", outcome(listOf(image(encoded))))
+                assertEquals("succeeded", screenshot.status)
+                val image = screenshot.files.single()
+                assertContentEquals(attachmentPng, storage.read(user, UUID.fromString(image.fileId)))
+                assertEquals(restJsonMapper.valueToTree(mapOf("type" to "resource_link", "uri" to "attachment:${image.fileId}",
+                    "name" to image.name, "mimeType" to "image/png")), screenshot.result!!["content"].single())
             }
             assertEquals("tool_image_unavailable", images.store(user, "broken-link",
                 outcome(listOf(link("attachment:${broken.id}")))).error?.code)
