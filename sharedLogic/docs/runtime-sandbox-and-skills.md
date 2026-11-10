@@ -4,6 +4,7 @@
 
 - Filesystem tools resolve a `RuntimeSandbox` from the current `ToolInvocationMeta`. The resolver maps invocation metadata to `SandboxScope` and may cache sandboxes by scope; tools must not cache a resolved path or sandbox for later users or conversations.
 - `FileSystemSkillRegistryRepository` and `RunSkillCommand` must use the same single-user bundle layout.
+- Production discovery uses `ToolInvocationRuntimeSandboxResolver.fileSystem` and the default factory's storage-only view. Listing existing IDs, descriptions and metadata does not create user directories or contact Docker, including for an empty registry. Exact bundle loading, installation, validation writes and script execution retain the runtime resolver. Custom factories/resolvers inherit a runtime-backed filesystem fallback unless they override this method.
 - Skill metadata, immutable hash-addressed bundles, and validation records stay behind `SandboxFileSystem`. Bundle loading rejects escaping paths, symlinks, non-regular files, binary content, and invalid UTF-8.
 - `RunSkillCommand` accepts only a skill activated for the current turn and keeps its script and working directory within that skill bundle.
 - `PROCESS` requires explicit `command` argv and ignores `scriptPath` and `args`. Composite scripts use interpreter runtimes only: bundle installation stores file contents without executable permissions.
@@ -29,7 +30,7 @@ The same contracts back local and Docker runtimes. JVM hosts select local or Doc
 
 Description discovery reads stored metadata or bounded, strict UTF-8 loose frontmatter, isolating failures per Skill without reading supporting files or hashing bundles. Exact bundle loading propagates malformed frontmatter; `SkillResolver` returns `skill_invalid_bundle` with the exact ID, parsing problem, and repair guidance. Enabled compiled Skills retain precedence.
 
-Docker mounts `/souz`, so bundled development skills live under `/opt/souz/skills` in the image and are seeded into registry-compatible state on startup. Seeding is non-overwriting: an existing skill record remains authoritative.
+Docker mounts `/souz`, so bundled development skills live under `/opt/souz/skills` in the image and are seeded into registry-compatible state on container startup. Inventory lists files already present on the host; it does not start a container to seed image contents. Provision a user's sandbox explicitly when relying on image-bundled Skills for first-use discovery. Exact-ID bundle lookup can also start the runtime and seed them. Seeding is non-overwriting: an existing skill record remains authoritative.
 
 Local sandboxes can share physical state roots across logical scopes. Sandbox Knowledge isolation therefore comes from its internal hashed user/conversation path rather than `RuntimeSandbox.scope`. Local process execution is not a cross-tenant filesystem security boundary.
 

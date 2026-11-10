@@ -10,6 +10,8 @@ import ru.souz.backend.config.SystemBackendConfigSource
 import ru.souz.backend.config.booleanValue
 import ru.souz.backend.hooks.HookConfig
 import ru.souz.backend.scheduler.ScheduledTaskConfig
+import ru.souz.backend.plugins.PluginRuntimeConfig
+import ru.souz.backend.plugins.S3PluginArtifactConfig
 import ru.souz.skilloauth.impl.OAuthProviderCatalog
 
 /**
@@ -158,10 +160,16 @@ data class BackendAppConfig(
     val attachments: AttachmentStorageConfig? = null,
     val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
     val policyPrompt: String? = null,
+    val plugins: PluginRuntimeConfig = PluginRuntimeConfig(),
+    val pluginArtifacts: S3PluginArtifactConfig? = null,
+    val pluginAdminToken: String? = null,
 ) {
     fun validate(): BackendAppConfig {
         server.validate()
         postgres.validate()
+        if (pluginAdminToken != null && (pluginAdminToken.isBlank() || pluginArtifacts == null)) {
+            throw BackendConfigurationException("Plugin administration requires a nonblank admin token and artifact S3 configuration.")
+        }
         if (attachmentHistoryLimit <= 0) {
             throw BackendConfigurationException("SOUZ_ATTACHMENTS_HISTORY_LIMIT / souz.attachments.historyLimit must be positive.")
         }
@@ -217,6 +225,9 @@ data class BackendAppConfig(
                         ?: throw BackendConfigurationException("JEV_WAIT_CATEGORY_THRESHOLD must be a number within [0, 1].")
                 } ?: 0.5,
                 attachments = AttachmentStorageConfig.load(source),
+                plugins = PluginRuntimeConfig.load(source),
+                pluginArtifacts = S3PluginArtifactConfig.load(source),
+                pluginAdminToken = source.value("SOUZ_PLUGINS_ADMIN_TOKEN", "souz.plugins.admin_token")?.trim()?.takeIf(String::isNotEmpty),
                 attachmentHistoryLimit = source.intValue("SOUZ_ATTACHMENTS_HISTORY_LIMIT", "souz.attachments.historyLimit", DEFAULT_ATTACHMENT_HISTORY_LIMIT),
                 hooks = HookConfig(
                     owners = source.value("SOUZ_HOOK_OWNERS", "souz.hooks.owners")

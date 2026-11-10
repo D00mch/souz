@@ -62,6 +62,9 @@ import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.scheduler.ScheduledTaskConfig
 import ru.souz.backend.scheduler.ScheduledTaskRunner
 import ru.souz.backend.metrics.BackendMetrics
+import ru.souz.backend.plugins.BackendPluginRuntime
+import ru.souz.backend.plugins.PostgresPluginRepository
+import ru.souz.backend.plugins.S3PluginArtifacts
 import ru.souz.jobs.JobService
 import ru.souz.jobs.JobRun
 import ru.souz.jobs.impl.PostgresJobService
@@ -166,6 +169,7 @@ internal fun backendE2eTest(
     skillOAuth: Boolean = false,
     attachments: AttachmentStorageConfig? = null,
     complexityClassifier: TaskComplexityClassifier? = null,
+    configureApp: (BackendAppConfig) -> BackendAppConfig = { it },
     block: suspend BackendE2eScope.() -> Unit,
 ) = testApplication {
     val backend = BackendE2eBackend(
@@ -188,6 +192,7 @@ internal fun backendE2eTest(
         sandboxFactory = sandboxFactory,
         complexityClassifier = complexityClassifier,
         attachments = attachments,
+        configureApp = configureApp,
     )
     application {
         backendApplication(backend.dependencies)
@@ -379,6 +384,7 @@ internal class BackendE2eBackend(
     private val sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
     private val attachments: AttachmentStorageConfig? = null,
     private val complexityClassifier: TaskComplexityClassifier? = null,
+    private val configureApp: (BackendAppConfig) -> BackendAppConfig = { it },
 ) : AutoCloseable {
     private val appConfig: BackendAppConfig = postgresAppConfig(
         schema = schema,
@@ -394,7 +400,7 @@ internal class BackendE2eBackend(
         llmLimits = llmLimits,
         policyPrompt = E2E_POLICY_PROMPT,
         attachments = attachments,
-    )
+    ).let(configureApp).validate()
     private val localChatApi = localChatApiBackedBy(llm)
     private val localAvailability = localProviderAvailability(localModels)
     private val localRuntime = relaxedLocalRuntime()
@@ -461,6 +467,7 @@ internal class BackendE2eBackend(
         }
         if (startBackgroundServices) {
             val applicationScope: BackendApplicationScope = di.direct.instance()
+            runBlocking { di.direct.instanceOrNull<BackendPluginRuntime>()?.start(applicationScope) }
             if (featureFlags.wsEvents) {
                 val recoveryService: ClientThreadRecoveryService = di.direct.instance()
                 runBlocking { recoveryService.recover() }
@@ -500,6 +507,9 @@ internal class BackendE2eBackend(
 
     val attachmentStorage: AttachmentStorage get() = di.direct.instance()
     val attachmentAccess: BackendAttachmentAccess get() = di.direct.instance()
+    val pluginRuntime: BackendPluginRuntime get() = di.direct.instance()
+    val pluginRepository: PostgresPluginRepository get() = di.direct.instance()
+    val pluginArtifacts: S3PluginArtifacts get() = di.direct.instance()
     fun sandboxFileSystem(userId: String): SandboxFileSystem =
         di.direct.instance<ToolInvocationRuntimeSandboxResolver>().resolve(ToolInvocationMeta(userId)).fileSystem
     val messageRepository: MessageRepository get() = di.direct.instance()
@@ -557,6 +567,8 @@ internal class BackendE2eBackend(
             llmLimits = llmLimits,
             sandboxFactory = sandboxFactory,
             attachments = attachments,
+            complexityClassifier = complexityClassifier,
+            configureApp = configureApp,
         )
 
     override fun close() {

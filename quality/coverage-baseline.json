@@ -12,6 +12,7 @@
     ":job-impl": 99.1803,
     ":llms": 37.8022,
     ":native": 77.2606,
+    ":plugin-api": 0,
     ":sharedLogic": 53.4602,
     ":sharedUI": 15.3267,
     ":skill-oauth-api": 0,

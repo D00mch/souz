@@ -1,8 +1,6 @@
 package ru.souz.backend.bootstrap
 
-import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.common.BackendLlmSupport
-import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.toDto
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
@@ -18,15 +16,12 @@ import ru.souz.llms.LocalModelAvailability
 class BackendBootstrapService(
     private val settingsProvider: SettingsProvider,
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
-    toolCatalog: AgentToolCatalog,
     private val featureFlags: BackendFeatureFlags,
     private val localModelAvailability: LocalModelAvailability,
     private val userProviderKeyRepository: UserProviderKeyRepository,
 ) {
-    private val advertisedToolNames: Set<String> =
-        BackendToolCapabilityPolicy.advertisedToolNames(toolCatalog)
-
     suspend fun response(identity: RequestIdentity): BootstrapResponse {
+        val advertisedToolNames = effectiveSettingsResolver.advertisedToolNames
         val buildProfile = LlmBuildProfile(settingsProvider, localModelAvailability)
         val userManagedProviders = userProviderKeyRepository.list(identity.userId)
             .mapNotNullTo(linkedSetOf()) { key ->
@@ -35,6 +30,7 @@ class BackendBootstrapService(
         val effectiveSettings = effectiveSettingsResolver.resolve(
             userId = identity.userId,
             userManagedProviders = userManagedProviders,
+            availableToolNames = advertisedToolNames,
         )
         val capabilityProviders = buildSet {
             addAll(buildProfile.availableProviders.filter { it in BackendLlmSupport.chatProviders })

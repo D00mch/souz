@@ -131,8 +131,8 @@ class SouzQualityPlugin : Plugin<Project> {
 
                     val analysisTasks = subproject.tasks.withType(Detekt::class.java)
                         .matching { task -> task.name != "detekt" && !task.name.endsWith("SourceSet") }
+                    subproject.tasks.withType(Detekt::class.java).configureEach { dependsOn(rulesJarTask) }
                     analysisTasks.configureEach {
-                        dependsOn(rulesJarTask)
                         exclude("**/generated/resources/**")
                         val projectPath = subproject.projectDir.relativeInvariantPath(
                             project.layout.projectDirectory.asFile

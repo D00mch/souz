@@ -42,6 +42,7 @@ import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.personality.personalityInstructions
 import ru.souz.backend.personality.PersonalitySync
 import ru.souz.backend.personality.PersonalityTool
+import ru.souz.backend.plugins.PluginExecutionBinding
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.db.SettingsProvider
@@ -117,6 +118,7 @@ internal class BackendConversationRuntimeFactory(
         key: AgentConversationKey,
         request: BackendConversationTurnRequest,
         initialUsage: LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0),
+        pluginBinding: PluginExecutionBinding? = null,
     ): BackendConversationRuntime {
         val persistedSession = agentStateRepository.get(key.userId, key.chatId())?.toConversationSession()
         val settingsProvider = BackendConversationSettingsProvider(
@@ -184,8 +186,9 @@ internal class BackendConversationRuntimeFactory(
                 executionApi.withProviderCall(LlmProvider.OPENAI) { imageGenerationGateway.generate(input) }
             },
         )
+        val pluginCatalog = pluginBinding?.catalog ?: AgentToolCatalog()
         val serverNames = toolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet() +
-            BackendToolCapabilityPolicy.executionBoundToolNames
+            BackendToolCapabilityPolicy.executionBoundToolNames + pluginCatalog.toolsByCategory.values.flatMap { it.keys }
         val baseCatalog = backendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
             executionLlmToolCatalog = AgentToolCatalog.compose(executionLlmToolCatalog.catalog,
@@ -197,6 +200,7 @@ internal class BackendConversationRuntimeFactory(
             clientToolCatalog = AgentToolCatalog(),
             includeFewShotExamples = settingsProvider.useFewShotExamples,
             metrics = metrics,
+            pluginToolCatalog = pluginCatalog,
         )
         var executionToolCatalog = baseCatalog
         suspend fun refreshClientCatalogue() {

@@ -20,6 +20,8 @@ Before changing this module, read the relevant pain-point topics below.
 - Telegram and VK bindings use encrypted tokens, private-account linking, and independent leased poll loops. Their shared poll scheduler keeps idle long polls outside the processing limit; channel providers use platform-specific formatting and shared chunk delivery bookkeeping.
 - Public-client executions attempt one best-effort initial waiting phrase unless routed simple; narration, parent tool starts or completion can overtake it. Other assistant progress is opt-in through `narrateSteps`; live-only bot observers stop delivery before the final reply. The per-user `intermediateMessages` setting, on by default, suppresses both when off. See [execution events](docs/execution-openapi-and-events.md).
 - PostgreSQL stores structured repositories and [conversation Knowledge](docs/conversation-knowledge.md). Sandbox workspaces remain filesystem-backed and user-scoped.
+- File-backed Skill inventory reads existing host-backed storage without starting Docker or creating a workspace. Stored-file reply selection and detachment do not resolve a sandbox; preparation and saving from workspace paths require Docker isolation. See [attachment contracts](docs/attachments.md).
+- Trusted JVM plugins use independent SDK handlers and invocation-bound services. PostgreSQL owns registry state, execution pins and fenced owner/plugin leases; immutable JARs live in separate S3 storage. Use the dedicated admin REST token and the existing `enabledTools` policy. See [JVM plugins](docs/jvm-plugins.md).
 - Bind one `JobService` and `PostgresJobService` instance to the application datasource. `BackendRuntime.startBackgroundServices` starts the only job worker with the scheduled-task handler; shutdown joins application work before closing storage. See [job ownership](../job-impl/docs/job-ownership.md).
 - Scheduled tasks are `JobService` jobs managed by the `SCHEDULING` tools. The agent chooses at-least-once or at-most-once delivery per task; occurrence IDs and an atomic execution insert enforce it, and the handler returns without awaiting the agent. Admission limits each process to one active execution per owner and a configurable total; capacity remains occupied through cancellation cleanup. Dispatch reserves a durable per-user UTC daily quota with execution insertion and checks delivery permissions. See [scheduled tasks](docs/scheduled-tasks.md).
 - Workspace hooks authenticate before agent setup and persist receipts before acknowledgement. Each new receipt owns a separate hidden technical chat; duplicate deliveries reuse the receipt. Hook recovery is single-process and only touches receipt-linked executions; see [the hook contract](../docs/hooks.md).
@@ -29,6 +31,7 @@ Before changing this module, read the relevant pain-point topics below.
 
 ## Pain points
 
+- [JVM plugins](docs/jvm-plugins.md) — artifact uploads, isolation, replica reconciliation, durable pins, invocation leases and process recovery.
 - [Personality settings](docs/personality-settings.md) — validated user style, conversational scope and Orion snapshots.
 - [User file storage](docs/s3-storage.md) — private S3 bucket, owner-scoped metadata, expiry and retryable cleanup.
 - [Attachment contracts](docs/attachments.md) — message references, session persistence, sandbox preparation, and explicit reply selection.

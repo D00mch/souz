@@ -31,6 +31,8 @@ Backend client commands share one live-only dispatcher, permit concurrent correl
 - UI layers (Screens and Composables) should not do neither business logic, nor IO operations.
 - UI-logic should be coordinated from ViewModels. ViewModel may delegate business logic to UseCases.
 
+File-backed Skill discovery reads existing storage without provisioning a user runtime. Stored-file reply selection uses owner-scoped storage metadata; workspace transfers and script execution retain LOCAL/DOCKER runtime boundaries.
+
 ## Development principles
 
 - Prefer composition to inheritance.
@@ -52,6 +54,7 @@ Backend client commands share one live-only dispatcher, permit concurrent correl
 - [`:job-impl`](job-impl/AGENTS.md) — PostgreSQL job persistence, scheduling, leased workers, retries, and queue metrics, composed by `:backend`.
 - [`:sharedUI`](sharedUI/AGENTS.md) — shared desktop UI logic, ViewModels, host ports, and Compose UI.
 - [`:desktopApp`](desktopApp/AGENTS.md) — desktop composition root, OS integrations, persistence, and packaging.
+- [`:plugin-api`](plugin-api/AGENTS.md) — independent stateless JVM plugin contracts and invocation-bound host services.
 - [`:backend`](backend/AGENTS.md) — trusted-proxy HTTP host and PostgreSQL-backed conversation runtime.
 - [`build-logic`](build-logic/AGENTS.md) — included build for repository quality checks, outside the production module graph.
 
@@ -67,10 +70,11 @@ Only these direct production project dependencies are allowed. Standard test-sou
 - `:skill-oauth-impl` `main` → `:skill-oauth-api`.
 - `:job-api` `main` → none.
 - `:job-impl` `main` → `:job-api`.
+- `:plugin-api` `main` → none.
 - `:sharedLogic` `commonJvmMain` → `:agent`, `:llms`, `:skill-oauth-api`; `jvmMain` → `:native`.
 - `:ambientAgent` `jvmMain` → `:sharedLogic`.
 - `:sharedUI` `commonJvmMain` → `:ambientAgent`, `:sharedLogic`, `:agent`, `:llms`; `jvmMain` → `:native`.
-- `:backend` `main` → `:agent`, `:llms`, `:native`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`, `:job-api`, `:job-impl`.
+- `:backend` `main` → `:agent`, `:llms`, `:native`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`, `:job-api`, `:job-impl`, `:plugin-api`.
 - `:desktopApp` `main` → `:ambientAgent`, `:sharedLogic`, `:sharedUI`, `:agent`, `:llms`, `:native`.
 
 ## Verification

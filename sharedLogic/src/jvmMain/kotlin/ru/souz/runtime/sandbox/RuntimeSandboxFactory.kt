@@ -6,6 +6,8 @@ import java.util.Base64
 import ru.souz.db.SettingsProvider
 import ru.souz.paths.DefaultSouzPaths
 import ru.souz.runtime.sandbox.docker.DockerRuntimeSandbox
+import ru.souz.runtime.sandbox.docker.DockerSandboxFileSystem
+import ru.souz.runtime.sandbox.docker.DockerSandboxLayout
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 
 class RuntimeSandboxModeResolver(
@@ -49,13 +51,7 @@ class DefaultRuntimeSandboxFactory(
         },
 ) : RuntimeSandboxFactory {
     override fun create(scope: SandboxScope): RuntimeSandbox = when (modeResolver.resolve()) {
-        SandboxMode.LOCAL -> LocalRuntimeSandbox(
-            scope = scope,
-            settingsProvider = settingsProvider,
-            homePath = localHomePath,
-            stateRoot = localStateRoot,
-            workspaceRoot = localWorkspaceRoot,
-        )
+        SandboxMode.LOCAL -> localSandbox(scope)
 
         SandboxMode.DOCKER -> {
             val hostRoot = dockerHostRoot.resolve(scope.storageKey())
@@ -67,6 +63,20 @@ class DefaultRuntimeSandboxFactory(
             )
         }
     }
+
+    /** Reads existing storage without creating user directories or contacting Docker. */
+    override fun fileSystem(scope: SandboxScope): SandboxFileSystem = when (modeResolver.resolve()) {
+        SandboxMode.LOCAL -> localSandbox(scope).fileSystem
+        SandboxMode.DOCKER -> DockerSandboxFileSystem(DockerSandboxLayout(dockerHostRoot.resolve(scope.storageKey())))
+    }
+
+    private fun localSandbox(scope: SandboxScope) = LocalRuntimeSandbox(
+        scope = scope,
+        settingsProvider = settingsProvider,
+        homePath = localHomePath,
+        stateRoot = localStateRoot,
+        workspaceRoot = localWorkspaceRoot,
+    )
 
     companion object {
         fun defaultDockerHostRoot(stateRoot: Path = DefaultSouzPaths.defaultStateRoot()): Path =

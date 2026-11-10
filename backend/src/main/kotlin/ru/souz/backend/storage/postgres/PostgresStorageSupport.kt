@@ -55,14 +55,18 @@ internal const val TELEGRAM_BOT_BINDINGS_TOKEN_HASH_CONSTRAINT: String = "telegr
 internal const val VK_BOT_BINDINGS_TOKEN_HASH_CONSTRAINT: String = "vk_bot_bindings_group_token_hash_key"
 internal val postgresStorageMapper = jacksonObjectMapper().findAndRegisterModules()
 
-internal suspend fun <T> DataSource.read(block: (Connection) -> T): T =
-    withContext(Dispatchers.IO) {
-        connection.use(block)
-    }
-
-internal suspend fun <T> DataSource.write(afterCommit: (T) -> Unit = {}, block: (Connection) -> T): T =
+internal suspend fun <T> DataSource.read(networkTimeoutMillis: Int? = null, block: (Connection) -> T): T =
     withContext(Dispatchers.IO) {
         connection.use { connection ->
+            networkTimeoutMillis?.let { connection.setNetworkTimeout(Runnable::run, it) }
+            block(connection)
+        }
+    }
+
+internal suspend fun <T> DataSource.write(afterCommit: (T) -> Unit = {}, networkTimeoutMillis: Int? = null, block: (Connection) -> T): T =
+    withContext(Dispatchers.IO) {
+        connection.use { connection ->
+            networkTimeoutMillis?.let { connection.setNetworkTimeout(Runnable::run, it) }
             val previousAutoCommit = connection.autoCommit
             connection.autoCommit = false
             val result = try {

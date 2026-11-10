@@ -89,6 +89,29 @@ class QualityGateTest {
     }
 
     @Test
+    fun `plugin SDK is independent and hosted only by backend in the KMP graph`() {
+        val modules = listOf("agent", "backend", "desktopApp", "native", "plugin-api", "sharedLogic", "sharedUI")
+        val projects = modules.map { ProjectDescriptor(":$it", it, "$it/build.gradle.kts") }
+        fun edge(source: String, sourceSet: String, target: String) = DependencyEdge(
+            ":$source", "implementation", sourceSet, ":$target", "$source/build.gradle.kts",
+        )
+        val allowed = listOf(
+            edge("backend", "main", "plugin-api"),
+            edge("backend", "main", "native"),
+            edge("sharedLogic", "jvmMain", "native"),
+            edge("sharedUI", "commonJvmMain", "sharedLogic"),
+        )
+        assertEquals(emptyList<QualityDiagnostic>(), ModuleBoundaries.check(projects, allowed))
+        val forbidden = listOf(
+            edge("plugin-api", "main", "agent"),
+            edge("sharedLogic", "commonJvmMain", "plugin-api"),
+            edge("sharedUI", "commonJvmMain", "plugin-api"),
+            edge("desktopApp", "main", "plugin-api"),
+        )
+        assertEquals(forbidden.size, ModuleBoundaries.check(projects, forbidden).size)
+    }
+
+    @Test
     fun `coroutine baselines preserve analysis scope and exclude review findings`() {
         val coroutine = "MonitorInsideSuspendContext:Example.kt:monitor"
         fun baseline(module: String, analysis: String, vararg ids: String) = write(

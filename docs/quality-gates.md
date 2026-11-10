@@ -195,7 +195,7 @@ reference. Kover is activated only with
 `-Psouz.coverage`, so `souzGateFast` and ordinary local builds are not
 instrumented.
 
-The root report merges every product module. Kover covers common and JVM source
+The root report merges every product module, including the plugin SDK. Kover covers common and JVM source
 sets; non-JVM targets are outside this report. Each module row covers that
 module's classes using its own JVM test tasks, while the root aggregate also
 includes coverage produced across module boundaries.
