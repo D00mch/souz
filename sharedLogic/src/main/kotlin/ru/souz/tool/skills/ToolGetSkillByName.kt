@@ -79,7 +79,6 @@ class ToolGetSkillByName(
     internal suspend fun getSkill(
         requestedId: String,
         meta: ToolInvocationMeta,
-        snapshotResolver: SkillResolver? = null,
     ): SkillLookupResponse {
         val skillId = requestedId.trim()
         if (skillId.isBlank()) {
@@ -87,7 +86,7 @@ class ToolGetSkillByName(
         }
 
         return try {
-            val resolver = snapshotResolver ?: resolver()
+            val resolver = SkillResolver(catalogProvider(), toolsFilter, skillBundleProvider::loadSkillBundle, approvalGate)
             when (val resolved = resolver.resolve(SkillId(skillId), meta.userId)) {
                 is SkillResolution.Compiled -> SkillLookupResponse(skill = resolved.tool.toDetail())
                 is SkillResolution.Bundle -> SkillLookupResponse(
@@ -102,9 +101,6 @@ class ToolGetSkillByName(
             lookupError(skillId, "skill_unavailable", error.message ?: "Skill is unavailable: $skillId")
         }
     }
-
-    internal fun resolver(): SkillResolver =
-        SkillResolver(catalogProvider(), toolsFilter, skillBundleProvider::loadSkillBundle, approvalGate)
 
     private fun lookupError(skillId: String?, code: String, message: String) =
         SkillLookupResponse(error = SkillDiscoveryError(skillId, code, message))
