@@ -26,7 +26,7 @@ The effective system prompt contains escaped server IDs and bounded descriptions
 
 All three paging tools accept a nonnegative `Int` offset and a limit of 1–50 (default 20), rejecting strings, fractions, nulls and overflow. Pages reserve 512 bytes for their envelope within a 16 KiB budget. Category offsets span the complete mixed catalogue independently of the MCP tool limit.
 
-MCP Skills use collision-free encoded IDs in the reserved `mcp.` namespace. Client declarations and file-backed Skills cannot claim those IDs or the loader. Children receive only selected immutable tool snapshots, without the loader. Catalogue composition is cached until client or MCP discovery changes membership.
+MCP Skills use collision-free encoded IDs in the reserved `mcp.` namespace. Client declarations and file-backed Skills cannot claim those IDs; client declarations also reserve the loader. Children receive only selected immutable tool snapshots, without the loader. Catalogue composition is cached until client or MCP discovery changes membership.
 
 ## Transport and limits
 
