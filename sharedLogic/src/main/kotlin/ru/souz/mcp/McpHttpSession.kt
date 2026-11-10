@@ -52,20 +52,28 @@ class McpHttpSession private constructor(
             var cursor: String? = null
             var retainedBytes = 0L
             do {
-                check(cursors.size < 100) { "MCP tool catalogue exceeds the page limit." }
+                check(cursors.size < McpLimits.LIST_PAGES) { "MCP tool catalogue exceeds the page limit." }
                 val page = client.listTools(ListToolsRequest(cursor?.let { PaginatedRequestParams(cursor = it) }))
                 for (tool in page.tools) {
                     val name = tool.name
                     require(name.isNotBlank()) { "MCP tool name must not be blank." }
-                    require(name.toByteArray(Charsets.UTF_8).size <= McpLimits.NAME_BYTES &&
-                        name.none(Char::isISOControl)) { "MCP tool name exceeds the size limit or contains controls." }
-                    require(tool.description.orEmpty().length <= McpLimits.DESCRIPTION_CHARS &&
-                        restJsonMapper.writeValueAsBytes(tool.description.orEmpty()).size <= 4_000) {
+                    require(
+                        name.toByteArray(Charsets.UTF_8).size <= McpLimits.NAME_BYTES && name.none(Char::isISOControl)
+                    ) { "MCP tool name exceeds the size limit or contains controls." }
+                    val description = tool.description.orEmpty()
+                    require(
+                        description.length <= McpLimits.DESCRIPTION_CHARS &&
+                            restJsonMapper.writeValueAsBytes(description).size <= McpLimits.DESCRIPTION_JSON_BYTES
+                    ) {
                         "MCP tool description exceeds the size limit."
                     }
                     check(name !in definitions) { "MCP tool catalogue contains duplicate names." }
-                    val definition = McpToolDefinition(name, tool.description.orEmpty(),
-                        schemaJson(tool.inputSchema), tool.outputSchema?.let(::schemaJson))
+                    val definition = McpToolDefinition(
+                        name = name,
+                        description = description,
+                        inputSchema = schemaJson(tool.inputSchema),
+                        outputSchema = tool.outputSchema?.let(::schemaJson),
+                    )
                     retainedBytes += definition.retainedBytes
                     check(retainedBytes <= McpLimits.CATALOG_BYTES) { "MCP catalogue exceeds the byte limit." }
                     definitions[name] = definition
@@ -89,19 +97,41 @@ class McpHttpSession private constructor(
             if (closed) return@withLock
             closed = true
             try {
-                closeStep(McpLimits.CONTROL_TIMEOUT_MS) { transport.terminateSession() }
+                closeStep("terminate_session", McpLimits.CONTROL_TIMEOUT_MS) { transport.terminateSession() }
             } finally {
-                closeStep(McpLimits.LOCAL_CLOSE_TIMEOUT_MS) { client.close() }
+                closeStep("close_client", McpLimits.LOCAL_CLOSE_TIMEOUT_MS) { client.close() }
             }
         }
     }
 
+    private suspend fun closeStep(operation: String, timeoutMillis: Long, block: suspend () -> Unit) {
+        try {
+            val completed = withTimeoutOrNull(timeoutMillis) {
+                block()
+                true
+            } ?: false
+            if (!completed) logger.warn("MCP cleanup timed out operation={} timeoutMs={}", operation, timeoutMillis)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            logger.warn("MCP cleanup failed operation={} failure={}", operation, failure.javaClass.simpleName)
+        }
+    }
+
     companion object {
-        suspend fun connect(httpClient: HttpClient, url: String, timeoutMillis: Long = 60_000): McpHttpSession {
+        private val logger = LoggerFactory.getLogger(McpHttpSession::class.java)
+
+        suspend fun connect(
+            httpClient: HttpClient,
+            url: String,
+            timeoutMillis: Long = McpLimits.REQUEST_TIMEOUT_MS,
+        ): McpHttpSession {
             require(timeoutMillis > 0) { "MCP request timeout must be positive." }
             val deadline = timeoutMillis.coerceAtMost(McpLimits.REQUEST_TIMEOUT_MS)
             val client = Client(Implementation(name = "souz", version = "1.0"))
-            val transport = StreamableHttpClientTransport(httpClient, url,
+            val transport = StreamableHttpClientTransport(
+                httpClient,
+                url,
                 maxInlineSseEventSize = McpLimits.RESPONSE_BYTES.toInt(),
                 requestBuilder = {
                     val control = method == HttpMethod.Delete ||
@@ -109,10 +139,11 @@ class McpHttpSession private constructor(
                     val requestDeadline = if (control) minOf(deadline, McpLimits.CONTROL_TIMEOUT_MS) else deadline
                     timeout {
                         requestTimeoutMillis = requestDeadline
-                        connectTimeoutMillis = minOf(requestDeadline, 5_000)
+                        connectTimeoutMillis = minOf(requestDeadline, McpLimits.CONNECT_TIMEOUT_MS)
                         socketTimeoutMillis = requestDeadline
                     }
-                })
+                },
+            )
             val session = McpHttpSession(client, transport, deadline)
             var connected = false
             try {
@@ -134,14 +165,3 @@ private fun schemaJson(schema: ToolSchema): JsonNode {
 
 private suspend fun <T : Any> bounded(timeoutMillis: Long, block: suspend () -> T): T =
     withTimeoutOrNull(timeoutMillis) { block() } ?: throw McpTimeoutException()
-
-private suspend fun closeStep(timeoutMillis: Long, block: suspend () -> Unit) {
-    try {
-        withTimeoutOrNull(timeoutMillis) { block() }
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (failure: Exception) {
-        LoggerFactory.getLogger(McpHttpSession::class.java).warn("MCP cleanup failed failure={}",
-            failure.javaClass.simpleName)
-    }
-}

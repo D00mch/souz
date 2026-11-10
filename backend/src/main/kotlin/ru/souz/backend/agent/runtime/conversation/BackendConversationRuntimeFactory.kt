@@ -14,8 +14,6 @@ import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.mcp.McpServerConfig
-import ru.souz.mcp.McpToolCatalog
 import ru.souz.agent.spi.TaskComplexityClassifier
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
@@ -59,6 +57,8 @@ import ru.souz.llms.openai.OpenAIImageGenerationGateway
 import ru.souz.llms.openai.OpenAIVisionGateway
 import ru.souz.llms.runtime.LLMCapabilityResolver
 import ru.souz.llms.runtime.ImageGenerationGateway
+import ru.souz.mcp.McpServerConfig
+import ru.souz.mcp.McpToolCatalog
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.RuntimePassThroughToolsFilter
@@ -179,12 +179,16 @@ internal class BackendConversationRuntimeFactory(
                 withProviderCall(hookBudget, LlmProvider.OPENAI) { imageGenerationGateway.generate(input) }
             },
         )
-        val mcp = McpToolCatalog(key.userId,
-            userSettingsRepository.get(key.userId)?.mcp.orEmpty().mapNotNull { (id, server) ->
+        val mcp = McpToolCatalog(
+            owner = key.userId,
+            servers = userSettingsRepository.get(key.userId)?.mcp.orEmpty().mapNotNull { (id, server) ->
                 server.url?.takeIf { server.enabled }?.let { url ->
                     McpServerConfig(id, server.description.ifBlank { id }, url)
                 }
-            }, providerHttpClients.mcp, request.requestTimeoutMillis ?: settingsProvider.requestTimeoutMillis)
+            },
+            httpClient = providerHttpClients.mcp,
+            timeoutMillis = request.requestTimeoutMillis ?: settingsProvider.requestTimeoutMillis,
+        )
         val pluginCatalog = pluginBinding?.catalog ?: AgentToolCatalog()
         val serverNames = toolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet() +
             BackendToolCapabilityPolicy.executionBoundToolNames + pluginCatalog.toolsByCategory.values.flatMap { it.keys } +
@@ -277,7 +281,7 @@ internal class BackendConversationRuntimeFactory(
                 runtimeCommand = runtimeCommandTool,
                 subagentTools = { subagentTools.create(it).tools },
                 forgetMemory = forgetMemoryTools,
-                additionalDiscoveryTools = listOf(mcp.discoveryTool).takeIf { mcp.servers.isNotEmpty() }.orEmpty(),
+                additionalDiscoveryTools = if (mcp.servers.isEmpty()) emptyList() else listOf(mcp.discoveryTool),
             ),
             knowledgeStore = knowledgeStore,
             telemetry = toolTelemetry,
@@ -308,8 +312,11 @@ internal class BackendConversationRuntimeFactory(
             initialMessages = initialMessages.messages,
             initialObservedMessageSeq = initialMessages.observedThroughSeq,
             closeExecutionResources = {
-                try { mcp.close() }
-                finally { composedCatalog.clear() }
+                try {
+                    mcp.close()
+                } finally {
+                    composedCatalog.clear()
+                }
             },
         )
     }

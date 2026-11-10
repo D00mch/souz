@@ -18,7 +18,7 @@ class ToolGetSkillsByCategory(
     override val fn: LLMRequest.Function = LLMRequest.Function(
         name = NAME,
         description = "Page descriptions and schemas in one category. Defaults to 20 with a 16 KiB result budget; continue with nextOffset. Inspect oversized entries with GetSkillByName.",
-        parameters = categoryInputParameters(paginated = true),
+        parameters = categoryInputParameters(),
         returnParameters = LLMRequest.Parameters(
             type = "object",
             properties = mapOf(
@@ -37,8 +37,8 @@ class ToolGetSkillsByCategory(
         meta: ToolInvocationMeta,
     ): LLMRequest.Message {
         val response = try {
-            val input = categoryDiscoveryInput(functionCall)
-            getSkills(input, meta)
+            val input = discoveryPage(functionCall.arguments)
+            getSkills(functionCall.arguments["category"] as? String ?: "", input, meta)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -60,11 +60,12 @@ class ToolGetSkillsByCategory(
     }
 
     private suspend fun getSkills(
-        input: CategoryDiscoveryInput,
+        requestedCategory: String,
+        input: DiscoveryPage,
         meta: ToolInvocationMeta,
     ): SkillsByCategoryResponse {
         val resolver = getSkillByName.resolver()
-        val names = getSkillsNamesByCategory.getSkillNames(input.category, resolver.enabledTools.byCategory)
+        val names = getSkillsNamesByCategory.getSkillNames(requestedCategory, resolver.enabledTools.byCategory)
         names.error?.let { error ->
             return SkillsByCategoryResponse(category = names.category, errors = listOf(error))
         }
@@ -72,13 +73,13 @@ class ToolGetSkillsByCategory(
         val skills = mutableListOf<SkillDetail>()
         val errors = mutableListOf<SkillDiscoveryError>()
         var position = input.offset.coerceAtMost(names.skillNames.size)
-        var bytes = 512
+        var bytes = DISCOVERY_ENVELOPE_BYTES
         while (position < names.skillNames.size && skills.size + errors.size < input.limit) {
             currentCoroutineContext().ensureActive()
             val skillId = names.skillNames[position]
             val lookup = getSkillByName.getSkill(skillId, meta, resolver)
             val size = restJsonMapper.writeValueAsBytes(lookup).size + 1
-            if (bytes + size > 16_384) {
+            if (bytes + size > DISCOVERY_PAGE_BYTES) {
                 if (skills.isEmpty() && errors.isEmpty()) {
                     errors += SkillDiscoveryError(skillId, "skill_detail_too_large", "Inspect this Skill with GetSkillByName.")
                     position++

@@ -22,7 +22,6 @@
 ## Pain points
 
 - [MCP HTTP client](docs/mcp-client.md) — SDK session ownership, bounded discovery, result handling, and schema representation.
-
 - [Runtime sandbox and skills](docs/runtime-sandbox-and-skills.md) — invocation scope, storage layouts, command runtimes, and Docker fixtures.
 - [Web tools](docs/web-tools.md) — evidence handling, citations, provider behavior, sandboxed output, and URL limitations.
 - [Provider responses](docs/provider-responses.md) — assistant text, tool-call serialization, and array schemas.

@@ -2,6 +2,7 @@ package ru.souz.mcp
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
+import java.io.IOException
 import java.net.Proxy
 import java.util.concurrent.TimeUnit
 import okhttp3.ConnectionPool
@@ -27,7 +28,7 @@ fun createMcpHttpClient(policy: McpNetworkPolicy = McpNetworkPolicy.fromEnvironm
                 try {
                     policy.validateUrl(chain.request().url.toString())
                 } catch (_: IllegalArgumentException) {
-                    throw java.io.IOException("MCP destination is not allowed.")
+                    throw IOException("MCP destination is not allowed.")
                 }
                 chain.proceed(chain.request())
             }
@@ -42,9 +43,10 @@ fun createMcpHttpClient(policy: McpNetworkPolicy = McpNetworkPolicy.fromEnvironm
                 if (body.contentLength() > McpLimits.RESPONSE_BYTES || invalidEncoding ||
                     response.headers.values("Content-Type").size > 1 ||
                     (response.header("Content-Type") != null && type == null) ||
-                    response.headers.values("Content-Encoding").any { !it.equals("identity", ignoreCase = true) }) {
+                    response.headers.values("Content-Encoding").any { !it.equals("identity", ignoreCase = true) }
+                ) {
                     response.close()
-                    throw java.io.IOException("MCP response violates its byte or encoding limits.")
+                    throw IOException("MCP response violates its byte or encoding limits.")
                 }
                 response.newBuilder().apply {
                     // Pin Ktor's decoder to the UTF-8 bytes inspected by the nesting guard.

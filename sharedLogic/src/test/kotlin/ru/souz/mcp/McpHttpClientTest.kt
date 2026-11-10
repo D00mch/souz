@@ -3,15 +3,17 @@ package ru.souz.mcp
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import java.net.InetAddress
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CompletableDeferred
-import ru.souz.llms.restJsonMapper
+import kotlinx.coroutines.runBlocking
+import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import mockwebserver3.RecordedRequest
 import okhttp3.Dns
 import okhttp3.Headers
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import ru.souz.llms.restJsonMapper
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
@@ -22,8 +24,8 @@ class McpHttpClientTest {
         val deleted = CompletableDeferred<Unit>()
         MockWebServer().use { server ->
             server.start(InetAddress.getByName("127.0.0.1"), 0)
-            server.dispatcher = object : mockwebserver3.Dispatcher() {
-                override fun dispatch(request: mockwebserver3.RecordedRequest): MockResponse {
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
                     if (request.method == "DELETE") {
                         deleted.complete(Unit)
                         return MockResponse(code = 200)

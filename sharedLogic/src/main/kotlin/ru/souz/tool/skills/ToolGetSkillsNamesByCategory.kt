@@ -19,7 +19,7 @@ class ToolGetSkillsNamesByCategory(
     override val fn: LLMRequest.Function = LLMRequest.Function(
         name = NAME,
         description = "Page exact Skill IDs in one category without loading descriptions. Defaults to 20; use nextOffset to continue.",
-        parameters = categoryInputParameters(paginated = true),
+        parameters = categoryInputParameters(),
         returnParameters = LLMRequest.Parameters(
             type = "object",
             properties = mapOf(
@@ -38,11 +38,14 @@ class ToolGetSkillsNamesByCategory(
         meta: ToolInvocationMeta,
     ): LLMRequest.Message {
         val response = try {
-            val input = categoryDiscoveryInput(functionCall)
-            val all = getSkillNames(input.category)
+            val input = discoveryPage(functionCall.arguments)
+            val all = getSkillNames(functionCall.arguments["category"] as? String ?: "")
             val page = all.skillNames.drop(input.offset).take(input.limit)
-            all.copy(skillNames = page, totalSkills = all.skillNames.size,
-                nextOffset = (input.offset + page.size).takeIf { it < all.skillNames.size })
+            all.copy(
+                skillNames = page,
+                totalSkills = all.skillNames.size,
+                nextOffset = (input.offset + page.size).takeIf { it < all.skillNames.size },
+            )
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -113,17 +116,14 @@ internal data class CategorySkillNamesResponse(
     val nextOffset: Int? = null,
 )
 
-internal fun categoryInputParameters(paginated: Boolean = false): LLMRequest.Parameters = LLMRequest.Parameters(
+internal fun categoryInputParameters(): LLMRequest.Parameters = LLMRequest.Parameters(
     type = "object",
     properties = mapOf(
         "category" to LLMRequest.Property(
             type = "string",
             description = "Skill category name.",
             enum = ToolCategory.entries.map { it.name },
-        )
-    ) + if (paginated) mapOf(
-        "offset" to LLMRequest.Property("integer", "Start position; default 0."),
-        "limit" to LLMRequest.Property("integer", "Maximum entries; default 20, maximum 50."),
-    ) else emptyMap(),
+        ),
+    ) + discoveryPageParameters(),
     required = listOf("category"),
 )

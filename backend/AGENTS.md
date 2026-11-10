@@ -32,7 +32,6 @@ Before changing this module, read the relevant pain-point topics below.
 ## Pain points
 
 - [MCP servers](docs/mcp.md) — HTTP configuration, classifier preloading, explicit discovery, Skill execution and session ownership.
-
 - [JVM plugins](docs/jvm-plugins.md) — artifact uploads, isolation, replica reconciliation, durable pins, invocation leases and process recovery.
 - [Personality settings](docs/personality-settings.md) — validated user style, conversational scope and Orion snapshots.
 - [User file storage](docs/s3-storage.md) — private S3 bucket, owner-scoped metadata, expiry and retryable cleanup.
