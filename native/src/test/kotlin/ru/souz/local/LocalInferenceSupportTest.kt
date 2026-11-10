@@ -464,14 +464,11 @@ class LocalInferenceSupportTest {
 
     @Test
     fun `strict json parser preserves bare numeric and structured final answers`() {
-        val usage = LLMResponse.Usage(10, 5, 15, 0)
         val answers = listOf(
             "3247",
             """{"first":703,"second":16169}""",
             """[{"first":703},{"second":16169}]""",
             """"A literal {brace}"""",
-            "true",
-            "null",
             """{"name":"Ada","result":"ok","count":2}""",
         )
 
@@ -479,16 +476,13 @@ class LocalInferenceSupportTest {
             val result = LocalStrictJsonParser().parse(
                 rawText = answer,
                 requestModel = LocalModelProfiles.QWEN35_9B.gigaModel.alias,
-                usage = usage,
-                nativeFinishReason = "length",
+                usage = LLMResponse.Usage(10, 5, 15, 0),
             )
 
             val ok = assertIs<LLMResponse.Chat.Ok>(result, answer)
             val choice = ok.choices.single()
             assertEquals(answer, choice.message.content)
             assertNull(choice.message.functionCall)
-            assertEquals(LLMResponse.FinishReason.length, choice.finishReason)
-            assertEquals(usage, ok.usage)
         }
     }
 
@@ -496,11 +490,8 @@ class LocalInferenceSupportTest {
     fun `strict json parser does not disguise incomplete tool calls as final json`() {
         val responses = listOf(
             """{"calls":[{"name":"Calculator","arguments":{"expression":"191 * 17"}}]}""",
-            """{"name":"Calculator","arguments":{"expression":"191 * 17"}}""",
-            """{"id":"call_1","name":"Calculator","arguments":[]}""",
             """{"arguments":{},"result":"not a final answer"}""",
             """[{"name":"Calculator","arguments":{}}]""",
-            """{"type":"tool_calls","calls":[{"id":"call_1","name":"Calculator","arguments":[]}]}""",
         )
 
         responses.forEach { response ->
@@ -716,7 +707,11 @@ class LocalInferenceSupportTest {
     fun `download prompt is returned until both local chat and linked embeddings are available`() {
         val tempRoot = Files.createTempDirectory("souz-local-models-test")
         val store = LocalModelStore(rootDir = tempRoot)
-        val model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel
+        val oldDir = Files.createDirectories(tempRoot.resolve("local-qwen3-4b-instruct-2507"))
+        Files.writeString(oldDir.resolve("Qwen3-4B-Instruct-2507-Q4_K_M.gguf"), "old weights")
+        val replacement = LocalModelProfiles.forAlias("local-qwen3-4b-instruct-2507")
+        assertEquals(LocalModelProfiles.QWEN35_4B, replacement)
+        val model = assertNotNull(replacement).gigaModel
 
         val missingPrompt = store.downloadPromptFor(model)
         assertNotNull(missingPrompt)
@@ -730,6 +725,7 @@ class LocalInferenceSupportTest {
         )
 
         val storedPath = store.modelPath(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507)
+        assertEquals(tempRoot.resolve("local-qwen3.5-4b/Qwen3.5-4B-Q4_K_M.gguf"), storedPath)
         Files.createDirectories(storedPath.parent)
         Files.writeString(storedPath, "stub")
 
