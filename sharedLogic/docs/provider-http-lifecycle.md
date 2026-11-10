@@ -3,6 +3,7 @@
 ## Invariants
 
 - Remote provider adapters receive host-owned `HttpClient` instances. They do not create, derive, or close clients.
+- MCP uses an explicitly supplied, dedicated transport with [destination and response limits](../../backend/docs/mcp.md#transport-and-limits); execution-owned SDK sessions borrow it.
 - Credentials, selected models, endpoints, sessions, and timeouts are request state and are applied explicitly to each request.
 - Backend composition excludes Giga entirely and rejects its selectors explicitly.
 - The host that creates a provider transport closes it exactly once after in-flight application work is stopped.

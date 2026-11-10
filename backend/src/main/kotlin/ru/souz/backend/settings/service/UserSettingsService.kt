@@ -49,6 +49,7 @@ class UserSettingsService(
                 interfaceLanguage = overrides.interfaceLanguage ?: existing.interfaceLanguage,
                 requestTimeoutMillis = overrides.requestTimeoutMillis ?: existing.requestTimeoutMillis,
                 useFewShotExamples = overrides.useFewShotExamples ?: existing.useFewShotExamples,
+                mcp = overrides.mcp?.let(::validatedMcpServers) ?: existing.mcp,
                 updatedAt = now,
             )
         )

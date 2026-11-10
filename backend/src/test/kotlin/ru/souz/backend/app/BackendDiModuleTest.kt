@@ -128,7 +128,7 @@ class BackendDiModuleTest {
         }
         val client = HttpClient(engine) { providerHttpClientDefaults() }
         val clock = Clock.fixed(Instant.parse("2026-09-27T22:30:00Z"), ZoneOffset.UTC)
-        val di = testDi(config, HikariDataSource(), ProviderHttpClients(client, client), clock)
+        val di = testDi(config, HikariDataSource(), ProviderHttpClients(client, client, mcp = client), clock)
         di.direct.instance<BackendRuntimeResources>().use {
             val memory = di.direct.instance<ConversationMemoryRuntime>()
             val context = MemoryContext(MemoryOwnerId(userId), ConversationId("chat-1"), null, null)
@@ -186,7 +186,7 @@ class BackendDiModuleTest {
                 respond(response, headers = headersOf(HttpHeaders.ContentType, "application/json"))
             }
             val client = HttpClient(engine) { providerHttpClientDefaults() }
-            val di = testDi(config, HikariDataSource(), ProviderHttpClients(client, client))
+            val di = testDi(config, HikariDataSource(), ProviderHttpClients(client, client, mcp = client))
             di.direct.instance<BackendRuntimeResources>().use {
                 val memory = di.direct.instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime
                 val chatId = UUID.randomUUID()

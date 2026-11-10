@@ -93,7 +93,7 @@ class BackendImagesE2eTest {
         val root = Files.createTempDirectory("image-workflow-").toRealPath()
         try {
             backendE2eTest("images", llm = llm, settingsSource = settings, attachments = AttachmentMinio.config(),
-                providerClients = ProviderHttpClients(http, http), sandboxFactory = { config ->
+                providerClients = ProviderHttpClients(http, http, mcp = http), sandboxFactory = { config ->
                     DefaultRuntimeSandboxFactory(config, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = root,
                         dockerSandboxCreator = { scope, host, image, name -> DockerRuntimeSandbox(scope, host, image, name, autoStart = false) })
                 }) {

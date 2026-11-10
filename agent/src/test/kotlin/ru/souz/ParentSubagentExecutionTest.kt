@@ -216,7 +216,7 @@ private class ParentHarness(
         )
         agent = SkillsGraphBasedAgent(
             restJsonMapper, nodesLLM, NodesCommon(SystemAgentRuntimeEnvironment), NodesErrorHandling(mockk(relaxed = true)),
-            NodesMemory(NoopConversationMemoryRuntime, captureScope), NodesSkillInventory(catalog, filter, bundles),
+            NodesMemory(NoopConversationMemoryRuntime, captureScope), NodesSkillInventory({ catalog }, filter, bundles),
             NodesToolUseWithKnowledge(AgentToolExecutor(), knowledgeStore = null), coreTools,
         )
     }

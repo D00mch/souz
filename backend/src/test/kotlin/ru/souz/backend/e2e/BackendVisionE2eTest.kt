@@ -73,7 +73,7 @@ class BackendVisionE2eTest {
             }
         }
         backendE2eTest("separate_vision", llm = llm, settingsSource = source, attachments = AttachmentMinio.config(),
-            providerClients = ProviderHttpClients(http, http)) {
+            providerClients = ProviderHttpClients(http, http, mcp = http)) {
             val user = UUID.randomUUID().toString()
             val chat = createPublicChat(user, tools = clientToolsJson("screen.capture"))
             val fs = backend.sandboxFileSystem(user)

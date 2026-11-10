@@ -167,6 +167,7 @@ internal fun backendE2eTest(
     skillOAuth: Boolean = false,
     attachments: AttachmentStorageConfig? = null,
     complexityClassifier: TaskComplexityClassifier? = null,
+    skillClassifier: SkillClassifier = SkillClassifier { _, _ -> emptySet() },
     configureApp: (BackendAppConfig) -> BackendAppConfig = { it },
     block: suspend BackendE2eScope.() -> Unit,
 ) = testApplication {
@@ -189,6 +190,7 @@ internal fun backendE2eTest(
         llmLimits = llmLimits,
         sandboxFactory = sandboxFactory,
         complexityClassifier = complexityClassifier,
+        skillClassifier = skillClassifier,
         attachments = attachments,
         configureApp = configureApp,
     )
@@ -382,6 +384,7 @@ internal class BackendE2eBackend(
     private val sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
     private val attachments: AttachmentStorageConfig? = null,
     private val complexityClassifier: TaskComplexityClassifier? = null,
+    private val skillClassifier: SkillClassifier = SkillClassifier { _, _ -> emptySet() },
     private val configureApp: (BackendAppConfig) -> BackendAppConfig = { it },
 ) : AutoCloseable {
     private val appConfig: BackendAppConfig = postgresAppConfig(
@@ -417,7 +420,7 @@ internal class BackendE2eBackend(
                 appConfig = appConfig,
             )
         )
-        bindSingleton<SkillClassifier>(overrides = true) { SkillClassifier { _, _ -> emptySet() } }
+        bindSingleton<SkillClassifier>(overrides = true) { skillClassifier }
         bindSingleton<Clock>(overrides = true) { clock }
         bindSingleton<PostgresJobService>(overrides = true) {
             PostgresJobService(instance<HikariDataSource>(), pollIntervalMillis = 50)
@@ -573,6 +576,7 @@ internal class BackendE2eBackend(
             sandboxFactory = sandboxFactory,
             attachments = attachments,
             complexityClassifier = complexityClassifier,
+            skillClassifier = skillClassifier,
             configureApp = configureApp,
         )
 

@@ -9,6 +9,7 @@ import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.settings.service.UserSettingsOverrides
+import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.ModelResolution
 import ru.souz.llms.resolveChatModel
@@ -40,6 +41,9 @@ internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(namedModels: 
             parseRequestTimeoutMillis(it, fieldName = "requestTimeoutMillis")
         },
         useFewShotExamples = useFewShotExamples,
+        mcp = mcp?.mapValues { (_, server) ->
+            UserMcpServer(enabled = server.enabled, description = server.description, url = server.url)
+        },
     )
 
 internal fun BackendV1OnboardingCompleteRequest.toUserSettingsOverrides(namedModels: Set<String> = emptySet()): UserSettingsOverrides =

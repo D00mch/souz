@@ -9,7 +9,8 @@ kodeinDi = "7.26.1"
 kotlin = "2.4.10"
 kover = "0.9.9"
 kotlinx-coroutines = "1.11.0"
-ktor = "3.5.1"
+ktor = "3.5.2"
+mcp = "0.16.0"
 logback = "1.5.18"
 log4j = "2.24.3"
 mockk = "1.13.11"
@@ -25,6 +26,7 @@ testcontainers = "1.21.4"
 
 
 [libraries]
+mcp-client = { module = "io.modelcontextprotocol:kotlin-sdk-client", version.ref = "mcp" }
 metadata-extractor = { module = "com.drewnoakes:metadata-extractor", version = "2.19.0" }
 imageio-webp = { module = "com.twelvemonkeys.imageio:imageio-webp", version = "3.15.3" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version = "5.3.2" }
