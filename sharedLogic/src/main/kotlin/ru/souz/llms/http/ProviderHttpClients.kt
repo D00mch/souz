@@ -28,7 +28,7 @@ class ProviderHttpClients(
     val standard: HttpClient,
     val openAi: HttpClient,
     val jev: HttpClient = standard,
-    val mcp: HttpClient = standard,
+    val mcp: HttpClient,
 ) : AutoCloseable {
     constructor() : this(createProviderHttpClients())
 

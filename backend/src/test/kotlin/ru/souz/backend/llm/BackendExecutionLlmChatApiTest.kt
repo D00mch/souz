@@ -626,7 +626,7 @@ private fun facadeFixture(
     fallbackModels: List<String> = emptyList(),
     failureMemory: ModelFailureMemory = ModelFailureMemory(),
 ): FacadeFixture {
-    val clients = ProviderHttpClients(standard = client, openAi = client)
+    val clients = ProviderHttpClients(standard = client, openAi = client, mcp = client)
     val metrics = BackendMetrics()
     val api = BackendExecutionLlmChatApi(
         llmConfig = llmConfig,
