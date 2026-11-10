@@ -33,6 +33,11 @@ import ru.souz.llms.resolveChatModel
 import ru.souz.llms.resolveEmbeddingsModel
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.openai.OpenAICompatibleChatAPI
+import ru.souz.backend.attachments.AttachmentStorage
+import ru.souz.llms.exceedsContextBudget
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.runtime.VisionGateway
+import ru.souz.llms.runtime.supportsImageInput
 
 /** Execution-scoped LLM routing, credentials, retries, and usage over process-owned transports. */
 internal class BackendExecutionLlmChatApi(
@@ -50,6 +55,8 @@ internal class BackendExecutionLlmChatApi(
     private val llmConfig: NamedLlmConfig = NamedLlmConfig(),
     private val fallbackModels: List<String> = emptyList(),
     private val failureMemory: ModelFailureMemory = ModelFailureMemory(),
+    private val attachmentStorage: AttachmentStorage? = null,
+    private val visionModel: String? = null,
 ) : LLMChatAPI {
     private val providerStateMutex = Mutex()
     private val credentials = mutableMapOf<LlmProvider, ResolvedProviderCredential?>()
@@ -57,6 +64,38 @@ internal class BackendExecutionLlmChatApi(
 
     private val usageMutex = Mutex()
     private var usage = initialUsage
+
+    // Vision has its own model and retries, but shares this execution's credentials, usage and hook budget.
+    // Never send its pixels to the main conversation's text-model fallbacks.
+    val visionGateway = VisionGateway { input ->
+        val model = if (visionModel == null) settingsProvider.gigaModel else findLLMModel(visionModel)
+        val provider = model?.provider ?: LlmProvider.OPENAI
+        check(provider.supportsImageInput()) { "Image understanding is unavailable for $provider" }
+        val request = LLMRequest.Chat(
+            model = if (visionModel == null) settingsProvider.executionModelId(requireNotNull(model)) else model?.alias ?: visionModel,
+            provider = provider,
+            contextSize = settingsProvider.contextSize,
+            messages = listOf(LLMRequest.Message(
+                LLMMessageRole.user, input.question, attachments = input.images.map { it.forVision() },
+            )),
+        )
+        val response = when (val route = chatRoute(request)) {
+            is ChatRoute.Ready -> {
+                val api = apiFor(route.provider, route.namedModel)
+                retryChat { callProvider(route.provider, route.request, api) }
+            }
+            is ChatRoute.Rejected -> route.error
+        }
+        check(response is LLMResponse.Chat.Ok) { "Image understanding failed" }
+        checkNotNull(response.choices.firstOrNull()?.message?.content?.trim()?.takeIf(String::isNotEmpty)) {
+            "Image understanding returned no text"
+        }
+    }
+
+    private suspend fun prepareVision(route: ChatRoute.Ready): ChatRoute.Ready =
+        if (visionModel == null) route else route.copy(
+            request = route.request.withAttachmentImages(userId, attachmentStorage, visionGateway, settingsProvider.contextSize),
+        )
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
         val summarizationModel = settingsProvider.openaiSummarizationModel
@@ -69,14 +108,15 @@ internal class BackendExecutionLlmChatApi(
                 baseUrl = settingsProvider.openaiSummarizationBaseUrl,
                 requestParameters = settingsProvider.openaiSummarizationParameters,
             )
-            val request = body.copy(model = summarizationModel, provider = LlmProvider.OPENAI)
+            val request = prepareImages(body.copy(model = summarizationModel, provider = LlmProvider.OPENAI))
             return retryChat { callProvider(LlmProvider.OPENAI, request, api) }
         }
         val primary = when (val route = chatRoute(body)) {
-            is ChatRoute.Ready -> route
+            is ChatRoute.Ready -> prepareVision(route)
             is ChatRoute.Rejected -> return route.error
         }
-        val fallbacks = fallbackModels.map { chatRoute(body.copy(model = it, provider = findLLMModel(it)?.provider ?: LlmProvider.OPENAI)) }
+        val prepared = body.copy(messages = primary.request.messages)
+        val fallbacks = fallbackModels.map { chatRoute(prepared.copy(model = it, provider = findLLMModel(it)?.provider ?: LlmProvider.OPENAI)) }
             .filterIsInstance<ChatRoute.Ready>()
         val routes = (listOf(primary) + fallbacks).distinctBy { it.target }
         if (routes.size == 1) return chat(primary)
@@ -95,8 +135,16 @@ internal class BackendExecutionLlmChatApi(
         return lastFailure ?: chat(primary)
     }
 
-    private suspend fun chat(route: ChatRoute.Ready): LLMResponse.Chat =
-        retryChat { callProvider(route.provider, route.request, apiFor(route.provider, route.namedModel)) }
+    private suspend fun chat(route: ChatRoute.Ready): LLMResponse.Chat {
+        val request = prepareImages(route.request)
+        val api = apiFor(route.provider, route.namedModel)
+        return retryChat { callProvider(route.provider, request, api) }
+    }
+
+    private suspend fun prepareImages(body: LLMRequest.Chat): LLMRequest.Chat =
+        if (visionModel == null || body.isSummarization) body.withAttachmentImages(
+            userId, attachmentStorage, contextLimit = settingsProvider.contextSize,
+        ) else body
 
     // A user's own key fails for that user only; every other credential is shared by the whole server.
     private suspend fun usesUserKey(route: ChatRoute.Ready): Boolean =
@@ -105,7 +153,7 @@ internal class BackendExecutionLlmChatApi(
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> {
         val (provider, request, namedModel) = when (val route = chatRoute(body)) {
-            is ChatRoute.Ready -> route
+            is ChatRoute.Ready -> prepareVision(route)
             is ChatRoute.Rejected -> return flow { emit(route.error) }
         }
         val api = apiFor(provider, namedModel)
@@ -249,6 +297,7 @@ internal class BackendExecutionLlmChatApi(
 
     private suspend fun callProvider(provider: LlmProvider, body: LLMRequest.Chat, api: LLMChatAPI): LLMResponse.Chat {
         val request = hookBudget?.limitRequest(body) ?: body
+        if (request.exceedsContextBudget(settingsProvider.contextSize, includeImageReferences = false)) return contextBudgetError()
         return withProviderCall(hookBudget, provider) {
             measureAttempt(provider, request.model) { outcome ->
                 api.message(request).also { response ->
@@ -259,8 +308,15 @@ internal class BackendExecutionLlmChatApi(
         }
     }
 
+    private fun contextBudgetError() = LLMResponse.Chat.Error(-1, "Prepared input exceeds the configured context budget.")
+
     private fun retryingStream(provider: LlmProvider, api: LLMChatAPI, body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
-        val request = hookBudget?.limitRequest(body) ?: body
+        val prepared = prepareImages(body)
+        val request = hookBudget?.limitRequest(prepared) ?: prepared
+        if (request.exceedsContextBudget(settingsProvider.contextSize, includeImageReferences = false)) {
+            emit(contextBudgetError())
+            return@flow
+        }
         var attempt = 0
         while (true) {
             try {

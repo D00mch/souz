@@ -21,6 +21,13 @@ import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.backend.storage.postgres.postgresAppConfig
 import ru.souz.backend.storage.postgres.write
+import java.awt.image.BufferedImage
+import java.io.ByteArrayOutputStream
+import javax.imageio.ImageIO
+
+internal val attachmentPng: ByteArray = ByteArrayOutputStream().also {
+    ImageIO.write(BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "png", it)
+}.toByteArray()
 
 internal object AttachmentMinio {
     suspend fun upload(config: AttachmentStorageConfig, userId: String, name: String, bytes: ByteArray,
@@ -39,7 +46,6 @@ internal object AttachmentMinio {
             accessKey = "user-$id", secretKey = "attachment-user-secret",
         ).also(::provision)
     }
-
 
     // Public source build; pin the multi-platform index for both CI (amd64) and local arm64.
     // Build recipe: https://github.com/coollabsio/minio
@@ -81,13 +87,13 @@ internal class AttachmentClock(var now: Instant = Instant.parse("2026-10-13T00:0
     override fun withZone(zone: ZoneId): Clock = this
 }
 
-internal fun attachmentTest(maxConcurrentUploads: Int = 16, block: suspend AttachmentFixture.() -> Unit) = runBlocking {
-    AttachmentFixture(maxConcurrentUploads).use { fixture ->
+internal fun attachmentTest(maxConcurrentUploads: Int = 16, maxFileBytes: Int = 1024, block: suspend AttachmentFixture.() -> Unit) = runBlocking {
+    AttachmentFixture(maxConcurrentUploads, maxFileBytes).use { fixture ->
         fixture.block()
     }
 }
 
-internal class AttachmentFixture(maxConcurrentUploads: Int) : AutoCloseable {
+internal class AttachmentFixture(maxConcurrentUploads: Int, maxFileBytes: Int = 1024) : AutoCloseable {
     private val appConfig = postgresAppConfig(newPostgresSchema("attachments"))
     val dataSource = PostgresDataSourceFactory.create(appConfig.postgres)
     val clock = AttachmentClock()
@@ -95,7 +101,7 @@ internal class AttachmentFixture(maxConcurrentUploads: Int) : AutoCloseable {
     val config = AttachmentStorageConfig(
         endpoint = "http://${AttachmentMinio.server.host}:${AttachmentMinio.server.firstMappedPort}",
         bucket = "attachments-$storageId",
-        accessKey = "user-$storageId", secretKey = "attachment-user-secret", maxFileBytes = 1024,
+        accessKey = "user-$storageId", secretKey = "attachment-user-secret", maxFileBytes = maxFileBytes,
         maxConcurrentUploads = maxConcurrentUploads,
     )
     init { AttachmentMinio.provision(config) }

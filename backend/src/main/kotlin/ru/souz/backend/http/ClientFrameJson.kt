@@ -20,6 +20,8 @@ import io.ktor.websocket.WebSocketSession
 import io.ktor.websocket.readText
 import ru.souz.backend.client.ClientContractException
 import ru.souz.backend.common.sanitizedIdentifier
+import com.fasterxml.jackson.core.StreamReadConstraints
+import ru.souz.llms.runtime.ImageSource
 
 internal fun Frame.Text.parseClient(): JsonNode = parseClientFrame(readText())
 
@@ -99,6 +101,9 @@ internal val clientFrameMapper = jacksonObjectMapper { enable(KotlinFeature.Stri
     .enable(DeserializationFeature.FAIL_ON_NUMBERS_FOR_ENUMS)
     .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
     .apply {
+        // One valid 20 MB image occupies more bytes after base64 encoding.
+        factory.setStreamReadConstraints(StreamReadConstraints.builder()
+            .maxStringLength(ImageSource.MAX_ENCODED_BYTES).build())
         coercionConfigFor(LogicalType.Textual)
             .setCoercion(CoercionInputShape.Integer, CoercionAction.Fail)
             .setCoercion(CoercionInputShape.Float, CoercionAction.Fail)

@@ -89,10 +89,14 @@ but do not query or cancel it as a thread. The target can run its own thread con
 
 All client commands are live-only, including current-channel commands, and may be in flight concurrently.
 Current-channel commands retain the source thread ID and current device metadata. Results resume the caller after the ACK is sent. They have no durable idempotency
-receipt: the first result reserved before `deadlineAt` wins and waits for its ACK even beyond that
-deadline. Further results, including those after timeout or caller cancellation, are rejected as
-`tool_call_not_found`. A failed ACK write releases the caller with `client_tool_failed`. Disconnect
-does not replay the call; if no result arrives before `deadlineAt`, the caller receives `client_tool_timed_out`.
+receipt. The first result reserved before `deadlineAt` wins. Preparation has 20 seconds and ACK sending
+has five seconds. A preparation timeout or failed ACK write returns `client_tool_failed` to the caller.
+Further results after reservation, deadline or caller cancellation receive `tool_call_not_found`.
+If no result arrives before `deadlineAt`, the caller receives `client_tool_timed_out`.
+
+A result with a `content` array allows up to 64 blocks and 16 `attachment:` resource links, counting
+repeats. Souz allows 16 concurrent result jobs per socket and eight concurrent attachment
+preparations per backend instance. Over-limit results fail with `client_tool_failed`.
 
 Active-thread submit/tool/cancel operations must reach the runtime owner in multi-replica deployments. Durable replay and thread status can be read from any process.
 

@@ -6,6 +6,7 @@ import ru.souz.backend.personality.PersonalityTool
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.files.ToolGenerateImage
 import ru.souz.tool.files.ToolViewImage
+import ru.souz.backend.attachments.ToolGenerateAttachmentImage
 
 /**
  * The backend's only answer to which tools it may host, advertise, and execute.
@@ -27,7 +28,7 @@ object BackendToolCapabilityPolicy {
     )
 
     /** Advertised tools whose LLM dependency is bound per execution, so no process catalog holds them. */
-    val executionBoundToolNames: Set<String> = setOf(ToolViewImage.NAME, ToolGenerateImage.NAME, PersonalityTool.NAME)
+    val executionBoundToolNames: Set<String> = setOf(ToolViewImage.NAME, ToolGenerateImage.NAME, PersonalityTool.NAME, ToolGenerateAttachmentImage.NAME)
 
     /** Names the backend advertises and accepts in a user's `enabledTools`, in stable order. */
     fun advertisedToolNames(processToolCatalog: AgentToolCatalog, pluginToolCatalog: AgentToolCatalog = AgentToolCatalog()): Set<String> =
