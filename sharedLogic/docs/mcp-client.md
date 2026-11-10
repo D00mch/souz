@@ -22,7 +22,7 @@ SDK 0.16.0 represents tool schema roots using `type`, `properties`, `required`, 
 
 ## Results
 
-Tool results retain the SDK's content blocks, structured content, metadata and `isError`. A tool-level error is a returned result; a protocol or transport failure remains an exception at the session boundary. The catalogue maps adapter-owned timeouts and request failures to [tool errors](../../backend/docs/mcp.md#results-and-lifetime), logging server identity, operation and failure type without remote error text, arguments or endpoint URLs. Parent coroutine cancellation propagates.
+Tool results retain the SDK's content blocks, structured content, metadata and `isError`. SDK-encoded result JSON is passed directly to message content. A tool-level error is a returned result; a protocol or transport failure remains an exception at the session boundary. The catalogue maps adapter-owned timeouts and request failures to [tool errors](../../backend/docs/mcp.md#results-and-lifetime), logging server identity, operation and failure type without remote error text, arguments or endpoint URLs. Parent coroutine cancellation propagates.
 
 ## Cleanup
 
