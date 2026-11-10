@@ -1,6 +1,5 @@
 package ru.souz.backend.settings.service
 
-import java.net.URI
 import java.net.UnknownHostException
 import ru.souz.backend.http.invalidV1Request
 import ru.souz.backend.settings.model.UserMcpServer
@@ -22,13 +21,6 @@ internal fun validatedMcpServers(servers: Map<String, UserMcpServer>): Map<Strin
             throw invalidV1Request("MCP server descriptions must contain 1 to ${McpServerConfig.MAX_DESCRIPTION_CHARS} characters.")
         }
         val url = server.url?.trim().orEmpty()
-        val uri = runCatching { URI(url) }.getOrNull()
-        val scheme = uri?.scheme?.lowercase()
-        if (uri == null || (scheme != "https" && scheme != "http") || uri.host.isNullOrBlank() ||
-            uri.rawUserInfo != null || uri.rawFragment != null
-        ) {
-            throw invalidV1Request("MCP server URLs must be HTTP(S) URLs without user information or fragments.")
-        }
         try {
             networkPolicy.validateUrl(url)
         } catch (_: IllegalArgumentException) {

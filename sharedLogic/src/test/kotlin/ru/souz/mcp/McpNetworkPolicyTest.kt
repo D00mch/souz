@@ -10,6 +10,21 @@ import kotlin.test.assertTrue
 
 class McpNetworkPolicyTest {
     @Test
+    fun `HTTP parser accepts normalized endpoints while preserving destination restrictions`() {
+        val policy = McpNetworkPolicy(setOf("https://xn--bcher-kva.example/mcp%20tools?x=1"))
+        policy.validateUrl("HTTPS://bücher.example:443/unused/../mcp tools?x=1")
+        policy.validateUrl("https://public.example/mcp tools")
+        val invalid = listOf(
+            "", "not a URL", "https://", "file:///tmp/mcp", "ftp://public.example/mcp",
+            "https://user:secret@public.example/mcp", "https://public.example/mcp#fragment",
+            "https://public.example/mcp#", "https://public.example/" + "x".repeat(2_048),
+            "https://bücher.example/mcp tools?x=2", "https://bücher.example/admin?x=1",
+            "HTTP://127.0.0.1:80/unused/../mcp tools",
+        )
+        invalid.forEach { assertFailsWith<IllegalArgumentException>(it) { policy.validateUrl(it) } }
+    }
+
+    @Test
     fun `literal destinations reject reserved IPv4 IPv6 and alternative numeric forms`() {
         val policy = McpNetworkPolicy()
         val blocked = listOf("0.0.0.0", "10.0.0.1", "100.64.1.1", "127.0.0.1", "127.1", "2130706433",
