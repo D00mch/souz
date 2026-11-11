@@ -507,6 +507,8 @@ internal class BackendE2eBackend(
     val jobService: JobService get() = di.direct.instance()
 
     val attachmentStorage: AttachmentStorage get() = di.direct.instance()
+    val executionQuotas: ru.souz.backend.llm.quota.ExecutionQuotaManager get() = di.direct.instance()
+    val imageGeneration: ru.souz.backend.attachments.ImageGeneration get() = di.direct.instance()
     val attachmentAccess: BackendAttachmentAccess get() = di.direct.instance()
     val pluginRuntime: BackendPluginRuntime get() = di.direct.instance()
     val pluginRepository: PostgresPluginRepository get() = di.direct.instance()

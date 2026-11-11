@@ -47,6 +47,28 @@ import ru.souz.llms.exceedsContextBudget
 
 class NodesLLMTest {
     @Test
+    fun `three document uploads in the active exchange reach the provider at desktop context size`() = runTest {
+        val calls = mutableListOf<LLMRequest.Chat>()
+        val api = mockk<LLMChatAPI> {
+            coEvery { message(capture(calls)) } returns block(0, "documents analyzed")
+        }
+        val nodes = NodesLLM(api, mockk { every { useStreaming } returns false })
+        val active = listOf(LLMRequest.Message(LLMMessageRole.user, "Analyze the CSV, text and PDF")) +
+            listOf("csv-id", "text-id", "pdf-id").flatMap { id -> listOf(
+                LLMRequest.Message(LLMMessageRole.assistant, "", functionCall = LLMRequest.FunctionCall("UploadFile", "{}")),
+                LLMRequest.Message(LLMMessageRole.function, id, name = "UploadFile", attachments = listOf(id)),
+            ) }
+        val seed = context(active)
+        val result = nodes.chat().execute(seed.copy(settings = seed.settings.copy(contextSize = 16_000)),
+            GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10))
+        assertTrue(result.input is LLMResponse.Chat.Ok)
+        val request = calls.single()
+        assertTrue(!request.isSummarization && !request.exceedsContextBudget(16_000))
+        assertEquals(listOf("csv-id", "text-id", "pdf-id"), request.messages.flatMap { it.attachments.orEmpty() })
+        assertEquals(active, result.history.dropLast(1))
+    }
+
+    @Test
     fun `summary file references are bounded by last occurrence while active input remains intact`() = runTest {
         val files = (0 until 23).map { index -> FileContent(
             "file-$index", "$index.md", "text/markdown", 12,

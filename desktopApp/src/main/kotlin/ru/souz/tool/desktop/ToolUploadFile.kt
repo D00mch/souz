@@ -36,7 +36,7 @@ class ToolUploadFile(
         )
     )
 
-    private val lastAttachments = ArrayList<String>()
+    private var lastAttachments: List<String> = emptyList()
     override val attachments: List<String>
         get() = lastAttachments
 
@@ -45,8 +45,7 @@ class ToolUploadFile(
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val file = File(input.filePath)
         val upload = api.uploadFile(file)
-        lastAttachments.clear()
-        lastAttachments.add(upload.id)
+        lastAttachments = listOf(upload.id)
         l.info("Uploaded file ${'$'}{file.name} with id ${'$'}{upload.id}")
         return upload.id
     }

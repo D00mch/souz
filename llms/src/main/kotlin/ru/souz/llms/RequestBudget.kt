@@ -23,7 +23,12 @@ fun LLMRequest.Chat.estimatedInputTokens(includeImageReferences: Boolean = true)
             (message.functionCall?.let { it.name.length.toLong() + it.arguments.length } ?: 0L)
     } + restJsonMapper.writeValueAsString(functions).length + 3) / 4 +
         if (isSummarization) 0L else IMAGE_INPUT_TOKEN_ALLOWANCE.toLong() *
-            (messages.sumOf { it.attachments.orEmpty().size.toLong() } +
+            (messages.sumOf { message -> message.attachments.orEmpty().count {
+                // Local attachments are native image paths; remote pixels use data/HTTP URLs.
+                // Opaque provider upload IDs also represent documents (e.g. desktop GigaChat uploads).
+                provider == LlmProvider.LOCAL || it.startsWith("data:image/") ||
+                    it.startsWith("https://") || it.startsWith("http://")
+            }.toLong() } +
                 if (includeImageReferences) imageFileReferences().size else 0))
         .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 

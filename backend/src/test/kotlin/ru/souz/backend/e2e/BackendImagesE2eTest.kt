@@ -14,6 +14,14 @@ import java.util.UUID
 import kotlin.test.*
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import io.mockk.coEvery
+import io.mockk.spyk
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -147,7 +155,7 @@ class BackendImagesE2eTest {
                 backend.awaitExecution(execution.id)
                 meta = ToolInvocationMeta(user, chat, execution.id.toString())
             }
-            val service = ImageGeneration(backend.attachmentStorage, backend.dataSource)
+            val service = ImageGeneration(backend.attachmentStorage, backend.dataSource, backend.executionQuotas)
             val result = service.generate(meta, "draw", emptyList(), "route", gateway)
             if (restarted) assertEquals(saved, result) else saved = result
             if (!restarted) {
@@ -182,7 +190,7 @@ class BackendImagesE2eTest {
         val execution = backend.dependencies.executionService.executeChatTurn(user, UUID.fromString(chat), "hello").execution
         backend.awaitExecution(execution.id)
         val meta = ToolInvocationMeta(user, chat, execution.id.toString())
-        val service = ImageGeneration(backend.attachmentStorage, backend.dataSource)
+        val service = ImageGeneration(backend.attachmentStorage, backend.dataSource, backend.executionQuotas)
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         var calls = 0
@@ -205,6 +213,102 @@ class BackendImagesE2eTest {
             val file = first.await()
             assertEquals(file, service.generate(meta, "draw", emptyList(), "route", gateway))
             assertEquals(1, calls)
+        }
+    }
+
+    @Test
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun `edits share chat image capacity before reads through provider waits and cancellation cleanup`() = backendE2eTest(
+        "image_edit_capacity", attachments = AttachmentMinio.config(),
+        llmLimits = ru.souz.backend.app.BackendLlmLimits(globalProviderConcurrency = 1),
+    ) {
+        val user = UUID.randomUUID().toString()
+        val chat = createPublicChat(user)
+        client.patch(BackendHttpRoutes.SETTINGS) {
+            trusted(user); jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}"}""")
+        }
+        val execution = backend.dependencies.executionService.executeChatTurn(user, UUID.fromString(chat), "hello").execution
+        backend.awaitExecution(execution.id)
+        val meta = ToolInvocationMeta(user, chat, execution.id.toString())
+        val file = backend.attachmentStorage.save(user, "source", "source.png", png.inputStream())
+        val quotas = backend.executionQuotas
+        val storage = spyk(backend.attachmentStorage)
+        var reads = 0
+        coEvery { storage.read(any<StoredAttachment>()) } coAnswers {
+            reads++
+            backend.attachmentStorage.read(firstArg())
+        }
+        val service = ImageGeneration(storage, backend.dataSource, quotas)
+        runTest {
+            val prepared = CompletableDeferred<Unit>()
+            val cleanup = CompletableDeferred<Unit>()
+            val releaseCleanup = CompletableDeferred<Unit>()
+            val releaseProvider = CompletableDeferred<Unit>()
+            val providerEntered = CompletableDeferred<Unit>()
+            val provider = async {
+                quotas.withProviderPermit(LlmProvider.OPENAI) {
+                    providerEntered.complete(Unit)
+                    releaseProvider.await()
+                }
+            }
+            providerEntered.await()
+            val chatEntered = CompletableDeferred<Unit>()
+            val projection = async {
+                quotas.withImageProjectionPermit {
+                    chatEntered.complete(Unit)
+                    awaitCancellation()
+                }
+            }
+            chatEntered.await()
+            val gateway = ImageGenerationGateway {
+                prepared.complete(Unit)
+                try {
+                    quotas.withProviderPermit(LlmProvider.OPENAI) { awaitCancellation() }
+                } finally {
+                    withContext(NonCancellable) {
+                        cleanup.complete(Unit)
+                        releaseCleanup.await()
+                    }
+                }
+            }
+            val editing = async { service.generate(meta, "edit", listOf(file.id.toString()), "route", gateway) }
+            prepared.await()
+            val waiting = async {
+                service.generate(meta, "next edit", listOf(file.id.toString()), "route", ImageGenerationGateway {
+                    GeneratedImage(ImageSource.read(png), "OPENAI", DEFAULT_IMAGE_MODEL)
+                })
+            }
+            val production = async {
+                assertFailsWith<AttachmentException> {
+                    backend.imageGeneration.generate(meta, "missing", listOf(UUID.randomUUID().toString()), "route", gateway)
+                }
+            }
+            try {
+                runCurrent()
+                assertEquals(1, reads, "Queued edits must retain only file references")
+                assertFalse(waiting.isCompleted)
+                assertFalse(production.isCompleted, "Production DI must share chat projection capacity")
+                editing.cancel()
+                cleanup.await()
+                runCurrent()
+                assertEquals(1, reads, "Provider cancellation cleanup retains image capacity")
+                assertFalse(waiting.isCompleted)
+                waiting.cancelAndJoin()
+                assertEquals(1, reads, "Cancelling a queued edit does not read sources")
+            } finally {
+                releaseCleanup.complete(Unit)
+                editing.cancelAndJoin()
+                projection.cancelAndJoin()
+                waiting.cancelAndJoin()
+                releaseProvider.complete(Unit)
+                provider.await()
+            }
+            assertEquals("attachment_not_found", production.await().code)
+            val output = service.generate(meta, "after cleanup", listOf(file.id.toString()), "route", ImageGenerationGateway {
+                GeneratedImage(ImageSource.read(png), "OPENAI", DEFAULT_IMAGE_MODEL)
+            })
+            assertContentEquals(png, backend.attachmentStorage.read(user, UUID.fromString(output.fileId)))
+            assertEquals(2, reads, "Capacity is reusable after cancellation and source failure")
         }
     }
 

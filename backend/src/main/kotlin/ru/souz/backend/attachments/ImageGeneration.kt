@@ -5,6 +5,7 @@ import javax.sql.DataSource
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.backend.crypto.sha256Hex
+import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.storage.postgres.write
 import ru.souz.llms.*
 import ru.souz.llms.runtime.*
@@ -13,6 +14,7 @@ import ru.souz.llms.runtime.*
 internal class ImageGeneration(
     private val storage: AttachmentStorage,
     private val dataSource: DataSource,
+    private val executionQuotas: ExecutionQuotaManager,
 ) {
     suspend fun generate(
         meta: ToolInvocationMeta,
@@ -20,7 +22,7 @@ internal class ImageGeneration(
         fileIds: List<String>,
         route: String,
         gateway: ImageGenerationGateway,
-    ): FileContent {
+    ): FileContent = executionQuotas.withImageProjectionPermit {
         require(prompt.isNotBlank() && prompt.length <= MAX_IMAGE_PROMPT_LENGTH) { "image_prompt_invalid" }
         require(fileIds.size <= ImageSource.MAX_IMAGES) { "image_count_exceeded" }
         val execution = meta.requestId ?: throw AttachmentException("attachment_execution_required")
@@ -35,7 +37,7 @@ internal class ImageGeneration(
             listOf(route, prompt.trim(), sources.map { listOf(it.id.toString(), it.sha256) }),
         ).sha256Hex()
         val key = "image:$execution:$fingerprint"
-        storage.find(meta.userId, key)?.let { return it.toContent(FilePresentation.image) }
+        storage.find(meta.userId, key)?.let { return@withImageProjectionPermit it.toContent(FilePresentation.image) }
         // Decode within the shared raster budget before claiming a paid attempt; retain order and original bytes.
         val images = sources.map { ImageSource.read(storage.read(it)) }
         val claimed = dataSource.write(networkTimeoutMillis = 15_000) { connection ->
@@ -54,7 +56,7 @@ internal class ImageGeneration(
         }
         if (!claimed) throw AttachmentException("image_previously_attempted")
         val image = gateway.generate(ImageGenerationInput(prompt.trim(), images = images)).image
-        return storage.save(
+        storage.save(
             meta.userId,
             key,
             "image.${image.mimeType.substringAfter('/')}",
