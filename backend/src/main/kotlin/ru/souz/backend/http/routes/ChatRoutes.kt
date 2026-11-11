@@ -296,6 +296,7 @@ internal suspend fun BackendHttpDependencies.createClientChat(
         clientType = request.clientType,
         title = request.title,
         tools = request.tools,
+        parameters = request.parameters,
     )
 }
 

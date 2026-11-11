@@ -28,8 +28,6 @@ data class UserSettings(
     val locale: Locale? = null,
     val timeZone: ZoneId? = null,
     val systemPrompt: String? = null,
-    val personalityPrompt: String? = null,
-    val personalityRevision: Long = 1,
     /**
      * Null follows every advertised tool, including tools added later. Submitted sets stay explicit,
      * including unavailable plugin names; empty enables none.

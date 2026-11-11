@@ -27,6 +27,7 @@ import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.personality.PERSONALITY_SYNC_COMMAND
 import ru.souz.backend.personality.PersonalitySync
+import ru.souz.backend.settings.model.PersonalityParameters
 import ru.souz.backend.settings.model.PersonalitySnapshot
 import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.llms.LLMResponse
@@ -58,7 +59,7 @@ class BackendChannelToolsTest {
                 val sync = PersonalitySync(mockk(), chats, events,
                     LiveClientToolDispatcher(registry, events))
                 for (hasFallback in listOf(true, false)) {
-                    val receivingChat = if (hasFallback) target.copy(id = UUID.randomUUID(), clientType = "mobile_app") else target
+                    val receivingChat = if (hasFallback) target.copy(id = UUID.randomUUID(), clientType = "mobile_app", yourName = "  Луна ") else target
                     val receiver = if (hasFallback) bus.subscribe(target.userId, receivingChat.id) else subscription
                     coEvery { chats.clientToolChannels(target.userId) } returns listOf(target, receivingChat).distinct().map {
                         ClientToolChannel(it, listOf(ClientToolDefinition(PERSONALITY_SYNC_COMMAND,
@@ -67,14 +68,15 @@ class BackendChannelToolsTest {
                     try {
                         val started = testScheduler.currentTime
                         val syncing = async(start = CoroutineStart.UNDISPATCHED) {
-                            sync.deliver(target.userId, PersonalitySnapshot("brief", 2), target.id, source)
+                            sync.deliver(target.userId, PersonalitySnapshot(PersonalityParameters(personality = "brief"), 2), target.id, source)
                         }
                         // A lone channel can accept the retry after its stalled queue drains.
                         if (!hasFallback) repeat(AgentEventLimits.LIVE_BUFFER_SIZE) { subscription.commands.receive() }
                         val snapshot = assertIs<PublicToolCallStartedPayload>(receiver.commands.receive().payload)
                         assertTrue(testScheduler.currentTime > started, "The full source queue must trigger a retry.")
                         assertEquals(PERSONALITY_SYNC_COMMAND, snapshot.name)
-                        assertEquals("brief", snapshot.arguments["prompt"].asText())
+                        assertEquals(receivingChat.yourName, snapshot.arguments["parameters"]["your_name"]?.textValue())
+                        assertEquals("brief", snapshot.arguments["parameters"]["personality"].asText())
                         assertEquals(2L, snapshot.arguments["revision"].asLong())
                         service.handleToolResult(receivingChat, ToolResultFrame("tool.result", receivingChat.id.toString(),
                             source.toString(), snapshot.toolCallId, "succeeded",

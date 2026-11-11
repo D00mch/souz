@@ -231,6 +231,55 @@ class BackendPersonalityE2eTest {
         }
     }
 
+    @Test
+    fun `HTTP and WebSocket creation share user preferences but each receiver keeps its own activation word`() =
+        backendE2eTest("personality_creation", llm = personalityApi()) {
+            val initial = mapOf("voice" to "sber", "appeal" to "official", "style" to "neutral", "personality" to "")
+            val tools = json.readTree(clientToolsJson(PERSONALITY_SYNC_COMMAND))
+            val payload = mapOf("userId" to owner, "parameters" to initial + mapOf("your_name" to "  Луна ", "future" to "a"), "tools" to tools)
+            suspend fun create(id: String, body: Map<String, Any>) = client.post(BackendHttpRoutes.CHATS) {
+                jsonBody(json.writeValueAsString(body + mapOf("requestId" to id, "clientType" to "backend")))
+            }
+            patch("""{"temperature":0.2}""")
+            withMultiChatSocket { socket ->
+                socket.send(Frame.Text(json.writeValueAsString(mapOf("kind" to "chat.create", "requestId" to "first", "payload" to payload))))
+                val ack = readRawJson(socket)
+                assertEquals("accepted", ack["status"].asText())
+                val frame = snapshot(socket)
+                assertEquals(json.valueToTree<JsonNode>(initial + ("your_name" to "  Луна ")), frame["payload"]["arguments"]["parameters"])
+                acknowledge(socket, frame, null, 1)
+                val retry = create("first", payload)
+                assertEquals(200, retry.status.value)
+                assertEquals(ack["chatId"], retry.jsonBody()["chat"]["id"])
+            }
+            assertEquals(409, create("first", payload + ("parameters" to initial + mapOf("your_name" to "  Луна ", "future" to "b"))).status.value)
+            for (invalid in listOf(json.nullNode(), mapOf("voice" to "sberkot"), mapOf("extra" to 1), mapOf("extra" to null))) {
+                assertEquals(400, create("invalid", payload + mapOf("parameters" to invalid)).status.value)
+            }
+            val second = create("second", payload + ("parameters" to mapOf("voice" to "joy", "your_name" to "")))
+            assertEquals(201, second.status.value)
+            val id = second.jsonBody()["chat"]["id"].asText()
+            withPublicSocket(id) { socket ->
+                val frame = snapshot(socket)
+                assertEquals(json.valueToTree<JsonNode>(initial + ("your_name" to "")), frame["payload"]["arguments"]["parameters"])
+                acknowledge(socket, frame, null, 1)
+                coroutineScope {
+                    val updating = async { turn(id, "formal") }
+                    val updated = snapshot(socket)
+                    val expected = mapOf("voice" to "afina", "appeal" to "official", "style" to "formal", "personality" to "formal")
+                    assertEquals(json.valueToTree<JsonNode>(expected + ("your_name" to "")), updated["payload"]["arguments"]["parameters"])
+                    acknowledge(socket, updated, "formal", 2)
+                    updating.await()
+                    assertEquals(json.valueToTree<JsonNode>(expected), settings()["personalityParameters"])
+                }
+            }
+            turn(id, "voice only")
+            assertEquals("", settings()["personalityParameters"]["personality"].asText())
+            assertEquals("afina", settings()["personalityParameters"]["voice"].asText())
+            turn(id, "reset")
+            assertEquals(json.readTree("""{"voice":"joy","appeal":"no_official","style":"informal","personality":""}"""), settings()["personalityParameters"])
+        }
+
     private suspend fun BackendE2eScope.discover(socket: DefaultClientWebSocketSession, chat: String, tools: String) =
         withTimeout(15_000) {
             coroutineScope {
@@ -267,8 +316,8 @@ class BackendPersonalityE2eTest {
     private suspend fun BackendE2eScope.acknowledge(socket: DefaultClientWebSocketSession, frame: JsonNode, prompt: String?, revision: Long, failed: Boolean = false) {
         assertTrue(frame.has("seq") && frame["seq"].isNull)
         val arguments = frame["payload"]["arguments"]
-        assertEquals(setOf("prompt", "revision"), arguments.fieldNames().asSequence().toSet())
-        assertEquals(prompt.orEmpty(), arguments["prompt"].asText())
+        assertEquals(setOf("parameters", "revision"), arguments.fieldNames().asSequence().toSet())
+        assertEquals(prompt.orEmpty(), arguments["parameters"]["personality"].asText())
         assertEquals(revision, arguments["revision"].asLong())
         socket.send(Frame.Text(toolResultFrame(frame, if (failed) "failed" else "succeeded",
             if (failed) mapOf("code" to "client_tool_failed", "message" to "retry") else mapOf("outcome" to "applied", "revision" to revision))))
@@ -279,17 +328,22 @@ private fun personalityApi(before: suspend (String, String) -> Unit = { _, _ -> 
     if (body.isSummarization) reply(body, "Earlier conversation summarized.")
     else if (body.messages.first().content == PERSONALITY_VALIDATION_PROMPT) {
         val input = restJsonMapper.readTree(body.messages.last().content)
-        val current = input["currentPersonality"].asText()
+        val current = input["current"]["personality"].asText()
         val wish = input["request"].asText()
         assertTrue(body.functions.isEmpty())
         assertTrue(body.maxTokens > 0)
         if (input["mode"].asText() == "replace") assertTrue(current.isEmpty())
         before(current, wish)
         reply(body, when (wish) {
-            "reject" -> """{"accepted":false,"prompt":"","reason":"Incompatible with voice"}"""
+            "reject" -> """{"accepted":false,"parameters":{},"reason":"Incompatible with voice"}"""
             "malformed" -> """{"accepted":true,"prompt":"bad","reason":""} trailing"""
-            else -> restJsonMapper.writeValueAsString(mapOf("accepted" to true, "reason" to "", "prompt" to
-                if (wish.startsWith("also ")) listOf(current, wish.removePrefix("also ")).filter(String::isNotEmpty).joinToString("; ") else wish))
+            else -> restJsonMapper.writeValueAsString(mapOf("accepted" to true, "reason" to "", "parameters" to mapOf(
+                "voice" to "afina", "appeal" to "official", "style" to "formal", "personality" to
+                when {
+                    wish == "voice only" -> ""
+                    wish.startsWith("also ") -> listOf(current, wish.removePrefix("also ")).filter(String::isNotEmpty).joinToString("; ")
+                    else -> wish
+                })))
         })
     } else {
         val wish = body.conversationPrompt()

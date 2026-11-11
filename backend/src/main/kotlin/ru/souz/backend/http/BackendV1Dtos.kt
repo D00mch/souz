@@ -35,6 +35,7 @@ import ru.souz.backend.telegram.TelegramBotBinding
 import ru.souz.backend.vk.VkBotBinding
 import ru.souz.llms.FileContent
 import ru.souz.llms.restJsonMapper
+import ru.souz.backend.settings.model.PersonalityParameters
 
 internal data class BackendV1SettingsResponse(
     val settings: BackendV1SettingsDto,
@@ -77,6 +78,7 @@ data class BackendV1SettingsDto(
     val systemPrompt: String?,
     val personalityPrompt: String?,
     val personalityRevision: Long,
+    val personalityParameters: PersonalityParameters,
     val enabledTools: List<String>,
     val showToolEvents: Boolean,
     val streamingMessages: Boolean,
@@ -289,8 +291,9 @@ internal fun EffectiveUserSettings.toDto(): BackendV1SettingsDto =
         locale = locale.toLanguageTag(),
         timeZone = timeZone.id,
         systemPrompt = systemPrompt,
-        personalityPrompt = personalityPrompt,
-        personalityRevision = personalityRevision,
+        personalityPrompt = personality.parameters.personality.ifEmpty { null },
+        personalityRevision = personality.revision,
+        personalityParameters = personality.parameters,
         enabledTools = enabledTools.toList(),
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
