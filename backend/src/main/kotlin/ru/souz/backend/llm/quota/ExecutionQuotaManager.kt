@@ -27,6 +27,11 @@ class ExecutionQuotaManager(
     private val providerSemaphores = LlmProvider.entries.associateWith {
         Semaphore(permits = limits.globalProviderConcurrency)
     }
+    // Bound retained image sources/projections across users and providers, including admission waits.
+    private val imageProjections = Semaphore(2)
+
+    internal suspend fun <T> withImageProjectionPermit(block: suspend () -> T): T =
+        imageProjections.withPermit { block() }
 
     suspend fun <T> withExecutionPermit(
         userId: String,

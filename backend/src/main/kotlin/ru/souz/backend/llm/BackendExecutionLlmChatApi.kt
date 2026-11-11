@@ -40,6 +40,7 @@ import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import ru.souz.backend.attachments.AttachmentStorage
 import ru.souz.llms.exceedsContextBudget
+import ru.souz.llms.imageFileReferences
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.local.withLocalVisionImages
 import ru.souz.llms.runtime.VisionGateway
@@ -109,7 +110,14 @@ internal class BackendExecutionLlmChatApi(
             request = route.request.withAttachmentImages(userId, attachmentStorage, visionGateway, settingsProvider.contextSize),
         )
 
-    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
+        withImageProjection(body) { messageWithImages(body) }
+
+    private suspend fun <T> withImageProjection(body: LLMRequest.Chat, call: suspend () -> T): T =
+        if (attachmentStorage == null || body.imageFileReferences().isEmpty()) call()
+        else executionQuotas.withImageProjectionPermit(call)
+
+    private suspend fun messageWithImages(body: LLMRequest.Chat): LLMResponse.Chat {
         val summarizationModel = settingsProvider.openaiSummarizationModel
         if (body.isSummarization && summarizationModel != null) {
             val api = providerApiOverride?.invoke(LlmProvider.OPENAI) ?: OpenAICompatibleChatAPI(
@@ -167,13 +175,19 @@ internal class BackendExecutionLlmChatApi(
         route.namedModel == null && route.provider in BackendLlmSupport.userManagedKeyProviders &&
             providerStateMutex.withLock { resolveCredentialLocked(route.provider) }.source == CredentialSource.USER_MANAGED
 
-    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> {
-        val (provider, request, namedModel) = when (val route = chatRoute(body)) {
-            is ChatRoute.Ready -> prepareVision(route)
-            is ChatRoute.Rejected -> return flow { emit(route.error) }
+    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
+        withImageProjection(body) {
+            val (provider, request, namedModel) = when (val route = chatRoute(body)) {
+                is ChatRoute.Ready -> prepareVision(route)
+                is ChatRoute.Rejected -> {
+                    emit(route.error)
+                    return@withImageProjection
+                }
+            }
+            val prepared = prepareImages(request)
+            val api = apiFor(provider, namedModel)
+            retryingStream(provider, api, prepared).collect { emit(it) }
         }
-        val api = apiFor(provider, namedModel)
-        return retryingStream(provider, api, request)
     }
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
@@ -346,8 +360,7 @@ internal class BackendExecutionLlmChatApi(
     private fun contextBudgetError() = LLMResponse.Chat.Error(-1, "Prepared input exceeds the configured context budget.")
 
     private fun retryingStream(provider: LlmProvider, api: LLMChatAPI, body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
-        val prepared = prepareImages(body)
-        val request = hookBudget?.limitRequest(prepared) ?: prepared
+        val request = hookBudget?.limitRequest(body) ?: body
         if (request.exceedsContextBudget(settingsProvider.contextSize, includeImageReferences = false)) {
             emit(contextBudgetError())
             return@flow

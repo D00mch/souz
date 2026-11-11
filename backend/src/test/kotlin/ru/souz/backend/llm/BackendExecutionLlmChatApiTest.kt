@@ -11,6 +11,8 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
 import io.mockk.mockk
+import io.mockk.coEvery
+import io.mockk.spyk
 import java.io.File
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
@@ -97,6 +99,144 @@ import ru.souz.llms.runtime.VisionInput
 
 class BackendExecutionLlmChatApiTest {
     private val pixels = attachmentPng
+
+    @Test
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun `attachment projection capacity spans provider admission and cancellation cleanup across users`() = attachmentTest {
+        val files = listOf("user-a", "user-b", "user-c").associateWith {
+            storage.save(it, "projection", "screen.png", pixels.inputStream()).toContent()
+        }
+        runTest {
+            for (streaming in listOf(false, true)) for (dedicated in listOf(false, true)) for (perUser in listOf(false, true)) {
+                val quotas = ExecutionQuotaManager(BackendLlmLimits(
+                    perUserConcurrentExecutions = if (perUser) 1 else 4,
+                    globalProviderConcurrency = if (perUser) 4 else 1,
+                ))
+                val observedStorage = spyk(storage)
+                var lookups = 0
+                coEvery { observedStorage.get(any(), any()) } coAnswers {
+                    lookups++
+                    storage.get(firstArg(), secondArg())
+                }
+                val entered = CompletableDeferred<Unit>()
+                val prepared = CompletableDeferred<Unit>()
+                val cleanupStarted = CompletableDeferred<Unit>()
+                val releaseCleanup = CompletableDeferred<Unit>()
+                suspend fun holdProvider() {
+                    entered.complete(Unit)
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        withContext(NonCancellable) {
+                            cleanupStarted.complete(Unit)
+                            releaseCleanup.await()
+                        }
+                    }
+                }
+                fun observed(request: LLMRequest.Chat) = ok(request.model).copy(choices = listOf(LLMResponse.Choice(
+                    LLMResponse.Message("Observed screen", LLMMessageRole.assistant, functionsStateId = null), 0, null,
+                )))
+                val secondUser = if (perUser) "user-a" else "user-b"
+                fun input(user: String) = chat(LLMModel.OpenAIGpt52.alias).copy(provider = LlmProvider.OPENAI,
+                    messages = listOf(LLMRequest.Message(LLMMessageRole.user, "inspect", files = listOf(files.getValue(user)))))
+                suspend fun call(api: BackendExecutionLlmChatApi, request: LLMRequest.Chat) =
+                    if (streaming) api.messageStream(request).toList().single() else api.message(request)
+                facadeFixture(attachmentStorage = observedStorage, executionQuotas = quotas,
+                    visionModel = "AnthropicSonnet45".takeIf { dedicated },
+                    providerApiOverride = { StubChatApi(
+                        message = { holdProvider(); observed(it) },
+                        stream = { flow { holdProvider(); emit(observed(it)) } },
+                    ) },
+                ).use { first ->
+                    facadeFixture(userId = secondUser, attachmentStorage = observedStorage, executionQuotas = quotas,
+                        visionModel = "AnthropicSonnet45".takeIf { dedicated },
+                        providerApiOverride = {
+                            prepared.complete(Unit) // Projection has finished; this call must wait for provider/user admission.
+                            StubChatApi(message = { observed(it) }, stream = { flowOf(observed(it)) })
+                        },
+                    ).use { second ->
+                        facadeFixture(userId = "user-c", attachmentStorage = observedStorage, executionQuotas = quotas,
+                            visionModel = "CodexGpt61Sol".takeIf { dedicated },
+                            providerApiOverride = { StubChatApi(message = { observed(it) }, stream = { flowOf(observed(it)) }) },
+                        ).use { third ->
+                            val independent = input("user-c").copy(provider = LlmProvider.CODEX, model = LLMModel.CodexGpt61Sol.alias)
+                            val running = async { call(first.api, input("user-a")) }
+                            entered.await()
+                            val admitted = async { call(second.api, input(secondUser)) }
+                            prepared.await()
+                            val waiting = async { call(third.api, independent) }
+                            try {
+                                runCurrent()
+                                assertEquals(2, lookups, "Queued projections must not access storage")
+                                assertFalse(admitted.isCompleted, "Second projection waits for provider/user admission")
+                                assertFalse(waiting.isCompleted, "Projection capacity is shared across users and providers")
+                                assertIs<LLMResponse.Chat.Ok>(call(third.api, independent.copy(messages = listOf(
+                                    LLMRequest.Message(LLMMessageRole.user, "text only")))))
+                                assertIs<LLMResponse.Chat.Ok>(call(third.api, independent.copy(isSummarization = true)))
+                                assertEquals(2, lookups, "Text and summaries bypass projection without loading files")
+                                running.cancel()
+                                cleanupStarted.await()
+                                runCurrent()
+                                assertEquals(2, lookups, "Cancellation cleanup still owns projection capacity")
+                                assertFalse(waiting.isCompleted)
+                                waiting.cancelAndJoin()
+                                assertEquals(2, lookups, "Cancelling a queued projection must not load its image")
+                            } finally {
+                                releaseCleanup.complete(Unit)
+                                running.cancelAndJoin()
+                                waiting.cancelAndJoin()
+                            }
+                            assertIs<LLMResponse.Chat.Ok>(admitted.await())
+                            assertIs<LLMResponse.Chat.Ok>(call(third.api, independent))
+                            assertEquals(3, lookups, "Capacity is reusable after cleanup and queued cancellation")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `image streams load only on collection and release capacity after storage or provider failure`() = attachmentTest {
+        val file = storage.save("user-a", "stream", "screen.png", pixels.inputStream()).toContent()
+        for (dedicated in listOf(false, true)) {
+            val observedStorage = spyk(storage)
+            var lookups = 0
+            var storageFailure = true
+            var providerFailure = false
+            coEvery { observedStorage.get(any(), any()) } coAnswers {
+                lookups++
+                if (storageFailure) error("storage unavailable")
+                storage.get(firstArg(), secondArg())
+            }
+            val requests = mutableListOf<LLMRequest.Chat>()
+            fun respond(request: LLMRequest.Chat): LLMResponse.Chat {
+                requests += request
+                if (providerFailure) error("provider unavailable")
+                return ok(request.model).copy(choices = listOf(LLMResponse.Choice(
+                    LLMResponse.Message("Observed screen", LLMMessageRole.assistant, functionsStateId = null), 0, null,
+                )))
+            }
+            facadeFixture(attachmentStorage = observedStorage, visionModel = "AnthropicSonnet45".takeIf { dedicated },
+                providerApiOverride = { StubChatApi(message = ::respond, stream = { flowOf(respond(it)) }) },
+            ).use { fixture ->
+                val input = chat(LLMModel.OpenAIGpt52.alias).copy(messages = listOf(
+                    LLMRequest.Message(LLMMessageRole.user, "inspect", files = listOf(file))))
+                val stream = fixture.api.messageStream(input)
+                assertEquals(0, lookups, "An uncollected stream retains only references")
+                repeat(3) { assertFailsWith<IllegalStateException> { stream.toList() } }
+                assertEquals(3, lookups)
+                storageFailure = false
+                providerFailure = true
+                repeat(3) { assertFailsWith<IllegalStateException> { stream.toList() } }
+                providerFailure = false
+                repeat(2) { assertIs<LLMResponse.Chat.Ok>(stream.toList().single()) }
+                assertEquals(8, lookups, "Each collection prepares a fresh request and releases capacity on exit")
+                val imageRequests = requests.filter { it.messages.any { message -> !message.attachments.isNullOrEmpty() } }
+                assertEquals(5, imageRequests.size, "Repeated collection cannot reuse a retained analysis or projection")
+            }
+        }
+    }
 
     @Test
     fun `local ViewImage retains native paths through inference and never falls back with pixels`() = runTest {

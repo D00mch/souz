@@ -10,6 +10,8 @@ Keep image order and file IDs aligned. Select at most five images from user mess
 
 PNG, JPEG and still WebP sources allow 20 MB, 40 million pixels and 16,384 pixels per edge. Validate decodability before storage or paid admission, with a 64 MiB original-raster budget and two concurrent decodes. Vision normalizes JPEG EXIF orientation and prepares one projection with edges at most 2,048 pixels and at most 5 MB of base64 data, shared by all providers. Five projections contain at most 25 MB of encoded images. Editing retains original bytes. WebP canvas and frame dimensions must agree before decoding. Processing stays headless.
 
+At most two attachment-image requests per backend instance may load and retain sources or projections. Acquire capacity before storage access and retain it through provider admission, retries, fallbacks and cancellation cleanup. Waiting requests retain only file references. Streams prepare images during collection and hold capacity until collection exits; text-only requests and summaries bypass this limit.
+
 ## Generation and editing
 
 `SOUZ_IMAGE_MODEL` selects a supported OpenAI image model, named images connection or Codex selector. Default: `gpt-image-2.5-sunburst`, PNG, 1024×1024, medium. Both model settings reject invalid selections at startup; provider access is checked on invocation.
