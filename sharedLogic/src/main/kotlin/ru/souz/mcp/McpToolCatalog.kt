@@ -3,6 +3,7 @@ package ru.souz.mcp
 import io.ktor.client.HttpClient
 import java.util.Base64
 import java.util.Collections
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
@@ -56,7 +57,7 @@ class McpToolCatalog(
     private data class Snapshot(val catalog: AgentToolCatalog, val hints: Map<String, String>)
 
     private data class LoadedServer(val session: McpHttpSession, val tools: List<RemoteTool>) {
-        val summaries = Collections.unmodifiableList(tools.map {
+        val summaries: List<LoadedMcpTool> = Collections.unmodifiableList(tools.map {
             LoadedMcpTool(it.fn.name, it.fn.description.take(McpLimits.TOOL_HINT_CHARS))
         })
         val bytes = tools.sumOf { it.definition.retainedBytes }
@@ -70,7 +71,7 @@ class McpToolCatalog(
     }
 
     override suspend fun preload(serverIds: Set<String>) {
-        withTimeoutOrNull(McpLimits.PRELOAD_TIMEOUT_MS) {
+        withTimeoutOrNull(McpLimits.PRELOAD_TIMEOUT_MS.milliseconds) {
             for (id in serverIds) {
                 try {
                     load(id)

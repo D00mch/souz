@@ -12,6 +12,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.ListToolsRequest
 import io.modelcontextprotocol.kotlin.sdk.types.McpJson
 import io.modelcontextprotocol.kotlin.sdk.types.PaginatedRequestParams
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
@@ -54,13 +55,12 @@ class McpHttpSession private constructor(
         do {
             check(cursors.size < McpLimits.LIST_PAGES) { "MCP tool catalogue exceeds the page limit." }
             val page = client.listTools(ListToolsRequest(cursor?.let { PaginatedRequestParams(cursor = it) }))
-            for (tool in page.tools) {
-                val name = tool.name
+            for ((name, inputSchema, rawDescription, outputSchema) in page.tools) {
                 require(name.isNotBlank()) { "MCP tool name must not be blank." }
                 require(
                     name.toByteArray(Charsets.UTF_8).size <= McpLimits.NAME_BYTES && name.none(Char::isISOControl)
                 ) { "MCP tool name exceeds the size limit or contains controls." }
-                val description = tool.description.orEmpty()
+                val description = rawDescription.orEmpty()
                 require(
                     description.length <= McpLimits.DESCRIPTION_CHARS &&
                         restJsonMapper.writeValueAsBytes(description).size <= McpLimits.DESCRIPTION_JSON_BYTES
@@ -71,8 +71,8 @@ class McpHttpSession private constructor(
                 val definition = McpToolDefinition(
                     name = name,
                     description = description,
-                    inputSchema = schemaJson(tool.inputSchema),
-                    outputSchema = tool.outputSchema?.let(::schemaJson),
+                    inputSchema = schemaJson(inputSchema),
+                    outputSchema = outputSchema?.let(::schemaJson),
                 )
                 retainedBytes += definition.retainedBytes
                 check(retainedBytes <= maxBytes) { "MCP catalogue exceeds the byte limit." }
@@ -105,7 +105,7 @@ class McpHttpSession private constructor(
 
     private suspend fun closeStep(operation: String, timeoutMillis: Long, block: suspend () -> Unit) {
         try {
-            val completed = withTimeoutOrNull(timeoutMillis) {
+            val completed = withTimeoutOrNull(timeoutMillis.milliseconds) {
                 block()
                 true
             } ?: false
@@ -163,4 +163,4 @@ private fun schemaJson(schema: ToolSchema): JsonNode {
 }
 
 private suspend fun <T : Any> bounded(timeoutMillis: Long, block: suspend () -> T): T =
-    withTimeoutOrNull(timeoutMillis) { block() } ?: throw McpTimeoutException()
+    withTimeoutOrNull(timeoutMillis.milliseconds) { block() } ?: throw McpTimeoutException()
