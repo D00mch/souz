@@ -206,7 +206,7 @@ class BackendSubagentE2eTest {
                 schemaPrefix = "e2e_cross_provider",
                 featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = true),
                 settingsSource = source,
-                providerClients = ProviderHttpClients(standard = http, openAi = http),
+                providerClients = ProviderHttpClients(standard = http, openAi = http, mcp = http),
                 llm = E2eLlmApi { request ->
                     val result = request.messages.lastOrNull { it.role == LLMMessageRole.function }
                     if (result?.name == "SpawnSubagent") waitForChild(request, result.content)

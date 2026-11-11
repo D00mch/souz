@@ -30,15 +30,12 @@ class McpSafetyTest {
             started.complete(Unit)
             awaitCancellation()
         }
-        server.client.use { http ->
-            val session = McpHttpSession.connect(http, URL, timeoutMillis = 30_000)
-            try {
-                val call = async { session.callTool("wait", emptyMap()) }
-                withTimeout(2_000) { started.await() }
-                withTimeout(1_500) { call.cancelAndJoin() }
-                assertTrue(cancelling.isCompleted)
-                assertTrue(call.isCancelled)
-            } finally { session.close() }
+        server.withSession(timeoutMillis = 30_000) { session ->
+            val call = async { session.callTool("wait", emptyMap()) }
+            withTimeout(2_000) { started.await() }
+            withTimeout(1_500) { call.cancelAndJoin() }
+            assertTrue(cancelling.isCompleted)
+            assertTrue(call.isCancelled)
         }
     }
 
@@ -47,18 +44,14 @@ class McpSafetyTest {
         var stalled = true
         val server = McpTestServer {
             if (stalled) awaitCancellation()
-            restJsonMapper.readTree("""{"tools":[]}""")
+            mcpTools(0)
         }
-        server.client.use { http ->
-            val catalog = McpToolCatalog("owner", listOf(McpServerConfig("first", "First", URL),
-                McpServerConfig("second", "Second", URL)), http)
-            try {
-                withTimeout(12_000) { catalog.preload(setOf("first", "second")) }
-                assertEquals(1, server.recorded().count { it.path("method").asText() == "initialize" })
-                assertEquals(setOf("first", "second"), catalog.servers.keys)
-                stalled = false
-                assertTrue(catalog.load("second").isEmpty())
-            } finally { catalog.close() }
+        server.withCatalog("first", "second") { catalog ->
+            withTimeout(12_000) { catalog.preload(setOf("first", "second")) }
+            assertEquals(1, server.recorded("initialize").size)
+            assertEquals(setOf("first", "second"), catalog.servers.keys)
+            stalled = false
+            assertTrue(catalog.load("second").isEmpty())
         }
     }
 
@@ -68,9 +61,9 @@ class McpSafetyTest {
         val server = McpTestServer(terminate = {
             terminations.send(Unit)
             awaitCancellation()
-        }) { restJsonMapper.readTree("""{"tools":[]}""") }
+        }) { mcpTools(0) }
         server.client.use { http ->
-            val catalog = McpToolCatalog("owner", (1..64).map { McpServerConfig("server$it", "Server", URL) }, http)
+            val catalog = McpToolCatalog("owner", (1..64).map { McpServerConfig("server$it", "Server", MCP_TEST_URL) }, http)
             try {
                 (1..64).forEach { catalog.load("server$it") }
                 withTimeout(2_000) { catalog.close() }
@@ -102,13 +95,10 @@ class McpSafetyTest {
                     }
                 }
             }
-            server.client.use { http ->
-                val catalog = McpToolCatalog("owner", listOf(McpServerConfig("server", "Server", URL)), http)
-                try {
-                    assertFailsWith<IllegalArgumentException> { catalog.load("server") }
-                    assertTrue(catalog.loadedTools.isEmpty())
-                    assertEquals(setOf("server"), catalog.servers.keys)
-                } finally { catalog.close() }
+            server.withCatalog("server") { catalog ->
+                assertFailsWith<IllegalArgumentException> { catalog.load("server") }
+                assertTrue(catalog.loadedTools.isEmpty())
+                assertEquals(setOf("server"), catalog.servers.keys)
             }
         }
     }
@@ -129,18 +119,12 @@ class McpSafetyTest {
                 }
             }
         }
-        server.client.use { http ->
-            val catalog = McpToolCatalog("owner", listOf(McpServerConfig("first", "First", URL),
-                McpServerConfig("second", "Second", URL)), http)
-            try {
-                assertEquals(1_200, catalog.load("first").size)
-                val first = catalog.catalog
-                assertFailsWith<IllegalStateException> { catalog.load("second") }
-                assertSame(first, catalog.catalog)
-                assertEquals(1_200, catalog.loadedTools.size)
-            } finally { catalog.close() }
+        server.withCatalog("first", "second") { catalog ->
+            assertEquals(1_200, catalog.load("first").size)
+            val first = catalog.catalog
+            assertFailsWith<IllegalStateException> { catalog.load("second") }
+            assertSame(first, catalog.catalog)
+            assertEquals(1_200, catalog.loadedTools.size)
         }
     }
-
-    companion object { private const val URL = "https://mcp.example.test/mcp" }
 }

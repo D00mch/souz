@@ -50,7 +50,8 @@ class McpHttpClientTest {
                 val session = McpHttpSession.connect(http, url)
                 try {
                     assertEquals("read", session.listTools().single().name)
-                    assertEquals("done", session.callTool("read", emptyMap()).path("content")[0].path("text").asText())
+                    val result = restJsonMapper.readTree(session.callTool("read", emptyMap()))
+                    assertEquals("done", result.path("content")[0].path("text").asText())
                 } finally { session.close() }
                 assertEquals(true, deleted.isCompleted)
                 assertEquals(405, http.get(url).status.value)

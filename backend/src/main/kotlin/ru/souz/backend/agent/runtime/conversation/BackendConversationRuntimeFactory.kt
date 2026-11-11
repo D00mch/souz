@@ -229,8 +229,8 @@ internal class BackendConversationRuntimeFactory(
             toolsFilter = requestToolsFilter,
         )
         val getSkillsByCategoryTool = ToolGetSkillsByCategory(
-            getSkillByName = getSkillByNameTool,
-            getSkillsNamesByCategory = getSkillsNamesByCategoryTool,
+            catalogProvider = ::currentToolCatalog,
+            toolsFilter = requestToolsFilter,
         )
         val runtimeCommandTool = ToolInvokeSkill(
             catalogProvider = ::currentToolCatalog,

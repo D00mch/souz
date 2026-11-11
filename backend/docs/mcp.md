@@ -18,7 +18,7 @@ Trusted `GET /v1/me/settings` returns `settings.mcp`. `PATCH /v1/me/settings` re
 }
 ```
 
-The map contains at most 64 servers. IDs contain 1–64 letters, digits, underscores or hyphens, starting with a letter or digit. Descriptions are whitespace-normalized and contain 1–240 characters. URLs use HTTP(S) without user information or fragments. Configuration is stored in the existing owner-scoped settings payload. Changes apply to new executions; an execution uses its captured configuration.
+The map contains at most 64 servers. IDs contain 1–64 letters, digits, underscores or hyphens, starting with a letter or digit. Descriptions are whitespace-normalized and contain 1–240 characters. URLs use HTTP(S) without user information or fragments. Settings retain trimmed URLs; `McpNetworkPolicy` uses OkHttp parsing for both settings and request validation, including canonical endpoint allowlist matching. Configuration is stored in the existing owner-scoped settings payload. Changes apply to new executions; an execution uses its captured configuration.
 
 Operators can allow trusted internal endpoints with `MCP_PRIVATE_ENDPOINT_ALLOWLIST`, a comma-separated list of complete HTTP(S) URLs, for example `http://127.0.0.1:8765/mcp`. Hosts with exceptions accept only the listed URLs, including their scheme, port, path and query. The setting is deployment configuration and cannot be raised through user settings. Allowed endpoints trust their DNS answers; the default is an empty allowlist. The [transport policy](../../sharedLogic/docs/mcp-client.md#transport) defines destination checks and HTTP restrictions.
 

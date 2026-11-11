@@ -52,16 +52,20 @@ class McpToolCatalog(
         get() = published.hints
     private val mutex = Mutex()
     private val closing = Mutex()
-    private val sessions = linkedMapOf<String, McpHttpSession>()
-    private val loaded = linkedMapOf<String, List<LLMToolSetup>>()
-    private val summaries = linkedMapOf<String, List<LoadedMcpTool>>()
-    private var retainedBytes = 0L
+    private val loaded = linkedMapOf<String, LoadedServer>()
     private var closed = false
     @Volatile
     private var published = Snapshot(AgentToolCatalog(), emptyMap())
     val catalog: AgentToolCatalog get() = published.catalog
 
     private data class Snapshot(val catalog: AgentToolCatalog, val hints: Map<String, String>)
+
+    private data class LoadedServer(
+        val session: McpHttpSession,
+        val tools: List<LLMToolSetup>,
+        val summaries: List<LoadedMcpTool>,
+        val retainedBytes: Long,
+    )
 
     init {
         require(serversById.size == servers.size) { "MCP server IDs must be unique." }
@@ -93,31 +97,34 @@ class McpToolCatalog(
             try {
                 val definitions = session.listTools()
                 val bytes = definitions.sumOf { it.retainedBytes }
-                check(retainedBytes + bytes <= McpLimits.CATALOG_BYTES) { "MCP execution catalogue exceeds the byte limit." }
-                check(loaded.values.sumOf { it.size } + definitions.size <= McpLimits.TOOLS) {
+                check(loaded.values.sumOf { it.retainedBytes } + bytes <= McpLimits.CATALOG_BYTES) {
+                    "MCP execution catalogue exceeds the byte limit."
+                }
+                check(loaded.values.sumOf { it.tools.size } + definitions.size <= McpLimits.TOOLS) {
                     "MCP execution catalogue exceeds the tool limit."
                 }
                 val discovered = definitions.map { definition -> tool(server, definition, session) }
-                val replacement = AgentToolCatalog(
-                    mapOf(ToolCategory.APPLICATIONS to (loaded.values.flatten() + discovered))
+                val record = LoadedServer(
+                    session = session,
+                    tools = discovered,
+                    summaries = Collections.unmodifiableList(discovered.map {
+                        LoadedMcpTool(it.fn.name, it.fn.description.take(McpLimits.TOOL_HINT_CHARS))
+                    }),
+                    retainedBytes = bytes,
                 )
-                sessions[serverId] = session
-                loaded[serverId] = discovered
-                retainedBytes += bytes
-                summaries[serverId] = Collections.unmodifiableList(discovered.map {
-                    LoadedMcpTool(it.fn.name, it.fn.description.take(McpLimits.TOOL_HINT_CHARS))
-                })
-                published = Snapshot(
-                    catalog = replacement,
-                    hints = replacement.toolsByCategory.values.flatMap { it.values }
-                        .associate { it.fn.name to it.fn.description.take(McpLimits.TOOL_HINT_CHARS) },
+                val records = loaded.values + record
+                val replacement = Snapshot(
+                    catalog = AgentToolCatalog(mapOf(ToolCategory.APPLICATIONS to records.flatMap { it.tools })),
+                    hints = Collections.unmodifiableMap(records.flatMap { it.summaries }.associate { it.skillId to it.description }),
                 )
+                loaded[serverId] = record
+                published = replacement
                 installed = true
             } finally {
                 if (!installed) session.close()
             }
         }
-        summaries.getValue(serverId)
+        loaded.getValue(serverId).summaries
     }
 
     val discoveryTool: LLMToolSetup = object : LLMToolSetup {
@@ -158,12 +165,12 @@ class McpToolCatalog(
                     page += tool
                     bytes += size
                 }
-                mapOf(
+                restJsonMapper.writeValueAsString(mapOf(
                     "serverId" to id,
                     "tools" to page,
                     "totalTools" to tools.size,
                     "nextOffset" to (start + page.size).takeIf { it < tools.size },
-                )
+                ))
             }
         }
     }
@@ -173,10 +180,8 @@ class McpToolCatalog(
             val owned = mutex.withLock {
                 if (closed) return@withContext
                 closed = true
-                val owned = sessions.values.toList()
-                sessions.clear()
+                val owned = loaded.values.map { it.session }
                 loaded.clear()
-                summaries.clear()
                 published = Snapshot(AgentToolCatalog(), emptyMap())
                 owned
             }
@@ -205,8 +210,8 @@ class McpToolCatalog(
             }
         }
 
-    private suspend fun guarded(name: String, serverId: String, operation: suspend () -> Any): LLMRequest.Message = try {
-        LLMRequest.Message(LLMMessageRole.function, restJsonMapper.writeValueAsString(operation()), name = name)
+    private suspend fun guarded(name: String, serverId: String, operation: suspend () -> String): LLMRequest.Message = try {
+        LLMRequest.Message(LLMMessageRole.function, operation(), name = name)
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: McpTimeoutException) {

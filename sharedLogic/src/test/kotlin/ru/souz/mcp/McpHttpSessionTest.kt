@@ -35,19 +35,15 @@ class McpHttpSessionTest {
                 }
             }
         }
-        server.client.use { http ->
-            val session = McpHttpSession.connect(http, URL)
-            try {
-                val tools = session.listTools()
-                assertEquals(listOf("first", "second"), tools.map { it.name })
-                assertEquals(schema, tools.first().inputSchema)
-                assertEquals(schema, tools.first().outputSchema)
-            } finally {
-                session.close()
-            }
-            McpHttpSession.connect(http, URL).close()
-            assertEquals(2, server.recorded().count { it.path("method").asText() == "initialize" })
-            assertEquals(2, server.recorded().count { it.path("method").asText() == "tools/list" })
+        server.withSession { session ->
+            val tools = session.listTools()
+            assertEquals(listOf("first", "second"), tools.map { it.name })
+            assertEquals(schema, tools.first().inputSchema)
+            assertEquals(schema, tools.first().outputSchema)
+            session.close()
+            McpHttpSession.connect(server.client, MCP_TEST_URL).close()
+            assertEquals(2, server.recorded("initialize").size)
+            assertEquals(2, server.recorded("tools/list").size)
         }
     }
 
@@ -57,25 +53,20 @@ class McpHttpSessionTest {
             val failure = request.path("params").path("name").asText() == "tool_error"
             json("""{"content":[{"type":"text","text":"Result"},{"type":"image","data":"AA==","mimeType":"image/png"}],"structuredContent":{"count":2},"isError":$failure,"_meta":{"example/source":"fixture"}}""")
         }
-        server.client.use { http ->
-            val session = McpHttpSession.connect(http, URL)
-            try {
-                val result = session.callTool("success", mapOf("nested" to mapOf("values" to listOf(1, null, true))))
-                assertFalse(result.path("isError").asBoolean())
-                assertEquals(2, result.path("structuredContent").path("count").asInt())
-                assertEquals("image/png", result.path("content")[1].path("mimeType").asText())
-                assertEquals("fixture", result.path("_meta").path("example/source").asText())
-                assertTrue(session.callTool("tool_error", emptyMap()).path("isError").asBoolean())
-                assertFailsWith<McpException> { session.callTool("protocol_error", emptyMap()) }
-                assertEquals(1, server.recorded().count {
-                    it.path("params").path("name").asText() == "protocol_error"
-                })
-                assertEquals(json("""{"nested":{"values":[1,null,true]}}"""), server.recorded().first {
-                    it.path("params").path("name").asText() == "success"
-                }.path("params").path("arguments"))
-            } finally {
-                session.close()
-            }
+        server.withSession { session ->
+            val result = json(session.callTool("success", mapOf("nested" to mapOf("values" to listOf(1, null, true)))))
+            assertFalse(result.path("isError").asBoolean())
+            assertEquals(2, result.path("structuredContent").path("count").asInt())
+            assertEquals("image/png", result.path("content")[1].path("mimeType").asText())
+            assertEquals("fixture", result.path("_meta").path("example/source").asText())
+            assertTrue(json(session.callTool("tool_error", emptyMap())).path("isError").asBoolean())
+            assertFailsWith<McpException> { session.callTool("protocol_error", emptyMap()) }
+            assertEquals(1, server.recorded().count {
+                it.path("params").path("name").asText() == "protocol_error"
+            })
+            assertEquals(json("""{"nested":{"values":[1,null,true]}}"""), server.recorded().first {
+                it.path("params").path("name").asText() == "success"
+            }.path("params").path("arguments"))
         }
     }
 
@@ -86,17 +77,12 @@ class McpHttpSessionTest {
             if (request.path("params").path("name").asText() == "wait_again") secondStarted.complete(Unit)
             awaitCancellation()
         }
-        server.client.use { http ->
-            val session = McpHttpSession.connect(http, URL, timeoutMillis = 2_000)
-            try {
-                assertFailsWith<McpTimeoutException> { session.callTool("wait", emptyMap()) }
-                val call = async { session.callTool("wait_again", emptyMap()) }
-                secondStarted.await()
-                call.cancelAndJoin()
-                assertTrue(call.isCancelled)
-            } finally {
-                session.close()
-            }
+        server.withSession(timeoutMillis = 2_000) { session ->
+            assertFailsWith<McpTimeoutException> { session.callTool("wait", emptyMap()) }
+            val call = async { session.callTool("wait_again", emptyMap()) }
+            secondStarted.await()
+            call.cancelAndJoin()
+            assertTrue(call.isCancelled)
         }
     }
 
@@ -117,7 +103,7 @@ class McpHttpSessionTest {
             awaitCancellation()
         }
         server.client.use { http ->
-            val session = McpHttpSession.connect(http, URL)
+            val session = McpHttpSession.connect(http, MCP_TEST_URL)
             val call = async {
                 try {
                     session.callTool("wait", emptyMap())
@@ -131,26 +117,20 @@ class McpHttpSessionTest {
             assertTrue(terminating.isCompleted)
             assertTrue(terminationCancelled.isCompleted)
             // A closed session must not close the host-owned client.
-            McpHttpSession.connect(http, URL).close()
+            McpHttpSession.connect(server.client, MCP_TEST_URL).close()
         }
     }
 
     @Test
     fun `a repeating pagination cursor fails instead of returning an incomplete catalogue`() = runBlocking {
         val server = McpTestServer { json("""{"tools":[],"nextCursor":"same"}""") }
-        server.client.use { http ->
-            val session = McpHttpSession.connect(http, URL)
-            try {
-                assertFailsWith<IllegalStateException> { session.listTools() }
-                assertEquals(2, server.recorded().count { it.path("method").asText() == "tools/list" })
-            } finally {
-                session.close()
-            }
+        server.withSession { session ->
+            assertFailsWith<IllegalStateException> { session.listTools() }
+            assertEquals(2, server.recorded("tools/list").size)
         }
     }
 
     companion object {
-        private const val URL = "https://mcp.example.test/mcp"
         private fun json(value: String): JsonNode = restJsonMapper.readTree(value)
     }
 }

@@ -42,7 +42,7 @@ class BackendOwnershipE2eTest {
         backendE2eTest(
             "e2e_provider_key_ownership",
             mockProvider = false,
-            providerClients = ProviderHttpClients(standard = http, openAi = http),
+            providerClients = ProviderHttpClients(standard = http, openAi = http, mcp = http),
         ) {
             val userA = UUID.randomUUID().toString()
             val userB = UUID.randomUUID().toString()

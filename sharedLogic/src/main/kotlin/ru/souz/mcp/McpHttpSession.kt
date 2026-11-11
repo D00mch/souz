@@ -27,10 +27,9 @@ data class McpToolDefinition(
     val inputSchema: JsonNode,
     val outputSchema: JsonNode?,
 ) {
-    internal val retainedBytes: Long
-        get() = (name.length + description.length) * 2L +
-            inputSchema.toString().toByteArray(Charsets.UTF_8).size +
-            (outputSchema?.toString()?.toByteArray(Charsets.UTF_8)?.size ?: 0)
+    internal val retainedBytes: Long = (name.length + description.length) * 2L +
+        inputSchema.toString().toByteArray(Charsets.UTF_8).size +
+        (outputSchema?.toString()?.toByteArray(Charsets.UTF_8)?.size ?: 0)
 }
 
 class McpTimeoutException : Exception("MCP request timed out; the remote outcome may be unknown.")
@@ -87,9 +86,9 @@ class McpHttpSession private constructor(
     }
 
     /** Tool-level isError is data; protocol and transport failures remain exceptions. */
-    suspend fun callTool(name: String, arguments: Map<String, Any?>): JsonNode = bounded(timeoutMillis) {
+    suspend fun callTool(name: String, arguments: Map<String, Any?>): String = bounded(timeoutMillis) {
         val result = client.callTool(name, arguments)
-        restJsonMapper.readTree(McpJson.encodeToString(CallToolResult.serializer(), result))
+        McpJson.encodeToString(CallToolResult.serializer(), result)
     }
 
     suspend fun close() = withContext(NonCancellable) {

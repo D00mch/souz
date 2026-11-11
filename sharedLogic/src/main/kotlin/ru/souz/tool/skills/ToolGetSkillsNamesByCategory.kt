@@ -48,6 +48,8 @@ class ToolGetSkillsNamesByCategory(
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (error: InvalidSkillCategory) {
+            CategorySkillNamesResponse(error = error.error)
         } catch (error: Exception) {
             CategorySkillNamesResponse(
                 error = SkillDiscoveryError(
@@ -64,24 +66,12 @@ class ToolGetSkillsNamesByCategory(
         )
     }
 
-    internal suspend fun getSkillNames(
-        requestedCategory: String,
-        snapshot: Map<ToolCategory, Map<String, LLMToolSetup>>? = null,
-    ): CategorySkillNamesResponse {
-        val categoryName = requestedCategory.trim()
-        if (categoryName.isBlank()) {
-            return CategorySkillNamesResponse(
-                error = SkillDiscoveryError(null, "invalid_category", "Category name must not be blank.")
-            )
-        }
-        val category = ToolCategory.entries.firstOrNull { it.name.equals(categoryName, ignoreCase = true) }
-            ?: return CategorySkillNamesResponse(
-                error = SkillDiscoveryError(null, "category_not_found", "Unknown Skill category: $categoryName")
-            )
+    private fun getSkillNames(requestedCategory: String): CategorySkillNamesResponse {
+        val category = parseSkillCategory(requestedCategory)
         val canonicalCategory = category.name
 
         return try {
-            val filteredCatalog = snapshot ?: toolsFilter.applyFilter(catalogProvider().toolsByCategory)
+            val filteredCatalog = toolsFilter.applyFilter(catalogProvider().toolsByCategory)
             CategorySkillNamesResponse(
                 category = canonicalCategory,
                 skillNames = filteredCatalog[category]
@@ -107,6 +97,18 @@ class ToolGetSkillsNamesByCategory(
         const val NAME = "GetSkillsNamesByCategory"
     }
 }
+
+internal fun parseSkillCategory(requestedCategory: String): ToolCategory {
+    val name = requestedCategory.trim()
+    return ToolCategory.entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
+        ?: throw InvalidSkillCategory(if (name.isBlank()) {
+            SkillDiscoveryError(null, "invalid_category", "Category name must not be blank.")
+        } else {
+            SkillDiscoveryError(null, "category_not_found", "Unknown Skill category: $name")
+        })
+}
+
+internal class InvalidSkillCategory(val error: SkillDiscoveryError) : IllegalArgumentException(error.message)
 
 internal data class CategorySkillNamesResponse(
     val category: String? = null,

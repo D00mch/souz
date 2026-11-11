@@ -1,7 +1,6 @@
 package ru.souz.mcp
 
 import com.fasterxml.jackson.module.kotlin.readValue
-import io.mockk.mockk
 import java.math.BigDecimal
 import java.math.BigInteger
 import kotlinx.coroutines.runBlocking
@@ -15,7 +14,6 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.ToolCategory
-import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsByCategory
 import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import kotlin.test.assertEquals
@@ -24,74 +22,59 @@ import kotlin.test.assertTrue
 @Timeout(15)
 class McpSkillDiscoveryTest {
     @Test
-    fun `mixed categories can page beyond the MCP tool count limit`() = runBlocking {
-        val server = McpTestServer {
-            restJsonMapper.createObjectNode().apply {
-                val tools = putArray("tools")
-                repeat(10_000) { index ->
-                    tools.addObject().apply {
-                        put("name", "remote$index")
-                        putObject("inputSchema").put("type", "object")
-                    }
-                }
-            }
-        }
-        val compiled = (0 until 100).map { index ->
+    fun `mixed category pages use one snapshot and continue beyond the MCP tool count limit`() = runBlocking {
+        val server = McpTestServer { mcpTools(10_000) }
+        val compiled = AgentToolCatalog(mapOf(ToolCategory.APPLICATIONS to (0 until 100).map { index ->
             object : LLMToolSetup {
                 override val fn = LLMRequest.Function(name = "compiled$index")
                 override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
                     error("Discovery must not invoke a tool.")
             }
-        }
-        server.client.use { http ->
-            val mcp = McpToolCatalog("owner", listOf(McpServerConfig("server", "Server", URL)), http)
-            try {
-                mcp.load("server")
-                val catalog = AgentToolCatalog.compose(
-                    AgentToolCatalog(mapOf(ToolCategory.APPLICATIONS to compiled)),
-                    mcp.catalog,
-                )
-                val names = ToolGetSkillsNamesByCategory({ catalog }, RuntimePassThroughToolsFilter)
-                val detail = ToolGetSkillByName({ catalog }, RuntimePassThroughToolsFilter, mockk())
-                val categories = ToolGetSkillsByCategory(detail, names)
-                for (tool in listOf(names, categories)) {
-                    val seen = mutableSetOf<String>()
-                    var offset: Int? = 10_000
-                    while (offset != null) {
-                        val response = restJsonMapper.readTree(tool.invoke(
-                            LLMResponse.FunctionCall(tool.fn.name, mapOf(
-                                "category" to "APPLICATIONS", "offset" to offset, "limit" to 50,
-                            )),
-                            ToolInvocationMeta(userId = "owner"),
-                        ).content)
-                        assertTrue(response.path("error").isMissingNode || response.path("error").isNull)
-                        assertEquals(0, response.path("errors").size())
-                        assertEquals(10_100, response.path("totalSkills").asInt())
-                        val entries = response.path(if (tool === names) "skillNames" else "skills")
-                        assertTrue(entries.size() > 0)
-                        entries.forEach { entry ->
-                            assertTrue(seen.add(if (entry.isTextual) entry.asText() else entry.path("skillId").asText()))
-                        }
-                        offset = response.path("nextOffset").takeUnless { it.isNull }?.asInt()
-                    }
-                    assertEquals(100, seen.size)
+        }))
+        server.withCatalog("server") { mcp ->
+            mcp.load("server")
+            var reads = 0
+            val provider = { reads++; AgentToolCatalog.compose(compiled, mcp.catalog) }
+            val names = ToolGetSkillsNamesByCategory(provider, RuntimePassThroughToolsFilter)
+            val details = ToolGetSkillsByCategory(provider, RuntimePassThroughToolsFilter)
+            for ((tool, field) in listOf(names to "skillNames", details to "skills")) {
+                suspend fun page(offset: Int, extra: Map<String, Any> = emptyMap()) = run {
+                    val before = reads
+                    val response = tool.discover(mapOf("category" to "APPLICATIONS", "offset" to offset) + extra)
+                    assertEquals(before + 1, reads)
+                    assertTrue(response.path("error").isMissingNode || response.path("error").isNull)
+                    assertEquals(0, response.path("errors").size())
+                    assertEquals(10_100, response.path("totalSkills").asInt())
+                    response
                 }
-                assertEquals(1, server.recorded().count { it.path("method").asText() == "tools/list" })
-            } finally {
-                mcp.close()
+                for (offset in listOf(0, 20)) {
+                    val response = page(offset)
+                    assertEquals(20, response.path(field).size())
+                    assertEquals(offset + 20, response.path("nextOffset").asInt())
+                }
+                val seen = mutableSetOf<String>()
+                var offset: Int? = 10_000
+                while (offset != null) {
+                    val response = page(offset, mapOf("limit" to 50))
+                    assertTrue(response.path(field).size() > 0)
+                    response.path(field).forEach { entry ->
+                        assertTrue(seen.add(if (entry.isTextual) entry.asText() else entry.path("skillId").asText()))
+                    }
+                    offset = response.path("nextOffset").takeUnless { it.isNull }?.asInt()
+                }
+                assertEquals(100, seen.size)
             }
+            assertEquals(1, server.recorded("tools/list").size)
         }
     }
 
     @Test
     fun `MCP and category discovery reject malformed pagination before reading a catalogue`() = runBlocking {
         val server = McpTestServer { error("Invalid pagination must not contact the server.") }
-        server.client.use { http ->
-            val mcp = McpToolCatalog("owner", listOf(McpServerConfig("server", "Server", URL)), http)
+        server.withCatalog("server") { mcp ->
             val provider = { error("Invalid pagination must not resolve a catalogue.") }
             val names = ToolGetSkillsNamesByCategory(provider, RuntimePassThroughToolsFilter)
-            val detail = ToolGetSkillByName(provider, RuntimePassThroughToolsFilter, mockk())
-            val categories = ToolGetSkillsByCategory(detail, names)
+            val details = ToolGetSkillsByCategory(provider, RuntimePassThroughToolsFilter)
             val invalid = listOf(
                 "offset" to -1,
                 "offset" to 1.9,
@@ -113,95 +96,21 @@ class McpSkillDiscoveryTest {
                     """{"serverId":"server","category":"APPLICATIONS","$field":null}"""
                 )
             }
-            try {
-                for (tool in listOf(mcp.discoveryTool, names, categories)) {
-                    for (arguments in invalid) {
-                        val response = restJsonMapper.readTree(tool.invoke(
-                            LLMResponse.FunctionCall(tool.fn.name, arguments),
-                            ToolInvocationMeta(userId = "owner"),
-                        ).content)
-                        val code = if (tool === categories) response.path("errors")[0].path("code")
-                            else response.path("error").path("code")
-                        assertEquals(
-                            if (tool === mcp.discoveryTool) "mcp_invalid_arguments" else "categories_unavailable",
-                            code.asText(),
-                            "${tool.fn.name}: $arguments",
-                        )
-                    }
+            for (tool in listOf(mcp.discoveryTool, names, details)) {
+                for (arguments in invalid) {
+                    val response = tool.discover(arguments)
+                    val error = if (tool === details) response.path("errors")[0] else response.path("error")
+                    assertEquals(
+                        if (tool === mcp.discoveryTool) "mcp_invalid_arguments" else "categories_unavailable",
+                        error.path("code").asText(), "${tool.fn.name}: $arguments",
+                    )
                 }
-                assertTrue(server.recorded().isEmpty())
-            } finally {
-                mcp.close()
             }
+            assertTrue(server.recorded().isEmpty())
         }
     }
 
-    @Test
-    fun `category pagination takes one snapshot for a thousand remote tools`() = runBlocking {
-        val server = McpTestServer {
-            restJsonMapper.createObjectNode().apply {
-                val tools = putArray("tools")
-                repeat(1_000) { index -> tools.addObject().apply {
-                    put("name", "tool$index")
-                    putObject("inputSchema").put("type", "object")
-                } }
-            }
-        }
-        server.client.use { http ->
-            val catalog = McpToolCatalog("owner", listOf(McpServerConfig("server", "Server", URL)), http)
-            try {
-                catalog.load("server")
-                var reads = 0
-                val provider = { reads++; AgentToolCatalog.compose(AgentToolCatalog(), catalog.catalog) }
-                val detail = ToolGetSkillByName(provider, RuntimePassThroughToolsFilter, mockk())
-                val names = ToolGetSkillsNamesByCategory(provider, RuntimePassThroughToolsFilter)
-                val categories = ToolGetSkillsByCategory(detail, names)
-                val meta = ToolInvocationMeta(userId = "owner")
-                val page = restJsonMapper.readTree(categories.invoke(LLMResponse.FunctionCall("GetSkillsByCategory",
-                    mapOf("category" to "APPLICATIONS")), meta).content)
-                assertEquals(1, reads)
-                assertEquals(20, page.path("skills").size())
-                assertEquals(1_000, page.path("totalSkills").asInt())
-                assertEquals(20, page.path("nextOffset").asInt())
-                val next = restJsonMapper.readTree(names.invoke(LLMResponse.FunctionCall("GetSkillsNamesByCategory",
-                    mapOf("category" to "APPLICATIONS", "offset" to 20)), meta).content)
-                assertEquals(20, next.path("skillNames").size())
-                assertEquals(40, next.path("nextOffset").asInt())
-                assertEquals(2, reads)
-            } finally { catalog.close() }
-        }
-    }
-
-    @Test
-    fun `category detail page stops at its byte budget and advances without losing entries`() = runBlocking {
-        val server = McpTestServer {
-            restJsonMapper.createObjectNode().apply {
-                val tools = putArray("tools")
-                repeat(4) { index -> tools.addObject().apply {
-                    put("name", "tool$index")
-                    putObject("inputSchema").apply {
-                        put("type", "object")
-                        putObject("properties").putObject("value").put("description", "x".repeat(6_000))
-                    }
-                } }
-            }
-        }
-        server.client.use { http ->
-            val catalog = McpToolCatalog("owner", listOf(McpServerConfig("server", "Server", URL)), http)
-            try {
-                catalog.load("server")
-                val names = ToolGetSkillsNamesByCategory({ catalog.catalog }, RuntimePassThroughToolsFilter)
-                val detail = ToolGetSkillByName({ catalog.catalog }, RuntimePassThroughToolsFilter, mockk())
-                val categories = ToolGetSkillsByCategory(detail, names)
-                val result = categories.invoke(LLMResponse.FunctionCall("GetSkillsByCategory",
-                    mapOf("category" to "APPLICATIONS")), ToolInvocationMeta(userId = "owner"))
-                val json = restJsonMapper.readTree(result.content)
-                assertEquals(2, json.path("skills").size())
-                assertEquals(2, json.path("nextOffset").asInt())
-                assertTrue(result.content.toByteArray(Charsets.UTF_8).size < 16_384)
-            } finally { catalog.close() }
-        }
-    }
-
-    companion object { private const val URL = "https://mcp.example.test/mcp" }
+    private suspend fun LLMToolSetup.discover(arguments: Map<String, Any>) = restJsonMapper.readTree(
+        invoke(LLMResponse.FunctionCall(fn.name, arguments), ToolInvocationMeta(userId = "owner")).content,
+    )
 }

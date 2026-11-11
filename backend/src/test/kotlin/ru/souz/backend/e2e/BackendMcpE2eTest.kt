@@ -135,6 +135,15 @@ class BackendMcpE2eTest {
                     trusted(user)
                 }.bodyAsText()).path("settings").path("mcp"))
             }
+            val normalizedUrl = "HTTPS://bücher.example:443/unused/../mcp tools"
+            val accepted = client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted(user)
+                jsonBody(json.writeValueAsString(mapOf("mcp" to mapOf("normalized" to mapOf(
+                    "url" to "  $normalizedUrl  ", "description" to "Normalized URL",
+                )))))
+            }
+            assertEquals(HttpStatusCode.OK, accepted.status)
+            assertEquals(normalizedUrl, accepted.jsonBody().path("settings").path("mcp").path("normalized").path("url").asText())
             client.patch(BackendHttpRoutes.SETTINGS) { trusted(user); jsonBody("""{"mcp":{}}""") }
             assertEquals(0, client.get(BackendHttpRoutes.SETTINGS) { trusted(user) }.jsonBody().path("settings").path("mcp").size())
         }

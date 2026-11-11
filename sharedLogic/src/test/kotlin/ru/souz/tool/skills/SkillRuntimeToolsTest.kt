@@ -172,7 +172,7 @@ class SkillRuntimeToolsTest {
         }
 
         val byName = getSkillByNameTool(repository, catalog, filter)
-        val byCategory = getSkillsByCategoryTool(repository, catalog, filter)
+        val byCategory = ToolGetSkillsByCategory({ catalog }, filter)
         val categoryResponse = byCategory.call(mapOf("category" to ToolCategory.FILES.name))
         val unknownCategoryResponse = byCategory.call(mapOf("category" to "UNKNOWN_CATEGORY"))
         val bundleResponse = byName.call(mapOf("skillId" to "bundle-skill"))
@@ -534,23 +534,6 @@ class SkillRuntimeToolsTest {
         toolsFilter = filter,
         skillBundleProvider = repository,
         approvalGate = approvalGate,
-    )
-
-    private fun getSkillsNamesByCategoryTool(
-        catalog: AgentToolCatalog = catalog(),
-        filter: AgentToolsFilter = TestToolsFilter(),
-    ): ToolGetSkillsNamesByCategory = ToolGetSkillsNamesByCategory(
-        catalogProvider = { catalog },
-        toolsFilter = filter,
-    )
-
-    private fun getSkillsByCategoryTool(
-        repository: SkillRegistryRepository,
-        catalog: AgentToolCatalog = catalog(),
-        filter: AgentToolsFilter = TestToolsFilter(),
-    ): ToolGetSkillsByCategory = ToolGetSkillsByCategory(
-        getSkillByName = getSkillByNameTool(repository, catalog, filter),
-        getSkillsNamesByCategory = getSkillsNamesByCategoryTool(catalog, filter),
     )
 
     private fun invokeSkillTool(

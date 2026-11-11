@@ -29,7 +29,7 @@ class ProviderHttpClientsTest {
     @Test
     fun `same client instance is not closed twice`() {
         val client = mockk<HttpClient>(relaxed = true)
-        val clients = ProviderHttpClients(client, client, client)
+        val clients = ProviderHttpClients(client, client, client, mcp = client)
 
         clients.close()
 
@@ -45,7 +45,7 @@ class ProviderHttpClientsTest {
         val jev = mockk<HttpClient>(relaxed = true)
         every { standard.close() } throws standardFailure
         every { openAi.close() } throws openAiFailure
-        val clients = ProviderHttpClients(standard, openAi, jev)
+        val clients = ProviderHttpClients(standard, openAi, jev, mcp = standard)
 
         val thrown = assertFailsWith<IllegalStateException> { clients.close() }
 
