@@ -45,12 +45,15 @@ class EffectiveSettingsResolver(
     private val userSettingsRepository: UserSettingsRepository,
     private val userProviderKeyRepository: UserProviderKeyRepository,
     private val featureFlags: BackendFeatureFlags,
-    toolCatalog: AgentToolCatalog,
+    private val toolCatalog: AgentToolCatalog,
     private val localModelAvailability: LocalModelAvailability,
     val namedModelNames: Set<String> = emptySet(),
+    private val pluginToolCatalog: () -> AgentToolCatalog = { AgentToolCatalog() },
 ) {
-    val advertisedToolNames: Set<String> =
-        BackendToolCapabilityPolicy.advertisedToolNames(toolCatalog)
+    val advertisedToolNames: Set<String> get() = advertisedToolNames(pluginToolCatalog())
+
+    fun advertisedToolNames(pluginCatalog: AgentToolCatalog): Set<String> =
+        BackendToolCapabilityPolicy.advertisedToolNames(toolCatalog, pluginCatalog)
 
     internal suspend fun defaultModel(
         userManagedProviders: suspend () -> Set<LlmProvider> = { emptySet() },
@@ -66,6 +69,7 @@ class EffectiveSettingsResolver(
         userId: String,
         requestOverrides: UserSettingsOverrides? = null,
         userManagedProviders: Set<LlmProvider>? = null,
+        availableToolNames: Set<String> = advertisedToolNames,
     ): EffectiveUserSettings {
         var loadedProviders = userManagedProviders
         val providers: suspend () -> Set<LlmProvider> = {
@@ -91,7 +95,7 @@ class EffectiveSettingsResolver(
             locale = locale,
             userManagedProviders = providers,
         )
-        val enabledTools = normalizeEnabledTools(requestOverrides?.enabledTools ?: persisted.enabledTools)
+        val enabledTools = normalizeEnabledTools(requestOverrides?.enabledTools ?: persisted.enabledTools, availableToolNames)
         val showToolEventsPreference = requestOverrides?.showToolEvents ?: persisted.showToolEvents ?: true
         val streamingPreference = requestOverrides?.streamingMessages
             ?: persisted.streamingMessages
@@ -148,8 +152,12 @@ class EffectiveSettingsResolver(
         )
     }
 
-    private fun normalizeEnabledTools(enabledTools: Set<String>?): Set<String> =
-        (enabledTools ?: advertisedToolNames).filterTo(linkedSetOf()) { it in advertisedToolNames }
+    private fun normalizeEnabledTools(enabledTools: Set<String>?, available: Set<String>): Set<String> {
+        UserSettingsLimits.validateEnabledTools(enabledTools)
+        return (enabledTools ?: available).filterTo(linkedSetOf()) {
+            it in available || BackendToolCapabilityPolicy.isPluginToolName(it)
+        }
+    }
 
     private suspend fun normalizeModel(
         model: String?,

@@ -7,9 +7,27 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
+import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
+import ru.souz.db.SettingsProvider
+import java.nio.file.Path
 import ru.souz.llms.ToolInvocationMeta
 
 class ToolInvocationRuntimeSandboxResolverTest {
+    @Test
+    fun `custom factories without a storage view preserve cached runtime fallback during discovery`() {
+        var created = 0
+        val runtime = LocalRuntimeSandbox(SandboxScope("user-1"), mockk<SettingsProvider>(), Path.of("build"))
+        val resolver = FactoryBackedToolInvocationRuntimeSandboxResolver(
+            sandboxFactory = { created++; runtime },
+            scopeResolver = { SandboxScope(it.userId) },
+        )
+        val meta = ToolInvocationMeta("user-1")
+        assertSame(runtime.fileSystem, resolver.fileSystem(meta))
+        assertSame(runtime.fileSystem, resolver.fileSystem(meta))
+        assertSame(runtime, resolver.resolve(meta))
+        assertEquals(1, created)
+    }
+
     @Test
     fun `reuses runtime sandbox for repeated resolves of the same scope`() {
         val created = AtomicInteger(0)

@@ -2,6 +2,7 @@ package ru.souz.backend.agent.model
 
 import ru.souz.agent.spi.ModelRouting
 import ru.souz.llms.FileContent
+import ru.souz.backend.plugins.PluginBinding
 
 /** Internal request model for one chat-oriented backend agent turn. */
 internal data class BackendConversationTurnRequest(
@@ -18,6 +19,7 @@ internal data class BackendConversationTurnRequest(
     val requestTimeoutMillis: Long? = null,
     val useFewShotExamples: Boolean? = null,
     val enabledTools: Set<String>? = null,
+    val pluginBindings: List<PluginBinding> = emptyList(),
     val clientToolsEnabled: Boolean = false,
     /** Destructive owner-wide memory tools require an authenticated interactive owner message. */
     val memoryMutationAllowed: Boolean = false,

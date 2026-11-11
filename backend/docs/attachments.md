@@ -4,7 +4,7 @@
 
 ## Tools and selection
 
-With S3 configured, the backend exposes `PrepareAttachment(fileId)`, `AttachFileToReply(path | fileId, presentation)`, and `DetachFileFromReply(fileId)` through the enabled-tool catalog. All three require a DOCKER sandbox; LOCAL workspaces are shared. Public WebSocket replies support the same explicit selection.
+With S3 configured, the backend exposes `PrepareAttachment(fileId)`, `AttachFileToReply(path | fileId, presentation)`, and `DetachFileFromReply(fileId)` through the enabled-tool catalog. Preparation and attachment from a workspace path require a DOCKER sandbox; LOCAL workspaces are shared. Selecting an owned, available stored file by ID uses S3 metadata directly in either runtime mode, without resolving a sandbox. Detaching only removes an ID from the current execution's reply selection and needs neither storage access nor a sandbox; it also works after a selected file expires. Public WebSocket replies support the same explicit selection.
 
 Preparation rebuilds a sandbox working copy from immutable storage. Attachment accepts exactly one source; saving the same bytes and name within an execution reuses the object. Detaching only changes reply selection. Prepared copies survive S3 expiry; workspace cleanup and save quotas are separate policies.
 

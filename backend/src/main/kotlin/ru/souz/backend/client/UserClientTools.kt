@@ -1,6 +1,7 @@
 package ru.souz.backend.client
 
 import ru.souz.backend.chat.model.Chat
+import ru.souz.agent.skills.PLUGIN_SKILL_PREFIX
 import ru.souz.llms.LLMRequest
 
 private val discoveryTool = ClientToolDefinition(
@@ -25,7 +26,7 @@ internal data class UserClientTool(
 internal fun List<ClientToolChannel>.userClientTools(excludedNames: Set<String>): List<UserClientTool> =
     flatMap { channel ->
         (channel.tools.filter { it.name != CLIENT_TOOL_DISCOVERY_NAME } + discoveryTool)
-            .filter { it.name !in excludedNames }
+            .filter { it.name !in excludedNames && !it.name.startsWith(PLUGIN_SKILL_PREFIX) }
             .map { it to channel }
     }.groupBy { it.first.name }.toSortedMap().values.mapNotNull { providers ->
         // TODO: support different definitions of one tool on different channels. Until then,

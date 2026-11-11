@@ -31,8 +31,8 @@ data class UserSettings(
     val personalityPrompt: String? = null,
     val personalityRevision: Long = 1,
     /**
-     * Null enables every tool the backend advertises, including tools added later; a selection of
-     * every advertised tool is stored as null. A set enables exactly those tools; empty enables none.
+     * Null follows every advertised tool, including tools added later. Submitted sets stay explicit,
+     * including unavailable plugin names; empty enables none.
      */
     val enabledTools: Set<String>? = null,
     val showToolEvents: Boolean? = null,

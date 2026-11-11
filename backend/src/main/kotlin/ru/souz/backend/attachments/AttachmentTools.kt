@@ -17,7 +17,7 @@ internal fun attachmentToolCatalog(access: BackendAttachmentAccess): AgentToolCa
     AgentToolCatalog(mapOf(ToolCategory.FILES to listOf(
         ToolPrepareAttachment(access),
         ToolAttachFileToReply(access),
-        ToolDetachFileFromReply(access),
+        ToolDetachFileFromReply(),
     )))
 
 internal class ToolPrepareAttachment(private val access: BackendAttachmentAccess) : LLMToolSetup {
@@ -79,7 +79,7 @@ internal class ToolAttachFileToReply(private val access: BackendAttachmentAccess
     }
 }
 
-internal class ToolDetachFileFromReply(private val access: BackendAttachmentAccess) : LLMToolSetup {
+internal class ToolDetachFileFromReply : LLMToolSetup {
     data class Input(val fileId: String? = null)
 
     override val fn = LLMRequest.Function(
@@ -95,7 +95,6 @@ internal class ToolDetachFileFromReply(private val access: BackendAttachmentAcce
         attachmentToolResult(NAME) {
             val fileId = functionCall.input<Input>().fileId?.takeIf { it.isNotBlank() }
                 ?: throw AttachmentException("attachment_file_id_required")
-            access.requireSupportedSandbox(meta)
             toolMessage(NAME, mapOf("fileId" to fileId, "selected" to false),
                 detachedReplyFiles = listOf(fileId))
         }

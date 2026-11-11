@@ -33,6 +33,8 @@ class UserSettingsService(
         }
         val now = Instant.now()
         val existing = userSettingsRepository.get(userId) ?: UserSettings(userId = userId, createdAt = now)
+        val enabledTools = overrides.enabledTools ?: existing.enabledTools
+        UserSettingsLimits.validateEnabledTools(enabledTools)
         userSettingsRepository.save(
             existing.copy(
                 defaultModel = overrides.defaultModel ?: existing.defaultModel,
@@ -40,8 +42,7 @@ class UserSettingsService(
                 locale = overrides.locale ?: existing.locale,
                 timeZone = overrides.timeZone ?: existing.timeZone,
                 systemPrompt = overrides.systemPrompt ?: existing.systemPrompt,
-                enabledTools = if (overrides.enabledTools == null) existing.enabledTools
-                    else overrides.enabledTools.takeUnless { it.containsAll(effectiveSettingsResolver.advertisedToolNames) },
+                enabledTools = enabledTools,
                 showToolEvents = overrides.showToolEvents ?: existing.showToolEvents,
                 streamingMessages = overrides.streamingMessages ?: existing.streamingMessages,
                 narrateSteps = overrides.narrateSteps ?: existing.narrateSteps,

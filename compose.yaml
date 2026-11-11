@@ -20,6 +20,7 @@ services:
       retries: 12
 
   backend:
+    restart: on-failure
     build:
       context: .
       dockerfile: backend.Dockerfile
