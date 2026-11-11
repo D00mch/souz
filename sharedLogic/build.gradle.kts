@@ -3,6 +3,8 @@ plugins {
 }
 
 dependencies {
+    runtimeOnly(libs.imageio.webp)
+    implementation(libs.metadata.extractor)
     implementation(projects.agent)
     implementation(projects.llms)
     implementation(projects.skillOauthApi)
@@ -42,6 +44,7 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
     systemProperty("java.awt.headless", "true")
+    doFirst { systemProperty("souz.test.runtimeClasspath", classpath.asPath) }
 }
 
 tasks.register<Exec>("buildRuntimeSandboxImage") {

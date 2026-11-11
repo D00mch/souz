@@ -13,6 +13,7 @@ import ru.souz.backend.scheduler.ScheduledTaskConfig
 import ru.souz.backend.plugins.PluginRuntimeConfig
 import ru.souz.backend.plugins.S3PluginArtifactConfig
 import ru.souz.skilloauth.impl.OAuthProviderCatalog
+import ru.souz.llms.runtime.DEFAULT_IMAGE_MODEL
 
 /**
  * Credentials for one [OAuthProviderCatalog] entry — read from `<NAME>_OAUTH_CLIENT_ID` /
@@ -159,6 +160,8 @@ data class BackendAppConfig(
     val scheduledTasks: ScheduledTaskConfig = ScheduledTaskConfig(),
     val attachments: AttachmentStorageConfig? = null,
     val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
+    val imageModel: String = DEFAULT_IMAGE_MODEL,
+    val visionModel: String? = null,
     val policyPrompt: String? = null,
     val plugins: PluginRuntimeConfig = PluginRuntimeConfig(),
     val pluginArtifacts: S3PluginArtifactConfig? = null,
@@ -228,6 +231,8 @@ data class BackendAppConfig(
                 plugins = PluginRuntimeConfig.load(source),
                 pluginArtifacts = S3PluginArtifactConfig.load(source),
                 pluginAdminToken = source.value("SOUZ_PLUGINS_ADMIN_TOKEN", "souz.plugins.admin_token")?.trim()?.takeIf(String::isNotEmpty),
+                imageModel = source.value("SOUZ_IMAGE_MODEL", "souz.image.model")?.trim() ?: DEFAULT_IMAGE_MODEL,
+                visionModel = source.value("SOUZ_ATTACHMENTS_VISION_MODEL", "souz.attachments.visionModel")?.trim(),
                 attachmentHistoryLimit = source.intValue("SOUZ_ATTACHMENTS_HISTORY_LIMIT", "souz.attachments.historyLimit", DEFAULT_ATTACHMENT_HISTORY_LIMIT),
                 hooks = HookConfig(
                     owners = source.value("SOUZ_HOOK_OWNERS", "souz.hooks.owners")

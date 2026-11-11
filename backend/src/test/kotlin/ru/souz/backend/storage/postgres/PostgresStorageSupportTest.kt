@@ -1,6 +1,12 @@
 package ru.souz.backend.storage.postgres
 
 import com.fasterxml.jackson.module.kotlin.readValue
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verifyOrder
+import java.sql.Connection
+import javax.sql.DataSource
+import kotlinx.coroutines.runBlocking
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
@@ -17,6 +23,28 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 
 class PostgresStorageSupportTest {
+    @Test
+    fun `borrowed JDBC timeout is restored on success and failure`() = runBlocking {
+        for (write in listOf(false, true)) for (fails in listOf(false, true)) {
+            val connection = mockk<Connection>(relaxed = true)
+            val dataSource = mockk<DataSource>()
+            every { dataSource.connection } returns connection
+            every { connection.networkTimeout } returns 30_000
+            every { connection.autoCommit } returns true
+            val operation: (Connection) -> Unit = { if (fails) error("operation failed") }
+            suspend fun execute() {
+                if (write) dataSource.write(networkTimeoutMillis = 15_000, block = operation)
+                else dataSource.read(networkTimeoutMillis = 15_000, block = operation)
+            }
+            if (fails) assertFailsWith<IllegalStateException> { execute() } else execute()
+            verifyOrder {
+                connection.setNetworkTimeout(any(), 15_000)
+                connection.setNetworkTimeout(any(), 30_000)
+                connection.close()
+            }
+        }
+    }
+
     @Test
     fun `legacy active agent id is ignored when reading conversation context`() {
         val context = postgresStorageMapper.readValue<StoredConversationContext>(

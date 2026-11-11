@@ -143,6 +143,10 @@ import ru.souz.tool.knowledge.ToolSearchKnowledge
 import ru.souz.tool.memory.ToolSearchMemory
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.web.internal.WebResearchClient
+import ru.souz.backend.attachments.ImageGeneration
+import ru.souz.backend.client.ClientImages
+import ru.souz.backend.llm.ImageModelRoute
+import ru.souz.backend.llm.validateVisionModel
 
 internal object BackendDiTags {
     const val LOG_OBJECT_MAPPER = "backendLogObjectMapper"
@@ -196,6 +200,8 @@ fun backendDiModule(
         bindSingleton { AttachmentStorage(config, instance(), instance(), instance()) }
         bindSingleton { AttachmentCleanupWorker(instance()) }
         bindSingleton { BackendAttachmentAccess(instance(), instance()) }
+        bindSingleton { ImageGeneration(instance(), instance<HikariDataSource>()) }
+        bindSingleton { ClientImages(instance()) }
     }
     bindSingleton<BackendFeatureFlags> { appConfig.featureFlags }
     bindSingleton { BackendMetrics() }
@@ -220,6 +226,7 @@ fun backendDiModule(
         )
     }
     bindSingleton { SystemBackendConfigSource.loadNamedModels() }
+    bindSingleton { ImageModelRoute(appConfig.imageModel, instance()) }
     bindSingleton<SettingsProvider> {
         BackendSettingsProvider(
             preferenceStore = instance(),
@@ -250,6 +257,7 @@ fun backendDiModule(
             cancelAndJoinApplicationWork = { instance<BackendApplicationScope>().cancelAndJoin() },
             closeProviderClients = {
                 instance<ProviderHttpClients>().close()
+                instanceOrNull<ClientImages>()?.close()
                 (instanceOrNull<VkBotApi>() as? AutoCloseable)?.close()
             },
             closeSkillOAuthClients = {
@@ -383,6 +391,10 @@ fun backendDiModule(
             effectiveSettingsResolver = instance(),
             retryPolicy = appConfig.providerRetryPolicy,
             attachmentHistoryLimit = appConfig.attachmentHistoryLimit,
+            imageModel = instance(),
+            visionModel = appConfig.visionModel,
+            imageGeneration = instanceOrNull(),
+            attachmentStorage = instanceOrNull(),
             providerHttpClients = instance(),
             providerApiOverride = instanceOrNull(),
             codexOAuthService = instance<CodexOAuthService>(),
@@ -602,6 +614,7 @@ fun backendDiModule(
     bindSingleton {
         PublicClientService(
             namedModelNames = instance<NamedLlmConfig>().models.keys,
+            clientImages = instanceOrNull(),
             chatRepository = instance(),
             executionRepository = instance(),
             clientRequestRepository = instance(),
@@ -627,6 +640,9 @@ fun backendDiModule(
         )
     }
     bindSingleton {
+        // Validate image selection before constructing HTTP dependencies or accepting text turns.
+        instance<ImageModelRoute>()
+        validateVisionModel(appConfig.visionModel, instance())
         val featureFlags = instance<BackendFeatureFlags>()
         val settingsResolver = instance<EffectiveSettingsResolver>()
         val userRepository = instance<UserRepository>()

@@ -244,6 +244,7 @@ private class ClientWebSocketSkill(
                 )
             }),
             name = functionName,
+            files = outcome.files,
         )
 
     private fun failed(code: String, message: String) = ClientToolOutcome("failed", null, ClientError(code, message))
