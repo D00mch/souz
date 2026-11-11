@@ -3,6 +3,7 @@ package ru.souz.mcp
 import io.ktor.client.HttpClient
 import java.util.Base64
 import java.util.Collections
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
@@ -75,7 +76,7 @@ class McpToolCatalog(
     }
 
     override suspend fun preload(serverIds: Set<String>) {
-        withTimeoutOrNull(McpLimits.PRELOAD_TIMEOUT_MS) {
+        withTimeoutOrNull(McpLimits.PRELOAD_TIMEOUT_MS.milliseconds) {
             for (id in serverIds) {
                 try {
                     load(id)
