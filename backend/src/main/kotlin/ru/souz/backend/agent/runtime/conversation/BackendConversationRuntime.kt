@@ -35,6 +35,7 @@ internal class BackendConversationRuntime(
     private val persistedSession: AgentConversationSession?,
     private val initialMessages: List<LLMRequest.Message>,
     initialObservedMessageSeq: Long,
+    private val closeExecutionResources: suspend () -> Unit = {},
 ) {
     private val cursorMutex = Mutex()
     private var observedMessageSeq = initialObservedMessageSeq
@@ -43,7 +44,7 @@ internal class BackendConversationRuntime(
         request: BackendConversationTurnRequest,
         eventSink: AgentRuntimeEventSink? = null,
         onRuntimeReady: suspend () -> Unit = {},
-    ): BackendConversationExecution {
+    ): BackendConversationExecution = try {
         val previousSelection = persistedSession?.takeIf {
             request.executionId != null && it.attachmentExecutionId == request.executionId
         }?.replyAttachments.orEmpty()
@@ -86,13 +87,15 @@ internal class BackendConversationRuntime(
         )
 
         val used = result.context.settings
-        return BackendConversationExecution(
+        BackendConversationExecution(
             output = result.output,
             usage = executionApi.cumulativeUsage(),
             session = nextSession,
             routedModel = request.routing?.let { listOf(it.simple, it.complex) }
                 ?.firstOrNull { it.model == used.model && it.provider == used.provider },
         )
+    } finally {
+        closeExecutionResources()
     }
 
     internal suspend fun currentUsage(): LLMResponse.Usage = executionApi.cumulativeUsage()

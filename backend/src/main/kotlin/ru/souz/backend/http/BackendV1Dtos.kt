@@ -54,6 +54,13 @@ internal data class BackendV1SettingsPatchRequest(
     val interfaceLanguage: String? = null,
     val requestTimeoutMillis: Long? = null,
     val useFewShotExamples: Boolean? = null,
+    val mcp: Map<String, BackendV1McpServerDto>? = null,
+)
+
+data class BackendV1McpServerDto(
+    val enabled: Boolean = true,
+    val description: String = "",
+    val url: String? = null,
 )
 
 internal data class BackendV1OnboardingCompleteRequest(
@@ -85,6 +92,7 @@ data class BackendV1SettingsDto(
     val interfaceLanguage: String,
     val requestTimeoutMillis: Long,
     val useFewShotExamples: Boolean,
+    val mcp: Map<String, BackendV1McpServerDto> = emptyMap(),
 )
 
 internal data class BackendV1ProviderKeysResponse(
@@ -299,6 +307,7 @@ internal fun EffectiveUserSettings.toDto(): BackendV1SettingsDto =
         interfaceLanguage = interfaceLanguage,
         requestTimeoutMillis = requestTimeoutMillis,
         useFewShotExamples = useFewShotExamples,
+        mcp = mcp.mapValues { (_, server) -> BackendV1McpServerDto(server.enabled, server.description, server.url) },
     )
 
 internal fun UserProviderKeyView.toDto(): BackendV1ProviderKeyDto =

@@ -21,6 +21,8 @@
 
 ## Pain points
 
+- [MCP servers](../backend/docs/mcp.md) — SDK schemas and results, dedicated transport, bounded discovery and session lifetime.
+
 - [Runtime sandbox and skills](docs/runtime-sandbox-and-skills.md) — invocation scope, storage layouts, command runtimes, and Docker fixtures.
 - [Web tools](docs/web-tools.md) — evidence handling, citations, provider behavior, sandboxed output, and URL limitations.
 - [Images](../backend/docs/images.md) — headless validation, request-local pixels and provider generation/editing.

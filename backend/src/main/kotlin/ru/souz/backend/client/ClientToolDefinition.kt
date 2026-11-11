@@ -3,7 +3,7 @@ package ru.souz.backend.client
 import com.fasterxml.jackson.databind.JsonNode
 import java.util.UUID
 import ru.souz.agent.SubagentTool
-import ru.souz.agent.skills.PLUGIN_SKILL_PREFIX
+import ru.souz.agent.skills.isHostSkillId
 import ru.souz.backend.http.invalidV1Request
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.restJsonMapper
@@ -29,7 +29,7 @@ internal fun List<ClientToolDefinition>.normalizeClientTools(
     return this.withIndex().sortedBy { it.value.name }.map { (index, tool) ->
         requireCatalogue(Regex("[A-Za-z][A-Za-z0-9_.-]{0,63}").matches(tool.name), "Invalid tool name.")
         requireCatalogue(
-            tool.name !in serverNames && tool.name !in reservedSkillNames && !tool.name.startsWith(PLUGIN_SKILL_PREFIX),
+            tool.name !in serverNames && tool.name !in reservedSkillNames && !isHostSkillId(tool.name),
             "Tool name is reserved by Souz."
         )
         requireCatalogue(
@@ -55,7 +55,7 @@ internal fun normalizeToolParameters(parameters: LLMRequest.Parameters, path: St
 private val reservedSkillNames = setOf(
     "GetSkillByName", "GetSkillsByCategory", "GetSkillsNamesByCategory", "RunSkillCommand",
     "GetKnowledge", "SearchKnowledge", "SearchMemory", "ForgetMemoryFact", "ForgetAllMemory",
-    "ConnectOAuthProvider", "SafeApiCall",
+    "ConnectOAuthProvider", "SafeApiCall", "LoadMcpTools",
 ) + SubagentTool.NAMES
 
 private fun requireCatalogue(valid: Boolean, message: String) {

@@ -297,7 +297,7 @@ class BackendHooksE2eTest {
         val llm = E2eLlmApi().apply { requestSkill("GenerateImage", mapOf("prompt" to "A tree", "outputPath" to "$workspace/tree.png")) }
         backendE2eTest("e2e_hook_image", llm = llm, hookConfig = HookConfig(setOf(owner)), sandboxFactory = ::localSandbox,
             llmLimits = BackendLlmLimits(globalProviderConcurrency = 1), settingsSource = settings,
-            providerClients = ProviderHttpClients(standard = http, openAi = http)) {
+            providerClients = ProviderHttpClients(standard = http, openAi = http, mcp = http)) {
             setupOwner()
             val first = invoke().jsonBody()["receiptId"].asText()
             try {

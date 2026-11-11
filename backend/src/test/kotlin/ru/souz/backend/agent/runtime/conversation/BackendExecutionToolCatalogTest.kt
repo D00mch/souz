@@ -28,6 +28,18 @@ import ru.souz.tool.web.ToolWebImageSearch
 
 class BackendExecutionToolCatalogTest {
     @Test
+    fun `discovery refreshes compose new membership without changing older snapshots`() {
+        val composed = ComposedToolCatalog()
+        val base = TestToolCatalog(ToolCategory.FILES to listOf("ReadFile"))
+        val remote = TestToolCatalog(ToolCategory.APPLICATIONS to listOf("mcp.first"))
+        val first = composed.get(base, remote)
+        assertSame(first, composed.get(base, remote))
+        assertEquals(setOf("ReadFile"), toolNames(composed.get(base, TestToolCatalog())))
+        assertEquals(setOf("mcp.first"), toolNames(composed.get(TestToolCatalog(), remote)))
+        assertEquals(setOf("ReadFile", "mcp.first"), toolNames(first))
+    }
+
+    @Test
     fun `attachment preparation and reply selection respect enabled tools`() {
         val names = setOf("PrepareAttachment", "AttachFileToReply", "DetachFileFromReply")
         for (enabled in listOf(null, emptySet(), names)) {
