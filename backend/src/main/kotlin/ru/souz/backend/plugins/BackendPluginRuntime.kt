@@ -31,11 +31,12 @@ internal class BackendPluginRuntime(
     private val onFatal: suspend () -> Unit = {},
     private val directory: Path = Files.createTempDirectory("souz-plugins-"),
     private val random: Random = Random.Default,
+    workDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(64),
 ) {
     private val stateMutex = Mutex()
     private val pollingMutex = Mutex() // only for `reconcile`
     // Foreign blocking code cannot occupy DB/control IO. This dispatcher is not an invocation quota.
-    private val work = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(64))
+    private val work = CoroutineScope(SupervisorJob() + workDispatcher)
     private val control = CoroutineScope(SupervisorJob() + controlDispatcher)
     private val shutdownScope = CoroutineScope(SupervisorJob() + controlDispatcher)
     private var shutdownTask: Deferred<Unit>? = null
@@ -359,8 +360,10 @@ internal class BackendPluginRuntime(
         val deadline = control.launch(start = CoroutineStart.LAZY) {
             delay((expires - now()).coerceAtLeast(0).milliseconds)
             val timedOut = stateMutex.withLock {
-                if (entry.phase != Phase.PREPARING) false else {
-                    entry.ready.completeExceptionally(PluginUnavailableException("plugin_restore_timeout"))
+                if (entry.phase != Phase.PREPARING ||
+                    !entry.ready.completeExceptionally(PluginUnavailableException("plugin_restore_timeout"))) false else {
+                    entry.error = "plugin_restore_timeout"
+                    publish()
                     true
                 }
             }
@@ -381,6 +384,8 @@ internal class BackendPluginRuntime(
                 currentCoroutineContext().ensureActive()
                 stateMutex.withLock {
                     currentCoroutineContext().ensureActive()
+                    // The deadline may have won while cancellation is still queued on work.
+                    if (entry.ready.isCompleted) return@withLock
                     entry.functions = functions
                     entry.phase = Phase.READY
                     ready = true

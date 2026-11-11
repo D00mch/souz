@@ -8,13 +8,17 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.time.Duration
 import java.util.Properties
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -52,6 +56,13 @@ class PluginRuntimeProcessTest {
         val binding = installBlockedProvider()
         runProbe(this, binding, "prepare-drained", 0)
         assertIncident(this, binding, "plugin_prepare_stalled")
+    }
+
+    @Test
+    fun `preparation timeout wins over completion before queued cancellation`(): Unit = runtimeTest {
+        val binding = installBlockedProvider()
+        runProbe(this, binding, "prepare-timeout", 0)
+        assertEquals(0, repository.version(binding)!!.severeIncidents)
     }
 
     private suspend fun PluginFixture.installBlockedProvider(): PluginBinding {
@@ -134,6 +145,7 @@ object PluginRuntimeProbe {
         val path = Path.of(args[0])
         val root = path.parent
         val properties = Properties().apply { Files.newInputStream(path).use(::load) }
+        val preparationTimesOut = args[1] == "prepare-timeout"
         val preparationDrains = args[1] == "prepare-drained"
         val responseGate = if (preparationDrains) PgResponseGate(properties.getProperty("jdbc")) else null
         val datasource = HikariDataSource(HikariConfig().apply {
@@ -149,23 +161,27 @@ object PluginRuntimeProbe {
             properties.getProperty("accessKey"), properties.getProperty("secretKey")))
         val services = runtimeServices(repository)
         val binding = PluginBinding(properties.getProperty("id"), properties.getProperty("version"), properties.getProperty("digest"))
-        val preparing = args[1] == "prepare" || preparationDrains
+        val preparing = args[1] == "prepare" || preparationDrains || preparationTimesOut
         val cleanup = args[1] == "cleanup"
-        val fatal = args[1] == "fatal" || preparing || cleanup
+        val fatal = args[1] == "fatal" || preparing && !preparationTimesOut || cleanup
         val lost = args[1] == "lost"
         val collecting = args[1] == "collect"
         System.setProperty("plugin.fixture.gate", root.toString())
-        val config = PluginRuntimeConfig(queueMillis = 300, callMillis = if (collecting) 5_000 else if (lost) 10_000 else 300, leaseMillis = 1_000, renewMillis = 100,
-            graceMillis = if (fatal) 200 else 10_000, shutdownMillis = 1_000, prepareMillis = if (preparing) 5_000 else 15_000)
+        val config = PluginRuntimeConfig(queueMillis = if (preparationTimesOut) 5_000 else 300,
+            callMillis = if (collecting || preparationTimesOut) 5_000 else if (lost) 10_000 else 300, leaseMillis = 1_000, renewMillis = 100,
+            graceMillis = if (fatal) 200 else 10_000, shutdownMillis = 1_000, prepareMillis = if (preparing) 5_000 else 15_000,
+            retryMillis = if (preparationTimesOut) 1 else 30_000)
         val workDirectory = Files.createDirectories(root.resolve("loader"))
         val fatalNotifications = AtomicInteger()
+        // Construction occupies the sole worker, so cancellation cannot run until construction returns.
+        val preparationWorker = if (preparationTimesOut) Executors.newSingleThreadExecutor().asCoroutineDispatcher() else null
         val runtime = BackendPluginRuntime(repository, artifacts, services, config, onFatal = {
             check(fatal) { "Unexpected fatal signal during drain probe." }
             if (preparationDrains) fatalNotifications.incrementAndGet() else {
                 Files.writeString(root.resolve("verified"), "severe persisted before fatal restart")
                 Runtime.getRuntime().halt(71)
             }
-        }, directory = workDirectory)
+        }, directory = workDirectory, workDispatcher = preparationWorker ?: Dispatchers.IO.limitedParallelism(64))
         val peer = BackendPluginRuntime(repository, artifacts, services, config)
         var cleanupObstruction: AutoCloseable? = null
         try {
@@ -178,6 +194,34 @@ object PluginRuntimeProbe {
             }
             if (preparing) {
                 awaitPlugin { Files.exists(root.resolve("entered")) }
+                if (preparationTimesOut) {
+                    awaitPlugin { runtime.snapshot.status.single().versions.single().error == "plugin_restore_timeout" }
+                    val failure = assertFailsWith<PluginUnavailableException> {
+                        runtime.acquire("alice", listOf(binding), PLUGIN_FIXTURE_TOOLS)
+                    }
+                    assertEquals("plugin_restore_timeout", failure.code)
+                    assertTrue(runtime.snapshot.defaultBindings.isEmpty())
+                    Files.writeString(root.resolve("release"), "finish construction before queued cancellation")
+                    awaitPlugin {
+                        val phase = runtime.snapshot.status.single().versions.single().phase
+                        phase == "failed" || phase == "ready"
+                    }
+                    val failed = runtime.snapshot.status.single().versions.single()
+                    assertEquals("failed", failed.phase, "Timed-out preparation must not publish READY.")
+                    assertEquals("plugin_restore_timeout", failed.error)
+                    assertTrue(runtime.snapshot.defaultBindings.isEmpty())
+                    assertTrue(runtime.snapshot.catalog.toolsByCategory.values.all { it.isEmpty() })
+                    assertTrue(Files.list(workDirectory).use { it.findAny().isEmpty })
+                    withTimeout(15_000) {
+                        while (runtime.snapshot.defaultBindings != listOf(binding)) { runtime.reconcile(); delay(10) }
+                    }
+                    val restored = runtime.acquire("alice", listOf(binding), PLUGIN_FIXTURE_TOOLS)
+                    assertEquals("v1", restored.call("report")["version"].asText())
+                    restored.release()
+                    assertTrue(runtime.shutdown())
+                    Files.writeString(root.resolve("verified"), "timeout disposes late construction and reconciliation retries successfully")
+                    return@runBlocking
+                }
                 if (preparationDrains) {
                     // Fatal state is committed; hold persistence while construction exits and cancels its watchdog.
                     val gate = requireNotNull(responseGate)
@@ -257,6 +301,7 @@ object PluginRuntimeProbe {
             cleanupObstruction?.close()
             Files.writeString(root.resolve("release"), "cleanup")
             runtime.shutdown(); peer.shutdown()
+            preparationWorker?.close()
             services.close(); artifacts.close(); datasource.close()
             responseGate?.close()
         }
