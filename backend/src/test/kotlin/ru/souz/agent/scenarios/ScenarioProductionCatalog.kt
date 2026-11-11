@@ -30,6 +30,7 @@ import ru.souz.backend.channels.ChannelProviderRegistry
 import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.execution.repository.AgentExecutionRepository
+import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.personality.PersonalityTool
 import ru.souz.db.SettingsProvider
 import ru.souz.jobs.JobService
@@ -81,6 +82,7 @@ internal suspend fun scenarioProductionCatalog(
     val clientSkills = BackendClientSkills(mockk(), mockk(relaxed = true), chats)
         .catalog(channel.userId, emptySet()) {}
     return backendExecutionToolCatalog(
+        executionQuotas = di.direct.instance<ExecutionQuotaManager>(),
         compiledToolCatalog = di.direct.instance(tag = BackendDiTags.MERGED_TOOL_CATALOG),
         executionLlmToolCatalog = AgentToolCatalog.compose(
             llmTools.catalog,

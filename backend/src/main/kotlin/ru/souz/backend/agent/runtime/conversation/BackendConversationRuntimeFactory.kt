@@ -187,6 +187,7 @@ internal class BackendConversationRuntimeFactory(
         val serverNames = toolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet() +
             BackendToolCapabilityPolicy.executionBoundToolNames + pluginCatalog.toolsByCategory.values.flatMap { it.keys }
         val baseCatalog = backendExecutionToolCatalog(
+            executionQuotas = executionQuotas,
             compiledToolCatalog = toolCatalog,
             executionLlmToolCatalog = AgentToolCatalog.compose(executionLlmToolCatalog.catalog,
                 AgentToolCatalog(mapOf(ToolCategory.IMAGE_GENERATION to listOfNotNull(attachmentImages))),

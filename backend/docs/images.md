@@ -10,7 +10,7 @@ Keep image order and file IDs aligned. Select at most five images from user mess
 
 PNG, JPEG and still WebP sources allow 20 MB, 40 million pixels and 16,384 pixels per edge. Validate decodability before storage or paid admission, with a 64 MiB original-raster budget and two concurrent decodes. Vision normalizes JPEG EXIF orientation and prepares one projection with edges at most 2,048 pixels and at most 5 MB of base64 data, shared by all providers. Five projections contain at most 25 MB of encoded images. Editing retains original bytes. WebP canvas and frame dimensions must agree before decoding. Processing stays headless.
 
-At most two attachment-image requests per backend instance may load and retain sources or projections. Chat projection and attachment generation/editing share this capacity. Acquire capacity before storage access and retain it through provider admission, retries, fallbacks, result storage and cancellation cleanup. Waiting requests retain only file references. Streams prepare images during collection and hold capacity until collection exits; text-only chat requests and summaries bypass this limit.
+At most two image requests per backend instance may load and retain sources or projections. Chat projection, attachment generation/editing, and sandbox `ViewImage`/`GenerateImage` share this capacity. Acquire capacity before storage or sandbox access and retain it through provider admission, retries, fallbacks, result storage and cancellation cleanup. Waiting requests retain only file references or sandbox paths. Streams prepare images during collection and hold capacity until collection exits; text-only chat requests and summaries bypass this limit.
 
 ## Generation and editing
 
