@@ -5,6 +5,7 @@
 - Remote provider adapters receive host-owned `HttpClient` instances. They do not create, derive, or close clients.
 - Credentials, selected models, endpoints, sessions, and timeouts are request state and are applied explicitly to each request.
 - Desktop may support Giga through its application-scoped transport and token state. Backend composition excludes Giga entirely.
+- Giga schemas explicitly set `additionalProperties: true` on unconstrained object properties, including generic Skill arguments. Preserve explicit closed-object constraints. Absent optional schema keywords are omitted from JSON.
 - The host that creates a provider transport closes it exactly once after in-flight application work is stopped.
 - OpenAI base URLs are normalized by `OpenAIEndpoint`. Only the semantically official HTTPS endpoint sends `stream_options.include_usage`; compatible custom endpoints omit that request option but still parse usage chunks they return.
 

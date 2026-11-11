@@ -311,6 +311,7 @@ object LLMRequest {
         val additionalProperties: Boolean? = null,
     )
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     data class Property(
         val type: String,
         val description: String? = null,
