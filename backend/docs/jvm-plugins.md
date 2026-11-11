@@ -88,6 +88,7 @@ Complete invocations serialize by `(userId, pluginId)` across replicas and versi
 PostgreSQL leases. Waiting is cancellable; FIFO is not promised. No database connection or transaction
 stays open throughout plugin execution. Each admission has a unique fencing token. State writes verify
 current unexpired ownership atomically; other services check ownership before dispatch.
+Renewal starts at the invocation handoff, including time queued for a worker; handler entry checks current ownership.
 
 State is owner/plugin-scoped JSON with 1 MiB records and paginated listing. It exposes no callbacks or CAS.
 Plugin JDBC operations bound socket reads, including transaction completion, to five seconds;

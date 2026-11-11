@@ -195,6 +195,7 @@ internal class BackendPluginRuntime(
                 val permit = version.breaker.admit(now()) ?: unavailable("plugin_version_circuit_open")
                 Invocation(version, requireNotNull(admission.lease), call.name, permit).also { entry ->
                     version.calls += entry
+                    entry.renewal = renewLease(entry)
                     entry.job = work.launch(start = CoroutineStart.ATOMIC) { execute(entry, tool, json, meta) }
                     control.launch {
                         if (withTimeoutOrNull(config.callMillis.milliseconds) { entry.reply.await(); true } != true) {
@@ -255,25 +256,28 @@ internal class BackendPluginRuntime(
         return entry
     }
 
+    /** Lease ownership includes time queued for a foreign worker. */
+    private fun renewLease(entry: Invocation): Job = control.launch {
+        while (true) {
+            delay(config.renewMillis.milliseconds)
+            val owned = try { repository.renew(entry.lease, config.leaseMillis) }
+            catch (cancelled: CancellationException) {
+                throw cancelled
+            }
+            catch (_: Exception) { false }
+            if (!owned) { stop(entry, "plugin_lease_lost", PluginCallOutcome.IGNORED); break }
+        }
+    }
+
     private suspend fun execute(
         entry: Invocation,
         tool: PluginFunction,
         json: String,
         meta: ToolInvocationMeta,
     ) {
-        val renewal = control.launch {
-            while (true) {
-                delay(config.renewMillis.milliseconds)
-                val owned = try { repository.renew(entry.lease, config.leaseMillis) }
-                catch (cancelled: CancellationException) {
-            throw cancelled
-        }
-                catch (_: Exception) { false }
-                if (!owned) { stop(entry, "plugin_lease_lost", PluginCallOutcome.IGNORED); break }
-            }
-        }
         try {
             currentCoroutineContext().ensureActive()
+            repository.assertOwned(entry.lease)
             val context = services.context(entry.lease, PluginInvocationMeta(entry.lease.ownerId, meta.conversationId, meta.requestId, meta.locale, meta.timeZone)) {
                 stateMutex.withLock { if (!entry.active) throw CancellationException("Plugin invocation has ended.") }
             }
@@ -304,7 +308,7 @@ internal class BackendPluginRuntime(
                 finish(entry, PluginCallOutcome.IGNORED, pluginError(entry.name, "plugin_cancelled"))
                 stateMutex.withLock { watchInvocation(entry) }
                 entry.accounting?.join()
-                renewal.cancelAndJoin()
+                entry.renewal.cancelAndJoin()
                 try {
                     repository.release(entry.lease)
                 } catch (cancelled: CancellationException) {
@@ -598,6 +602,7 @@ internal class BackendPluginRuntime(
     internal class Invocation(val version: Version, val lease: PluginCallLease, val name: String, val permit: PluginVersionBreaker.Permit) {
         val reply = CompletableDeferred<LLMRequest.Message>()
         lateinit var job: Job
+        lateinit var renewal: Job
         var active = true
         var grace: Job? = null
         var accounting: Job? = null
