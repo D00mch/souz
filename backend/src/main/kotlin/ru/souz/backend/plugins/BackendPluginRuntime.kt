@@ -458,7 +458,8 @@ internal class BackendPluginRuntime(
         }
     }
 
-    private suspend fun severe(binding: PluginBinding, incident: String, code: String) {
+    private suspend fun severe(binding: PluginBinding, incident: String, code: String): Unit = withContext(NonCancellable) {
+        // Once committed, escalation must outlive the watchdog that detected the incident.
         val first = stateMutex.withLock {
             val first = !fatal
             fatal = true
@@ -466,16 +467,19 @@ internal class BackendPluginRuntime(
             publish()
             first
         }
-        log.error("Plugin {} severe incident {} reason={} replica={}", binding.id, incident, code, replicaId)
-        val record = control.async {
-            try { repository.recordSevereIncident(binding, incident, config.severeIncidentThreshold, code, replicaId) }
-            catch (cancelled: CancellationException) {
-            throw cancelled
+        try {
+            log.error("Plugin {} severe incident {} reason={} replica={}", binding.id, incident, code, replicaId)
+            val record = control.async {
+                try { repository.recordSevereIncident(binding, incident, config.severeIncidentThreshold, code, replicaId) }
+                catch (cancelled: CancellationException) {
+                    throw cancelled
+                }
+                catch (failure: Exception) { log.error("Plugin incident persistence failed: {}", failure.javaClass.name) }
+            }
+            withTimeoutOrNull(config.cleanupMillis.milliseconds) { record.await() }
+        } finally {
+            if (first) onFatal()
         }
-            catch (failure: Exception) { log.error("Plugin incident persistence failed: {}", failure.javaClass.name) }
-        }
-        withTimeoutOrNull(config.cleanupMillis.milliseconds) { record.await() }
-        if (first) onFatal()
     }
 
     suspend fun shutdown(): Boolean {

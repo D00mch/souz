@@ -9,6 +9,7 @@ import java.nio.file.StandardOpenOption
 import java.time.Duration
 import java.util.Properties
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -17,6 +18,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.io.TempDir
 import ru.souz.backend.testutil.withPluginProbe
 
@@ -35,11 +37,7 @@ class PluginRuntimeProcessTest {
     @Test
     fun `isolated processes preserve actual work and recover from stuck preparation or cleanup`() {
         for (mode in listOf("drain", "lost", "prepare", "cleanup")) runtimeTest {
-            val source = if (mode == "prepare") repackagePlugin(pluginFixture("kotlin-v1"), directory.resolve("stuck-provider.jar"),
-                resources = mapOf("fixture-construction-block" to byteArrayOf())) else pluginFixture("kotlin-v1")
-            val binding = inspectPlugin(source)
-            artifacts.store(source, binding)
-            repository.install(binding, 0)
+            val binding = if (mode == "prepare") installBlockedProvider() else install("kotlin-v1", 0)
             runProbe(this, binding, mode, if (mode == "prepare" || mode == "cleanup") 71 else 0)
             when (mode) {
                 "prepare" -> assertIncident(this, binding, "plugin_prepare_stalled")
@@ -47,6 +45,19 @@ class PluginRuntimeProcessTest {
                 else -> assertEquals(0, repository.version(binding)!!.severeIncidents)
             }
         }
+    }
+
+    @Test
+    fun `completed preparation cannot cancel a committed fatal notification`(): Unit = runtimeTest {
+        val binding = installBlockedProvider()
+        runProbe(this, binding, "prepare-drained", 0)
+        assertIncident(this, binding, "plugin_prepare_stalled")
+    }
+
+    private suspend fun PluginFixture.installBlockedProvider(): PluginBinding {
+        val source = repackagePlugin(pluginFixture("kotlin-v1"), directory.resolve("stuck-provider.jar"),
+            resources = mapOf("fixture-construction-block" to byteArrayOf()))
+        return inspectPlugin(source).also { artifacts.store(source, it); repository.install(it, 0) }
     }
 
     @Test
@@ -123,8 +134,10 @@ object PluginRuntimeProbe {
         val path = Path.of(args[0])
         val root = path.parent
         val properties = Properties().apply { Files.newInputStream(path).use(::load) }
+        val preparationDrains = args[1] == "prepare-drained"
+        val responseGate = if (preparationDrains) PgResponseGate(properties.getProperty("jdbc")) else null
         val datasource = HikariDataSource(HikariConfig().apply {
-            jdbcUrl = properties.getProperty("jdbc")
+            jdbcUrl = responseGate?.url ?: properties.getProperty("jdbc")
             username = properties.getProperty("databaseUser")
             password = properties.getProperty("databasePassword")
             schema = properties.getProperty("schema")
@@ -136,7 +149,7 @@ object PluginRuntimeProbe {
             properties.getProperty("accessKey"), properties.getProperty("secretKey")))
         val services = runtimeServices(repository)
         val binding = PluginBinding(properties.getProperty("id"), properties.getProperty("version"), properties.getProperty("digest"))
-        val preparing = args[1] == "prepare"
+        val preparing = args[1] == "prepare" || preparationDrains
         val cleanup = args[1] == "cleanup"
         val fatal = args[1] == "fatal" || preparing || cleanup
         val lost = args[1] == "lost"
@@ -145,14 +158,18 @@ object PluginRuntimeProbe {
         val config = PluginRuntimeConfig(queueMillis = 300, callMillis = if (collecting) 5_000 else if (lost) 10_000 else 300, leaseMillis = 1_000, renewMillis = 100,
             graceMillis = if (fatal) 200 else 10_000, shutdownMillis = 1_000, prepareMillis = if (preparing) 5_000 else 15_000)
         val workDirectory = Files.createDirectories(root.resolve("loader"))
+        val fatalNotifications = AtomicInteger()
         val runtime = BackendPluginRuntime(repository, artifacts, services, config, onFatal = {
             check(fatal) { "Unexpected fatal signal during drain probe." }
-            Files.writeString(root.resolve("verified"), "severe persisted before fatal restart")
-            Runtime.getRuntime().halt(71)
+            if (preparationDrains) fatalNotifications.incrementAndGet() else {
+                Files.writeString(root.resolve("verified"), "severe persisted before fatal restart")
+                Runtime.getRuntime().halt(71)
+            }
         }, directory = workDirectory)
         val peer = BackendPluginRuntime(repository, artifacts, services, config)
         var cleanupObstruction: AutoCloseable? = null
         try {
+            responseGate?.arm("insert into jvm_plugin_incidents")
             runtime.reconcile()
             if (collecting) {
                 collectRetiredLoaders(runtime, binding, datasource)
@@ -161,6 +178,20 @@ object PluginRuntimeProbe {
             }
             if (preparing) {
                 awaitPlugin { Files.exists(root.resolve("entered")) }
+                if (preparationDrains) {
+                    // Fatal state is committed; hold persistence while construction exits and cancels its watchdog.
+                    val gate = requireNotNull(responseGate)
+                    withTimeout(10_000) { gate.entered.await() }
+                    Files.writeString(root.resolve("release"), "finish construction after fatal escalation")
+                    withTimeout(3_000) { awaitPlugin { runtime.snapshot.status.single().versions.isEmpty() } }
+                    assertEquals(0, fatalNotifications.get(), "Persistence is still pending.")
+                    gate.resume()
+                    withTimeout(3_000) { while (fatalNotifications.get() == 0) delay(10) }
+                    assertTrue(runtime.shutdown())
+                    assertEquals(1, fatalNotifications.get())
+                    Files.writeString(root.resolve("verified"), "fatal notification survives preparation watchdog cancellation")
+                    return@runBlocking
+                }
                 awaitCancellation()
             }
             val pinned = runtime.acquire("alice", listOf(binding), PLUGIN_FIXTURE_TOOLS)
@@ -222,10 +253,12 @@ object PluginRuntimeProbe {
             assertTrue(peer.shutdown())
             Files.writeString(root.resolve("verified"), "actual code drained before resource cleanup")
         } finally {
+            responseGate?.resume()
             cleanupObstruction?.close()
             Files.writeString(root.resolve("release"), "cleanup")
             runtime.shutdown(); peer.shutdown()
             services.close(); artifacts.close(); datasource.close()
+            responseGate?.close()
         }
     }
 
