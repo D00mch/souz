@@ -1,23 +1,53 @@
 package ru.souz.backend.http
 
+import com.fasterxml.jackson.databind.DeserializationFeature
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive
+import io.ktor.server.request.receiveChannel
+import io.ktor.utils.io.readBuffer
 import java.time.DateTimeException
 import java.time.ZoneId
 import java.util.IllformedLocaleException
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.io.readByteArray
 import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.settings.service.UserSettingsLimits
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.ModelResolution
 import ru.souz.llms.resolveChatModel
+import ru.souz.llms.restJsonMapper
 
 internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrV1BadRequest(): T =
     receiveOrRequestError(::invalidV1Request)
 
 internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrBadRequest(): T =
     receiveOrRequestError(::badRequestV1)
+
+/** Bound settings and onboarding input before JSON decoding, including chunked requests. */
+internal suspend inline fun <reified T : Any> ApplicationCall.receiveSettingsBody(): T {
+    if ((request.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0) > UserSettingsLimits.MAX_BODY_BYTES) {
+        throw settingsPayloadTooLarge()
+    }
+    val bytes = receiveChannel().readBuffer(UserSettingsLimits.MAX_BODY_BYTES + 1).use { it.readByteArray() }
+    if (bytes.size > UserSettingsLimits.MAX_BODY_BYTES) throw settingsPayloadTooLarge()
+    return try {
+        restJsonMapper.readerFor(T::class.java).without(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES).readValue<T>(bytes)
+            ?: throw invalidV1Request("Invalid settings payload.")
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        throw invalidV1Request("Invalid settings payload.")
+    }
+}
+
+internal fun settingsPayloadTooLarge() = BackendV1Exception(
+    HttpStatusCode.PayloadTooLarge, "settings_payload_too_large",
+    "Settings request body must not exceed ${UserSettingsLimits.MAX_BODY_BYTES} bytes.",
+)
 
 internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(namedModels: Set<String> = emptySet()): UserSettingsOverrides =
     UserSettingsOverrides(
@@ -27,10 +57,7 @@ internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(namedModels: 
         locale = locale?.let { parseLocale(it, fieldName = "locale") },
         timeZone = timeZone?.let { parseTimeZone(it, fieldName = "timeZone") },
         systemPrompt = systemPrompt?.trim()?.takeIf { it.isNotEmpty() },
-        enabledTools = enabledTools?.map { toolName ->
-            toolName.trim().takeIf { it.isNotEmpty() }
-                ?: throw invalidV1Request("enabledTools must not contain blank values.")
-        }?.toCollection(linkedSetOf()),
+        enabledTools = parseEnabledTools(enabledTools),
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
         narrateSteps = narrateSteps,
@@ -47,10 +74,7 @@ internal fun BackendV1OnboardingCompleteRequest.toUserSettingsOverrides(namedMod
         defaultModel = defaultModel?.let { parseModel(it, fieldName = "defaultModel", namedModels = namedModels) },
         locale = locale?.let { parseLocale(it, fieldName = "locale") },
         timeZone = timeZone?.let { parseTimeZone(it, fieldName = "timeZone") },
-        enabledTools = enabledTools?.map { toolName ->
-            toolName.trim().takeIf { it.isNotEmpty() }
-                ?: throw invalidV1Request("enabledTools must not contain blank values.")
-        }?.toCollection(linkedSetOf()),
+        enabledTools = parseEnabledTools(enabledTools),
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
         narrateSteps = narrateSteps,
@@ -137,6 +161,14 @@ private suspend inline fun <reified T : Any> ApplicationCall.receiveOrRequestErr
     } catch (e: Exception) {
         throw errorFactory("Invalid payload: ${e.message ?: "request body cannot be parsed."}")
     }
+
+private fun parseEnabledTools(names: List<String>?): Set<String>? {
+    UserSettingsLimits.validateEnabledTools(names)
+    return names?.mapTo(linkedSetOf()) { name ->
+        name.trim().takeIf { it.isNotEmpty() }
+            ?: throw invalidV1Request("enabledTools must not contain blank values.")
+    }
+}
 
 private const val UNDEFINED_LANGUAGE = "und"
 private const val MIN_REQUEST_TIMEOUT_MILLIS = 1_000L

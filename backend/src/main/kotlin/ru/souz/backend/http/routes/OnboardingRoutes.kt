@@ -14,7 +14,7 @@ import ru.souz.backend.http.BackendV1OnboardingCompleteRequest
 import ru.souz.backend.http.describeV1
 import ru.souz.backend.http.jsonBody
 import ru.souz.backend.http.jsonResponse
-import ru.souz.backend.http.receiveOrV1BadRequest
+import ru.souz.backend.http.receiveSettingsBody
 import ru.souz.backend.http.requireJsonContentV1
 import ru.souz.backend.http.toUserSettingsOverrides
 import ru.souz.backend.http.v1ErrorResponses
@@ -39,7 +39,7 @@ internal fun Route.onboardingRoutes(deps: BackendHttpDependencies) {
 
     post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
         call.requireJsonContentV1()
-        val request = call.receiveOrV1BadRequest<BackendV1OnboardingCompleteRequest>()
+        val request = call.receiveSettingsBody<BackendV1OnboardingCompleteRequest>()
         call.respond(
             deps.onboardingService.complete(
                 identity = call.requestIdentity(),
@@ -54,13 +54,13 @@ internal fun Route.onboardingRoutes(deps: BackendHttpDependencies) {
     ) {
         requestBody {
             jsonBody<BackendV1OnboardingCompleteRequest>(
-                description = "Optional first-run preferences.",
+                description = "Optional first-run preferences. Body limit: 64 KiB.",
                 schemaTransform = BackendOpenApiSchemas::onboardingComplete,
             )
         }
         responses {
             jsonResponse<OnboardingCompleteResponse>(HttpStatusCode.OK, "Onboarding was completed.")
-            v1ErrorResponses(HttpStatusCode.BadRequest, HttpStatusCode.Conflict)
+            v1ErrorResponses(HttpStatusCode.BadRequest, HttpStatusCode.Conflict, HttpStatusCode.PayloadTooLarge)
         }
     }
 }

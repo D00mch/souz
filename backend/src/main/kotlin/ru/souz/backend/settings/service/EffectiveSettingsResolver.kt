@@ -152,10 +152,12 @@ class EffectiveSettingsResolver(
         )
     }
 
-    private fun normalizeEnabledTools(enabledTools: Set<String>?, available: Set<String>): Set<String> =
-        (enabledTools ?: available).filterTo(linkedSetOf()) {
+    private fun normalizeEnabledTools(enabledTools: Set<String>?, available: Set<String>): Set<String> {
+        UserSettingsLimits.validateEnabledTools(enabledTools)
+        return (enabledTools ?: available).filterTo(linkedSetOf()) {
             it in available || BackendToolCapabilityPolicy.isPluginToolName(it)
         }
+    }
 
     private suspend fun normalizeModel(
         model: String?,

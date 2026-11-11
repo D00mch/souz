@@ -16,6 +16,7 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.openapi.describe
 import io.ktor.utils.io.ExperimentalKtorApi
 import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.settings.service.UserSettingsLimits
 import ru.souz.llms.LlmProvider
 
 internal object BackendOpenApiTags {
@@ -254,7 +255,7 @@ internal object BackendOpenApiSchemas {
             .withPropertyDescription("temperature", "Must be a finite JSON number.")
             .withNonBlankString("locale", "A recognized BCP 47 language tag.")
             .withNonBlankString("timeZone", "An IANA time-zone identifier.")
-            .withNonBlankArrayItems("enabledTools")
+            .withEnabledTools()
             .withPropertyDescription("narrateSteps", "Opt in to short RU/EN assistant progress and live WebSocket or bot delivery. Excludes initial waiting. Defaults to false; applies to new executions.")
             .withPropertyDescription("intermediateMessages", "False suppresses the initial waiting phrase and step narration regardless of narrateSteps; final responses and technical events are unaffected. Defaults to true; applies to new executions.")
             .withStringEnum("interfaceLanguage", listOf("en", "ru"))
@@ -265,7 +266,7 @@ internal object BackendOpenApiSchemas {
             .withModelAliases("defaultModel")
             .withNonBlankString("locale", "A recognized BCP 47 language tag.")
             .withNonBlankString("timeZone", "An IANA time-zone identifier.")
-            .withNonBlankArrayItems("enabledTools")
+            .withEnabledTools()
             .withPropertyDescription("narrateSteps", "Opt in to short RU/EN assistant progress and live WebSocket or bot delivery. Excludes initial waiting. Defaults to false; applies to new executions.")
             .withStringEnum("interfaceLanguage", listOf("en", "ru"))
             .withMinimum("requestTimeoutMillis", 1_000.0, "Must be at least 1000 milliseconds.")
@@ -393,9 +394,11 @@ private fun JsonSchema.withNonBlankString(
         )
     }
 
-private fun JsonSchema.withNonBlankArrayItems(propertyName: String): JsonSchema =
-    withProperty(propertyName) { property ->
+private fun JsonSchema.withEnabledTools(): JsonSchema =
+    withProperty("enabledTools") { property ->
         property.copy(
+            maxItems = UserSettingsLimits.MAX_ENABLED_TOOLS,
+            description = "At most ${UserSettingsLimits.MAX_ENABLED_TOOLS} names totaling at most ${UserSettingsLimits.MAX_ENABLED_TOOL_BYTES} UTF-8 bytes.",
             items = property.items?.mapSchema { item ->
                 item.copy(minLength = 1, pattern = NON_BLANK_PATTERN)
             },

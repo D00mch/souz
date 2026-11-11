@@ -1,6 +1,7 @@
 package ru.souz.backend.settings.service
 
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import java.util.Locale
 import kotlin.test.Test
@@ -31,6 +32,34 @@ import ru.souz.llms.LlmProvider.QWEN
 import ru.souz.llms.LocalModelAvailability
 
 class EffectiveSettingsResolverTest {
+    @Test
+    fun `legacy and request selections enforce a UTF-8 byte budget before filtering unavailable names`() = runTest {
+        val names = (0 until 256).map { "я".repeat(32) + it }.toSet()
+        val repository = mockk<UserSettingsRepository>()
+        val resolver = EffectiveSettingsResolver(
+            baseSettingsProvider = LlmSettingsStub(),
+            userSettingsRepository = repository,
+            userProviderKeyRepository = mockk(),
+            featureFlags = BackendFeatureFlags(),
+            toolCatalog = TestToolCatalog(),
+            localModelAvailability = mockk(),
+        )
+        // These fit in 16,384 UTF-16 units, but exceed that budget as UTF-8 bytes.
+        for (override in listOf(false, true)) {
+            coEvery { repository.get(USER) } returns UserSettings(
+                USER, defaultModel = LLMModel.Max.alias, enabledTools = names.takeUnless { override },
+            )
+            val error = assertFailsWith<BackendV1Exception> {
+                resolver.resolve(USER, UserSettingsOverrides(enabledTools = names.takeIf { override }))
+            }
+            assertEquals("enabledTools names must total at most 16384 UTF-8 bytes.", error.message)
+        }
+        assertFailsWith<BackendV1Exception> {
+            UserSettingsService(repository, resolver).patch(USER, UserSettingsOverrides(enabledTools = names))
+        }
+        coVerify(exactly = 0) { repository.save(any()) }
+    }
+
     @Test
     fun `selects the default model with at most one stored key listing`() = runTest {
         val named = "test-chat"

@@ -15,7 +15,7 @@ import ru.souz.backend.http.BackendV1SettingsPatchRequest
 import ru.souz.backend.http.describeV1
 import ru.souz.backend.http.jsonBody
 import ru.souz.backend.http.jsonResponse
-import ru.souz.backend.http.receiveOrV1BadRequest
+import ru.souz.backend.http.receiveSettingsBody
 import ru.souz.backend.http.requireJsonContentV1
 import ru.souz.backend.http.requireUserIdFromTrustedProxy
 import ru.souz.backend.http.toDto
@@ -43,7 +43,7 @@ internal fun Route.settingsRoutes(deps: BackendHttpDependencies) {
 
     patch(BackendHttpRoutes.SETTINGS) {
         call.requireJsonContentV1()
-        val request = call.receiveOrV1BadRequest<BackendV1SettingsPatchRequest>()
+        val request = call.receiveSettingsBody<BackendV1SettingsPatchRequest>()
         call.respond(
             BackendV1SettingsResponse(
                 settings = deps.userSettingsService.patch(
@@ -60,13 +60,13 @@ internal fun Route.settingsRoutes(deps: BackendHttpDependencies) {
     ) {
         requestBody {
             jsonBody<BackendV1SettingsPatchRequest>(
-                description = "Settings fields to update; omitted fields are left unchanged.",
+                description = "Settings fields to update; omitted fields are left unchanged. Body limit: 64 KiB.",
                 schemaTransform = BackendOpenApiSchemas::settingsPatch,
             )
         }
         responses {
             jsonResponse<BackendV1SettingsResponse>(HttpStatusCode.OK, "Updated effective user settings.")
-            v1ErrorResponses(HttpStatusCode.BadRequest)
+            v1ErrorResponses(HttpStatusCode.BadRequest, HttpStatusCode.PayloadTooLarge)
         }
     }
 }
