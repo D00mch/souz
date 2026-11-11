@@ -305,7 +305,7 @@ class BackendExecutionLlmChatApiTest {
         }) { providerHttpClientDefaults() }
         val models = NamedLlmConfig(mapOf("named-image" to NamedLlmModel("image-model", "https://images.test/v1", "named-key")))
         facadeFixture(client = http, settingsProvider = settings).use { fixture ->
-            val clients = ProviderHttpClients(http, http)
+            val clients = ProviderHttpClients(http, http, mcp = http)
             val selections = listOf(DEFAULT_IMAGE_MODEL, "gpt-image-2", "gpt-image-2.5-flare-2026-09-08", "named-image", "CodexGpt61Sol")
             for (selection in selections) {
                 val gateway = ImageModelRoute(selection, models).gateway(
