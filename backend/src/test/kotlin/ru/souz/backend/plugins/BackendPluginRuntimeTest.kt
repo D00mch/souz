@@ -6,13 +6,19 @@ import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.StandardTestDispatcher
 import org.junit.jupiter.api.io.TempDir
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.ToolInvocationMeta
 
 class BackendPluginRuntimeTest {
     @TempDir lateinit var directory: Path
@@ -210,6 +216,57 @@ class BackendPluginRuntimeTest {
             assertEquals(1, other.call("state", owner = "bob")["count"].asInt())
         } finally { repository.release(held) }
         assertEquals(1, pinned.call("state")["count"].asInt())
+    }
+
+    @Test
+    fun `timed out worker-queued invocation never starts its handler`() = revokedQueuedInvocation(cancelCaller = false)
+
+    @Test
+    fun `caller cancellation prevents worker-queued handler startup`() = revokedQueuedInvocation(cancelCaller = true)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun revokedQueuedInvocation(cancelCaller: Boolean): Unit = runtimeTest {
+        val first = install("kotlin-v1", 0)
+        val worker = StandardTestDispatcher()
+        val local = runtime(config.copy(callMillis = 1_000), workDispatcher = worker)
+        local.reconcile()
+        awaitPlugin { worker.scheduler.runCurrent(); local.snapshot.defaultBindings == listOf(first) }
+        val pinned = bind(local, first)
+        val version = pinned.versions.single()
+        val entered = CompletableDeferred<Unit>()
+        // A synchronous handler has no suspension or service access that could detect cancellation.
+        val tool = version.functions.single { it.schema.name.endsWith(".report") }.copy(handler = { _, _ ->
+            entered.complete(Unit)
+            "{}"
+        })
+        val call = LLMResponse.FunctionCall(tool.schema.name, emptyMap())
+        try {
+            coroutineScope {
+                val pending = async { local.invoke(pinned, version, tool, call, ToolInvocationMeta("alice")) }
+                awaitPlugin { local.snapshot.status.single().versions.single().calls == 1 }
+                // Withhold workers until revocation: execute is queued ahead of Job.cancel.
+                if (cancelCaller) pending.cancelAndJoin()
+                else assertEquals("plugin_timeout", ru.souz.llms.restJsonMapper.readTree(pending.await().content).errorCode())
+                assertFalse(entered.isCompleted)
+                assertEquals(1, local.snapshot.status.single().versions.single().calls)
+                awaitPlugin { worker.scheduler.runCurrent(); local.snapshot.status.single().versions.single().calls == 0 }
+                assertFalse(entered.isCompleted, "Revoked queued handler must not start when a worker becomes available.")
+                assertEquals(0, repository.version(first)!!.severeIncidents)
+
+                // The old invocation released its fenced lease and accounting; ordinary work still runs.
+                val retry = async { local.invoke(pinned, version, tool, call, ToolInvocationMeta("alice")) }
+                awaitPlugin { worker.scheduler.runCurrent(); retry.isCompleted && local.snapshot.status.single().versions.single().calls == 0 }
+                assertEquals("{}", retry.await().content)
+                assertTrue(entered.isCompleted)
+            }
+        } finally {
+            pinned.release()
+            coroutineScope {
+                val shutdown = async { local.shutdown() }
+                awaitPlugin { worker.scheduler.runCurrent(); shutdown.isCompleted }
+                assertTrue(shutdown.await())
+            }
+        }
     }
 
     @Test

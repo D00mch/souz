@@ -2,6 +2,8 @@ package ru.souz.backend.plugins
 
 import com.fasterxml.jackson.databind.JsonNode
 import kotlin.random.Random
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -35,8 +37,12 @@ internal class PluginFixture {
     private val instances = mutableListOf<BackendPluginRuntime>()
     private val bindings = mutableListOf<PluginExecutionBinding>()
 
-    fun runtime(timing: PluginRuntimeConfig = config, random: Random = Random.Default): BackendPluginRuntime =
-        BackendPluginRuntime(repository, artifacts, services, timing, random = random).also(instances::add)
+    fun runtime(
+        timing: PluginRuntimeConfig = config,
+        random: Random = Random.Default,
+        workDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(64),
+    ): BackendPluginRuntime =
+        BackendPluginRuntime(repository, artifacts, services, timing, random = random, workDispatcher = workDispatcher).also(instances::add)
 
     suspend fun install(name: String, revision: Long): PluginBinding = inspectPlugin(pluginFixture(name)).also {
         artifacts.store(pluginFixture(name), it)

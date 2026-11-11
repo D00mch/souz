@@ -278,6 +278,9 @@ internal class BackendPluginRuntime(
                 stateMutex.withLock { if (!entry.active) throw CancellationException("Plugin invocation has ended.") }
             }
             val result = withContext(PluginClassLoaderContext(requireNotNull(entry.version.code).loader)) {
+                // Coordinator completion revokes the call even while Job.cancel is still queued on work.
+                // A mutex handoff here could strand coordinator ownership behind blocked workers.
+                if (entry.reply.isCompleted) throw CancellationException("Plugin invocation has ended.")
                 coroutineScope { tool.handler(json, context) }
             }
             require(result.toByteArray().size <= PluginApi.MAX_JSON_BYTES) { "Invalid plugin result size." }
