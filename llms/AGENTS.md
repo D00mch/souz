@@ -12,6 +12,7 @@ Before changing this module, read the relevant pain-point topics below.
 
 - Keep wire DTOs and enum aliases backward compatible unless all persisted and remote consumers are migrated together.
 - Preserve provider neutrality in public contracts; provider-specific transport behavior belongs in the provider implementation.
+- Omit absent optional JSON Schema keywords instead of serializing null values; preserve explicitly supplied enums and nested schemas.
 - Keep model-default and availability decisions in build profiles, with host capabilities supplied through narrow interfaces.
 - Preserve the shared Souz state-directory contract because multiple modules resolve persisted assets through it.
 

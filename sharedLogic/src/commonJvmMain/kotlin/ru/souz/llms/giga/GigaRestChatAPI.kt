@@ -366,10 +366,12 @@ private fun LLMRequest.Property.toGigaSchemaProperty(): LLMRequest.Property = co
     } else {
         properties?.mapValues { it.value.toGigaSchemaProperty() }
     },
+    // Giga's constrained decoder otherwise treats an open object as an empty object.
+    additionalProperties = additionalProperties ?: if (type == "object" && properties.isNullOrEmpty()) true else null,
 )
 
 private fun gigaUnconstrainedObjectProperty(): LLMRequest.Property =
-    LLMRequest.Property(type = "object", properties = emptyMap())
+    LLMRequest.Property(type = "object", properties = emptyMap(), additionalProperties = true)
 
 internal fun parseGigaStreamChunk(data: String): LLMResponse.Chat {
     val node = restJsonMapper.readTree(data)
