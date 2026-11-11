@@ -13,6 +13,10 @@ class AttachmentStorageConfig(
     val pathStyleAccess: Boolean = true,
     val maxFileBytes: Int = 20_000_000,
     val maxConcurrentUploads: Int = 16,
+    val maxOwnerBytes: Long = 1_000_000_000,
+    val maxOwnerFiles: Int = 1_000,
+    val maxTotalBytes: Long = 100_000_000_000,
+    val maxTotalFiles: Int = 100_000,
 ) {
     init {
         val uri = try { URI(endpoint) } catch (_: URISyntaxException) {
@@ -30,6 +34,9 @@ class AttachmentStorageConfig(
         }
         require(maxFileBytes in 1..100_000_000) { "Attachment file limit must be between 1 and 100000000 bytes." }
         require(maxConcurrentUploads in 1..1_000) { "Attachment transfer concurrency must be between 1 and 1000." }
+        require(maxOwnerBytes > 0 && maxTotalBytes > 0 && maxOwnerFiles > 0 && maxTotalFiles > 0) {
+            "Attachment storage quotas must be positive."
+        }
     }
 
     override fun toString(): String = "AttachmentStorageConfig(configured=true)"
@@ -50,6 +57,10 @@ class AttachmentStorageConfig(
                 pathStyleAccess = parsed("S3_PATH_STYLE", true, String::toBooleanStrictOrNull),
                 maxFileBytes = parsed("MAX_FILE_BYTES", 20_000_000, String::toIntOrNull),
                 maxConcurrentUploads = parsed("MAX_CONCURRENT_UPLOADS", 16, String::toIntOrNull),
+                maxOwnerBytes = parsed("MAX_OWNER_BYTES", 1_000_000_000L, String::toLongOrNull),
+                maxOwnerFiles = parsed("MAX_OWNER_FILES", 1_000, String::toIntOrNull),
+                maxTotalBytes = parsed("MAX_TOTAL_BYTES", 100_000_000_000L, String::toLongOrNull),
+                maxTotalFiles = parsed("MAX_TOTAL_FILES", 100_000, String::toIntOrNull),
             )
         }
     }

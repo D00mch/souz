@@ -12,6 +12,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.storage.postgres.PostgresAttachmentRepository
+import ru.souz.llms.runtime.ImageSource
 import software.amazon.awssdk.services.s3.model.S3Exception
 
 class AttachmentStorage(
@@ -34,9 +35,28 @@ class AttachmentStorage(
         require(userId.isNotBlank() && key.isNotBlank() && key.length <= 512)
         val safeName = attachmentName(name)
         val file = repository.reserve(userId, key, safeName, attachmentMime(bytes, safeName),
-            bytes.size.toLong(), sha256, clock.instant())
+            bytes.size.toLong(), sha256, clock.instant(), config)
         if (file.state == "ready") return@withPermit available(file)
         // Failed/canceled uploads stay pending until their cleanup deadline; PUT is never resumed.
+        objects.put(file, bytes)
+        available(repository.complete(file, clock.instant()))
+    }
+
+    /** Reserve durable byte/count quota before decoding or downloading a client tool image. */
+    internal suspend fun saveClientImage(userId: String, sourceKey: String, limit: Int, declaredMime: String?,
+        load: suspend (Int) -> ByteArray): StoredAttachment = transfers.withPermit {
+        require(userId.isNotBlank() && sourceKey.isNotBlank() && sourceKey.length <= 512 && limit > 0)
+        val bound = minOf(limit, config.maxFileBytes)
+        val reserved = repository.reserveClientImage(userId, sourceKey, bound, clock.instant(), config)
+        if (reserved.state == "ready") return@withPermit available(reserved)
+        // Failure or cancellation leaves the reservation for the normal pending cleanup, including
+        // cancellation just after its transaction commits. No untracked S3 object can be created.
+        val bytes = load(bound)
+        require(bytes.size <= bound)
+        val source = ImageSource.read(bytes)
+        require(declaredMime == null || declaredMime == source.mimeType)
+        val file = repository.prepareClientImage(reserved, "tool-image.${source.mimeType.substringAfter('/')}",
+            source.mimeType, bytes.size, bytes.sha256Hex(), clock.instant())
         objects.put(file, bytes)
         available(repository.complete(file, clock.instant()))
     }
@@ -74,7 +94,7 @@ class AttachmentStorage(
         available(repository.registerUpload(StoredAttachment(
             UUID.randomUUID(), userId, safeName, attachmentMime(bytes, safeName), bytes.size.toLong(), bytes.sha256Hex(),
             "ready", now, now, now.plus(ATTACHMENT_RETENTION), now.plus(ATTACHMENT_RETENTION), objectKey,
-        )))
+        ), config))
     }
 
     suspend fun find(userId: String, sourceKey: String): StoredAttachment? =

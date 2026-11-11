@@ -444,6 +444,37 @@ class BackendImagesE2eTest {
     }
 
     @Test
+    fun `client image quotas span chats and public owner IDs without blocking owned reuse`() = backendE2eTest(
+        "image_client_quotas", attachments = AttachmentMinio.config(maxOwnerFiles = 1, maxTotalFiles = 2),
+        llm = E2eLlmApi().apply { requestSkill("screen.capture", emptyMap()) },
+    ) {
+        suspend fun capture(user: String, requestId: String, content: Map<String, String>): String? {
+            val chat = createPublicChat(user, requestId = requestId, tools = clientToolsJson("screen.capture"))
+            withPublicSocket(chat) { socket ->
+                socket.send(Frame.Text(messageFrame(chat, user, "capture")))
+                assertEquals("accepted", readJson(socket)["status"].asText())
+                readJson(socket)
+                val started = readJson(socket)
+                socket.send(Frame.Text(toolResultFrame(started, "succeeded", mapOf("content" to listOf(content)))))
+                assertEquals("accepted", readJson(socket)["status"].asText())
+                assertEquals("thread.completed", readJson(socket)["type"].asText())
+            }
+            val state = backend.agentStateRepository.get(user, UUID.fromString(chat))!!
+            assertFalse(base64 in restJsonMapper.writeValueAsString(state.history))
+            val result = state.history.single { it.name == "RunSkillCommand" }
+            if (result.files.isEmpty()) assertTrue("tool_image_unavailable" in result.content)
+            return result.files.singleOrNull()?.fileId
+        }
+        val image = mapOf("type" to "image", "mimeType" to "image/png", "data" to base64)
+        val owner = UUID.randomUUID().toString()
+        val saved = assertNotNull(capture(owner, "first", image))
+        assertNull(capture(owner, "same-owner-new-chat", image))
+        assertNotNull(capture(UUID.randomUUID().toString(), "second-owner", image))
+        assertNull(capture(UUID.randomUUID().toString(), "fresh-owner", image))
+        assertEquals(saved, capture(owner, "reuse", mapOf("type" to "resource_link", "uri" to "attachment:$saved")))
+    }
+
+    @Test
     fun `client screenshots and document links persist as trusted references`() = backendE2eTest(
         "image_client", attachments = AttachmentMinio.config(),
         llm = E2eLlmApi().apply { requestSkill("screen.capture", emptyMap()) },

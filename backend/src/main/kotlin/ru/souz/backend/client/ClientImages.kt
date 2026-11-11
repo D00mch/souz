@@ -75,15 +75,13 @@ internal class ClientImages(private val storage: AttachmentStorage) : AutoClosea
                     }
                     existing
                 } else {
-                    val bytes = if (item["type"]?.asText() == "image") {
-                        val data = requireNotNull(item["data"]?.takeIf { it.isTextual }?.asText())
-                        require(data.length <= 4 * ((remaining + 2) / 3))
-                        Base64.getDecoder().decode(data)
-                    } else download(item["uri"]?.asText().orEmpty(), remaining)
-                    require(bytes.size <= remaining)
-                    val source = ImageSource.read(bytes)
-                    item["mimeType"]?.asText()?.let { require(it == source.mimeType) }
-                    storage.save(userId, "$key:$index", "tool-image.${source.mimeType.substringAfter('/')}", bytes.inputStream())
+                    storage.saveClientImage(userId, "$key:$index", remaining, item["mimeType"]?.asText()) { bound ->
+                        if (item["type"]?.asText() == "image") {
+                            val data = requireNotNull(item["data"]?.takeIf { it.isTextual }?.asText())
+                            require(data.length <= 4 * ((bound + 2) / 3))
+                            Base64.getDecoder().decode(data)
+                        } else download(item["uri"]?.asText().orEmpty(), bound)
+                    }
                 }
                 require(saved.sizeBytes <= remaining && saved.mimeType in ImageSource.MIME_TYPES)
                 remaining -= saved.sizeBytes.toInt()

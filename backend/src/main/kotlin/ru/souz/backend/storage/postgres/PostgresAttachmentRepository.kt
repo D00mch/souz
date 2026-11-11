@@ -8,14 +8,16 @@ import ru.souz.backend.attachments.ATTACHMENT_CLEANUP_LEASE
 import ru.souz.backend.attachments.ATTACHMENT_PENDING_LIFETIME
 import ru.souz.backend.attachments.ATTACHMENT_RETENTION
 import ru.souz.backend.attachments.AttachmentException
+import ru.souz.backend.attachments.AttachmentStorageConfig
 import ru.souz.backend.attachments.StoredAttachment
 import ru.souz.backend.attachments.attachmentObjectKey
 import java.sql.Connection
 
 class PostgresAttachmentRepository(private val dataSource: DataSource) {
     /** Insert ready metadata only after the caller has verified the already-uploaded object. */
-    suspend fun registerUpload(file: StoredAttachment): StoredAttachment = dataSource.write(networkTimeoutMillis = 15_000) { connection ->
-        connection.attachmentStatement("""
+    suspend fun registerUpload(file: StoredAttachment, config: AttachmentStorageConfig): StoredAttachment = dataSource.write(networkTimeoutMillis = 15_000) { connection ->
+        connection.lockAdmission()
+        val inserted = connection.attachmentStatement("""
             insert into stored_attachments(id, user_id, source_key, name, mime_type, size_bytes, sha256,
                 state, created_at, stored_at, expires_at, cleanup_due_at, object_key)
             values (?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?)
@@ -33,8 +35,9 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
             it.setInstant(10, requireNotNull(file.expiresAt))
             it.setInstant(11, file.cleanupDueAt)
             it.setString(12, file.objectKey)
-            it.executeUpdate()
+            it.executeUpdate() == 1
         }
+        if (inserted) connection.checkQuota(file.userId, config)
         connection.attachmentStatement("select * from stored_attachments where object_key = ? and user_id = ?").use {
             it.setString(1, file.objectKey)
             it.setString(2, file.userId)
@@ -52,9 +55,23 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
 
     suspend fun reserve(
         userId: String, sourceKey: String, name: String, mimeType: String, size: Long, sha256: String, now: Instant,
+        config: AttachmentStorageConfig,
     ): StoredAttachment = dataSource.write(networkTimeoutMillis = 15_000) { connection ->
+        connection.reserve(userId, sourceKey, name, mimeType, size, sha256, now, config, validateContent = true)
+    }
+
+    /** A pending row accounts for the maximum download before any untrusted bytes are read. */
+    internal suspend fun reserveClientImage(userId: String, sourceKey: String, size: Int, now: Instant,
+        config: AttachmentStorageConfig): StoredAttachment = dataSource.write(networkTimeoutMillis = 15_000) { connection ->
+        connection.reserve(userId, sourceKey, "tool-image", "application/octet-stream", size.toLong(), "", now,
+            config, validateContent = false)
+    }
+
+    private fun Connection.reserve(userId: String, sourceKey: String, name: String, mimeType: String,
+        size: Long, sha256: String, now: Instant, config: AttachmentStorageConfig, validateContent: Boolean): StoredAttachment {
+        lockAdmission()
         val id = UUID.randomUUID()
-        val inserted = connection.attachmentStatement("""
+        val inserted = attachmentStatement("""
             insert into stored_attachments(id, user_id, source_key, name, mime_type, size_bytes, sha256, state, created_at, cleanup_due_at, object_key)
             values (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
             on conflict (user_id, source_key) do nothing
@@ -71,7 +88,8 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
             it.setString(10, attachmentObjectKey(userId, id))
             it.executeUpdate() == 1
         }
-        connection.attachmentStatement("select * from stored_attachments where user_id = ? and source_key = ?").use {
+        if (inserted) checkQuota(userId, config)
+        return attachmentStatement("select * from stored_attachments where user_id = ? and source_key = ?").use {
             it.setString(1, userId)
             it.setString(2, sourceKey)
             it.executeQuery().use { rows ->
@@ -79,9 +97,56 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
                 rows.attachment().also { file ->
                     if (file.state == "deleting") throw AttachmentException("attachment_expired")
                     if (!inserted && file.state == "pending") throw AttachmentException("attachment_not_ready")
-                    if (file.sha256 != sha256 || file.sizeBytes != size || file.name != name || file.mimeType != mimeType) {
+                    if (validateContent && (file.sha256 != sha256 || file.sizeBytes != size || file.name != name || file.mimeType != mimeType)) {
                         throw AttachmentException("attachment_idempotency_conflict")
                     }
+                }
+            }
+        }
+    }
+
+    internal suspend fun prepareClientImage(file: StoredAttachment, name: String, mimeType: String,
+        size: Int, sha256: String, now: Instant): StoredAttachment = dataSource.write(networkTimeoutMillis = 15_000) { connection ->
+        connection.attachmentStatement("""
+            update stored_attachments set name = ?, mime_type = ?, size_bytes = ?, sha256 = ?
+            where id = ? and user_id = ? and state = 'pending' and sha256 = '' and size_bytes >= ? and cleanup_due_at > ?
+            returning *
+        """.trimIndent()).use {
+            it.setString(1, name)
+            it.setString(2, mimeType)
+            it.setInt(3, size)
+            it.setString(4, sha256)
+            it.setObject(5, file.id)
+            it.setString(6, file.userId)
+            it.setInt(7, size)
+            it.setInstant(8, now)
+            it.executeQuery().use { rows ->
+                if (!rows.next()) throw AttachmentException("attachment_expired")
+                rows.attachment()
+            }
+        }
+    }
+
+    // Serializes only metadata admission, across replicas and caller-selected owner IDs. All other
+    // mutations can only shrink quota usage. The table lock also protects imports and ordinary saves.
+    private fun Connection.lockAdmission() {
+        attachmentStatement("lock table stored_attachments in share row exclusive mode").use { it.execute() }
+    }
+
+    private fun Connection.checkQuota(userId: String, config: AttachmentStorageConfig) {
+        attachmentStatement("""
+            select count(*) as total_files, coalesce(sum(size_bytes), 0) as total_bytes,
+                count(*) filter (where user_id = ?) as owner_files,
+                coalesce(sum(size_bytes) filter (where user_id = ?), 0) as owner_bytes
+            from stored_attachments
+        """.trimIndent()).use {
+            it.setString(1, userId)
+            it.setString(2, userId)
+            it.executeQuery().use { rows ->
+                check(rows.next())
+                if (rows.getLong("total_files") > config.maxTotalFiles || rows.getBigDecimal("total_bytes") > config.maxTotalBytes.toBigDecimal() ||
+                    rows.getLong("owner_files") > config.maxOwnerFiles || rows.getBigDecimal("owner_bytes") > config.maxOwnerBytes.toBigDecimal()) {
+                    throw AttachmentException("attachment_quota_exceeded")
                 }
             }
         }

@@ -39,11 +39,12 @@ internal object AttachmentMinio {
         return file
     }
 
-    fun config(): AttachmentStorageConfig {
+    fun config(maxOwnerFiles: Int = 1_000, maxTotalFiles: Int = 100_000): AttachmentStorageConfig {
         val id = UUID.randomUUID().toString()
         return AttachmentStorageConfig(
             endpoint = "http://${server.host}:${server.firstMappedPort}", bucket = "attachments-$id",
             accessKey = "user-$id", secretKey = "attachment-user-secret",
+            maxOwnerFiles = maxOwnerFiles, maxTotalFiles = maxTotalFiles,
         ).also(::provision)
     }
 
