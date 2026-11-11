@@ -35,13 +35,10 @@ import ru.souz.llms.local.LocalPromptRenderer
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.llms.local.LocalStrictJsonParser
 import ru.souz.llms.local.LocalVisionGateway
-import ru.souz.llms.anthropic.AnthropicVisionGateway
 import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import ru.souz.llms.openai.OpenAIImageGenerationGateway
-import ru.souz.llms.openai.OpenAIVisionGateway
-import ru.souz.llms.runtime.CapabilityBasedImageGenerationGateway
+import ru.souz.llms.runtime.ChatVisionGateway
 import ru.souz.llms.runtime.ImageGenerationGateway
-import ru.souz.llms.runtime.LLMCapabilityResolver
 import ru.souz.llms.runtime.SettingsRoutingLlmChatApi
 import ru.souz.llms.runtime.VisionGateway
 import ru.souz.paths.DefaultSouzPaths
@@ -82,8 +79,6 @@ fun runtimeLlmDiModule(
     bindSingleton<CodexChatAPI> {
         CodexChatAPI(instance(), instance(), instance<ProviderHttpClients>().standard)
     }
-    bindSingleton { OpenAIVisionGateway(instance(), instance()) }
-    bindSingleton { AnthropicVisionGateway(instance(), instance()) }
     bindSingleton {
         val settings = instance<SettingsProvider>()
         val clients = instance<ProviderHttpClients>()
@@ -119,17 +114,17 @@ fun runtimeLlmDiModule(
         )
     }
     bindSingleton { LocalVisionGateway(instance(), instance<LLMChatAPI>()) }
-    bindSingleton {
-        LLMCapabilityResolver(
-            settingsProvider = instance(),
-            openAiGateway = instance(),
-            anthropicGateway = instance(),
-            additionalGateways = mapOf(LlmProvider.LOCAL to instance<LocalVisionGateway>()),
-        )
+    bindSingleton { ChatVisionGateway(instance(), instance<LLMChatAPI>()) }
+    bindSingleton<VisionGateway> {
+        val settings = instance<SettingsProvider>()
+        val local = instance<LocalVisionGateway>()
+        val remote = instance<ChatVisionGateway>()
+        VisionGateway { input ->
+            if (settings.gigaModel.provider == LlmProvider.LOCAL) local.analyze(input) else remote.analyze(input)
+        }
     }
-    bindSingleton { CapabilityBasedImageGenerationGateway(instance(), instance()) }
-    bindSingleton<VisionGateway> { instance<LLMCapabilityResolver>() }
-    bindSingleton<ImageGenerationGateway> { instance<CapabilityBasedImageGenerationGateway>() }
+    bindSingleton<ImageGenerationGateway> { instance<OpenAIImageGenerationGateway>() }
+
 }
 
 /** DI tag of the FRIDA classifier that answers when Jev fails; bound only when `FRIDA_URL` is set. */

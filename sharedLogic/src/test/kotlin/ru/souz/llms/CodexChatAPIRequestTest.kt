@@ -22,8 +22,17 @@ import ru.souz.db.SettingsProvider
 import ru.souz.llms.codex.CodexChatAPI
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.providerHttpClientDefaults
+import com.fasterxml.jackson.databind.JsonNode
 
 class CodexChatAPIRequestTest {
+    @Test fun `image input is forwarded next to text`() = runTest {
+        val body = chatRequest().copy(messages = listOf(LLMRequest.Message(LLMMessageRole.user,
+            "look", attachments = listOf("data:image/png;base64,AAAA"))))
+        val request = restJsonMapper.valueToTree<JsonNode>(captureRequest(body))
+        assertEquals("input_text", request["input"][0]["content"][0]["type"].asText())
+        assertEquals("data:image/png;base64,AAAA", request["input"][0]["content"][1]["image_url"].asText())
+    }
+
     @Test
     fun `reasoning effort is nested for Responses and omitted when unset`() = runTest {
         val configured = captureRequest(chatRequest().copy(reasoningEffort = "low"))

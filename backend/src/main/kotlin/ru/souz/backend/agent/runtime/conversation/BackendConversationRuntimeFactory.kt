@@ -50,15 +50,9 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.anthropic.AnthropicVisionGateway
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.local.LocalChatAPI
-import ru.souz.llms.local.LocalVisionGateway
-import ru.souz.llms.openai.OpenAIImageGenerationGateway
-import ru.souz.llms.openai.OpenAIVisionGateway
-import ru.souz.llms.runtime.LLMCapabilityResolver
-import ru.souz.llms.runtime.ImageGenerationGateway
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.RuntimePassThroughToolsFilter
@@ -71,6 +65,10 @@ import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.subagent.SubagentToolFactory
 import ru.souz.tool.web.internal.WebResearchClient
+import ru.souz.backend.attachments.AttachmentStorage
+import ru.souz.backend.attachments.ImageGeneration
+import ru.souz.backend.attachments.ToolGenerateAttachmentImage
+import ru.souz.backend.llm.ImageModelRoute
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
 internal class BackendConversationRuntimeFactory(
@@ -111,6 +109,10 @@ internal class BackendConversationRuntimeFactory(
     private val llmConfig: NamedLlmConfig = NamedLlmConfig(),
     private val testLlmApiFactory: (suspend (SettingsProvider) -> LLMChatAPI)? = null,
     private val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
+    private val imageModel: ImageModelRoute,
+    private val visionModel: String?,
+    private val imageGeneration: ImageGeneration? = null,
+    private val attachmentStorage: AttachmentStorage? = null,
 ) {
     private val modelFailures = ModelFailureMemory()
 
@@ -162,29 +164,24 @@ internal class BackendConversationRuntimeFactory(
             metrics = metrics,
             fallbackModels = effectiveSettingsResolver.fallbackModels(key.userId, Locale.forLanguageTag(request.locale)),
             failureMemory = modelFailures,
+            attachmentStorage = attachmentStorage,
+            visionModel = visionModel,
         )
-        val visionGateway = LLMCapabilityResolver(
-            settingsProvider = settingsProvider,
-            openAiGateway = OpenAIVisionGateway(settingsProvider, executionApi),
-            anthropicGateway = AnthropicVisionGateway(settingsProvider, executionApi),
-            additionalGateways = mapOf(
-                LlmProvider.LOCAL to LocalVisionGateway(settingsProvider, executionApi),
-            ),
+        val imageGenerationGateway = imageModel.gateway(
+            settingsProvider, providerHttpClients, codexOAuthService, executionApi,
         )
-        val imageGenerationGateway = OpenAIImageGenerationGateway(
-            settingsProvider = settingsProvider,
-            client = providerHttpClients.openAi,
-            apiKeyProvider = { executionApi.credentialFor(LlmProvider.OPENAI) },
-        )
+        val attachmentImages = imageGeneration?.let { service ->
+            ToolGenerateAttachmentImage { meta, prompt, ids ->
+                service.generate(meta, prompt, ids, imageModel.identity, imageGenerationGateway)
+            }
+        }
         val executionLlmToolCatalog = LlmBackedToolCatalog(
             llmApi = executionApi,
             settingsProvider = settingsProvider,
             filesToolUtil = filesToolUtil,
             webResearchClient = webResearchClient,
-            visionGateway = visionGateway,
-            imageGenerationGateway = ImageGenerationGateway { input ->
-                executionApi.withProviderCall(LlmProvider.OPENAI) { imageGenerationGateway.generate(input) }
-            },
+            visionGateway = executionApi.visionGateway,
+            imageGenerationGateway = imageGenerationGateway,
         )
         val pluginCatalog = pluginBinding?.catalog ?: AgentToolCatalog()
         val serverNames = toolCatalog.toolsByCategory.values.flatMap { it.keys }.toSet() +
@@ -192,6 +189,7 @@ internal class BackendConversationRuntimeFactory(
         val baseCatalog = backendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
             executionLlmToolCatalog = AgentToolCatalog.compose(executionLlmToolCatalog.catalog,
+                AgentToolCatalog(mapOf(ToolCategory.IMAGE_GENERATION to listOfNotNull(attachmentImages))),
                 AgentToolCatalog(mapOf(ToolCategory.CONFIG to listOf(
                     PersonalityTool(userSettingsRepository, personalitySync, executionApi, settingsProvider, agentBackgroundScope),
                 ))),

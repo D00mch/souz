@@ -1,11 +1,9 @@
 package ru.souz.tool.files
 
 import com.fasterxml.jackson.module.kotlin.readValue
-import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import org.junit.jupiter.api.AfterEach
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
@@ -14,108 +12,63 @@ import ru.souz.llms.runtime.ImageGenerationGateway
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
-import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.io.path.exists
 import kotlin.io.path.readBytes
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertTrue
+import java.awt.image.BufferedImage
+import java.io.ByteArrayOutputStream
+import javax.imageio.ImageIO
+import org.junit.jupiter.api.io.TempDir
+import ru.souz.llms.runtime.ImageSource
+import ru.souz.tool.BadInputException
 
 class ToolGenerateImageTest {
-    private val tempRoots = mutableListOf<Path>()
+    @TempDir
+    lateinit var homeDir: Path
 
-    @AfterEach
-    fun cleanup() {
-        tempRoots.asReversed().forEach { path -> runCatching { path.toFile().deleteRecursively() } }
-        tempRoots.clear()
-    }
+    private val imageBytes = ByteArrayOutputStream().also {
+        ImageIO.write(BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "png", it)
+    }.toByteArray()
+    private val gateway = ImageGenerationGateway { GeneratedImage(ImageSource.read(imageBytes), "OPENAI", "gpt-image-1") }
 
     @Test
     fun `writes generated image to default safe path`() = runTest {
-        val homeDir = tempDir("home")
-        val filesToolUtil = createFilesToolUtil(homeDir)
-        val gateway = mockk<ImageGenerationGateway>()
-        val imageBytes = byteArrayOf(9, 8, 7, 6)
-        coEvery { gateway.generate(any()) } returns GeneratedImage(
-            bytes = imageBytes,
-            mimeType = "image/png",
-            provider = "OPENAI",
-            model = "gpt-image-1",
+        val files = createFilesToolUtil()
+        val raw = ToolGenerateImage(files, gateway).suspendInvoke(
+            ToolGenerateImage.Input(prompt = "A tiny red cube"), ToolInvocationMeta.localDefault(),
         )
-
-        val tool = ToolGenerateImage(
-            filesToolUtil = filesToolUtil,
-            imageGenerationGateway = gateway,
-        )
-
-        val raw = tool.suspendInvoke(
-            ToolGenerateImage.Input(
-                prompt = "A tiny red cube",
-                outputPath = null,
-            ),
-            ToolInvocationMeta.localDefault(),
-        )
-
         val result: Map<String, String> = restJsonMapper.readValue(raw)
         val savedPath = Path.of(result.getValue("outputPath"))
 
-        assertTrue(savedPath.exists())
         assertContentEquals(imageBytes, savedPath.readBytes())
         assertEquals("image/png", result["mimeType"])
         assertEquals("OPENAI", result["provider"])
         assertEquals("gpt-image-1", result["model"])
-        assertEquals(
-            filesToolUtil.souzDocumentsDirectoryPath.toAbsolutePath().normalize().toRealPath(),
-            savedPath.parent.toAbsolutePath().normalize().toRealPath(),
-        )
+        assertEquals(files.souzDocumentsDirectoryPath.toRealPath(), savedPath.parent.toRealPath())
     }
 
     @Test
     fun `rejects explicit output path with mismatched extension`() = runTest {
-        val homeDir = tempDir("home")
-        val filesToolUtil = createFilesToolUtil(homeDir)
-        val gateway = mockk<ImageGenerationGateway>()
-        coEvery { gateway.generate(any()) } returns GeneratedImage(
-            bytes = byteArrayOf(9, 8, 7, 6),
-            mimeType = "image/png",
-            provider = "OPENAI",
-            model = "gpt-image-1",
-        )
-
-        val tool = ToolGenerateImage(
-            filesToolUtil = filesToolUtil,
-            imageGenerationGateway = gateway,
-        )
-
-        val error = assertFailsWith<ru.souz.tool.BadInputException> {
+        val tool = ToolGenerateImage(createFilesToolUtil(), gateway)
+        val error = assertFailsWith<BadInputException> {
             tool.suspendInvoke(
-                ToolGenerateImage.Input(
-                    prompt = "A tiny red cube",
-                    outputPath = "${homeDir.resolve("Pictures/result.jpg")}",
-                ),
+                ToolGenerateImage.Input(prompt = "A tiny red cube", outputPath = homeDir.resolve("Pictures/result.jpg").toString()),
                 ToolInvocationMeta.localDefault(),
             )
         }
-
         assertEquals("outputPath extension .jpg does not match generated MIME type image/png", error.message)
     }
 
-    private fun createFilesToolUtil(homeDir: Path): FilesToolUtil {
-        val settingsProvider = mockk<SettingsProvider>()
-        every { settingsProvider.forbiddenFolders } returns emptyList()
-        return FilesToolUtil(
-            LocalRuntimeSandbox(
-                scope = SandboxScope(userId = "tool-generate-image-test"),
-                settingsProvider = settingsProvider,
-                homePath = homeDir,
-                stateRoot = tempDir("state"),
-            )
-        )
+    private fun createFilesToolUtil(): FilesToolUtil {
+        val settings = mockk<SettingsProvider> { every { forbiddenFolders } returns emptyList() }
+        return FilesToolUtil(LocalRuntimeSandbox(
+            scope = SandboxScope(userId = "tool-generate-image-test"),
+            settingsProvider = settings,
+            homePath = homeDir,
+            stateRoot = homeDir.resolve("state"),
+        ))
     }
-
-    private fun tempDir(prefix: String): Path =
-        Files.createTempDirectory(prefix).also(tempRoots::add)
 }

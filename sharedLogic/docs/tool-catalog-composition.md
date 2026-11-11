@@ -4,7 +4,7 @@
 
 `AgentToolCatalog` in `:agent` owns immutable tool membership and name indexing. Construction, filtering, transformation, and composition preserve `ToolCategory.entries` order and reject duplicate function names. Tool instances retain their invocation behavior; catalog immutability applies to the outer and inner maps.
 
-Host factories expose their catalog through `.catalog`. `LlmBackedToolCatalog` is the single factory for `InternetSearch`, `InternetResearch`, `ViewImage`, and `GenerateImage`. Portable and JVM runtime catalogs do not contain those tools.
+Host factories expose their catalog through `.catalog`. `LlmBackedToolCatalog` is the single factory for `InternetSearch`, `InternetResearch`, `ViewImage`, and `GenerateImage`. Portable and JVM runtime catalogs do not contain those tools. Execution-bound tools use the execution model unless the backend configures an explicit [vision route](../../backend/docs/images.md#model-input).
 
 Skill lookup, invocation, and subagent selection read a host-supplied catalog provider. Each operation resolves one immutable snapshot; children retain only the capabilities selected at spawn, independently of later parent catalog changes.
 
