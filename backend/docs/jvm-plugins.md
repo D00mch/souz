@@ -77,6 +77,8 @@ including pinned continuations; selecting another version never clears it. Disab
 subsequent calls. Calls already admitted may finish.
 
 Logical requests persist `(pluginId, version, digest)` alongside their settings snapshot before execution.
+Credential-free Client-Souz executions receive no plugin catalog or bindings, regardless of the claimed
+owner's enabled-tool selection. Matching caller-supplied user UUIDs do not authorize plugin services.
 Subagents inherit the selected catalog. Saved user waits release in-memory references while retaining pins;
 continuations restore only those artifacts. Missing, corrupt, incompatible or quarantined pins fail explicitly.
 Legacy executions with no pins receive no plugins. Working files are disposable, digest-verified and

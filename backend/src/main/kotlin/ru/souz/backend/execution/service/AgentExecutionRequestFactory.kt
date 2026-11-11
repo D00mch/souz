@@ -59,7 +59,8 @@ internal class AgentExecutionRequestFactory(
         trustedInteractive: Boolean = false,
         attachments: List<FileContent> = emptyList(),
     ): PreparedChatTurn {
-        val pluginSnapshot = plugins?.snapshotForRequest()
+        // Client-Souz identity is caller-supplied and cannot authorize owner-scoped plugin services.
+        val pluginSnapshot = if (clientToolsEnabled) null else plugins?.snapshotForRequest()
         val available = effectiveSettingsResolver.advertisedToolNames(pluginSnapshot?.catalog ?: AgentToolCatalog())
         val effectiveSettings = effectiveSettingsResolver.resolve(userId, requestOverrides, availableToolNames = available)
         val pluginBindings = pluginSnapshot?.defaultBindings.orEmpty().filter { binding ->

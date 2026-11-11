@@ -31,7 +31,7 @@ Backend client commands share one live-only dispatcher, permit concurrent correl
 - UI layers (Screens and Composables) should not do neither business logic, nor IO operations.
 - UI-logic should be coordinated from ViewModels. ViewModel may delegate business logic to UseCases.
 
-File-backed Skill discovery reads existing storage without provisioning a user runtime. Stored-file reply selection uses owner-scoped storage metadata; workspace transfers and script execution retain LOCAL/DOCKER runtime boundaries.
+File-backed Skill discovery reads existing storage without provisioning a user runtime. Stored-file reply selection uses owner-scoped storage metadata; workspace transfers and script execution retain LOCAL/DOCKER runtime boundaries. Backend JVM plugins are unavailable to credential-free Client-Souz executions.
 
 ## Development principles
 

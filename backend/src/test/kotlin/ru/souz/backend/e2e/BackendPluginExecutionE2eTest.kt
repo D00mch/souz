@@ -1,6 +1,7 @@
 package ru.souz.backend.e2e
 
 import com.fasterxml.jackson.databind.JsonNode
+import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.patch
@@ -8,6 +9,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.websocket.Frame
 import java.util.UUID
 import java.nio.file.Files
 import java.nio.file.Path
@@ -40,6 +42,54 @@ import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.runtime.sandbox.RuntimeSandboxModeResolver
 
 class BackendPluginExecutionE2eTest {
+    @Test
+    fun `credential-free sockets cannot invoke owner plugins with default or explicit selections`() {
+        val state = "plugin.reference.state"
+        val artifacts = pluginArtifactConfig()
+        backendE2eTest(
+            schemaPrefix = "e2e_plugin_public",
+            llm = E2eLlmApi().apply { requestSkill(state, emptyMap()) },
+            configureApp = { it.copy(pluginArtifacts = artifacts, pluginAdminToken = ADMIN_TOKEN) },
+        ) {
+            installPlugin("kotlin-v1", 0)
+            for (explicit in listOf(false, true)) {
+                val owner = UUID.randomUUID().toString()
+                val ownerChat = createPublicChat(owner)
+                if (explicit) {
+                    assertEquals(HttpStatusCode.OK, client.patch(BackendHttpRoutes.SETTINGS) {
+                        trusted(owner); jsonBody("""{"enabledTools":["$state"]}""")
+                    }.status)
+                }
+                backend.awaitExecution(submitPluginRequest(owner, ownerChat, "seed owner state"))
+                assertEquals(1, json.readTree(llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content)["count"].asInt())
+
+                // A claimed owner UUID permits chat creation and submission, but grants no plugin authority.
+                val attackerChat = createPublicChat(owner, requestId = "attacker")
+                suspend fun probe(session: DefaultClientWebSocketSession, chat: String) {
+                    val before = llm.requests.size
+                    session.send(Frame.Text(messageFrame(chat, owner, "attack-$chat", text = "increment owner state")))
+                    val ack = readJson(session)
+                    assertEquals("accepted", ack["status"].asText())
+                    assertEquals("thread.status", readJson(session)["type"].asText())
+                    assertEquals("thread.completed", readJson(session)["type"].asText())
+                    val executionId = UUID.fromString(ack["thread"]["id"].asText())
+                    backend.awaitExecution(executionId)
+                    assertEquals("[]", backend.executionRepository.get(owner, executionId)?.metadata?.get("pluginBindings"))
+                    val requests = llm.requests.drop(before)
+                    assertTrue(requests.all { !it.messages.first().content.contains(state) })
+                    val rejected = json.readTree(requests.last().messages.last { it.name == "RunSkillCommand" }.content)
+                    assertEquals("skill_unavailable", rejected["error"]["code"].asText())
+                }
+                withPublicSocket(attackerChat) { probe(it, attackerChat) }
+                withMultiChatSocket { probe(it, ownerChat) }
+
+                // Authenticated proxy turns still invoke the plugin; neither socket changed owner state.
+                backend.awaitExecution(submitPluginRequest(owner, ownerChat, "check owner state"))
+                assertEquals(2, json.readTree(llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content)["count"].asInt())
+            }
+        }
+    }
+
     @Test
     fun `plugin only HTTP turn needs no user workspace or Docker runtime`() {
         val root = Files.createTempDirectory(Path.of("build"), "plugin-no-sandbox-").toAbsolutePath()
