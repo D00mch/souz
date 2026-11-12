@@ -59,6 +59,7 @@ class McpHttpSession private constructor(
         val cursors = mutableSetOf<String>()
         var cursor: String? = null
         var retainedBytes = 0L
+        var cursorBytes = 0
         do {
             check(cursors.size < McpLimits.LIST_PAGES) { "MCP tool catalogue exceeds the page limit." }
             val page = client.listTools(ListToolsRequest(cursor?.let { PaginatedRequestParams(cursor = it) }))
@@ -87,7 +88,15 @@ class McpHttpSession private constructor(
                 check(definitions.size <= maxTools) { "MCP tool catalogue exceeds the tool limit." }
             }
             cursor = page.nextCursor
-            check(cursor == null || cursors.add(cursor)) { "MCP tool catalogue repeats a pagination cursor." }
+            if (cursor != null) {
+                val bytes = cursor.toByteArray(Charsets.UTF_8).size
+                check(bytes <= McpLimits.CURSOR_BYTES) { "MCP pagination cursor exceeds the byte limit." }
+                cursorBytes += bytes
+                check(cursorBytes <= McpLimits.TOTAL_CURSOR_BYTES) {
+                    "MCP pagination cursors exceed the cumulative byte limit."
+                }
+                check(cursors.add(cursor)) { "MCP tool catalogue repeats a pagination cursor." }
+            }
         } while (cursor != null)
         definitions.values.toList()
     }

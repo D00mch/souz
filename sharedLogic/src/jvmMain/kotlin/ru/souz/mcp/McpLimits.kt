@@ -6,6 +6,8 @@ internal object McpLimits {
     const val CATALOG_BYTES = 4_194_304L
     const val TOOLS = 10_000
     const val LIST_PAGES = 100
+    const val CURSOR_BYTES = 4_096
+    const val TOTAL_CURSOR_BYTES = 65_536
     const val NAME_BYTES = 128
     const val DESCRIPTION_CHARS = 2_000
     const val DESCRIPTION_JSON_BYTES = 4_000
