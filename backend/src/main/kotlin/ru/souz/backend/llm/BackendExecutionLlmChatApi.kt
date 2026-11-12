@@ -97,6 +97,11 @@ internal class BackendExecutionLlmChatApi(
             request = route.request.withAttachmentImages(userId, attachmentStorage, visionGateway, settingsProvider.contextSize),
         )
 
+    internal suspend fun messageOnce(body: LLMRequest.Chat): LLMResponse.Chat = when (val route = chatRoute(body)) {
+        is ChatRoute.Ready -> callProvider(route.provider, route.request, apiFor(route.provider, route.namedModel))
+        is ChatRoute.Rejected -> route.error
+    }
+
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
         val summarizationModel = settingsProvider.openaiSummarizationModel
         if (body.isSummarization && summarizationModel != null) {

@@ -30,6 +30,7 @@ Before changing this module, read the relevant pain-point topics below.
 
 ## Pain points
 
+- [Ambient presets](docs/ambient-presets.md) — owner-scoped Skill selection and reply finalization before the agent graph.
 - [MCP servers](docs/mcp.md) — owner settings, live discovery, network policy, budgets and execution cleanup.
 
 - [JVM plugins](docs/jvm-plugins.md) — artifact uploads, isolation, replica reconciliation, durable pins, invocation leases and process recovery.

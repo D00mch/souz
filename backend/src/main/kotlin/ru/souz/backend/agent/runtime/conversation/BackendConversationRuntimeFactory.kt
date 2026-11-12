@@ -5,11 +5,13 @@ import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.plus
+import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.DEFAULT_ATTACHMENT_HISTORY_LIMIT
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.spi.AgentTelemetry
@@ -23,6 +25,7 @@ import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
 import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.toConversationSession
+import ru.souz.backend.attachments.ToolAttachFileToReply
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.client.BackendClientSkills
@@ -46,6 +49,8 @@ import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LlmProvider
@@ -108,6 +113,7 @@ internal class BackendConversationRuntimeFactory(
     private val llmConfig: NamedLlmConfig = NamedLlmConfig(),
     private val providerApiOverride: ((LlmProvider) -> LLMChatAPI?)? = null,
     private val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
+    private val ambientPresetTurn: AmbientPresetTurn? = null,
     private val imageModel: ImageModelRoute,
     private val visionModel: String?,
     private val imageGeneration: ImageGeneration? = null,
@@ -301,6 +307,8 @@ internal class BackendConversationRuntimeFactory(
                 "threadId" to request.executionId,
             ),
         ).create()
+        val ambient = ambientPresetTurn?.takeIf { hookBudget == null }
+        val attach = baseCatalog.toolsByCategory[ToolCategory.FILES]?.get(ToolAttachFileToReply.NAME)
         return BackendConversationRuntime(
             key = key,
             settingsProvider = settingsProvider,
@@ -310,7 +318,51 @@ internal class BackendConversationRuntimeFactory(
             persistedSession = persistedSession,
             initialMessages = initialMessages.messages,
             initialObservedMessageSeq = initialMessages.observedThroughSeq,
+            renderAmbientPreset = if (ambient != null && attach != null) {
+                { prompt, meta ->
+                    ambient.tryRender(prompt, meta, { bundle -> ambientCommand(attach, bundle, meta.userId) }) { description ->
+                        generateAmbientPhrase(key.userId, prompt, description, executionApi)
+                    }
+                }
+            } else null,
             closeExecutionResources = mcp::close,
         )
+    }
+
+    private fun ambientCommand(attach: LLMToolSetup, bundle: SkillBundle, userId: String): ToolInvokeSkill {
+        val catalog = AgentToolCatalog(mapOf(ToolCategory.FILES to listOf(attach)))
+        return ToolInvokeSkill(
+            catalogProvider = { catalog },
+            toolsFilter = RuntimePassThroughToolsFilter,
+            loadBundle = { owner, id -> bundle.takeIf { owner == userId && id == bundle.skillId } },
+            commandExecutor = commandExecutor,
+            approvalGate = null,
+        )
+    }
+
+    private suspend fun generateAmbientPhrase(
+        userId: String,
+        prompt: String,
+        description: String,
+        api: BackendExecutionLlmChatApi,
+    ): String? {
+        val model = AmbientPresetTurn.phraseModel
+        if (!effectiveSettingsResolver.isSelectableDefaultModel(userId, model.model)) return null
+        val instructions = "Write one short caption for an animated background in the language of the user's request. " +
+            "Return only the caption, at most 100 characters, without quotation marks."
+        val response = withTimeoutOrNull(10_000L) {
+            api.messageOnce(LLMRequest.Chat(
+                model = model.model,
+                provider = model.provider,
+                maxTokens = 64,
+                messages = listOf(
+                    LLMRequest.Message(LLMMessageRole.system, listOfNotNull(policyPrompt, instructions).joinToString("\n\n")),
+                    LLMRequest.Message(LLMMessageRole.user, "Background: $description\nRequest: $prompt"),
+                ),
+            ))
+        }
+        val choice = (response as? LLMResponse.Chat.Ok)?.choices?.singleOrNull() ?: return null
+        if (choice.finishReason != LLMResponse.FinishReason.stop) return null
+        return choice.message.content.trim().trim('"', '«', '»').trim()
     }
 }

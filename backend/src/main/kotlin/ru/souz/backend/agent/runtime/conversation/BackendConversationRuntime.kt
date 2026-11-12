@@ -19,6 +19,7 @@ import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.client.repository.ClientRequestResult
+import ru.souz.llms.FileContent
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -35,6 +36,7 @@ internal class BackendConversationRuntime(
     private val persistedSession: AgentConversationSession?,
     private val initialMessages: List<LLMRequest.Message>,
     initialObservedMessageSeq: Long,
+    private val renderAmbientPreset: (suspend (String, ToolInvocationMeta) -> AmbientPresetResult?)? = null,
     private val closeExecutionResources: suspend () -> Unit = {},
 ) {
     private val cursorMutex = Mutex()
@@ -45,22 +47,53 @@ internal class BackendConversationRuntime(
         eventSink: AgentRuntimeEventSink? = null,
         onRuntimeReady: suspend () -> Unit = {},
     ): BackendConversationExecution = try {
+        executeTurn(request, eventSink, onRuntimeReady)
+    } finally {
+        closeExecutionResources()
+    }
+
+    private suspend fun executeTurn(
+        request: BackendConversationTurnRequest,
+        eventSink: AgentRuntimeEventSink?,
+        onRuntimeReady: suspend () -> Unit,
+    ): BackendConversationExecution {
         val previousSelection = persistedSession?.takeIf {
             request.executionId != null && it.attachmentExecutionId == request.executionId
         }?.replyAttachments.orEmpty()
+        val history = persistedSession?.history.orEmpty() + initialMessages
+        val meta = ToolInvocationMeta(
+            userId = key.userId,
+            conversationId = key.conversationId,
+            requestId = request.executionId,
+            locale = request.locale,
+            timeZone = request.timeZone,
+        )
+        if (request.clientToolsEnabled && request.inputMessageSeq != null && request.systemPrompt == null &&
+            request.attachments.isEmpty() && previousSelection.isEmpty()
+        ) {
+            val preset = renderAmbientPreset?.invoke(request.prompt, meta)
+            if (preset != null) {
+                val output = if (request.locale.startsWith("ru", ignoreCase = true)) "Живой фон готов." else "Your background is ready."
+                val files = listOf(preset.file)
+                val updatedHistory = history + listOf(
+                    LLMRequest.Message(LLMMessageRole.user, request.prompt),
+                    LLMRequest.Message(LLMMessageRole.assistant, output, files = files),
+                )
+                return BackendConversationExecution(
+                    output = output,
+                    usage = executionApi.cumulativeUsage(),
+                    session = session(request, updatedHistory, files, settingsProvider.temperature),
+                    routedModel = preset.routedModel,
+                )
+            }
+        }
         val seedContext = contextFactory.create(
             agentId = AgentId.SKILLS_GRAPH,
-            history = persistedSession?.history.orEmpty() + initialMessages,
+            history = history,
             model = settingsProvider.gigaModel,
             contextSize = settingsProvider.contextSize,
             temperature = settingsProvider.temperature,
-            toolInvocationMeta = ToolInvocationMeta(
-                userId = key.userId,
-                conversationId = key.conversationId,
-                requestId = request.executionId,
-                locale = request.locale,
-                timeZone = request.timeZone,
-            ),
+            toolInvocationMeta = meta,
         )
 
         val result = executor.execute(
@@ -74,29 +107,31 @@ internal class BackendConversationRuntime(
             eventSink = eventSink,
             onActiveRunReady = onRuntimeReady,
         )
-        val attachments = result.context.replyAttachments
-        val nextSession = AgentConversationSession(
-            attachmentExecutionId = request.executionId.takeIf { attachments.isNotEmpty() },
-            replyAttachments = attachments,
-            history = result.context.history,
-            temperature = result.context.settings.temperature,
-            locale = request.locale,
-            timeZone = request.timeZone,
-            basedOnMessageSeq = cursorMutex.withLock { observedMessageSeq },
-            rowVersion = persistedSession?.rowVersion ?: 0L,
-        )
-
         val used = result.context.settings
-        BackendConversationExecution(
+        return BackendConversationExecution(
             output = result.output,
             usage = executionApi.cumulativeUsage(),
-            session = nextSession,
+            session = session(request, result.context.history, result.context.replyAttachments, used.temperature),
             routedModel = request.routing?.let { listOf(it.simple, it.complex) }
                 ?.firstOrNull { it.model == used.model && it.provider == used.provider },
         )
-    } finally {
-        closeExecutionResources()
     }
+
+    private suspend fun session(
+        request: BackendConversationTurnRequest,
+        history: List<LLMRequest.Message>,
+        attachments: List<FileContent>,
+        temperature: Float,
+    ) = AgentConversationSession(
+        attachmentExecutionId = request.executionId.takeIf { attachments.isNotEmpty() },
+        replyAttachments = attachments,
+        history = history,
+        temperature = temperature,
+        locale = request.locale,
+        timeZone = request.timeZone,
+        basedOnMessageSeq = cursorMutex.withLock { observedMessageSeq },
+        rowVersion = persistedSession?.rowVersion ?: 0L,
+    )
 
     internal suspend fun currentUsage(): LLMResponse.Usage = executionApi.cumulativeUsage()
 

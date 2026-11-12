@@ -125,6 +125,7 @@ CODEX_EXPIRES_AT=... # Unix epoch seconds
 # Feature flags
 SOUZ_FEATURE_WS_EVENTS=true
 SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL=false
+SOUZ_FEATURE_AMBIENT_PRESETS=false
 SOUZ_FEATURE_STREAMING_MESSAGES=true
 SOUZ_FEATURE_TOOL_EVENTS=true
 SOUZ_FEATURE_OPTIONS=true
@@ -176,6 +177,8 @@ SOUZ_BACKEND_DB_SCHEMA=public
 SOUZ_BACKEND_DB_MAX_POOL_SIZE=10
 SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS=30000
 ```
+
+See [ambient presets](backend/docs/ambient-presets.md) for enabling ready-made backgrounds on Client-Souz channels.
 
 The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `POSTGRES_DSN` must be a PostgreSQL JDBC URL and, when set, replaces `SOUZ_BACKEND_DB_HOST`, `SOUZ_BACKEND_DB_PORT`, and `SOUZ_BACKEND_DB_NAME`; user and password still come from `SOUZ_BACKEND_DB_USER` and `SOUZ_BACKEND_DB_PASSWORD`. `SOUZ_MASTER_KEY` is required for backend startup. Backend Logback writes one-line JSON records to stdout, including timestamp, level, logger, thread, message, formatted message, MDC, SLF4J key-value pairs, and throwable details. `LOG_LEVEL` controls the root logger, while `SOUZ_APP_LOG_LEVEL` keeps Souz application diagnostics such as public WebSocket request flow visible even when third-party logging is quieter. `SOUZ_WEB_USER_AGENT` overrides the browser-like default sent by web tools, including the HTTPS CONNECT request when a JVM HTTP proxy is selected. `SOUZ_BACKEND_SYSTEM_PROMPT` replaces the built-in default system prompt, and a prompt from user settings or a request replaces it in turn. `SOUZ_BACKEND_POLICY_PROMPT` follows that prompt in every chat; users cannot replace or remove it through settings or requests. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled and must be Base64 that decodes to exactly 32 bytes; generate one with `openssl rand -base64 32`. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
 
