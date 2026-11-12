@@ -1,6 +1,6 @@
 # Remote MCP servers
 
-The backend uses the official Kotlin MCP SDK with Streamable HTTP. Desktop retains its separate [stdio, HTTP and OAuth integration](../../sharedLogic/src/jvmMain/kotlin/ru/souz/service/mcp/README.md). Connections belong to one owner and execution; Orion client tools retain their independent channel transport.
+The backend uses the official Kotlin MCP SDK with Streamable HTTP. Desktop retains its separate [stdio, HTTP and OAuth integration](../../sharedLogic/src/jvmMain/kotlin/ru/souz/service/mcp/README.md). Connections belong to one owner and execution; Orion client tools retain their independent channel transport. Credential-free Client-Souz turns cannot read owner MCP configuration, advertise those servers, load their tools or invoke them; matching caller-supplied chat and device UUIDs do not establish owner authority.
 
 ## Configuration
 
@@ -30,9 +30,9 @@ MCP Skills use collision-free encoded IDs in the reserved `mcp.` namespace. Clie
 
 ## Transport and limits
 
-`ProviderHttpClients.mcp` is an explicitly supplied, host-owned transport. It rejects private/reserved literal destinations and every non-public DNS answer, including mixed answers, unless operator-allowlisted. It uses no proxy, redirects, or connection-failure retries. Requests have a maximum 60-second operation deadline; tools are never automatically replayed.
+`ProviderHttpClients.mcp` is an explicitly supplied, host-owned transport. It rejects private/reserved literal destinations and every non-public DNS answer, including mixed answers, unless operator-allowlisted. It uses no proxy, redirects, or connection-failure retries. Request bodies are one-shot, preventing status-driven follow-up replays, including HTTP 503 with `Retry-After: 0`. Requests have a maximum 60-second operation deadline; tools are never automatically replayed.
 
-Before SDK buffering, each response (JSON or SSE connection) is limited to 1 MiB and JSON nesting to 64. Only UTF-8 and identity encoding are accepted. Streamable HTTP accepts JSON or SSE protocol responses; `listTools` and `callTool` await complete results, independently of LLM token streaming.
+Before SDK decoding, each response (JSON or SSE connection) is limited to 1 MiB and JSON nesting to 64. The nesting guard trims SSE data lines consistently with the SDK's inline decoder, including whitespace around split escapes. Only UTF-8 and identity encoding are accepted. Streamable HTTP accepts JSON or SSE protocol responses; `listTools` and `callTool` await complete results, independently of LLM token streaming.
 
 Discovery rejects duplicate names, repeated cursors and more than 100 pages. An execution admits at most 10,000 tools and 4 MiB of retained metadata across servers. A listing consumes the remaining execution budget and publishes nothing on failure. Names contain 1–128 UTF-8 bytes without controls; descriptions contain at most 2,000 characters and 4,000 JSON bytes; each schema is at most 16 KiB.
 

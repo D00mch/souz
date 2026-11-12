@@ -16,7 +16,7 @@ Desktop [local model profiles](native/docs/model-assets-and-context-budget.md#de
 
 Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts. Revisioned snapshots go to the current connected channel if it declares `prompt.personality.set`, otherwise to another declaring channel. Settings save independently of discovery; no known receiver means synchronization is skipped.
 
-Backend remote [MCP servers](backend/docs/mcp.md) use owner-scoped settings and execution-scoped sessions. Classifier-selected servers preload; all enabled servers remain discoverable through `LoadMcpTools`. Keep transport limits, owner checks, atomic catalogue publication and bounded cleanup intact.
+Backend remote [MCP servers](backend/docs/mcp.md) use owner-scoped settings and execution-scoped sessions. Credential-free Client-Souz turns cannot access owner MCP configuration or tools. Classifier-selected servers preload; all enabled servers remain discoverable through `LoadMcpTools`. Keep transport limits, owner checks, atomic catalogue publication and bounded cleanup intact.
 
 Backend [external memory](backend/docs/external-memory.md) exposes exact-fact forgetting and one-time confirmed bank deletion only on authenticated interactive owner turns when Hindsight is configured.
 

@@ -12,6 +12,8 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import io.ktor.websocket.Frame
+import io.ktor.websocket.send
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CompletableDeferred
@@ -31,6 +33,59 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class BackendMcpE2eTest {
+    @Test
+    fun `credential-free client turns cannot discover or invoke the claimed owner's MCP tools`() {
+        val calls = CopyOnWriteArrayList<JsonNode>()
+        val closed = CompletableDeferred<Unit>()
+        val otherHttp = HttpClient(MockEngine { error("Unexpected provider HTTP request") })
+        val skillId = McpToolCatalog.toolId("calendar", "create_event")
+        val llm = E2eLlmApi { request ->
+            if (request.functions.isEmpty()) return@E2eLlmApi reply(request, "Speculative text response")
+            val system = request.messages.first { it.role == LLMMessageRole.system }.content
+            assertFalse(system.contains("serverId: \"calendar\""))
+            assertFalse(system.contains("serverId: \"music\""))
+            assertFalse(request.functions.any { it.name == McpToolCatalog.LOAD_TOOL_NAME })
+            val results = request.messages.filter { it.role == LLMMessageRole.function }
+            when {
+                results.none { it.name == "GetSkillByName" } ->
+                    toolCallReply(request, "GetSkillByName", mapOf("skillId" to skillId))
+                results.none { it.name == "RunSkillCommand" } -> {
+                    assertEquals("skill_unavailable", restJsonMapper.readTree(results.last().content).path("error").path("code").asText())
+                    toolCallReply(request, "RunSkillCommand", mapOf("skillId" to skillId, "arguments" to emptyMap<String, Any>()))
+                }
+                else -> {
+                    assertEquals("skill_unavailable", restJsonMapper.readTree(results.last().content).path("error").path("code").asText())
+                    reply(request, "Owner MCP tools unavailable")
+                }
+            }
+        }
+        backendE2eTest("e2e_mcp_public", llm = llm,
+            providerClients = ProviderHttpClients(otherHttp, otherHttp, mcp = mcpHttp(calls, closed)),
+            skillClassifier = SkillClassifier { _, descriptions ->
+                assertFalse(SkillId("calendar") in descriptions)
+                emptySet()
+            }, complexityClassifier = TaskComplexityClassifier { _, capabilities ->
+                assertFalse("tool-server:calendar" in capabilities)
+                TaskClassification(complex = true)
+            }) {
+            val owner = UUID.randomUUID().toString()
+            assertEquals(HttpStatusCode.OK, client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted(owner); jsonBody(configuredServers())
+            }.status)
+            val chat = createPublicChat(owner)
+            withPublicSocket(chat) { socket ->
+                socket.send(Frame.Text(messageFrame(chat, owner, "public-mcp", text = "Create an owner calendar event")))
+                assertEquals("accepted", readJson(socket).path("status").asText())
+                assertEquals("thread.status", readJson(socket).path("type").asText())
+                assertEquals("thread.completed", readJson(socket).path("type").asText())
+            }
+            val messages = client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(owner) }.jsonBody().path("items")
+            assertEquals("Owner MCP tools unavailable", messages.last().path("content").asText())
+            assertTrue(calls.isEmpty(), "Credential-free turns must not contact any owner MCP server")
+            assertFalse(closed.isCompleted)
+        }
+    }
+
     @Test
     fun `MCP tools execute in the real graph after classifier preloading`() = mcpScenario(preload = true)
 

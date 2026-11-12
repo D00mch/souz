@@ -9,6 +9,8 @@ import okhttp3.ConnectionPool
 import okhttp3.Dns
 import okhttp3.Interceptor
 import okhttp3.Protocol
+import okhttp3.RequestBody
+import okio.BufferedSink
 import ru.souz.llms.http.providerHttpClientDefaults
 
 /** Host-owned MCP transport. No provider credentials, proxies, redirects or connection-failure retries. */
@@ -25,12 +27,23 @@ fun createMcpHttpClient(policy: McpNetworkPolicy = McpNetworkPolicy.fromEnvironm
             protocols(listOf(Protocol.HTTP_1_1))
             connectionPool(ConnectionPool(5, 60, TimeUnit.SECONDS))
             addInterceptor { chain ->
+                val request = chain.request()
                 try {
-                    policy.validateUrl(chain.request().url.toString())
+                    policy.validateUrl(request.url.toString())
                 } catch (_: IllegalArgumentException) {
                     throw IOException("MCP destination is not allowed.")
                 }
-                chain.proceed(chain.request())
+                // Status-driven follow-ups (including 503 Retry-After: 0) ignore retryOnConnectionFailure.
+                val body = request.body?.let { delegate ->
+                    object : RequestBody() {
+                        override fun contentType() = delegate.contentType()
+                        override fun contentLength() = delegate.contentLength()
+                        override fun isDuplex() = delegate.isDuplex()
+                        override fun isOneShot() = true
+                        override fun writeTo(sink: BufferedSink) = delegate.writeTo(sink)
+                    }
+                }
+                chain.proceed(request.newBuilder().method(request.method, body).build())
             }
             // Network interceptors see wire bytes before OkHttp's transparent gzip decoder.
             addNetworkInterceptor(Interceptor { chain ->

@@ -187,8 +187,11 @@ internal class BackendConversationRuntimeFactory(
         )
         val mcp = McpToolCatalog(
             owner = key.userId,
-            servers = userSettingsRepository.get(key.userId)?.mcp.orEmpty().mapNotNull { (id, server) ->
-                server.url?.takeIf { server.enabled }?.let { McpServerConfig(id, server.description.ifBlank { id }, it) }
+            // Client-Souz UUIDs are caller-supplied and cannot authorize owner-configured servers.
+            servers = if (request.clientToolsEnabled) emptyList() else {
+                userSettingsRepository.get(key.userId)?.mcp.orEmpty().mapNotNull { (id, server) ->
+                    server.url?.takeIf { server.enabled }?.let { McpServerConfig(id, server.description.ifBlank { id }, it) }
+                }
             },
             httpClient = providerHttpClients.mcp,
             timeoutMillis = request.requestTimeoutMillis ?: settingsProvider.requestTimeoutMillis,

@@ -17,6 +17,7 @@ internal class McpResponseBody(private val delegate: ResponseBody) : ResponseBod
         } == true
         private var prefix = 0
         private var dataLine = false
+        private val data = Buffer()
         private var lineEmpty = true
         private var previousCr = false
         private var startBytes = 0
@@ -26,7 +27,10 @@ internal class McpResponseBody(private val delegate: ResponseBody) : ResponseBod
             try {
                 val chunk = Buffer()
                 val read = super.read(chunk, minOf(byteCount, 8_192, McpLimits.RESPONSE_BYTES - total + 1))
-                if (read <= 0) return read
+                if (read <= 0) {
+                    if (read == -1L && sse) finishDataLine()
+                    return read
+                }
                 total += read
                 if (total > McpLimits.RESPONSE_BYTES) throw IOException("MCP response exceeds the byte limit.")
                 val bytes = chunk.readByteArray()
@@ -51,13 +55,14 @@ internal class McpResponseBody(private val delegate: ResponseBody) : ResponseBod
             }
             previousCr = c == 13
             if (c == 10 || c == 13) {
+                finishDataLine()
                 if (lineEmpty) json.reset()
                 prefix = 0
                 dataLine = false
                 lineEmpty = true
             } else {
                 lineEmpty = false
-                if (dataLine) json.accept(c)
+                if (dataLine) data.writeByte(c)
                 else if (prefix >= 0) {
                     if (c == "data:"[prefix].code) {
                         prefix++
@@ -65,6 +70,12 @@ internal class McpResponseBody(private val delegate: ResponseBody) : ResponseBod
                     } else prefix = -1
                 }
             }
+        }
+
+        private fun finishDataLine() {
+            // The SDK trims each inline SSE data line before concatenation. The response byte cap
+            // bounds this buffer, including unterminated lines, before any frame can be decoded.
+            data.readUtf8().trim().forEach { json.accept(it.code) }
         }
     }.buffer()
 

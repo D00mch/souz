@@ -1,6 +1,8 @@
 package ru.souz.mcp
 
 import io.ktor.client.request.get
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import java.net.InetAddress
 import kotlinx.coroutines.CompletableDeferred
@@ -19,6 +21,24 @@ import kotlin.test.assertFailsWith
 
 @Timeout(20)
 class McpHttpClientTest {
+    @Test
+    fun `HTTP 503 with Retry-After zero cannot replay an MCP POST`() = runBlocking {
+        MockWebServer().use { server ->
+            server.start(InetAddress.getByName("127.0.0.1"), 0)
+            server.enqueue(MockResponse(code = 503, headers = Headers.headersOf("Retry-After", "0")))
+            server.enqueue(MockResponse(body = "unexpected replay"))
+            val url = "http://127.0.0.1:${server.port}/mcp"
+            val rpc = """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_event","arguments":{}}}"""
+            createMcpHttpClient(McpNetworkPolicy(setOf(url))).use { http ->
+                val response = http.post(url) { setBody(rpc) }
+                assertEquals(503, response.status.value)
+                response.bodyAsText()
+            }
+            assertEquals(1, server.requestCount)
+            assertEquals(rpc, server.takeRequest().body!!.utf8())
+        }
+    }
+
     @Test
     fun `real SDK uses bounded HTTP for inline SSE discovery JSON calls and session termination`() = runBlocking {
         val deleted = CompletableDeferred<Unit>()
