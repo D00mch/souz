@@ -13,7 +13,9 @@ import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
 import okhttp3.Dns
 import okhttp3.Headers
+import org.junit.jupiter.api.DynamicTest.dynamicTest
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestFactory
 import org.junit.jupiter.api.Timeout
 import ru.souz.llms.restJsonMapper
 import kotlin.test.assertEquals
@@ -39,29 +41,43 @@ class McpHttpClientTest {
         }
     }
 
-    @Test
-    fun `real SDK uses bounded HTTP for inline SSE discovery JSON calls and session termination`() = runBlocking {
+    @TestFactory
+    fun `real SDK propagates negotiated protocol before initialized discovery calls and termination`() =
+        listOf("2025-11-25", "2025-03-26").flatMap { version ->
+            listOf(false, true).map { sse ->
+                dynamicTest("$version with ${if (sse) "SSE" else "JSON"} initialization") {
+                    verifyNegotiatedProtocol(version, sse)
+                }
+            }
+        }
+
+    private fun verifyNegotiatedProtocol(version: String, sse: Boolean) = runBlocking {
         val deleted = CompletableDeferred<Unit>()
         MockWebServer().use { server ->
             server.start(InetAddress.getByName("127.0.0.1"), 0)
             server.dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     if (request.method == "DELETE") {
+                        if (request.headers["MCP-Protocol-Version"] != version) return MockResponse(code = 400)
                         deleted.complete(Unit)
                         return MockResponse(code = 200)
                     }
                     if (request.method != "POST") return MockResponse(code = 405)
                     val rpc = restJsonMapper.readTree(request.body!!.utf8())
                     val method = rpc.path("method").asText()
+                    if (method != "initialize" && request.headers["MCP-Protocol-Version"] != version) {
+                        return MockResponse(code = 400)
+                    }
                     if (method.startsWith("notifications/")) return MockResponse(code = 202)
                     val result = when (method) {
-                        "initialize" -> """{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"fixture","version":"1"}}"""
+                        "initialize" -> """{"protocolVersion":"$version","capabilities":{"tools":{}},"serverInfo":{"name":"fixture","version":"1"}}"""
                         "tools/list" -> """{"tools":[{"name":"read","inputSchema":{"type":"object"}}]}"""
                         else -> """{"content":[{"type":"text","text":"done"}],"isError":false}"""
                     }
                     val json = """{"jsonrpc":"2.0","id":${rpc["id"]},"result":$result}"""
-                    return MockResponse(body = if (method == "tools/list") "data: $json\n\n" else json,
-                        headers = Headers.headersOf("Content-Type", if (method == "tools/list") "text/event-stream" else "application/json",
+                    val inlineSse = method == "tools/list" || (method == "initialize" && sse)
+                    return MockResponse(body = if (inlineSse) "data: $json\n\n" else json,
+                        headers = Headers.headersOf("Content-Type", if (inlineSse) "text/event-stream" else "application/json",
                             "Mcp-Session-Id", "fixture"))
                 }
             }
@@ -74,6 +90,19 @@ class McpHttpClientTest {
                     assertEquals("done", result.path("content")[0].path("text").asText())
                 } finally { session.close() }
                 assertEquals(true, deleted.isCompleted)
+                val initialize = restJsonMapper.readTree(server.takeRequest().body!!.utf8())
+                assertEquals("2025-11-25", initialize.path("params").path("protocolVersion").asText())
+                val followups = List(server.requestCount - 1) { server.takeRequest() }
+                for (request in followups) {
+                    assertEquals(listOf(version), request.headers.values("MCP-Protocol-Version"), request.method)
+                    assertEquals("fixture", request.headers["Mcp-Session-Id"], request.method)
+                }
+                // The SDK may open a GET/SSE stream concurrently with the ordered POSTs.
+                val methods = followups.filter { it.method != "GET" }.map { request ->
+                    if (request.method == "DELETE") "DELETE"
+                    else restJsonMapper.readTree(request.body!!.utf8()).path("method").asText()
+                }
+                assertEquals(listOf("notifications/initialized", "tools/list", "tools/call", "DELETE"), methods)
                 assertEquals(405, http.get(url).status.value)
             }
         }

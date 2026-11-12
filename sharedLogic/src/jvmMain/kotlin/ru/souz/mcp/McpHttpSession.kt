@@ -6,11 +6,18 @@ import io.ktor.client.plugins.timeout
 import io.ktor.http.HttpMethod
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.client.StreamableHttpClientTransport
+import io.modelcontextprotocol.kotlin.sdk.shared.Transport
+import io.modelcontextprotocol.kotlin.sdk.shared.TransportSendOptions
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
+import io.modelcontextprotocol.kotlin.sdk.types.InitializeResult
+import io.modelcontextprotocol.kotlin.sdk.types.JSONRPCMessage
+import io.modelcontextprotocol.kotlin.sdk.types.JSONRPCRequest
+import io.modelcontextprotocol.kotlin.sdk.types.JSONRPCResponse
 import io.modelcontextprotocol.kotlin.sdk.types.ListToolsRequest
 import io.modelcontextprotocol.kotlin.sdk.types.McpJson
 import io.modelcontextprotocol.kotlin.sdk.types.PaginatedRequestParams
+import io.modelcontextprotocol.kotlin.sdk.types.RequestId
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CancellationException
@@ -143,10 +150,30 @@ class McpHttpSession private constructor(
                     }
                 },
             )
+            // SDK 0.16.0 does not copy the negotiated version to its HTTP transport.
+            // Apply it before Client.connect resumes and sends notifications/initialized.
+            val negotiatingTransport = object : Transport by transport {
+                private var initializeId: RequestId? = null
+
+                override suspend fun send(message: JSONRPCMessage, options: TransportSendOptions?) {
+                    if (message is JSONRPCRequest && message.method == "initialize") initializeId = message.id
+                    transport.send(message, options)
+                }
+
+                override fun onMessage(block: suspend (JSONRPCMessage) -> Unit) {
+                    transport.onMessage { message ->
+                        if (message is JSONRPCResponse && message.id == initializeId) {
+                            (message.result as? InitializeResult)?.let { transport.protocolVersion = it.protocolVersion }
+                            initializeId = null
+                        }
+                        block(message)
+                    }
+                }
+            }
             val session = McpHttpSession(client, transport, deadline)
             var connected = false
             try {
-                bounded(deadline) { client.connect(transport) }
+                bounded(deadline) { client.connect(negotiatingTransport) }
                 connected = true
                 return session
             } finally {
