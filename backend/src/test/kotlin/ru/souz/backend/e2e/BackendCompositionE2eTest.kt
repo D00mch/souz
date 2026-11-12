@@ -48,7 +48,7 @@ class BackendCompositionE2eTest {
         backendE2eTest(
             "e2e_named_models", settingsSource = source, localModels = emptyList(),
             featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = true),
-            providerClients = ProviderHttpClients(standard = http, openAi = http),
+            providerClients = ProviderHttpClients(standard = http, openAi = http, mcp = http),
         ) {
             val userId = UUID.randomUUID().toString()
             assertEquals("test-chat", client.get(BackendHttpRoutes.HEALTH).jsonBody()["model"].asText())

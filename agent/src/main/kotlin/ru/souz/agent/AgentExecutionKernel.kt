@@ -20,6 +20,7 @@ import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolServerSource
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.TaskComplexityClassifier
 import ru.souz.llms.LLMChatAPI
@@ -52,6 +53,8 @@ class AgentExecutionKernelFactory(
     private val fallbackSkillClassifier: SkillClassifier? = null,
     private val complexityClassifier: TaskComplexityClassifier? = null,
     private val attachmentHistoryLimit: Int = DEFAULT_ATTACHMENT_HISTORY_LIMIT,
+    private val toolCatalogProvider: () -> AgentToolCatalog = { toolCatalog },
+    private val toolServerSource: AgentToolServerSource? = null,
 ) {
     fun create(): AgentExecutionKernel {
         val agentToolExecutor = AgentToolExecutor(telemetry)
@@ -61,7 +64,8 @@ class AgentExecutionKernelFactory(
             runtimeEnvironment = runtimeEnvironment,
         )
         val nodesSkillInventory = NodesSkillInventory(
-            toolCatalog = toolCatalog,
+            toolCatalogProvider = toolCatalogProvider,
+            toolServerSource = toolServerSource,
             toolsFilter = toolsFilter,
             skillBundleProvider = skillBundleProvider,
             llmApi = llmApi,

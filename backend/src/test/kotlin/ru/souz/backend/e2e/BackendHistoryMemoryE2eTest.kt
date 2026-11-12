@@ -1113,6 +1113,6 @@ internal class HistoryHindsightStub {
             }
             respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
         }) { providerHttpClientDefaults() }
-        return ProviderHttpClients(client, client)
+        return ProviderHttpClients(client, client, mcp = client)
     }
 }

@@ -2,7 +2,7 @@
 
 ## Invariant
 
-`SkillsGraphBasedAgent` exposes `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand`. `GraphBasedAgent` exposes the universal core subset `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` independently of classification. Both install the host's execution-bound `SpawnSubagent`, `WaitSubagent`, `CancelSubagent` and optional memory-forgetting tools when supplied through `AgentCoreTools`. The skills graph replaces advertised and executable tools before execution. Its effective system message contains filtered tool-backed IDs, user-scoped escaped file-backed IDs, and concise descriptions beside relevant exact IDs. `AgentContext.systemPrompt` remains the caller-provided prompt. Inventory selects descriptions with Jev and execution-LLM fallback; direct-tool classification and MCP injection are omitted.
+`SkillsGraphBasedAgent` exposes `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand`. `GraphBasedAgent` exposes the universal core subset `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` independently of classification. Both install the host's execution-bound `SpawnSubagent`, `WaitSubagent`, `CancelSubagent` and optional memory-forgetting tools when supplied through `AgentCoreTools`. The skills graph replaces advertised and executable tools before execution. Its effective system message contains filtered tool-backed IDs, user-scoped escaped file-backed IDs, and concise descriptions beside relevant exact IDs. `AgentContext.systemPrompt` remains the caller-provided prompt. Inventory selects descriptions with Jev and execution-LLM fallback; direct-tool classification and desktop MCP injection are omitted.
 
 Continuation ordering, reserved publication, response acceptance, and stream revisions follow [Execution lifecycle](execution-lifecycle.md).
 
@@ -28,6 +28,8 @@ Merging instructions leaves stored context unchanged. Turn finalization converts
 and schedules memory capture; it does not summarize history.
 
 `NodesSkillInventory` owns Skill inventory prompt augmentation. `AgentContext.withOnlyTools` replaces advertised and executable tools at the skills-graph boundary through the list-based `AgentTools` factory shared with subagent selection. This factory rejects duplicate names and retains only explicitly supplied categories for selected tools. `SteerableChatNode` owns execution-scoped continuation boundaries. `NodesCommon` enriches history with host context. `NodesPlain` is a stateless object providing history, response, and tool-execution helpers. `NodesToolUseWithKnowledge` composes tool execution with Knowledge-aware result handling.
+
+Hosts may supply additional core discovery tools through `AgentCoreTools`; their results also remain inline. Category and [MCP discovery](../../backend/docs/mcp.md#discovery) use bounded pages.
 
 Tool results larger than 8,192 UTF-8 bytes are stored in conversation-scoped Knowledge and replaced with a compact JSON reference. A result of exactly 8,192 bytes stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results are always returned inline. `SearchMemory` has no always-inline exemption and a large result may be offloaded. Storage unavailability and persistence failures keep the original result inline; coroutine cancellation propagates.
 

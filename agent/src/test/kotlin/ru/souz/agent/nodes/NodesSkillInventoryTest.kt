@@ -13,6 +13,7 @@ import ru.souz.agent.graph.RetryPolicy
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolServerSource
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -348,6 +349,73 @@ class NodesSkillInventoryTest {
         coVerify(exactly = 0) { repository.listSkillDescriptions(any()) }
     }
 
+    @Test
+    fun `server selection only preloads matching servers and keeps every server discoverable`() = runTest {
+        for (preload in listOf(false, true)) {
+            val source = TestServerSource()
+            val core = FixedTool("GetSkillByName")
+            val result = node(catalog(), source = source,
+                catalogProvider = { catalog(*source.loadedTools.keys.map { FixedTool(it) }.toTypedArray()) },
+                classifier = SkillClassifier { _, choices ->
+                    assertEquals(setOf(SkillId("calendar"), SkillId("music")), choices.keys)
+                    if (preload) setOf(SkillId("calendar"), SkillId("unknown")) else emptySet()
+                }).node(listOf(core), classifySkills = true).execute(contextWithCatalog(), runtime())
+            val prompt = result.history.first().content
+            assertEquals(if (preload) listOf(setOf("calendar")) else emptyList(), source.calls)
+            source.servers.forEach { (id, description) ->
+                assertContains(prompt, "serverId: \"$id\"; description: \"$description\"")
+                assertEquals(description, result.routingCapabilities["tool-server:$id"])
+            }
+            assertContains(prompt, "LoadMcpTools")
+            assertEquals(if (preload) 20 else 0, prompt.lineSequence().count { it.startsWith("- skillId:") })
+            assertFalse(prompt.contains("mcp.tool30"))
+            assertEquals(setOf(core.fn.name), result.settings.tools.byName.keys)
+            assertEquals(PROVIDED_SYSTEM_PROMPT, result.systemPrompt)
+        }
+    }
+
+    @Test
+    fun `server fallback selection propagates preload cancellation`() = runTest {
+        val source = TestServerSource(cancel = true)
+        val inventory = node(catalog(), source = source,
+            classifier = SkillClassifier { _, _ -> error("JEV unavailable") },
+            fallbackClassifier = SkillClassifier { _, _ -> setOf(SkillId("calendar")) })
+        assertFailsWith<CancellationException> {
+            inventory.node(emptyList(), classifySkills = true).execute(contextWithCatalog(), runtime())
+        }
+        assertEquals(listOf(setOf("calendar")), source.calls)
+    }
+
+    @Test
+    fun `all 64 server IDs survive bounded escaped inventory rendering`() = runTest {
+        val source = object : AgentToolServerSource {
+            override val servers = (1..64).associate { ("server" + it.toString().padStart(2, '0') + "x".repeat(56)) to "\u0001<&".repeat(80) }
+            override val loadedTools = (1..20).associate { "mcp." + it + "x".repeat(250) to "<&".repeat(120) }
+            override val discoveryToolName = "LoadMcpTools"
+            override suspend fun preload(serverIds: Set<String>) = Unit
+        }
+        val result = node(catalog(), source = source,
+            catalogProvider = { catalog(*source.loadedTools.keys.map { FixedTool(it) }.toTypedArray()) })
+            .node(emptyList()).execute(contextWithCatalog(), runtime())
+        val block = result.history.first().content.substringAfter("<tool_server_inventory>")
+        assertEquals(64, block.lineSequence().count { it.startsWith("- serverId:") })
+        source.servers.keys.forEach { assertContains(block, it) }
+        assertTrue(block.toByteArray(Charsets.UTF_8).size < 16_384)
+        assertFalse(block.contains("\u0001"))
+    }
+
+    private class TestServerSource(private val cancel: Boolean = false) : AgentToolServerSource {
+        override val servers = mapOf("calendar" to "Calendar events", "music" to "Music playback")
+        override var loadedTools: Map<String, String> = emptyMap()
+        override val discoveryToolName = "LoadMcpTools"
+        val calls = mutableListOf<Set<String>>()
+        override suspend fun preload(serverIds: Set<String>) {
+            calls.add(serverIds)
+            if (cancel) throw CancellationException("cancelled")
+            loadedTools = (0..30).associate { "mcp.tool$it" to "tool $it" }
+        }
+    }
+
     private fun node(
         catalog: AgentToolCatalog,
         toolsFilter: AgentToolsFilter = PassThroughToolsFilter,
@@ -355,8 +423,11 @@ class NodesSkillInventoryTest {
         classifier: SkillClassifier? = null,
         fallbackClassifier: SkillClassifier? = null,
         llmApi: LLMChatAPI? = null,
+        source: AgentToolServerSource? = null,
+        catalogProvider: () -> AgentToolCatalog = { catalog },
     ): NodesSkillInventory = NodesSkillInventory(
-        toolCatalog = catalog,
+        toolCatalogProvider = catalogProvider,
+        toolServerSource = source,
         toolsFilter = toolsFilter,
         skillBundleProvider = repository,
         skillClassifier = classifier,

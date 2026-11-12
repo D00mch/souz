@@ -1,7 +1,7 @@
 package ru.souz.tool.skills
 
 import ru.souz.agent.skills.SkillId
-import ru.souz.agent.skills.PLUGIN_SKILL_PREFIX
+import ru.souz.agent.skills.isHostSkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleException
 import ru.souz.agent.skills.bundle.SkillBundleHasher
@@ -22,8 +22,8 @@ internal class SkillResolver(
 
     suspend fun resolve(skillId: SkillId, userId: String): SkillResolution {
         enabledTools.byName[skillId.value]?.let { return SkillResolution.Compiled(it) }
-        if (skillId.value.startsWith(PLUGIN_SKILL_PREFIX)) {
-            return SkillResolution.Error("skill_unavailable", "Plugin Skill is unavailable or disabled: ${skillId.value}")
+        if (isHostSkillId(skillId.value)) {
+            return SkillResolution.Error("skill_unavailable", "Host-loaded Skill is unavailable or disabled: ${skillId.value}")
         }
         val bundle = try {
             loadBundle(userId, skillId)

@@ -174,7 +174,7 @@ class SkillRuntimeToolsTest {
         }
 
         val byName = getSkillByNameTool(repository, catalog, filter)
-        val byCategory = getSkillsByCategoryTool(repository, catalog, filter)
+        val byCategory = ToolGetSkillsByCategory({ catalog }, filter)
         val categoryResponse = byCategory.call(mapOf("category" to ToolCategory.FILES.name))
         val unknownCategoryResponse = byCategory.call(mapOf("category" to "UNKNOWN_CATEGORY"))
         val bundleResponse = byName.call(mapOf("skillId" to "bundle-skill"))
@@ -217,38 +217,39 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
-    fun `missing or disabled plugins cannot resolve persisted file backed declarations`() = runTest {
-        val pluginName = "plugin.reference.report"
-        val compiled = RecordingTool(pluginName)
-        val repository = repository(bundle(pluginName, body = "Spoofed plugin instructions."))
-        val pluginCatalog = catalog(ToolCategory.MAIL to listOf(compiled))
-        val disabledFilter = TestToolsFilter { tools ->
-            tools.mapValues { (_, entries) -> entries.filterKeys { it != pluginName } }
-        }
-        val unavailableTools = listOf(
-            getSkillByNameTool(repository),
-            invokeSkillTool(repository),
-            getSkillByNameTool(repository, pluginCatalog, disabledFilter),
-            invokeSkillTool(repository, pluginCatalog, disabledFilter),
-        )
+    fun `missing or disabled host tools cannot resolve persisted file backed declarations`() = runTest {
+        for (skillId in listOf("plugin.reference.report", "mcp.Y2FsZW5kYXI.Y3JlYXRl")) {
+            val compiled = RecordingTool(skillId)
+            val repository = repository(bundle(skillId, body = "Spoofed host instructions."))
+            val hostCatalog = catalog(ToolCategory.MAIL to listOf(compiled))
+            val disabledFilter = TestToolsFilter { tools ->
+                tools.mapValues { (_, entries) -> entries.filterKeys { it != skillId } }
+            }
+            val unavailableTools = listOf(
+                getSkillByNameTool(repository),
+                invokeSkillTool(repository),
+                getSkillByNameTool(repository, hostCatalog, disabledFilter),
+                invokeSkillTool(repository, hostCatalog, disabledFilter),
+            )
 
-        unavailableTools.forEach { tool ->
-            val response = tool.call(mapOf("skillId" to pluginName))
-            assertEquals("skill_unavailable", response["error"]["code"].asText())
-            assertFalse(response.toString().contains("Spoofed plugin instructions."))
-        }
-        assertNull(compiled.lastMeta)
+            unavailableTools.forEach { tool ->
+                val response = tool.call(mapOf("skillId" to skillId))
+                assertEquals("skill_unavailable", response["error"]["code"].asText())
+                assertFalse(response.toString().contains("Spoofed host instructions."))
+            }
+            assertNull(compiled.lastMeta)
 
-        val description = getSkillByNameTool(repository, pluginCatalog).call(mapOf("skillId" to pluginName))
-        assertEquals(compiled.fn.description, description["skill"]["description"].asText())
-        val invoke = invokeSkillTool(repository, pluginCatalog)
-        val result = invoke.invoke(
-            LLMResponse.FunctionCall(invoke.fn.name, mapOf("skillId" to pluginName, "arguments" to emptyMap<String, Any>())),
-            ToolInvocationMeta(USER_ID),
-        )
-        assertEquals("delegated-content", result.content)
-        assertEquals(USER_ID, compiled.lastMeta?.userId)
-        coVerify(exactly = 0) { repository.loadSkillBundle(any(), any()) }
+            val description = getSkillByNameTool(repository, hostCatalog).call(mapOf("skillId" to skillId))
+            assertEquals(compiled.fn.description, description["skill"]["description"].asText())
+            val invoke = invokeSkillTool(repository, hostCatalog)
+            val result = invoke.invoke(
+                LLMResponse.FunctionCall(invoke.fn.name, mapOf("skillId" to skillId, "arguments" to emptyMap<String, Any>())),
+                ToolInvocationMeta(USER_ID),
+            )
+            assertEquals("delegated-content", result.content)
+            assertEquals(USER_ID, compiled.lastMeta?.userId)
+            coVerify(exactly = 0) { repository.loadSkillBundle(any(), any()) }
+        }
     }
 
     @Test
@@ -604,23 +605,6 @@ class SkillRuntimeToolsTest {
         toolsFilter = filter,
         skillBundleProvider = repository,
         approvalGate = approvalGate,
-    )
-
-    private fun getSkillsNamesByCategoryTool(
-        catalog: AgentToolCatalog = catalog(),
-        filter: AgentToolsFilter = TestToolsFilter(),
-    ): ToolGetSkillsNamesByCategory = ToolGetSkillsNamesByCategory(
-        catalogProvider = { catalog },
-        toolsFilter = filter,
-    )
-
-    private fun getSkillsByCategoryTool(
-        repository: SkillRegistryRepository,
-        catalog: AgentToolCatalog = catalog(),
-        filter: AgentToolsFilter = TestToolsFilter(),
-    ): ToolGetSkillsByCategory = ToolGetSkillsByCategory(
-        getSkillByName = getSkillByNameTool(repository, catalog, filter),
-        getSkillsNamesByCategory = getSkillsNamesByCategoryTool(catalog, filter),
     )
 
     private fun invokeSkillTool(
