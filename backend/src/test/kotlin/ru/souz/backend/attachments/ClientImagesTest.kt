@@ -61,22 +61,28 @@ class ClientImagesTest {
                 val invalid = listOf(
                     listOf(link("http://127.0.0.1/private.png")),
                     listOf(link("http://[64:ff9b::7f00:1]/private.png")),
+                    listOf(link("http://127.0.0.1/capture", "IMAGE/PNG")),
                     listOf(image(encoded, "image/jpeg")),
+                    listOf(image(encoded, "IMAGE/JPEG")),
                     listOf(image("invalid-base64")),
                     listOf(image(Base64.getEncoder().encodeToString(attachmentPng.copyOf(33)))),
                     List(6) { image(encoded) },
+                    List(6) { image(encoded, "Image/PnG") },
                     listOf(link("attachment:${saved.fileId}", "text/plain")),
                 )
-                for (content in invalid) {
-                    assertEquals("tool_image_unavailable", images.store("foreign", "invalid", outcome(content)).error?.code)
-                    assertNull(storage.find("foreign", "invalid:0"), "Invalid screenshots must not be stored")
+                for ((index, content) in invalid.withIndex()) {
+                    val key = "invalid-$embedded-$index"
+                    assertEquals("tool_image_unavailable", images.store("foreign", key, outcome(content)).error?.code)
+                    assertNull(storage.find("foreign", "$key:0"), "Invalid screenshots must not be stored")
                 }
-                val screenshot = images.store(user, "screenshot-$embedded", outcome(listOf(image(encoded))))
-                assertEquals("succeeded", screenshot.status)
-                val image = screenshot.files.single()
-                assertContentEquals(attachmentPng, storage.read(user, UUID.fromString(image.fileId)))
-                assertEquals(restJsonMapper.valueToTree(mapOf("type" to "resource_link", "uri" to "attachment:${image.fileId}",
-                    "name" to image.name, "mimeType" to "image/png")), screenshot.result!!["content"].single())
+                for (mime in listOf("image/png", "IMAGE/PNG", "Image/PnG")) {
+                    val screenshot = images.store(user, "screenshot-$embedded-$mime", outcome(listOf(image(encoded, mime))))
+                    assertEquals("succeeded", screenshot.status)
+                    val image = screenshot.files.single()
+                    assertContentEquals(attachmentPng, storage.read(user, UUID.fromString(image.fileId)))
+                    assertEquals(restJsonMapper.valueToTree(mapOf("type" to "resource_link", "uri" to "attachment:${image.fileId}",
+                        "name" to image.name, "mimeType" to "image/png")), screenshot.result!!["content"].single())
+                }
             }
             for ((index, uri) in listOf("file:///screen.png", "screen://capture/0").withIndex()) {
                 fun embedded(blob: String) = mapOf("type" to "resource", "resource" to mapOf("uri" to uri, "blob" to blob))

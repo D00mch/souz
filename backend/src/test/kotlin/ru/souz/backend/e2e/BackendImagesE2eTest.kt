@@ -547,7 +547,9 @@ class BackendImagesE2eTest {
             assertEquals("screen.capture", started["payload"]["name"].asText())
             val result = toolResultFrame(started, "succeeded", mapOf("content" to documentLinks + listOf(
                 mapOf("type" to "resource_link", "uri" to "https://example.invalid/report.txt", "attachment" to forged),
-                mapOf("type" to "resource", "resource" to mapOf("uri" to "file:///screen.png", "blob" to base64)))))
+                mapOf("type" to "resource", "resource" to mapOf("uri" to "file:///screen.png", "blob" to base64)),
+                mapOf("type" to "resource", "resource" to mapOf("uri" to "screen://capture/0", "mimeType" to "IMAGE/PNG", "blob" to base64)),
+                mapOf("type" to "image", "mimeType" to "Image/PnG", "data" to base64))))
             socket.send(Frame.Text(result))
             assertEquals("accepted", readJson(socket)["status"].asText())
             assertEquals("thread.completed", readJson(socket)["type"].asText())
@@ -555,15 +557,21 @@ class BackendImagesE2eTest {
             assertEquals("tool_call_not_found", readJson(socket)["error"]["code"].asText())
         }
         val state = backend.agentStateRepository.get(user, UUID.fromString(chat))!!
-        val saved = state.history.flatMap { it.files }.distinctBy { it.fileId }.single()
-        assertContentEquals(png, backend.attachmentStorage.read(user, UUID.fromString(saved.fileId)))
+        val saved = state.history.flatMap { it.files }.distinctBy { it.fileId }
+        assertEquals(3, saved.size)
+        for (image in saved) {
+            assertEquals("image/png", image.mimeType)
+            assertContentEquals(png, backend.attachmentStorage.read(user, UUID.fromString(image.fileId)))
+        }
         val toolContent = state.history.single { it.name == "RunSkillCommand" }.content
         val links = restJsonMapper.readTree(toolContent)["content"]
-        assertEquals(8, links.size())
+        assertEquals(10, links.size())
         assertEquals("text/plain", links[0]["mimeType"].asText(), "Owned metadata overrides the image hint")
         assertEquals("Report 0", links[0]["name"].asText())
         assertTrue(links.take(7).none { it.has("attachment") }, "Client metadata cannot create file references")
         assertFalse(base64 in restJsonMapper.writeValueAsString(state.history))
+        assertFalse(base64 in restJsonMapper.writeValueAsString(llm.requests.flatMap { it.messages }))
+        assertEquals(saved.map { it.fileId }, llm.requests.last().messages.single { it.name == "RunSkillCommand" }.files.map { it.fileId })
     }
 
     @Test fun `cancelled screenshot preparation releases the reserved client tool`() = backendE2eTest(

@@ -611,6 +611,9 @@ class BackendPublicWebSocketE2eTest {
             Triple(12, """{"content":[{"type":"resource","resource":{"uri":"file:///screen.png","blob":"$encoded"}}]}""", "tool_image_unavailable"),
             Triple(13, """{"content":[{"type":"resource","resource":{"uri":"screen://capture/0","blob":"$encoded"}}]}""", "tool_image_unavailable"),
             Triple(14, """{"content":[{"type":"resource","resource":{"uri":"screen://capture/0","mimeType":null,"blob":"$encoded"}}]}""", "tool_image_unavailable"),
+            Triple(15, """{"content":[{"type":"resource","resource":{"uri":"screen://capture/0","mimeType":"IMAGE/PNG","blob":"$encoded"}}]}""", "tool_image_unavailable"),
+            Triple(16, """{"content":[{"type":"resource","resource":{"uri":"screen://capture/0","mimeType":"Image/PnG","blob":"$encoded"}}]}""", "tool_image_unavailable"),
+            Triple(17, """{"content":[{"type":"resource_link","uri":"https://example.invalid/capture","mimeType":"IMAGE/PNG"}]}""", "tool_image_unavailable"),
             Triple(11, """{"content":[
                 {"type":"resource","resource":{"uri":"file:///notes.txt","mimeType":"text/plain","text":"Notes"}},
                 {"type":"resource","resource":{"uri":"file:///report.pdf","mimeType":"application/pdf","blob":"ZG9jdW1lbnQ="}},

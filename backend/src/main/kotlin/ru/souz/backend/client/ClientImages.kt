@@ -76,7 +76,7 @@ internal class ClientImages(private val storage: AttachmentStorage) : AutoClosea
                     }
                     existing
                 } else {
-                    storage.saveClientImage(userId, "$key:$index", remaining, item["mimeType"]?.asText()) { bound ->
+                    storage.saveClientImage(userId, "$key:$index", remaining, item["mimeType"]?.asText()?.lowercase()) { bound ->
                         if (item["type"]?.asText() == "image") {
                             val data = requireNotNull(item["data"]?.takeIf { it.isTextual }?.asText())
                             require(data.length <= 4 * ((bound + 2) / 3))
@@ -146,13 +146,13 @@ internal fun isImageContent(item: JsonNode): Boolean =
     when (item["type"]?.asText()) {
         "image" -> true
         "resource" -> item["resource"]?.let { resource ->
-            resource["mimeType"]?.asText()?.startsWith("image/") == true ||
+            resource["mimeType"]?.asText()?.lowercase()?.startsWith("image/") == true ||
                 resource["uri"].hasImageSuffix() ||
                 // MIME is optional in MCP. Ambiguous binary resources must pass image validation
                 // (or be rejected without storage), never escape as raw base64 in text/history.
                 (resource.has("blob") && resource["mimeType"]?.takeIf { it.isTextual }?.asText().isNullOrBlank())
         } == true
-        "resource_link" -> item["mimeType"]?.asText()?.startsWith("image/") == true ||
+        "resource_link" -> item["mimeType"]?.asText()?.lowercase()?.startsWith("image/") == true ||
             item["uri"].hasImageSuffix()
         else -> false
     }
