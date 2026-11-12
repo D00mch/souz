@@ -99,67 +99,6 @@ class ChatUseCaseTest {
     }
 
     @Test
-    fun `active run input replaces provisional stream without starting another request`() = runTest {
-        val executeStarted = CompletableDeferred<Unit>()
-        val executeResult = CompletableDeferred<String>()
-        val executedInputs = mutableListOf<String>()
-        val submittedInputs = mutableListOf<String>()
-        val sideEffects = MutableSharedFlow<AgentSideEffect>()
-        val useCase = createExecutableUseCase(
-            activeAgentId = AgentId.SKILLS_GRAPH,
-            sideEffects = sideEffects,
-            executedInputs = executedInputs,
-            submittedInputs = submittedInputs,
-            submitToActiveRun = { true },
-            executeAnswer = {
-                executeStarted.complete(Unit)
-                executeResult.await()
-            },
-        )
-        var state = MainState()
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            useCase.outputs.collect { output ->
-                if (output is MainUseCaseOutput.State) {
-                    state = output.reduce(state)
-                }
-            }
-        }
-
-        val requestJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            useCase.sendChatMessage(
-                scope = backgroundScope,
-                isVoice = false,
-                chatMessage = "hello",
-                requestSource = ChatRequestSource.CHAT_UI,
-            )
-        }
-        executeStarted.await()
-        runCurrent()
-        sideEffects.emit(AgentSideEffect.Text("provisional"))
-
-        assertEquals(listOf("hello", "provisional"), state.chatMessages.map { it.text })
-
-        val accepted = useCase.submitToActiveRun("  steer this  ", isVoice = false)
-
-        assertTrue(accepted)
-        assertEquals(listOf("hello", "steer this"), state.chatMessages.map { it.text })
-        assertTrue(state.isProcessing)
-
-        runCurrent()
-        sideEffects.emit(AgentSideEffect.Text("replacement", streamRevision = 1L))
-        assertEquals(listOf("hello", "steer this", "replacement"), state.chatMessages.map { it.text })
-        assertFalse(state.chatMessages.any { it.text.contains("provisional") })
-
-        executeResult.complete("final answer")
-        requestJob.join()
-
-        assertEquals(listOf("hello"), executedInputs)
-        assertEquals(listOf("steer this"), submittedInputs)
-        assertEquals(listOf("hello", "steer this", "final answer"), state.chatMessages.map { it.text })
-        assertFalse(state.isProcessing)
-    }
-
-    @Test
     fun `voice continuation makes non-streaming response speak`() = runTest {
         val executeStarted = CompletableDeferred<Unit>()
         val executeResult = CompletableDeferred<String>()
@@ -478,91 +417,6 @@ class ChatUseCaseTest {
     }
 
     @Test
-    fun `sendChatMessage passes conversation and message ids to agent execution meta`() = runTest {
-        val executionMeta = mutableListOf<ToolInvocationMeta?>()
-        val agentFacade = mockk<AgentFacade>(relaxed = true)
-        every { agentFacade.sideEffects } returns MutableSharedFlow<AgentSideEffect>()
-        every { agentFacade.activeAgentId } returns MutableStateFlow(AgentId.GRAPH)
-        every { agentFacade.currentContext } returns MutableStateFlow(
-            AgentContext(
-                input = "",
-                settings = AgentSettings(
-                    model = "model",
-                    provider = LlmProvider.OPENAI,
-                    temperature = 0f,
-                    toolsByCategory = emptyMap(),
-                ),
-                history = listOf(LLMRequest.Message(LLMMessageRole.system, "Base system prompt")),
-                activeTools = emptyList(),
-                systemPrompt = "Base system prompt",
-            )
-        )
-        coEvery {
-            agentFacade.executeForResult(
-                input = "hello",
-                toolInvocationMetaOverride = any(),
-            )
-        } coAnswers {
-            executionMeta += secondArg<ToolInvocationMeta?>()
-            AgentExecutionResult(
-                output = "response",
-                context = agentFacade.currentContext.value,
-            )
-        }
-
-        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
-        every { settingsProvider.gigaModel } returns LLMModel.Max
-        every { settingsProvider.notificationSoundEnabled } returns false
-        every { settingsProvider.useStreaming } returns false
-
-        val tokenLogging = mockk<TokenLogging>(relaxed = true)
-        every { tokenLogging.requestContextElement(any()) } returns EmptyCoroutineContext
-        every { tokenLogging.currentRequestTokenUsage(any()) } returns LLMResponse.Usage(0, 0, 0, 0)
-        every { tokenLogging.sessionTokenUsage() } returns LLMResponse.Usage(0, 0, 0, 0)
-
-        val toolModifyReviewUseCase = mockk<ToolModifyReviewUseCase>(relaxed = true)
-        coEvery {
-            toolModifyReviewUseCase.resolvePendingReviewIfNeeded(
-                requestId = any(),
-                pendingBotMessage = any(),
-                response = "response",
-                onReviewShown = any(),
-            )
-        } returns ToolModifyReviewUseCase.ToolModifyReviewResult(
-            text = "response",
-            appendAsNewMessage = false,
-        )
-
-        val useCase = ChatUseCase(
-            agentFacade = agentFacade,
-            settingsProvider = settingsProvider,
-            speechUseCase = mockk(relaxed = true),
-            finderPathExtractor = mockk(relaxed = true),
-            chatAttachmentsUseCase = ChatAttachmentsUseCase(UnconfinedTestDispatcher()),
-            toolModifyReviewUseCase = toolModifyReviewUseCase,
-            observabilityTracker = ChatObservabilityTracker(log = DesktopStructuredLogger()),
-            log = DesktopStructuredLogger(),
-            tokenLogging = tokenLogging,
-            conversationKnowledgeStore = mockk(relaxed = true),
-            ioDispatcher = UnconfinedTestDispatcher(),
-        )
-
-        useCase.sendChatMessage(
-            scope = backgroundScope,
-            isVoice = false,
-            chatMessage = "hello",
-            requestSource = ChatRequestSource.CHAT_UI,
-        )
-        advanceUntilIdle()
-
-        val meta = assertNotNull(executionMeta.single())
-        assertTrue(meta.conversationId?.isNotBlank() == true)
-        assertTrue(meta.requestId?.isNotBlank() == true)
-        assertTrue(meta.attributes["userMessageId"]?.isNotBlank() == true)
-        assertTrue(meta.attributes["assistantMessageId"]?.isNotBlank() == true)
-    }
-
-    @Test
     fun `cleanup does not wait for hanging agent execution without memory capture`() = runTest {
         val executeStarted = CompletableDeferred<Unit>()
         val executeResult = CompletableDeferred<String>()
@@ -609,9 +463,11 @@ class ChatUseCaseTest {
             timeZone = "Europe/Moscow",
             attributes = mapOf("host" to "desktop"),
         )
+        val executionMeta = mutableListOf<ToolInvocationMeta?>()
         val useCase = createExecutableUseCase(
             knowledgeStore = knowledgeStore,
             baseMeta = baseMeta,
+            executionMeta = executionMeta,
         )
 
         useCase.sendChatMessage(
@@ -620,6 +476,7 @@ class ChatUseCaseTest {
             chatMessage = "hello",
             requestSource = ChatRequestSource.CHAT_UI,
         )
+        val sentMeta = assertNotNull(executionMeta.single())
         val capturedMeta = assertNotNull(
             useCase.finishCurrentConversation(ChatConversationCloseReason.NEW_CONVERSATION)
         )
@@ -627,6 +484,8 @@ class ChatUseCaseTest {
         useCase.clearConversationContext()
         useCase.cleanupConversation(capturedMeta)
 
+        assertEquals(ToolInvocationMeta.localDefault(), useCase.snapshotContext()?.toolInvocationMeta)
+        assertEquals(sentMeta, capturedMeta)
         assertEquals("user-42", capturedMeta.userId)
         assertEquals("ru-RU", capturedMeta.locale)
         assertEquals("Europe/Moscow", capturedMeta.timeZone)
@@ -687,8 +546,7 @@ class ChatUseCaseTest {
         sideEffects: MutableSharedFlow<AgentSideEffect> = MutableSharedFlow(),
         speechUseCase: SpeechUseCase = mockk(relaxed = true),
         useStreaming: Boolean = false,
-        executedInputs: MutableList<String>? = null,
-        submittedInputs: MutableList<String>? = null,
+        executionMeta: MutableList<ToolInvocationMeta?>? = null,
         submitToActiveRun: suspend (String) -> Boolean = { false },
         onCancelActiveJob: () -> Unit = {},
         executeAnswer: suspend (String) -> String = { "response" },
@@ -696,7 +554,7 @@ class ChatUseCaseTest {
         val agentFacade = mockk<AgentFacade>(relaxed = true)
         every { agentFacade.sideEffects } returns sideEffects
         every { agentFacade.activeAgentId } returns MutableStateFlow(activeAgentId)
-        every { agentFacade.currentContext } returns MutableStateFlow(
+        val context = MutableStateFlow(
             AgentContext(
                 input = "",
                 settings = AgentSettings(
@@ -711,9 +569,14 @@ class ChatUseCaseTest {
                 toolInvocationMeta = baseMeta,
             )
         )
+        every { agentFacade.currentContext } returns context
+        coEvery { agentFacade.clearContext() } coAnswers {
+            context.value = context.value.copy(toolInvocationMeta = ToolInvocationMeta.localDefault())
+            true
+        }
         coEvery { agentFacade.cancelActiveJob() } answers { onCancelActiveJob() }
         coEvery { agentFacade.executeForResult(any(), any()) } coAnswers {
-            executedInputs?.add(firstArg())
+            executionMeta?.add(secondArg())
             AgentExecutionResult(
                 output = executeAnswer(firstArg()),
                 context = agentFacade.currentContext.value,
@@ -721,7 +584,6 @@ class ChatUseCaseTest {
         }
         coEvery { agentFacade.submitToActiveRun(any()) } coAnswers {
             val input = firstArg<String>()
-            submittedInputs?.add(input)
             submitToActiveRun(input)
         }
 

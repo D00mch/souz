@@ -14,6 +14,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.ValueSource
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -276,11 +277,17 @@ class TelegramBotControllerTest {
         assertEquals(4096L, file.fileSize)
     }
 
-    @Test
-    fun `processUpdates executes only owner private commands`() = runTest {
+    @ParameterizedTest(name = "sender={0}, chat={1}, authorized={4}")
+    @CsvSource("42, private, 100, 5, true", "42, group, -1001, 10, false", "99, private, 99, 20, false")
+    fun `processUpdates authorizes only owner private commands`(
+        senderId: Long,
+        chatType: String,
+        chatId: Long,
+        updateId: Long,
+        authorized: Boolean,
+    ) = runTest {
         val agentFacade = mockk<AgentFacade>()
         coEvery { agentFacade.execute("ping") } returns "pong"
-
         val botApi = FakeBotApi()
         val controller = TelegramBotController(
             telegramService = mockk(relaxed = true),
@@ -288,96 +295,30 @@ class TelegramBotControllerTest {
             botApi = botApi,
         )
 
-        val nextOffset = controller.processUpdates(
-            token = "token",
-            ownerId = 42,
-            updates = listOf(
-                TelegramUpdate(
-                    updateId = 5,
-                    message = TelegramMessage(
-                        messageId = 1,
-                        from = TelegramUser(id = 42, isBot = false),
-                        chat = TelegramChat(id = 100, type = "private"),
-                        text = "ping",
+        try {
+            val nextOffset = controller.processUpdates(
+                token = "token",
+                ownerId = 42,
+                updates = listOf(
+                    TelegramUpdate(
+                        updateId = updateId,
+                        message = TelegramMessage(
+                            messageId = 1,
+                            from = TelegramUser(id = senderId, isBot = false),
+                            chat = TelegramChat(id = chatId, type = chatType),
+                            text = "ping",
+                        ),
                     ),
                 ),
-            ),
-            currentOffset = 0,
-        )
+                currentOffset = 0,
+            )
 
-        assertEquals(6, nextOffset)
-        assertEquals(listOf("Processing command...", "pong"), botApi.sentTexts)
-        coVerify(exactly = 1) { agentFacade.execute("ping") }
-
-        controller.close()
-    }
-
-    @Test
-    fun `processUpdates rejects owner commands outside private chat`() = runTest {
-        val agentFacade = mockk<AgentFacade>(relaxed = true)
-        val botApi = FakeBotApi()
-        val controller = TelegramBotController(
-            telegramService = mockk(relaxed = true),
-            agentFacade = agentFacade,
-            botApi = botApi,
-        )
-
-        val nextOffset = controller.processUpdates(
-            token = "token",
-            ownerId = 42,
-            updates = listOf(
-                TelegramUpdate(
-                    updateId = 10,
-                    message = TelegramMessage(
-                        messageId = 1,
-                        from = TelegramUser(id = 42, isBot = false),
-                        chat = TelegramChat(id = -1001, type = "group"),
-                        text = "dangerous",
-                    ),
-                ),
-            ),
-            currentOffset = 0,
-        )
-
-        assertEquals(11, nextOffset)
-        assertTrue(botApi.sentTexts.isEmpty())
-        coVerify(exactly = 0) { agentFacade.execute(any()) }
-
-        controller.close()
-    }
-
-    @Test
-    fun `processUpdates rejects non-owner private commands`() = runTest {
-        val agentFacade = mockk<AgentFacade>(relaxed = true)
-        val botApi = FakeBotApi()
-        val controller = TelegramBotController(
-            telegramService = mockk(relaxed = true),
-            agentFacade = agentFacade,
-            botApi = botApi,
-        )
-
-        val nextOffset = controller.processUpdates(
-            token = "token",
-            ownerId = 42,
-            updates = listOf(
-                TelegramUpdate(
-                    updateId = 20,
-                    message = TelegramMessage(
-                        messageId = 1,
-                        from = TelegramUser(id = 99, isBot = false),
-                        chat = TelegramChat(id = 99, type = "private"),
-                        text = "ping",
-                    ),
-                ),
-            ),
-            currentOffset = 0,
-        )
-
-        assertEquals(21, nextOffset)
-        assertTrue(botApi.sentTexts.isEmpty())
-        coVerify(exactly = 0) { agentFacade.execute(any()) }
-
-        controller.close()
+            assertEquals(updateId + 1, nextOffset)
+            assertEquals(if (authorized) listOf("Processing command...", "pong") else emptyList(), botApi.sentTexts)
+            coVerify(exactly = if (authorized) 1 else 0) { agentFacade.execute(any()) }
+        } finally {
+            controller.close()
+        }
     }
 
     @Test

@@ -86,6 +86,7 @@ fun sharedUiDesktopDiModule(): DI.Module = DI.Module("sharedUiDesktop") {
             speechUseCase = instance(),
             permissionsUseCase = instance(),
             permissionPromptService = instance(),
+            ioDispatcher = context.ioDispatcher,
         )
     }
 }

@@ -2,6 +2,7 @@
 
 package ru.souz.ui.main
 
+import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import io.mockk.coEvery
 import io.mockk.every
@@ -30,15 +31,14 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.yield
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.EnumSource
 import org.kodein.di.DI
 import org.kodein.di.bind
 import org.kodein.di.bindSingleton
@@ -46,8 +46,8 @@ import org.kodein.di.instance
 import org.kodein.di.scoped
 import org.kodein.di.singleton
 import org.kodein.di.with
-import org.junit.jupiter.api.Assumptions.assumeTrue
 import souz.sharedui.generated.resources.Res
+import souz.sharedui.generated.resources.ambient_error_missing_analysis_model
 import souz.sharedui.generated.resources.chat_action_web_search
 import souz.sharedui.generated.resources.onboarding_display_text
 import souz.sharedui.generated.resources.onboarding_input_permission_request
@@ -73,6 +73,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMResponse.FunctionCall
 import ru.souz.llms.ToolInvocationMeta
@@ -148,8 +149,6 @@ class MainViewModelTest {
 
     @BeforeTest
     fun setUp() {
-        assumeTrue(hasOpenGlRuntime(), "MainViewModelTest requires libGL runtime on Linux CI")
-
         mainDispatcher = StandardTestDispatcher()
         Dispatchers.setMain(mainDispatcher)
 
@@ -157,21 +156,23 @@ class MainViewModelTest {
         mockkStatic("org.jetbrains.compose.resources.StringArrayResourcesKt")
         coEvery { getString(any()) } answers { firstArg<Any>().toString() }
         coEvery { getString(Res.string.chat_action_web_search) } returns "Ищу в интернете: %1\$s"
+        coEvery { getString(Res.string.ambient_error_missing_analysis_model) } returns "Missing ambient analysis model"
         coEvery { getStringArray(any()) } returns listOf("tip")
 
     }
 
     @AfterTest
     fun tearDown() {
+        mainDispatcher.scheduler.runCurrent()
         Dispatchers.resetMain()
         unmockkAll()
     }
 
     @Test
-    fun `send during capable agent processing submits input to the active run`() = runTest(mainDispatcher) {
+    fun `active run input replaces provisional output without starting another request`() = runTest(mainDispatcher) {
         val response = CompletableDeferred<String>()
         val harness = createHarness(
-            activeAgentId = AgentId.GRAPH,
+            activeAgentId = AgentId.SKILLS_GRAPH,
             supportsActiveRunInput = true,
             executeBehavior = { response.await() },
             submitActiveRunBehavior = { true },
@@ -179,22 +180,32 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
             assertTrue(viewModel.uiState.value.supportsActiveRunInput)
 
             viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
             awaitState(viewModel) { it.isProcessing }
 
-            viewModel.handleEvent(MainEvent.SendChatMessage("steer this"))
+            harness.sideEffects.emit(AgentSideEffect.Text("provisional"))
+            assertEquals(
+                listOf("initial request", "provisional"),
+                awaitState(viewModel) { it.chatMessages.size == 2 }.chatMessages.map { it.text },
+            )
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("  steer this  "))
 
             val steeredState = awaitState(viewModel) { state ->
                 state.chatMessages.any { it.isUser && it.text == "steer this" }
             }
+            assertEquals(listOf("initial request", "steer this"), steeredState.chatMessages.map { it.text })
             assertTrue(steeredState.isProcessing)
-            assertEquals(listOf("initial request"), harness.executedInputs)
-            assertEquals(listOf("steer this"), harness.submittedActiveRunInputs)
             assertTrue(steeredState.chatInputSubmissionFeedback.accepted)
-            assertEquals("steer this", steeredState.chatInputSubmissionFeedback.input)
+            assertEquals("  steer this  ", steeredState.chatInputSubmissionFeedback.input)
+
+            harness.sideEffects.emit(AgentSideEffect.Text("replacement", streamRevision = 1L))
+            val replacementState = awaitState(viewModel) { it.chatMessages.last().text == "replacement" }
+            assertEquals(listOf("initial request", "steer this", "replacement"), replacementState.chatMessages.map { it.text })
+            assertFalse(replacementState.chatMessages.any { it.text.contains("provisional") })
 
             response.complete("final answer")
             val finalState = awaitState(viewModel) { state ->
@@ -204,6 +215,8 @@ class MainViewModelTest {
                 listOf("initial request", "steer this", "final answer"),
                 finalState.chatMessages.map { it.text },
             )
+            assertEquals(listOf("initial request"), harness.executedInputs)
+            assertEquals(listOf("steer this"), harness.submittedActiveRunInputs)
         } finally {
             response.complete("final answer")
             harness.clear()
@@ -221,7 +234,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
             viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
             awaitState(viewModel) { it.isProcessing }
             val initialRevision = viewModel.uiState.value.chatInputSubmissionFeedback.revision
@@ -242,21 +255,27 @@ class MainViewModelTest {
 
     @Test
     fun `send stop, send drops, canceled first message, and keeps processing state`() = runTest(mainDispatcher) {
+        val firstStarted = CompletableDeferred<Unit>()
         val firstResponse = CompletableDeferred<String>()
         val secondResponse = CompletableDeferred<String>()
         val harness = createHarness(executeBehavior = { input ->
             when (input) {
-                "first request" -> firstResponse.await()
+                "first request" -> {
+                    firstStarted.complete(Unit)
+                    firstResponse.await()
+                }
                 "second request" -> secondResponse.await()
                 else -> error("Unexpected input: $input")
             }
         }, onCancelActiveJob = {
-            firstResponse.completeExceptionally(CancellationException("Stopped by user"))
+            if (firstStarted.isCompleted) {
+                firstResponse.completeExceptionally(CancellationException("Stopped by user"))
+            }
         })
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             viewModel.handleEvent(MainEvent.SendChatMessage("first request"))
 
@@ -302,7 +321,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             viewModel.handleEvent(MainEvent.SendChatMessage("first request"))
 
@@ -319,7 +338,7 @@ class MainViewModelTest {
             assertFalse(afterStop.chatMessages.any { it.text == "first request" })
 
             firstResponse.complete("late answer")
-            advanceUntilIdle()
+            runCurrent()
             val afterLateCompletion = viewModel.uiState.value
             assertFalse(afterLateCompletion.chatMessages.any { it.text == "late answer" })
             assertFalse(afterLateCompletion.isProcessing)
@@ -369,7 +388,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             viewModel.handleEvent(MainEvent.SendChatMessage("first request"))
 
@@ -420,7 +439,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             prepareAudioCapture(viewModel, byteArrayOf(1, 2, 3))
             viewModel.send(MainEvent.StartListening)
@@ -482,7 +501,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             recordVoiceInput(viewModel, byteArrayOf(9, 8, 7))
             val stateWithDraft = awaitState(viewModel) { state ->
@@ -527,7 +546,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             recordVoiceInput(viewModel, byteArrayOf(1, 2, 3))
             val firstDraft = requireNotNull(
@@ -586,7 +605,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             viewModel.handleEvent(MainEvent.SendChatMessage("request A"))
             awaitState(viewModel) { it.isProcessing }
@@ -640,7 +659,7 @@ class MainViewModelTest {
         try {
             val viewModel = harness.viewModel
             val audioRecorder = testAudioRecorder(viewModel)
-            advanceUntilIdle()
+            runCurrent()
 
             audioRecorder.failNextStop()
             viewModel.handleEvent(MainEvent.StartListening)
@@ -677,7 +696,7 @@ class MainViewModelTest {
         try {
             val viewModel = harness.viewModel
             val audioRecorder = testAudioRecorder(viewModel)
-            advanceUntilIdle()
+            runCurrent()
 
             audioRecorder.deferNextStop()
             prepareAudioCapture(viewModel, byteArrayOf(9, 8, 7))
@@ -717,7 +736,7 @@ class MainViewModelTest {
         try {
             val viewModel = harness.viewModel
             val audioRecorder = testAudioRecorder(viewModel)
-            advanceUntilIdle()
+            runCurrent()
 
             viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
             awaitState(viewModel) { it.isProcessing }
@@ -756,7 +775,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             prepareAudioCapture(viewModel, byteArrayOf(9, 9, 9))
             viewModel.handleEvent(MainEvent.StartListening)
@@ -795,7 +814,7 @@ class MainViewModelTest {
 
             try {
                 val viewModel = harness.viewModel
-                advanceUntilIdle()
+                runCurrent()
 
                 recordVoiceInput(viewModel, byteArrayOf(7, 8, 9))
 
@@ -803,6 +822,8 @@ class MainViewModelTest {
                 val unavailableState = awaitState(viewModel) { it.statusMessage == unavailableMessage }
                 assertEquals(unavailableMessage, unavailableState.statusMessage)
 
+                advanceTimeBy(1_000)
+                runCurrent()
                 recordVoiceInput(viewModel, byteArrayOf(1, 2, 3))
 
                 val recoveredState = awaitState(viewModel) {
@@ -831,7 +852,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             recordVoiceInput(viewModel, ByteArray(16_000 * 2 * 45 + 1))
 
@@ -860,7 +881,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             val chatUseCase = privateField<Any>(viewModel, "chatUseCase")
             val toolModifyReviewUseCase = privateField<Any>(viewModel, "toolModifyReviewUseCase")
@@ -894,7 +915,7 @@ class MainViewModelTest {
 
             try {
                 val viewModel = harness.viewModel
-                advanceUntilIdle()
+                runCurrent()
 
                 awaitVoiceRequestStarted(viewModel, byteArrayOf(1, 2, 3)) { state ->
                     state.isProcessing && state.chatMessages.any { it.isUser && it.text == "hello" }
@@ -951,7 +972,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             viewModel.handleEvent(MainEvent.SendChatMessage("hello"))
             awaitState(viewModel) { it.isProcessing }
@@ -990,7 +1011,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             viewModel.handleEvent(MainEvent.SendChatMessage("hello"))
             awaitState(viewModel) { it.isProcessing }
@@ -1032,7 +1053,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             viewModel.handleEvent(MainEvent.SendChatMessage("first"))
             awaitState(viewModel) { it.isProcessing }
@@ -1106,7 +1127,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             viewModel.handleEvent(MainEvent.UpdateChatModel(LLMModel.LocalQwen3_4B_Instruct_2507.alias))
 
@@ -1166,16 +1187,16 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
             localModelUiHost.clearCounters()
 
             viewModel.handleEvent(MainEvent.ToggleAmbientMode)
 
             val effect = awaitDeferred(effectSignal)
-            advanceUntilIdle()
+            runCurrent()
 
             assertTrue(effect is MainEffect.ShowError)
-            assertTrue(effect.message.contains("ambient", ignoreCase = true))
+            assertEquals(getString(Res.string.ambient_error_missing_analysis_model), effect.message)
             assertEquals(1, localModelUiHost.downloadPromptCalls)
             assertEquals(listOf(ambientModel), localModelUiHost.downloadPromptModels)
             assertEquals(0, ambientTranscriptionService.startCalls)
@@ -1201,7 +1222,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
             localModelUiHost.clearCounters()
 
             viewModel.handleEvent(MainEvent.ToggleAmbientMode)
@@ -1232,7 +1253,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
             localModelUiHost.clearCounters()
 
             viewModel.handleEvent(MainEvent.ToggleAmbientMode)
@@ -1264,14 +1285,14 @@ class MainViewModelTest {
         )
 
         val viewModel = harness.viewModel
-        advanceUntilIdle()
+        runCurrent()
 
         viewModel.handleEvent(MainEvent.ToggleAmbientMode)
         awaitState(viewModel) { it.ambientMode.listening }
 
         viewModel.viewModelScope.cancel()
         harness.clear()
-        advanceUntilIdle()
+        runCurrent()
 
         assertEquals(1, ambientTranscriptionService.startCalls)
         assertEquals(1, ambientTranscriptionService.stopCalls)
@@ -1294,7 +1315,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             viewModel.handleEvent(MainEvent.PickChatAttachments)
 
@@ -1321,7 +1342,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             viewModel.handleEvent(
                 MainEvent.AttachDroppedFiles(
@@ -1356,7 +1377,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             viewModel.handleEvent(MainEvent.AttachDroppedFiles(listOf(tempFile.absolutePath)))
             awaitState(viewModel) { state -> state.attachedFiles.size == 1 }
@@ -1384,7 +1405,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             val firstMatch = ChatMessage(text = "alpha target", isUser = true)
             val noMatch = ChatMessage(text = "beta", isUser = false)
@@ -1421,22 +1442,37 @@ class MainViewModelTest {
         }
     }
 
-    @Test
-    fun `clear context resets awaiting tool review state`() = runTest(mainDispatcher) {
-        val harness = createHarness()
+    @ParameterizedTest(name = "close conversation: {0}")
+    @EnumSource(
+        ChatConversationCloseReason::class,
+        names = ["NEW_CONVERSATION", "CLEAR_CONTEXT", "VIEW_MODEL_CLEARED"],
+    )
+    fun `closing a conversation resets UI and cleans its memory and Knowledge`(
+        reason: ChatConversationCloseReason,
+    ) = runTest(mainDispatcher) {
+        val cleanup = RecordingMemoryConversationCleanup()
+        val clearedKnowledgeMeta = mutableListOf<ToolInvocationMeta>()
+        val knowledgeStore = mockk<ConversationKnowledgeStore>(relaxed = true)
+        coEvery { knowledgeStore.clearConversation(capture(clearedKnowledgeMeta)) } returns Unit
+        val finishedConversations = mutableListOf<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>()
+        val harness = createHarness(
+            memoryConversationCleanup = cleanup,
+            conversationKnowledgeStore = knowledgeStore,
+            conversationFinishedEvents = finishedConversations,
+        )
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
+            viewModel.handleEvent(MainEvent.SendChatMessage("temporary conversation data"))
+            awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { it.text == "stub response" }
+            }
             forceUiState(
                 viewModel,
                 viewModel.uiState.value.copy(
                     isAwaitingToolReview = true,
-                    pendingVoiceInputDraft = PendingVoiceInputDraft(
-                        text = "voice draft",
-                        token = 42L,
-                        submitAsVoice = true,
-                    ),
+                    pendingVoiceInputDraft = PendingVoiceInputDraft("voice draft", 42L, submitAsVoice = true),
                     chatMessages = listOf(
                         ChatMessage(
                             text = "pending review",
@@ -1444,154 +1480,41 @@ class MainViewModelTest {
                             toolModifyReview = ToolModifyReviewUi(items = emptyList()),
                         )
                     ),
-                )
+                ),
             )
 
-            viewModel.handleEvent(MainEvent.ClearContext)
-
-            val state = awaitState(viewModel) {
-                !it.isAwaitingToolReview &&
-                    it.chatMessages.isEmpty() &&
-                    it.pendingVoiceInputDraft == null
+            when (reason) {
+                ChatConversationCloseReason.NEW_CONVERSATION -> {
+                    viewModel.handleEvent(MainEvent.RequestNewConversation)
+                    awaitState(viewModel) { it.showNewChatDialog }
+                    assertTrue(cleanup.cleanedConversationIds.isEmpty())
+                    assertTrue(clearedKnowledgeMeta.isEmpty())
+                    viewModel.handleEvent(MainEvent.ConfirmNewConversation)
+                }
+                ChatConversationCloseReason.CLEAR_CONTEXT -> viewModel.handleEvent(MainEvent.ClearContext)
+                ChatConversationCloseReason.VIEW_MODEL_CLEARED -> harness.clear()
+                else -> error("Unsupported desktop close reason: $reason")
             }
-            assertFalse(state.isAwaitingToolReview)
-            assertNull(state.pendingVoiceInputDraft)
+            runCurrent()
+
+            if (reason == ChatConversationCloseReason.VIEW_MODEL_CLEARED) {
+                assertFalse(viewModel.viewModelScope.coroutineContext[Job]!!.isActive)
+            } else {
+                val state = viewModel.uiState.value
+                assertTrue(state.chatMessages.isEmpty())
+                assertFalse(state.isAwaitingToolReview)
+                assertFalse(state.showNewChatDialog)
+                assertNull(state.pendingVoiceInputDraft)
+                assertEquals(reason == ChatConversationCloseReason.CLEAR_CONTEXT, state.userExpectCloseOnX)
+            }
+            val conversationId = cleanup.cleanedConversationIds.single()
+            assertTrue(conversationId.isNotBlank())
+            assertEquals(conversationId, finishedConversations.single().first)
+            assertEquals(conversationId, clearedKnowledgeMeta.single().conversationId)
+            assertEquals(reason, finishedConversations.single().third)
         } finally {
             harness.clear()
         }
-    }
-
-    @Test
-    fun `new conversation resets awaiting tool review state`() = runTest(mainDispatcher) {
-        val harness = createHarness()
-
-        try {
-            val viewModel = harness.viewModel
-            advanceUntilIdle()
-            forceUiState(
-                viewModel,
-                viewModel.uiState.value.copy(
-                    isAwaitingToolReview = true,
-                    chatMessages = listOf(
-                        ChatMessage(
-                            text = "pending review",
-                            isUser = false,
-                            toolModifyReview = ToolModifyReviewUi(items = emptyList()),
-                        )
-                    ),
-                )
-            )
-
-            viewModel.handleEvent(MainEvent.RequestNewConversation)
-            awaitState(viewModel) { it.showNewChatDialog }
-            viewModel.handleEvent(MainEvent.ConfirmNewConversation)
-
-            val state = awaitState(viewModel) {
-                !it.isAwaitingToolReview && it.chatMessages.isEmpty() && !it.showNewChatDialog
-            }
-            assertFalse(state.isAwaitingToolReview)
-        } finally {
-            harness.clear()
-        }
-    }
-
-    @Test
-    fun `confirmed new conversation cleans discarded chat memory and Knowledge`() = runTest(mainDispatcher) {
-        val cleanup = RecordingMemoryConversationCleanup()
-        val clearedKnowledgeMeta = mutableListOf<ToolInvocationMeta>()
-        val knowledgeStore = mockk<ConversationKnowledgeStore>(relaxed = true)
-        coEvery { knowledgeStore.clearConversation(capture(clearedKnowledgeMeta)) } returns Unit
-        val finishedConversations = mutableListOf<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>()
-        val harness = createHarness(
-            memoryConversationCleanup = cleanup,
-            conversationKnowledgeStore = knowledgeStore,
-            conversationFinishedEvents = finishedConversations,
-        )
-
-        try {
-            val viewModel = harness.viewModel
-            advanceUntilIdle()
-
-            viewModel.handleEvent(MainEvent.SendChatMessage("remember this only for this chat"))
-            awaitState(viewModel) { state ->
-                !state.isProcessing && state.chatMessages.any { it.text == "stub response" }
-            }
-
-            viewModel.handleEvent(MainEvent.RequestNewConversation)
-            awaitState(viewModel) { it.showNewChatDialog }
-            viewModel.handleEvent(MainEvent.ConfirmNewConversation)
-            awaitState(viewModel) { it.chatMessages.isEmpty() && !it.showNewChatDialog }
-            advanceUntilIdle()
-
-            assertEquals(1, cleanup.cleanedConversationIds.size)
-            assertTrue(cleanup.cleanedConversationIds.single().isNotBlank())
-            assertEquals(cleanup.cleanedConversationIds.single(), finishedConversations.single().first)
-            assertEquals(cleanup.cleanedConversationIds.single(), clearedKnowledgeMeta.single().conversationId)
-            assertEquals(ChatConversationCloseReason.NEW_CONVERSATION, finishedConversations.single().third)
-        } finally {
-            harness.clear()
-        }
-    }
-
-    @Test
-    fun `clear context immediately cleans conversation memory and Knowledge`() = runTest(mainDispatcher) {
-        val cleanup = RecordingMemoryConversationCleanup()
-        val clearedKnowledgeMeta = mutableListOf<ToolInvocationMeta>()
-        val knowledgeStore = mockk<ConversationKnowledgeStore>(relaxed = true)
-        coEvery { knowledgeStore.clearConversation(capture(clearedKnowledgeMeta)) } returns Unit
-        val finishedConversations = mutableListOf<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>()
-        val harness = createHarness(
-            memoryConversationCleanup = cleanup,
-            conversationKnowledgeStore = knowledgeStore,
-            conversationFinishedEvents = finishedConversations,
-        )
-
-        try {
-            val viewModel = harness.viewModel
-            advanceUntilIdle()
-            viewModel.handleEvent(MainEvent.SendChatMessage("retain a Knowledge reference"))
-            awaitState(viewModel) { state ->
-                !state.isProcessing && state.chatMessages.any { it.text == "stub response" }
-            }
-
-            viewModel.handleEvent(MainEvent.ClearContext)
-            awaitState(viewModel) { it.chatMessages.isEmpty() && it.userExpectCloseOnX }
-            advanceUntilIdle()
-
-            assertEquals(1, cleanup.cleanedConversationIds.size)
-            assertEquals(cleanup.cleanedConversationIds.single(), clearedKnowledgeMeta.single().conversationId)
-            assertEquals(ChatConversationCloseReason.CLEAR_CONTEXT, finishedConversations.single().third)
-        } finally {
-            harness.clear()
-        }
-    }
-
-    @Test
-    fun `view model teardown cleans conversation memory and Knowledge`() = runTest(mainDispatcher) {
-        val cleanup = RecordingMemoryConversationCleanup()
-        val clearedKnowledgeMeta = mutableListOf<ToolInvocationMeta>()
-        val knowledgeStore = mockk<ConversationKnowledgeStore>(relaxed = true)
-        coEvery { knowledgeStore.clearConversation(capture(clearedKnowledgeMeta)) } returns Unit
-        val finishedConversations = mutableListOf<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>()
-        val harness = createHarness(
-            memoryConversationCleanup = cleanup,
-            conversationKnowledgeStore = knowledgeStore,
-            conversationFinishedEvents = finishedConversations,
-        )
-
-        val viewModel = harness.viewModel
-        advanceUntilIdle()
-        viewModel.handleEvent(MainEvent.SendChatMessage("temporary data"))
-        awaitState(viewModel) { state ->
-            !state.isProcessing && state.chatMessages.any { it.text == "stub response" }
-        }
-
-        harness.clear()
-        advanceUntilIdle()
-
-        assertEquals(1, cleanup.cleanedConversationIds.size)
-        assertEquals(cleanup.cleanedConversationIds.single(), clearedKnowledgeMeta.single().conversationId)
-        assertEquals(ChatConversationCloseReason.VIEW_MODEL_CLEARED, finishedConversations.single().third)
     }
 
     @Test
@@ -1630,7 +1553,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             viewModel.handleEvent(MainEvent.SendChatMessage("first request"))
             awaitState(viewModel) { it.isProcessing && it.chatMessages.any { msg -> msg.text == "first request" } }
@@ -1640,7 +1563,7 @@ class MainViewModelTest {
             awaitState(viewModel) { it.isProcessing && it.chatMessages.any { msg -> msg.text == "second request" } }
 
             firstResponse.complete("stale answer")
-            advanceUntilIdle()
+            runCurrent()
 
             assertFalse(harness.deferredToolModifyPermissionBroker.hasPendingEdits())
             assertNull(harness.deferredToolModifyPermissionBroker.snapshotPendingReview())
@@ -1696,7 +1619,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            advanceUntilIdle()
+            runCurrent()
 
             viewModel.handleEvent(MainEvent.SendChatMessage("first request"))
             awaitState(viewModel) { it.isProcessing && it.chatMessages.any { msg -> msg.text == "first request" } }
@@ -1706,7 +1629,7 @@ class MainViewModelTest {
             awaitState(viewModel) { it.isProcessing && it.chatMessages.any { msg -> msg.text == "second request" } }
 
             firstFailureGate.complete(Unit)
-            advanceUntilIdle()
+            runCurrent()
 
             assertFalse(harness.deferredToolModifyPermissionBroker.hasPendingEdits())
             assertNull(harness.deferredToolModifyPermissionBroker.snapshotPendingReview())
@@ -1725,30 +1648,25 @@ class MainViewModelTest {
     }
 
 
-    private suspend fun TestScope.awaitState(
+    private fun TestScope.awaitState(
         viewModel: MainViewModel,
         predicate: (MainState) -> Boolean,
     ): MainState {
-        val deadlineMs = System.currentTimeMillis() + 5_000
-        while (System.currentTimeMillis() < deadlineMs) {
+        runCurrent()
+        if (!predicate(viewModel.uiState.value)) {
+            // Advance voice confirmation/retry delays without running the recurring index refresh to idle.
+            advanceTimeBy(1_000)
             runCurrent()
-            val state = viewModel.uiState.value
-            if (predicate(state)) return state
-            withContext(Dispatchers.Default) { yield() }
         }
-        error("Timed out waiting for expected MainState")
+        return viewModel.uiState.value.also { state ->
+            assertTrue(predicate(state), "Unexpected MainState: $state")
+        }
     }
 
     private suspend fun <T> TestScope.awaitDeferred(signal: CompletableDeferred<T>): T {
-        val deadlineMs = System.currentTimeMillis() + 5_000
-        while (System.currentTimeMillis() < deadlineMs) {
-            if (signal.isCompleted) {
-                return signal.await()
-            }
-            runCurrent()
-            withContext(Dispatchers.Default) { yield() }
-        }
-        error("Timed out waiting for deferred completion")
+        runCurrent()
+        assertTrue(signal.isCompleted, "Expected deferred completion")
+        return signal.await()
     }
 
     private suspend fun TestScope.awaitVoiceRequestStarted(
@@ -1853,6 +1771,7 @@ class MainViewModelTest {
         every { settingsProvider.regionProfile } returns "ru"
         every { settingsProvider.forbiddenFolders } returns emptyList()
         every { settingsProvider.qwenChatKey } returns qwenChatKey
+        every { settingsProvider.hasKey(any<LlmProvider>()) } answers { callOriginal() }
         every { settingsProvider.regionProfile = any() } just runs
         var embeddingsModelState = ru.souz.llms.EmbeddingsModel.GigaEmbeddings
         every { settingsProvider.embeddingsModel } answers { embeddingsModelState }
@@ -1985,11 +1904,12 @@ class MainViewModelTest {
                     speechUseCase = instance(),
                     permissionsUseCase = instance(),
                     permissionPromptService = desktopPermissionService,
+                    ioDispatcher = mainDispatcher,
                 )
             }
         }
 
-        val viewModel = createMainViewModel(di)
+        val viewModel = createMainViewModel(di, MainViewModelScope(mainDispatcher))
 
         return TestHarness(
             viewModel = viewModel,
@@ -2003,17 +1923,6 @@ class MainViewModelTest {
             submittedActiveRunInputs = submittedActiveRunInputs,
             pressVoiceHotkey = { pressed -> checkNotNull(voiceHotkeyCallback)(pressed) },
         )
-    }
-
-    private fun hasOpenGlRuntime(): Boolean {
-        val mapped = System.mapLibraryName("GL")
-        val candidates = listOf(
-            File("/usr/lib/x86_64-linux-gnu/$mapped"),
-            File("/lib/x86_64-linux-gnu/$mapped"),
-            File("/usr/lib64/$mapped"),
-            File("/usr/lib/$mapped"),
-        )
-        return candidates.any { it.exists() }
     }
 
     private fun emptyAgentContext() = AgentContext(
@@ -2035,11 +1944,9 @@ class MainViewModelTest {
         val submittedActiveRunInputs: List<String>,
         val pressVoiceHotkey: (Boolean) -> Unit,
     ) {
-        fun clear() {
-            val onCleared = MainViewModel::class.java.getDeclaredMethod("onCleared")
-            onCleared.isAccessible = true
-            onCleared.invoke(viewModel)
-        }
+        private val store = ViewModelStore().apply { put("main", viewModel) }
+
+        fun clear() = store.clear()
     }
 
     private class RecordingMemoryConversationCleanup : MemoryConversationCleanup {
