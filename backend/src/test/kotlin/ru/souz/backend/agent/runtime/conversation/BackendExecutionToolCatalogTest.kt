@@ -14,6 +14,8 @@ import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.state.AgentSettings
 import ru.souz.backend.metrics.BackendMetrics
+import ru.souz.backend.app.BackendLlmLimits
+import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.testutil.TestToolCatalog
 import ru.souz.backend.testutil.TestToolSetup
 import ru.souz.llms.LLMRequest
@@ -32,6 +34,7 @@ class BackendExecutionToolCatalogTest {
         val names = setOf("PrepareAttachment", "AttachFileToReply", "DetachFileFromReply")
         for (enabled in listOf(null, emptySet(), names)) {
             val catalog = backendExecutionToolCatalog(
+                executionQuotas = ExecutionQuotaManager(BackendLlmLimits()),
                 compiledToolCatalog = TestToolCatalog(ToolCategory.FILES to names.toList()),
                 executionLlmToolCatalog = TestToolCatalog(), enabledCompiledToolNames = enabled,
                 clientToolCatalog = TestToolCatalog(), includeFewShotExamples = false,
@@ -63,6 +66,7 @@ class BackendExecutionToolCatalogTest {
                     }
                 }
                 val catalog = backendExecutionToolCatalog(
+                    executionQuotas = ExecutionQuotaManager(BackendLlmLimits()),
                     compiledToolCatalog = TestToolCatalog(mapOf(ToolCategory.FILES to mapOf(call.name to tool))),
                     executionLlmToolCatalog = TestToolCatalog(),
                     enabledCompiledToolNames = null,
@@ -117,6 +121,7 @@ class BackendExecutionToolCatalogTest {
     fun `client tools cannot shadow compiled tools`() {
         assertFailsWith<IllegalArgumentException> {
             backendExecutionToolCatalog(
+                executionQuotas = ExecutionQuotaManager(BackendLlmLimits()),
                 compiledToolCatalog = TestToolCatalog(ToolCategory.FILES to listOf("ReadFile")),
                 executionLlmToolCatalog = TestToolCatalog(),
                 enabledCompiledToolNames = null,
@@ -129,6 +134,7 @@ class BackendExecutionToolCatalogTest {
     @Test
     fun `few-shot examples are stripped when the execution disables them`() {
         val catalog = backendExecutionToolCatalog(
+            executionQuotas = ExecutionQuotaManager(BackendLlmLimits()),
             compiledToolCatalog = TestToolCatalog(
                 mapOf(
                     ToolCategory.FILES to mapOf(
@@ -153,6 +159,7 @@ class BackendExecutionToolCatalogTest {
 
     private fun executionCatalog(enabledCompiledToolNames: Set<String>?): AgentToolCatalog =
         backendExecutionToolCatalog(
+            executionQuotas = ExecutionQuotaManager(BackendLlmLimits()),
             compiledToolCatalog = TestToolCatalog(
                 ToolCategory.FILES to listOf("ReadFile"),
                 ToolCategory.WEB_SEARCH to listOf("WebPageText", ToolWebImageSearch.NAME, "FutureWebTool"),

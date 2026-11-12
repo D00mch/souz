@@ -11,6 +11,8 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
 import io.mockk.mockk
+import io.mockk.coEvery
+import io.mockk.spyk
 import java.io.File
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
@@ -78,7 +80,442 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.TestTimeSource
 
+import java.awt.image.BufferedImage
+import java.io.ByteArrayOutputStream
+import java.util.Base64
+import java.util.Random
+import javax.imageio.ImageIO
+import kotlin.test.assertContentEquals
+import ru.souz.backend.attachments.AttachmentStorage
+import ru.souz.backend.attachments.attachmentPng
+import ru.souz.backend.attachments.attachmentTest
+import ru.souz.backend.attachments.toContent
+import ru.souz.backend.common.BackendConfigurationException
+import ru.souz.llms.exceedsContextBudget
+import ru.souz.llms.runtime.DEFAULT_IMAGE_MODEL
+import ru.souz.llms.runtime.ImageGenerationInput
+import ru.souz.llms.runtime.ImageSource
+import ru.souz.llms.runtime.VisionInput
+
 class BackendExecutionLlmChatApiTest {
+    private val pixels = attachmentPng
+
+    @Test
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun `attachment projection capacity spans provider admission and cancellation cleanup across users`() = attachmentTest {
+        val files = listOf("user-a", "user-b", "user-c").associateWith {
+            storage.save(it, "projection", "screen.png", pixels.inputStream()).toContent()
+        }
+        runTest {
+            for (streaming in listOf(false, true)) for (dedicated in listOf(false, true)) for (perUser in listOf(false, true)) {
+                val quotas = ExecutionQuotaManager(BackendLlmLimits(
+                    perUserConcurrentExecutions = if (perUser) 1 else 4,
+                    globalProviderConcurrency = if (perUser) 4 else 1,
+                ))
+                val observedStorage = spyk(storage)
+                var lookups = 0
+                coEvery { observedStorage.get(any(), any()) } coAnswers {
+                    lookups++
+                    storage.get(firstArg(), secondArg())
+                }
+                val entered = CompletableDeferred<Unit>()
+                val prepared = CompletableDeferred<Unit>()
+                val cleanupStarted = CompletableDeferred<Unit>()
+                val releaseCleanup = CompletableDeferred<Unit>()
+                suspend fun holdProvider() {
+                    entered.complete(Unit)
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        withContext(NonCancellable) {
+                            cleanupStarted.complete(Unit)
+                            releaseCleanup.await()
+                        }
+                    }
+                }
+                fun observed(request: LLMRequest.Chat) = ok(request.model).copy(choices = listOf(LLMResponse.Choice(
+                    LLMResponse.Message("Observed screen", LLMMessageRole.assistant, functionsStateId = null), 0, null,
+                )))
+                val secondUser = if (perUser) "user-a" else "user-b"
+                fun input(user: String) = chat(LLMModel.OpenAIGpt52.alias).copy(provider = LlmProvider.OPENAI,
+                    messages = listOf(LLMRequest.Message(LLMMessageRole.user, "inspect", files = listOf(files.getValue(user)))))
+                suspend fun call(api: BackendExecutionLlmChatApi, request: LLMRequest.Chat) =
+                    if (streaming) api.messageStream(request).toList().single() else api.message(request)
+                facadeFixture(attachmentStorage = observedStorage, executionQuotas = quotas,
+                    visionModel = "AnthropicSonnet45".takeIf { dedicated },
+                    providerApiOverride = { StubChatApi(
+                        message = { holdProvider(); observed(it) },
+                        stream = { flow { holdProvider(); emit(observed(it)) } },
+                    ) },
+                ).use { first ->
+                    facadeFixture(userId = secondUser, attachmentStorage = observedStorage, executionQuotas = quotas,
+                        visionModel = "AnthropicSonnet45".takeIf { dedicated },
+                        providerApiOverride = {
+                            prepared.complete(Unit) // Projection has finished; this call must wait for provider/user admission.
+                            StubChatApi(message = { observed(it) }, stream = { flowOf(observed(it)) })
+                        },
+                    ).use { second ->
+                        facadeFixture(userId = "user-c", attachmentStorage = observedStorage, executionQuotas = quotas,
+                            visionModel = "CodexGpt61Sol".takeIf { dedicated },
+                            providerApiOverride = { StubChatApi(message = { observed(it) }, stream = { flowOf(observed(it)) }) },
+                        ).use { third ->
+                            val independent = input("user-c").copy(provider = LlmProvider.CODEX, model = LLMModel.CodexGpt61Sol.alias)
+                            val running = async { call(first.api, input("user-a")) }
+                            entered.await()
+                            val admitted = async { call(second.api, input(secondUser)) }
+                            prepared.await()
+                            val waiting = async { call(third.api, independent) }
+                            try {
+                                runCurrent()
+                                assertEquals(2, lookups, "Queued projections must not access storage")
+                                assertFalse(admitted.isCompleted, "Second projection waits for provider/user admission")
+                                assertFalse(waiting.isCompleted, "Projection capacity is shared across users and providers")
+                                assertIs<LLMResponse.Chat.Ok>(call(third.api, independent.copy(messages = listOf(
+                                    LLMRequest.Message(LLMMessageRole.user, "text only")))))
+                                assertIs<LLMResponse.Chat.Ok>(call(third.api, independent.copy(isSummarization = true)))
+                                assertEquals(2, lookups, "Text and summaries bypass projection without loading files")
+                                running.cancel()
+                                cleanupStarted.await()
+                                runCurrent()
+                                assertEquals(2, lookups, "Cancellation cleanup still owns projection capacity")
+                                assertFalse(waiting.isCompleted)
+                                waiting.cancelAndJoin()
+                                assertEquals(2, lookups, "Cancelling a queued projection must not load its image")
+                            } finally {
+                                releaseCleanup.complete(Unit)
+                                running.cancelAndJoin()
+                                waiting.cancelAndJoin()
+                            }
+                            assertIs<LLMResponse.Chat.Ok>(admitted.await())
+                            assertIs<LLMResponse.Chat.Ok>(call(third.api, independent))
+                            assertEquals(3, lookups, "Capacity is reusable after cleanup and queued cancellation")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `image streams load only on collection and release capacity after storage or provider failure`() = attachmentTest {
+        val file = storage.save("user-a", "stream", "screen.png", pixels.inputStream()).toContent()
+        for (dedicated in listOf(false, true)) {
+            val observedStorage = spyk(storage)
+            var lookups = 0
+            var storageFailure = true
+            var providerFailure = false
+            coEvery { observedStorage.get(any(), any()) } coAnswers {
+                lookups++
+                if (storageFailure) error("storage unavailable")
+                storage.get(firstArg(), secondArg())
+            }
+            val requests = mutableListOf<LLMRequest.Chat>()
+            fun respond(request: LLMRequest.Chat): LLMResponse.Chat {
+                requests += request
+                if (providerFailure) error("provider unavailable")
+                return ok(request.model).copy(choices = listOf(LLMResponse.Choice(
+                    LLMResponse.Message("Observed screen", LLMMessageRole.assistant, functionsStateId = null), 0, null,
+                )))
+            }
+            facadeFixture(attachmentStorage = observedStorage, visionModel = "AnthropicSonnet45".takeIf { dedicated },
+                providerApiOverride = { StubChatApi(message = ::respond, stream = { flowOf(respond(it)) }) },
+            ).use { fixture ->
+                val input = chat(LLMModel.OpenAIGpt52.alias).copy(messages = listOf(
+                    LLMRequest.Message(LLMMessageRole.user, "inspect", files = listOf(file))))
+                val stream = fixture.api.messageStream(input)
+                assertEquals(0, lookups, "An uncollected stream retains only references")
+                repeat(3) { assertFailsWith<IllegalStateException> { stream.toList() } }
+                assertEquals(3, lookups)
+                storageFailure = false
+                providerFailure = true
+                repeat(3) { assertFailsWith<IllegalStateException> { stream.toList() } }
+                providerFailure = false
+                repeat(2) { assertIs<LLMResponse.Chat.Ok>(stream.toList().single()) }
+                assertEquals(8, lookups, "Each collection prepares a fresh request and releases capacity on exit")
+                val imageRequests = requests.filter { it.messages.any { message -> !message.attachments.isNullOrEmpty() } }
+                assertEquals(5, imageRequests.size, "Repeated collection cannot reuse a retained analysis or projection")
+            }
+        }
+    }
+
+    @Test
+    fun `local ViewImage retains native paths through inference and never falls back with pixels`() = runTest {
+        val settings = LlmSettingsStub().apply {
+            gigaModel = LLMModel.LocalGemma4_E2B_It
+            contextSize = 24_000
+        }
+        val paths = mutableListOf<java.nio.file.Path>()
+        var fail = false
+        var calls = 0
+        facadeFixture(settingsProvider = settings, fallbackModels = listOf("OpenAIGpt52"),
+            providerApiOverride = { provider ->
+                assertEquals(LlmProvider.LOCAL, provider)
+                StubChatApi(message = { request ->
+                    calls++
+                    assertEquals(settings.gigaModel.alias, request.model)
+                    assertEquals("compare", request.messages.single().content)
+                    paths.clear()
+                    paths.addAll(request.messages.single().attachments.orEmpty().map { java.nio.file.Path.of(it) })
+                    assertEquals(2, paths.size)
+                    paths.forEach { assertContentEquals(pixels, java.nio.file.Files.readAllBytes(it)) }
+                    if (fail) LLMResponse.Chat.Error(503, "local failure") else ok(request.model).copy(
+                        choices = listOf(LLMResponse.Choice(
+                            LLMResponse.Message("Observed", LLMMessageRole.assistant, functionsStateId = null), 0, null,
+                        )),
+                    )
+                })
+            },
+        ).use { fixture ->
+            val input = VisionInput(List(2) { ImageSource.read(pixels) }, "compare")
+            fixture.api.visionGateway.analyze(input)
+            paths.forEach { assertFalse(java.nio.file.Files.exists(it)) }
+            fail = true
+            assertFailsWith<IllegalStateException> { fixture.api.visionGateway.analyze(input) }
+            paths.forEach { assertFalse(java.nio.file.Files.exists(it)) }
+            assertEquals(2, calls)
+        }
+    }
+
+    @Test
+    fun `image projections keep the last five sources and survive storage removal between retries`() = attachmentTest {
+        for (streaming in listOf(false, true)) {
+            val sources = (0..5).map { storage.save("user-a", "$streaming:$it", "$it.png", pixels.inputStream()) }
+            val requests = mutableListOf<LLMRequest.Chat>()
+            suspend fun respond(request: LLMRequest.Chat): LLMResponse.Chat {
+                requests += request
+                assertEquals(5, request.messages.last().attachments!!.size)
+                assertFalse(sources.first().id.toString() in request.messages.last().content)
+                sources.takeLast(5).forEach { assertTrue(it.id.toString() in request.messages.last().content) }
+                if (requests.size == 1) {
+                    sources.forEach { objects.delete(it) }
+                    return LLMResponse.Chat.Error(429, "retry")
+                }
+                assertEquals(requests.first(), request)
+                return ok(request.model)
+            }
+            facadeFixture(settingsProvider = LlmSettingsStub().apply { contextSize = 64_000 },
+                attachmentStorage = storage, retryPolicy = BackendProviderRetryPolicy(max429Retries = 1),
+                providerApiOverride = { StubChatApi(message = ::respond, stream = { flowOf(respond(it)) }) },
+            ).use { fixture ->
+                val input = chat(LLMModel.OpenAIGpt52.alias).copy(messages = listOf(
+                    LLMRequest.Message(LLMMessageRole.user, "inspect", files = sources.map { it.toContent() }),
+                ))
+                val oversized = input.copy(messages = input.messages + LLMRequest.Message(LLMMessageRole.function, "x".repeat(100_000)))
+                assertFalse(oversized.exceedsContextBudget(64_000, includeImageReferences = false))
+                assertIs<LLMResponse.Chat.Error>(if (streaming) fixture.api.messageStream(oversized).toList().single()
+                    else fixture.api.message(oversized))
+                assertTrue(requests.isEmpty())
+                val result = if (streaming) fixture.api.messageStream(input).toList().single() else fixture.api.message(input)
+                assertIs<LLMResponse.Chat.Ok>(result)
+                assertEquals(2, requests.size)
+                assertTrue(input.messages.single().attachments.isNullOrEmpty())
+            }
+        }
+    }
+
+    @Test
+    fun `unavailable historical images become request-local notes across later text turns`() = attachmentTest {
+        val gif = ByteArrayOutputStream().also {
+            ImageIO.write(BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "gif", it)
+        }.toByteArray()
+        val unsupported = storage.save("user-a", "gif", "image.gif", gif.inputStream())
+        val broken = storage.save("user-a", "broken", "broken.png", pixels.copyOf(33).inputStream())
+        val unavailable = listOf("missing", "hash", "size").map { storage.save("user-a", it, "$it.png", pixels.inputStream()) }
+        objects.delete(unavailable[0])
+        objects.put(unavailable[1], pixels.copyOf().also { it[it.lastIndex] = (it.last() + 1).toByte() })
+        objects.put(unavailable[2], pixels.copyOf(pixels.size - 1))
+        val files = (listOf(unsupported, broken) + unavailable).map { it.toContent() }
+        val history = listOf(LLMRequest.Message(LLMMessageRole.user, "inspect", files = files))
+        facadeFixture(attachmentStorage = storage, providerApiOverride = { StubChatApi(message = { request ->
+            assertTrue(request.messages.all { it.attachments.isNullOrEmpty() })
+            val content = request.messages.first().content
+            assertTrue("unsupported, damaged or too large" in content)
+            files.forEach { assertTrue("Image ${it.fileId} unavailable;" in content) }
+            ok(request.model)
+        }) }).use { fixture ->
+            for (messages in listOf(history, history + LLMRequest.Message(LLMMessageRole.user, "continue in text"))) {
+                assertIs<LLMResponse.Chat.Ok>(fixture.api.message(chat(LLMModel.OpenAIGpt52.alias).copy(messages = messages)))
+            }
+            assertEquals("inspect", history.single().content)
+            assertEquals(files, history.single().files)
+        }
+    }
+
+    @Test
+    fun `large historical images and near budget questions stay within the dedicated vision limits`() = attachmentTest(maxFileBytes = 20_000_000) {
+        val raster = BufferedImage(2048, 2048, BufferedImage.TYPE_INT_RGB)
+        val random = Random(1)
+        for (y in 0 until raster.height) for (x in 0 until raster.width) raster.setRGB(x, y, random.nextInt())
+        val pixels = ByteArrayOutputStream().also { ImageIO.write(raster, "png", it) }.toByteArray()
+        raster.flush()
+        assertTrue(pixels.size * 4L / 3 > 10_000_000)
+        val file = storage.save("user-a", "noise", "noise.png", pixels.inputStream()).toContent()
+        val question = "CURRENT_REQUEST " + "x".repeat(64_000)
+        val input = chat("QwenMax").copy(provider = LlmProvider.QWEN, contextSize = 24_000, messages = listOf(
+            LLMRequest.Message(LLMMessageRole.user, question, files = listOf(file)),
+        ))
+        var visionCalls = 0
+        facadeFixture(settingsProvider = LlmSettingsStub().apply { contextSize = 24_000 },
+            attachmentStorage = storage, visionModel = "AnthropicSonnet45",
+            providerApiOverride = { StubChatApi(message = { request ->
+                assertFalse(request.exceedsContextBudget(24_000, includeImageReferences = false))
+                if (request.provider == LlmProvider.ANTHROPIC) {
+                    visionCalls++
+                    val message = request.messages.single()
+                    assertEquals(1, "CURRENT_REQUEST".toRegex().findAll(message.content).count())
+                    assertEquals(1, message.attachments!!.size)
+                    assertTrue(message.attachments!!.single().substringAfter(',').length <= ImageSource.MAX_VISION_ENCODED_BYTES)
+                } else assertTrue(request.messages.all { it.attachments.isNullOrEmpty() })
+                ok(request.model).copy(choices = listOf(LLMResponse.Choice(
+                    LLMResponse.Message("Observed noise", LLMMessageRole.assistant, functionsStateId = null), 0, null,
+                )))
+            }) },
+        ).use { fixture ->
+            assertIs<LLMResponse.Chat.Ok>(fixture.api.message(input))
+            assertIs<LLMResponse.Chat.Ok>(fixture.api.message(input.copy(messages = input.messages +
+                LLMRequest.Message(LLMMessageRole.user, "describe again"))))
+            assertEquals(2, visionCalls)
+            assertEquals(question, input.messages.single().content)
+            assertTrue(input.messages.single().attachments.isNullOrEmpty())
+        }
+    }
+
+    @Test
+    fun `named text routes and streams share one visual analysis across retries and fallbacks`() = attachmentTest {
+        val files = (1..2).map { storage.save("user-a", "source-$it", "$it.png", pixels.inputStream()).toContent() }
+        val input = chat("text").copy(provider = LlmProvider.OPENAI, messages = listOf(
+            LLMRequest.Message(LLMMessageRole.user, "compare these screenshots", files = files),
+        ))
+        var visionCalls = 0
+        var mainCalls = 0
+        var visionFail = false
+        val models = NamedLlmConfig(listOf("text", "vision", "backup").associateWith {
+            NamedLlmModel("upstream-$it", "https://$it.test/v1", "$it-key")
+        })
+        facadeFixture(llmConfig = models, attachmentStorage = storage, visionModel = "vision",
+            retryPolicy = BackendProviderRetryPolicy(max429Retries = 1), fallbackModels = listOf("backup"),
+            providerApiOverride = { StubChatApi(message = { request ->
+                if (request.model == "upstream-vision") {
+                    visionCalls++
+                    assertEquals(2, request.messages.sumOf { it.attachments.orEmpty().size })
+                    if (visionFail) LLMResponse.Chat.Error(503, "no vision") else
+                        ok(request.model).copy(choices = listOf(LLMResponse.Choice(
+                            LLMResponse.Message("TWO_SCREENS", LLMMessageRole.assistant, functionsStateId = null), 0, null,
+                        )))
+                } else {
+                    assertTrue(request.messages.all { it.attachments.isNullOrEmpty() })
+                    assertTrue("TWO_SCREENS" in request.messages.last().content)
+                    if (request.model == "upstream-text") LLMResponse.Chat.Error(if (mainCalls++ == 0) 429 else 503, "retry")
+                    else ok(request.model)
+                }
+            }, stream = { request ->
+                assertEquals("upstream-text", request.model)
+                assertTrue(request.messages.all { it.attachments.isNullOrEmpty() })
+                assertTrue("TWO_SCREENS" in request.messages.last().content)
+                flowOf(ok(request.model))
+            }) },
+        ).use { fixture ->
+            assertEquals("upstream-backup", assertIs<LLMResponse.Chat.Ok>(fixture.api.message(input)).model)
+            assertEquals(1, visionCalls, "Text retries and fallback reuse the analysis")
+            fixture.api.messageStream(input).toList()
+            assertEquals(2, visionCalls)
+            assertEquals(files, input.messages.single().files)
+            assertTrue(input.messages.single().attachments.isNullOrEmpty(), "Input projection must not mutate history")
+            visionFail = true
+            assertFailsWith<IllegalStateException> {
+                fixture.api.visionGateway.analyze(VisionInput(List(2) { ImageSource.read(pixels) }, "compare"))
+            }
+            assertEquals(3, visionCalls, "The explicit vision route receives images directly without text fallback")
+        }
+    }
+
+    @Test
+    fun `dedicated vision uses its own model retries and accounting without the text cascade or S3`() = runTest {
+        val requests = mutableListOf<LLMRequest.Chat>()
+        var failure: Int? = 429
+        var cancel = false
+        val input = VisionInput(listOf(ImageSource.read(pixels)), "read the label")
+        facadeFixture(
+            settingsProvider = LlmSettingsStub().apply { gigaModel = LLMModel.QwenMax },
+            visionModel = "CodexGpt61Sol",
+            llmConfig = NamedLlmConfig(reasoningEfforts = mapOf("gpt-6.1-sol" to "low")),
+            fallbackModels = listOf("QwenMax"),
+            retryPolicy = BackendProviderRetryPolicy(max429Retries = 1),
+            providerApiOverride = { provider ->
+                assertEquals(LlmProvider.CODEX, provider)
+                StubChatApi(message = { request ->
+                    requests += request
+                    if (cancel) throw CancellationException("stop vision")
+                    val status = failure.also { failure = null }
+                    if (status != null) LLMResponse.Chat.Error(status, "vision unavailable") else
+                        ok(request.model, usage(7, 3, 10, 0)).copy(choices = listOf(LLMResponse.Choice(
+                            LLMResponse.Message("Label", LLMMessageRole.assistant, functionsStateId = null), 0, null,
+                        )))
+                })
+            },
+        ).use { fixture ->
+            fixture.api.visionGateway.analyze(input)
+            assertEquals(2, requests.size)
+            requests.forEach {
+                assertEquals("gpt-6.1-sol", it.model)
+                assertEquals("low", it.reasoningEffort)
+                assertEquals("read the label", it.messages.single().content)
+                assertEquals(1, it.messages.single().attachments!!.size)
+                assertTrue(it.functions.isEmpty())
+            }
+            assertEquals(usage(7, 3, 10, 0), fixture.api.cumulativeUsage())
+            failure = 503
+            assertFailsWith<IllegalStateException> { fixture.api.visionGateway.analyze(input) }
+            assertEquals(3, requests.size, "Vision failure must not call a text-model fallback")
+            cancel = true
+            assertFailsWith<CancellationException> { fixture.api.visionGateway.analyze(input) }
+            assertEquals(4, requests.size)
+        }
+    }
+
+    @Test
+    fun `image selection routes independently of chat through OpenAI named and Codex connections`() = runTest {
+        val settings = LlmSettingsStub().apply {
+            gigaModel = LLMModel.QwenMax
+            codexAccessToken = "codex-test-token"
+            codexExpiresAt = Long.MAX_VALUE
+        }
+        val encoded = Base64.getEncoder().encodeToString(pixels)
+        val requests = mutableListOf<CapturedRequest>()
+        val http = HttpClient(MockEngine { request ->
+            requests += CapturedRequest(request.url.toString(), request.headers[HttpHeaders.Authorization],
+                restJsonMapper.readTree(request.body.toByteArray()))
+            if (request.url.host == "chatgpt.com") respond(
+                "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"image_generation_call\",\"result\":\"$encoded\"}}\n\n" +
+                    "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n",
+                headers = headersOf(HttpHeaders.ContentType, "text/event-stream"))
+            else respond("""{"data":[{"b64_json":"$encoded"}]}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }) { providerHttpClientDefaults() }
+        val models = NamedLlmConfig(mapOf("named-image" to NamedLlmModel("image-model", "https://images.test/v1", "named-key")))
+        facadeFixture(client = http, settingsProvider = settings).use { fixture ->
+            val clients = ProviderHttpClients(http, http)
+            val selections = listOf(DEFAULT_IMAGE_MODEL, "gpt-image-2", "gpt-image-2.5-flare-2026-09-08", "named-image", "CodexGpt61Sol")
+            for (selection in selections) {
+                val gateway = ImageModelRoute(selection, models).gateway(
+                    settings, clients, CodexOAuthService(settings, http), fixture.api,
+                )
+                assertContentEquals(pixels, gateway.generate(ImageGenerationInput("draw")).image.bytes)
+            }
+            assertEquals(selections.take(3) + listOf("image-model", "gpt-6.1-sol"), requests.map { it.body["model"].asText() })
+            assertEquals("https://images.test/v1/images/generations", requests[3].url)
+            assertEquals(List(3) { "Bearer test-key" } + listOf("Bearer named-key", "Bearer codex-test-token"),
+                requests.map { it.authorization })
+            for (request in requests) {
+                val options = request.body["tools"]?.get(0) ?: request.body
+                assertEquals("1024x1024", options["size"].asText())
+                assertEquals("medium", options["quality"].asText())
+                assertEquals("png", options["output_format"].asText())
+            }
+            assertFailsWith<BackendConfigurationException> { ImageModelRoute("unknown", models) }
+        }
+    }
+
+
     @Test
     fun `AiTunnel retries have one owner and charge each real attempt`() = runTest {
         PostgresDataSourceFactory.create(postgresAppConfig(newPostgresSchema("aitunnel_retry")).postgres).use { db ->
@@ -928,6 +1365,8 @@ private fun facadeFixture(
     },
     fallbackModels: List<String> = emptyList(),
     failureMemory: ModelFailureMemory = ModelFailureMemory(),
+    visionModel: String? = null,
+    attachmentStorage: AttachmentStorage? = null,
 ): FacadeFixture {
     val clients = ProviderHttpClients(standard = client, openAi = client)
     val metrics = BackendMetrics()
@@ -948,6 +1387,8 @@ private fun facadeFixture(
         metrics = metrics,
         fallbackModels = fallbackModels,
         failureMemory = failureMemory,
+        visionModel = visionModel,
+        attachmentStorage = attachmentStorage,
     )
     return FacadeFixture(api, credentialResolver, clients, metrics)
 }

@@ -8,6 +8,7 @@ import ru.souz.llms.LLMException
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.exceedsContextBudget
 
 /** Compacts only the completed prefix, preserving system instructions and the entire active exchange. */
 internal suspend fun LLMChatAPI.compactHistory(

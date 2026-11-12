@@ -331,11 +331,11 @@ internal class BackendE2eScope(
         }
     }
 
-    suspend fun awaitLockWait(table: String) {
+    suspend fun awaitLockWait(table: String, count: Int = 1) {
         eventually("database wait on $table") {
             sql { connection -> connection.createStatement().use { statement ->
                 statement.executeQuery("select count(*) from pg_locks where not granted and relation = '$table'::regclass")
-                    .use { rows -> rows.next() && rows.getInt(1) > 0 }
+                    .use { rows -> rows.next() && rows.getInt(1) >= count }
             } }.takeIf { it }
         }
     }
@@ -400,6 +400,7 @@ internal class BackendE2eBackend(
         llmLimits = llmLimits,
         policyPrompt = E2E_POLICY_PROMPT,
         attachments = attachments,
+        visionModel = settingsSource?.value("SOUZ_ATTACHMENTS_VISION_MODEL", "souz.attachments.visionModel")?.trim(),
     ).let(configureApp).validate()
     private val localChatApi = localChatApiBackedBy(llm)
     private val localAvailability = localProviderAvailability(localModels)
@@ -506,6 +507,8 @@ internal class BackendE2eBackend(
     val jobService: JobService get() = di.direct.instance()
 
     val attachmentStorage: AttachmentStorage get() = di.direct.instance()
+    val executionQuotas: ru.souz.backend.llm.quota.ExecutionQuotaManager get() = di.direct.instance()
+    val imageGeneration: ru.souz.backend.attachments.ImageGeneration get() = di.direct.instance()
     val attachmentAccess: BackendAttachmentAccess get() = di.direct.instance()
     val pluginRuntime: BackendPluginRuntime get() = di.direct.instance()
     val pluginRepository: PostgresPluginRepository get() = di.direct.instance()

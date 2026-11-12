@@ -33,6 +33,8 @@ kotlin {
         val commonJvmMain by creating {
             dependsOn(commonMain)
             dependencies {
+                implementation(libs.metadata.extractor)
+                runtimeOnly(libs.imageio.webp)
                 implementation(projects.agent)
                 implementation(projects.llms)
                 implementation(projects.skillOauthApi)
@@ -92,6 +94,8 @@ kotlin {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+    systemProperty("java.awt.headless", "true")
+    doFirst { systemProperty("souz.test.runtimeClasspath", classpath.asPath) }
 }
 
 tasks.register<Exec>("buildRuntimeSandboxImage") {

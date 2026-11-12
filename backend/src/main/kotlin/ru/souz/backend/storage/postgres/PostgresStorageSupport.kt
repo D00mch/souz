@@ -46,6 +46,7 @@ import ru.souz.llms.FileContent
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.findLLMModel
+import java.util.UUID
 
 internal const val ACTIVE_EXECUTION_CONSTRAINT: String = "agent_executions_one_active_per_chat_idx"
 internal const val CHAT_REQUEST_CONSTRAINT: String = "chats_user_id_request_id_key"
@@ -58,34 +59,45 @@ internal val postgresStorageMapper = jacksonObjectMapper().findAndRegisterModule
 internal suspend fun <T> DataSource.read(networkTimeoutMillis: Int? = null, block: (Connection) -> T): T =
     withContext(Dispatchers.IO) {
         connection.use { connection ->
-            networkTimeoutMillis?.let { connection.setNetworkTimeout(Runnable::run, it) }
-            block(connection)
+            connection.withNetworkTimeout(networkTimeoutMillis) { block(connection) }
         }
     }
 
 internal suspend fun <T> DataSource.write(afterCommit: (T) -> Unit = {}, networkTimeoutMillis: Int? = null, block: (Connection) -> T): T =
     withContext(Dispatchers.IO) {
         connection.use { connection ->
-            networkTimeoutMillis?.let { connection.setNetworkTimeout(Runnable::run, it) }
-            val previousAutoCommit = connection.autoCommit
-            connection.autoCommit = false
-            val result = try {
-                val result = block(connection)
-                connection.commit()
+            connection.withNetworkTimeout(networkTimeoutMillis) {
+                val previousAutoCommit = connection.autoCommit
+                connection.autoCommit = false
+                val result = try {
+                    val result = block(connection)
+                    connection.commit()
+                    result
+                } catch (t: Throwable) {
+                    runCatching { connection.rollback() }
+                    throw t
+                } finally {
+                    connection.autoCommit = previousAutoCommit
+                }
+                // Stay on the JDBC dispatcher so cancellation after commit cannot lose the observation.
+                afterCommit(result)
                 result
-            } catch (t: Throwable) {
-                runCatching { connection.rollback() }
-                throw t
-            } finally {
-                connection.autoCommit = previousAutoCommit
             }
-            // Stay on the JDBC dispatcher so cancellation after commit cannot lose the observation.
-            afterCommit(result)
-            result
         }
     }
 
-internal fun Connection.ensureStateChat(userId: String, chatId: java.util.UUID, updatedAt: Instant) {
+private inline fun <T> Connection.withNetworkTimeout(timeoutMillis: Int?, block: () -> T): T {
+    if (timeoutMillis == null) return block()
+    val previous = networkTimeout
+    setNetworkTimeout(Runnable::run, timeoutMillis)
+    return try {
+        block()
+    } finally {
+        if (!isClosed) setNetworkTimeout(Runnable::run, previous)
+    }
+}
+
+internal fun Connection.ensureStateChat(userId: String, chatId: UUID, updatedAt: Instant) {
     prepareStatement(
         """
         insert into chats(
@@ -109,7 +121,7 @@ internal fun Connection.ensureStateChat(userId: String, chatId: java.util.UUID, 
     }
 }
 
-internal fun Connection.lockChat(userId: String, chatId: java.util.UUID) {
+internal fun Connection.lockChat(userId: String, chatId: UUID) {
     prepareStatement(
         "select id from chats where user_id = ? and id = ? for update"
     ).use { statement ->
@@ -207,7 +219,7 @@ internal fun Chat.toRow(): List<Any?> =
 
 internal fun ResultSet.toChat(): Chat =
     Chat(
-        id = getObject("id", java.util.UUID::class.java),
+        id = getObject("id", UUID::class.java),
         userId = getString("user_id"),
         clientType = getString("client_type"),
         requestId = getString("request_id"),
@@ -220,9 +232,9 @@ internal fun ResultSet.toChat(): Chat =
 
 internal fun ResultSet.toTelegramBotBinding(): TelegramBotBinding =
     TelegramBotBinding(
-        id = getObject("id", java.util.UUID::class.java),
+        id = getObject("id", UUID::class.java),
         userId = getString("user_id"),
-        chatId = getObject("chat_id", java.util.UUID::class.java),
+        chatId = getObject("chat_id", UUID::class.java),
         botTokenEncrypted = getString("bot_token_encrypted"),
         botTokenHash = getString("bot_token_hash"),
         linkSecretHash = getString("link_secret_hash"),
@@ -246,9 +258,9 @@ internal fun ResultSet.toTelegramBotBinding(): TelegramBotBinding =
 
 internal fun ResultSet.toVkBotBinding(): VkBotBinding =
     VkBotBinding(
-        id = getObject("id", java.util.UUID::class.java),
+        id = getObject("id", UUID::class.java),
         userId = getString("user_id"),
-        chatId = getObject("chat_id", java.util.UUID::class.java),
+        chatId = getObject("chat_id", UUID::class.java),
         groupTokenEncrypted = getString("group_token_encrypted"),
         groupTokenHash = getString("group_token_hash"),
         linkSecretHash = getString("link_secret_hash"),
@@ -272,9 +284,9 @@ internal fun ResultSet.toVkBotBinding(): VkBotBinding =
 
 internal fun ResultSet.toMessage(): ChatMessage =
     ChatMessage(
-        id = getObject("id", java.util.UUID::class.java),
+        id = getObject("id", UUID::class.java),
         userId = getString("user_id"),
-        chatId = getObject("chat_id", java.util.UUID::class.java),
+        chatId = getObject("chat_id", UUID::class.java),
         seq = getLong("seq"),
         role = parseChatRole(getString("role")),
         attachments = postgresStorageMapper.readValue(getString("attachments")),
@@ -287,7 +299,7 @@ internal fun ResultSet.toState(): AgentConversationState {
     val context = postgresStorageMapper.readValue<StoredConversationContext>(getString("context_json"))
     return AgentConversationState(
         userId = getString("user_id"),
-        chatId = getObject("chat_id", java.util.UUID::class.java),
+        chatId = getObject("chat_id", UUID::class.java),
         schemaVersion = context.schemaVersion,
         attachmentExecutionId = context.attachmentExecutionId,
         replyAttachments = context.replyAttachments,
@@ -303,11 +315,11 @@ internal fun ResultSet.toState(): AgentConversationState {
 
 internal fun ResultSet.toExecution(): AgentExecution =
     AgentExecution(
-        id = getObject("id", java.util.UUID::class.java),
+        id = getObject("id", UUID::class.java),
         userId = getString("user_id"),
-        chatId = getObject("chat_id", java.util.UUID::class.java),
-        userMessageId = getObject("user_message_id", java.util.UUID::class.java),
-        assistantMessageId = getObject("assistant_message_id", java.util.UUID::class.java),
+        chatId = getObject("chat_id", UUID::class.java),
+        userMessageId = getObject("user_message_id", UUID::class.java),
+        assistantMessageId = getObject("assistant_message_id", UUID::class.java),
         status = parseExecutionStatus(getString("status")),
         requestId = getString("request_id"),
         clientMessageId = getString("client_message_id"),
@@ -336,10 +348,10 @@ internal fun ResultSet.toExecution(): AgentExecution =
 
 internal fun ResultSet.toOption(): Option =
     Option(
-        id = getObject("id", java.util.UUID::class.java),
+        id = getObject("id", UUID::class.java),
         userId = getString("user_id"),
-        chatId = getObject("chat_id", java.util.UUID::class.java),
-        executionId = getObject("execution_id", java.util.UUID::class.java),
+        chatId = getObject("chat_id", UUID::class.java),
+        executionId = getObject("execution_id", UUID::class.java),
         kind = parseOptionKind(getString("kind")),
         title = getString("title"),
         selectionMode = getString("selection_mode"),
@@ -363,10 +375,10 @@ internal fun ResultSet.toOption(): Option =
 internal fun ResultSet.toEvent(): AgentEvent =
     parseEventType(getString("type")).let { eventType ->
         AgentEvent(
-            id = getObject("id", java.util.UUID::class.java),
+            id = getObject("id", UUID::class.java),
             userId = getString("user_id"),
-            chatId = getObject("chat_id", java.util.UUID::class.java),
-            executionId = getObject("execution_id", java.util.UUID::class.java),
+            chatId = getObject("chat_id", UUID::class.java),
+            executionId = getObject("execution_id", UUID::class.java),
             seq = getLong("seq"),
             type = eventType,
             payload = AgentEventPayloadStorageCodec.fromStorageJson(
@@ -380,8 +392,8 @@ internal fun ResultSet.toEvent(): AgentEvent =
 internal fun ResultSet.toToolCall(): ToolCall =
     ToolCall(
         userId = getString("user_id"),
-        chatId = getObject("chat_id", java.util.UUID::class.java).toString(),
-        executionId = getObject("execution_id", java.util.UUID::class.java).toString(),
+        chatId = getObject("chat_id", UUID::class.java).toString(),
+        executionId = getObject("execution_id", UUID::class.java).toString(),
         toolCallId = getString("tool_call_id"),
         name = getString("name"),
         target = getString("target"),

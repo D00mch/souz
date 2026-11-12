@@ -1,11 +1,8 @@
 package ru.souz.tool.files
 
-import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
 import ru.souz.llms.ToolInvocationMeta
-import ru.souz.llms.runtime.DEFAULT_MAX_VISION_IMAGE_BYTES
-import ru.souz.llms.runtime.ImageFileFormats
 import ru.souz.llms.runtime.VisionGateway
 import ru.souz.llms.runtime.VisionInput
 import ru.souz.runtime.files.FilesToolUtil
@@ -15,23 +12,25 @@ import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
+import ru.souz.llms.runtime.ImageSource
 
 class ToolViewImage(
     private val filesToolUtil: FilesToolUtil,
     private val visionGateway: VisionGateway,
-    private val maxImageBytes: Long = DEFAULT_MAX_VISION_IMAGE_BYTES,
 ) : ToolSetup<ToolViewImage.Input> {
 
     data class Input(
         @InputParamDescription("Absolute path to a local image file.")
-        val imagePath: String,
+        val imagePath: String? = null,
+        @InputParamDescription("Ordered absolute image paths, up to five; use instead of imagePath.")
+        val imagePaths: List<String>? = null,
         @InputParamDescription("Question to ask about the image.")
         val question: String,
     )
 
     override val name: String = NAME
     override val description: String =
-        "Read a local image from a safe absolute path and ask the current multimodal model to describe or analyze it."
+        "Read a local image from a safe absolute path and ask the configured vision model to describe or analyze it."
 
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(
@@ -55,25 +54,15 @@ class ToolViewImage(
         if (input.question.isBlank()) {
             throw BadInputException("question must not be empty")
         }
-        requireAbsolutePath(input.imagePath)
-        val image = filesToolUtil.resolveSafeExistingFile(input.imagePath, meta)
-        return filesToolUtil.withReadableLocalPathSuspend(image, meta) { localImagePath ->
-            val sizeBytes = image.sizeBytes
-                ?: runCatching { Files.size(localImagePath) }.getOrElse {
-                    throw BadInputException("Failed to determine image size for ${image.name}")
-                }
-            requireSizeWithinLimit(sizeBytes)
-            val mimeType = ImageFileFormats.detectMimeType(localImagePath)
-                ?: throw BadInputException("Unsupported image type: ${image.name}")
-            visionGateway.analyze(
-                VisionInput(
-                    imagePath = localImagePath,
-                    mimeType = mimeType,
-                    sizeBytes = sizeBytes,
-                    question = input.question.trim(),
-                )
-            )
+        require((input.imagePath != null) xor (input.imagePaths != null)) { "Supply imagePath or imagePaths" }
+        val paths = input.imagePaths ?: listOf(requireNotNull(input.imagePath))
+        require(paths.size in 1..ImageSource.MAX_IMAGES) { "Supply one to five images" }
+        val images = paths.map { path ->
+            requireAbsolutePath(path)
+            val file = filesToolUtil.resolveSafeExistingFile(path, meta)
+            filesToolUtil.openInputStream(file, meta).use { ImageSource.read(it) }
         }
+        return visionGateway.analyze(VisionInput(images, input.question.trim()))
     }
 
     private fun requireAbsolutePath(rawPath: String) {
@@ -81,12 +70,6 @@ class ToolViewImage(
         val path = runCatching { Path.of(rawPath) }.getOrNull()
         if (path == null || !(path.isAbsolute || rawPath.startsWith("/"))) {
             throw BadInputException("imagePath must be an absolute local path")
-        }
-    }
-
-    private fun requireSizeWithinLimit(sizeBytes: Long) {
-        if (sizeBytes > maxImageBytes) {
-            throw BadInputException("image file is too large: $sizeBytes bytes exceeds limit of $maxImageBytes bytes")
         }
     }
 

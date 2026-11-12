@@ -59,6 +59,10 @@ import ru.souz.backend.testutil.createSymbolicLinkOrSkip
 import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.runtime.sandbox.RuntimeSandboxModeResolver
 import ru.souz.runtime.sandbox.docker.DockerRuntimeSandbox
+import java.awt.image.BufferedImage
+import java.io.ByteArrayOutputStream
+import javax.imageio.ImageIO
+import kotlin.test.assertContentEquals
 
 class BackendHooksE2eTest {
     @TempDir lateinit var workspace: Path
@@ -300,12 +304,16 @@ class BackendHooksE2eTest {
     fun `image generation holds provider capacity through HTTP completion without charging queued calls`() {
         writeHook()
         writeHook(id = "second", directory = "second")
+        val png = ByteArrayOutputStream().also {
+            ImageIO.write(BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "png", it)
+        }.toByteArray()
+        val encoded = Base64.getEncoder().encodeToString(png)
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val http = HttpClient(MockEngine {
             entered.complete(Unit)
             release.await()
-            respond("""{"data":[{"b64_json":"aW1hZ2U="}]}""",
+            respond("""{"data":[{"b64_json":"$encoded"}]}""",
                 headers = headersOf(HttpHeaders.ContentType, "application/json"))
         }) { providerHttpClientDefaults() }
         val settings = object : BackendConfigSource {
@@ -335,7 +343,7 @@ class BackendHooksE2eTest {
             }
             assertEquals(4, awaitStatus(first, "completed")["llmCalls"].asInt())
             assertEquals(4, awaitStatus(requireNotNull(second), "completed")["llmCalls"].asInt())
-            assertEquals("image", Files.readString(workspace.resolve("tree.png")))
+            assertContentEquals(png, Files.readAllBytes(workspace.resolve("tree.png")))
         }
     }
 

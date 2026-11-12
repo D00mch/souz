@@ -8,8 +8,7 @@ import ru.souz.llms.LLMResponse
 internal suspend fun requestVisionText(
     settingsProvider: SettingsProvider,
     input: VisionInput,
-    attachment: String,
-    failurePrefix: String,
+    attachments: List<String>,
     chatRequest: suspend (LLMRequest.Chat) -> LLMResponse.Chat,
 ): String {
     val model = settingsProvider.gigaModel
@@ -17,13 +16,14 @@ internal suspend fun requestVisionText(
         LLMRequest.Chat(
             model = settingsProvider.executionModelId(model),
             provider = model.provider,
+            contextSize = settingsProvider.contextSize,
             messages = listOf(
                 LLMRequest.Message(
                     role = LLMMessageRole.user,
                     content = input.question,
-                    attachments = listOf(attachment),
+                    attachments = attachments,
                 )
             ),
         ),
-    ).requireAssistantText(failurePrefix)
+    ).requireAssistantText("Image understanding failed")
 }

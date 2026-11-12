@@ -42,8 +42,32 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.estimatedInputTokens
+import ru.souz.llms.exceedsContextBudget
 
 class NodesLLMTest {
+    @Test
+    fun `three document uploads in the active exchange reach the provider at desktop context size`() = runTest {
+        val calls = mutableListOf<LLMRequest.Chat>()
+        val api = mockk<LLMChatAPI> {
+            coEvery { message(capture(calls)) } returns block(0, "documents analyzed")
+        }
+        val nodes = NodesLLM(api, mockk { every { useStreaming } returns false })
+        val active = listOf(LLMRequest.Message(LLMMessageRole.user, "Analyze the CSV, text and PDF")) +
+            listOf("csv-id", "text-id", "pdf-id").flatMap { id -> listOf(
+                LLMRequest.Message(LLMMessageRole.assistant, "", functionCall = LLMRequest.FunctionCall("UploadFile", "{}")),
+                LLMRequest.Message(LLMMessageRole.function, id, name = "UploadFile", attachments = listOf(id)),
+            ) }
+        val seed = context(active)
+        val result = nodes.chat().execute(seed.copy(settings = seed.settings.copy(contextSize = 16_000)),
+            GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10))
+        assertTrue(result.input is LLMResponse.Chat.Ok)
+        val request = calls.single()
+        assertTrue(!request.isSummarization && !request.exceedsContextBudget(16_000))
+        assertEquals(listOf("csv-id", "text-id", "pdf-id"), request.messages.flatMap { it.attachments.orEmpty() })
+        assertEquals(active, result.history.dropLast(1))
+    }
+
     @Test
     fun `summary file references are bounded by last occurrence while active input remains intact`() = runTest {
         val files = (0 until 23).map { index -> FileContent(
@@ -145,15 +169,19 @@ class NodesLLMTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ["tool schemas", "completed history"])
-    fun `oversized tools or summary input never call the provider`(oversizedPart: String) = runTest {
+    @ValueSource(strings = ["tool schemas", "completed history", "images"])
+    fun `oversized inputs never call the provider`(oversizedPart: String) = runTest {
         val api = mockk<LLMChatAPI>()
         val nodes = NodesLLM(api, mockk { every { useStreaming } returns false })
         val oversized = "x".repeat(100_000)
-        val original = if (oversizedPart == "completed history") context(exchange(oversized) + activeTurn(), activeExchangeStartIndex = 2) else
-            context(activeTurn()).copy(activeTools = listOf(
+        val original = when (oversizedPart) {
+            "completed history" -> context(exchange(oversized) + activeTurn(), activeExchangeStartIndex = 2)
+            "images" -> context(listOf(LLMRequest.Message(LLMMessageRole.user, "inspect",
+                files = List(5) { FileContent("$it", "$it.png", "image/png", 100) })))
+            else -> context(activeTurn()).copy(activeTools = listOf(
                 LLMRequest.Function("work", oversized, LLMRequest.Parameters("object")),
             ))
+        }
 
         val rejected = nodes.chat().execute(original, GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10))
 
@@ -363,20 +391,23 @@ class NodesLLMTest {
     }
 
     @Test
-    fun `routed compaction preserves the active exchange`() = runTest {
+    fun `routed image compaction preserves the active exchange`() = runTest {
         for ((complex, chosen) in listOf(false to "simple", true to "complex")) {
             val calls = mutableListOf<LLMRequest.Chat>()
             val api = mockk<LLMChatAPI> {
                 coEvery { message(capture(calls)) } returnsMany listOf(block(0, "short summary"), block(0, "answer"))
             }
             val nodes = NodesLLM(api, mockk { every { useStreaming } returns false }, complexityClassifier = { _, _ -> TaskClassification(complex) })
-            val completed = exchange("old ".repeat(18000))
-            val ctx = context(completed + activeTurn("result ".repeat(1000)), activeExchangeStartIndex = 2)
+            val completed = exchange("x".repeat(56_000))
+            val active = activeTurn().map { it.copy(files = if (it.role == LLMMessageRole.function)
+                listOf(FileContent("image", "image.png", "image/png", 100)) else emptyList()) }
+            val ctx = context(completed + active, activeExchangeStartIndex = 2)
             val result = nodes.chat().execute(ctx.copy(settings = ctx.settings.copy(routing = ROUTING)), runtime())
 
             assertEquals(listOf(chosen to true, chosen to false), calls.map { it.model to it.isSummarization })
             assertEquals(completed, calls.first().messages.dropLast(1))
-            assertEquals(ctx.history.drop(2), calls.last().messages.drop(result.activeExchangeStartIndex))
+            assertEquals(active, result.history.drop(result.activeExchangeStartIndex).dropLast(1))
+            assertEquals(active.map { it.withFileReferences() }, calls.last().messages.drop(result.activeExchangeStartIndex))
             assertEquals(1, result.activeExchangeStartIndex)
         }
     }

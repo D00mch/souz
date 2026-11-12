@@ -26,6 +26,7 @@ Keep this module UI-free. Compose resources and UI adapters belong in `:sharedUI
 - [Runtime sandbox and skills](docs/runtime-sandbox-and-skills.md) — invocation scope, storage layouts, platform runtimes, and Docker fixtures.
 - [Web tools](docs/web-tools.md) — evidence handling, citations, provider behavior, sandboxed output, and URL limitations.
 - [Observability](docs/observability.md) — request bookkeeping, structured events, and host-owned logging sinks.
+- [Images](../backend/docs/images.md) — bounded validation, request-local pixels and provider generation/editing.
 - [Provider HTTP lifecycle](docs/provider-http-lifecycle.md) — client ownership, request-local credentials, and host shutdown.
 - [Tool catalog composition](docs/tool-catalog-composition.md) — catalog value ownership, LLM-backed construction, duplicate rejection, and immutable execution snapshots.
 

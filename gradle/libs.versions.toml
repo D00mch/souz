@@ -41,6 +41,9 @@ testcontainers = "1.21.4"
 
 
 [libraries]
+metadata-extractor = { module = "com.drewnoakes:metadata-extractor", version = "2.19.0" }
+imageio-webp = { module = "com.twelvemonkeys.imageio:imageio-webp", version = "3.15.3" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version = "5.3.2" }
 aws-s3 = { module = "software.amazon.awssdk:s3", version.ref = "awsSdk" }
 aws-urlConnectionClient = { module = "software.amazon.awssdk:url-connection-client", version.ref = "awsSdk" }
 androidx-lifecycle-viewmodelCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }

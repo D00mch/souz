@@ -19,7 +19,19 @@ class AttachmentStorageConfigTest {
             assertEquals(20_000_000, config.maxFileBytes)
             assertEquals(true, config.pathStyleAccess)
             assertEquals(16, config.maxConcurrentUploads)
+            assertEquals(1_000_000_000L, config.maxOwnerBytes)
+            assertEquals(1_000, config.maxOwnerFiles)
+            assertEquals(100_000_000_000L, config.maxTotalBytes)
+            assertEquals(100_000, config.maxTotalFiles)
             assertFalse(config.toString().contains("test-secret"))
+            val quotas = assertNotNull(AttachmentStorageConfig.load(source(settings + mapOf(
+                "MAX_OWNER_BYTES" to "2000000000", "MAX_OWNER_FILES" to "42",
+                "MAX_TOTAL_BYTES" to "4000000000", "MAX_TOTAL_FILES" to "84",
+            ), properties)))
+            assertEquals(2_000_000_000L, quotas.maxOwnerBytes)
+            assertEquals(42, quotas.maxOwnerFiles)
+            assertEquals(4_000_000_000L, quotas.maxTotalBytes)
+            assertEquals(84, quotas.maxTotalFiles)
         }
     }
 
@@ -36,6 +48,10 @@ class AttachmentStorageConfigTest {
             "MAX_CONCURRENT_UPLOADS" to "0",
             "MAX_CONCURRENT_UPLOADS" to "1001",
             "MAX_CONCURRENT_UPLOADS" to "invalid",
+            "MAX_OWNER_BYTES" to "0",
+            "MAX_OWNER_FILES" to "-1",
+            "MAX_TOTAL_BYTES" to "9223372036854775808",
+            "MAX_TOTAL_FILES" to "invalid",
             "S3_PATH_STYLE" to "invalid",
             "S3_BUCKET" to "INVALID",
             "S3_BUCKET" to "",

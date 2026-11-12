@@ -50,12 +50,23 @@ import ru.souz.backend.events.model.AgentLiveEvent
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.events.model.isPublicClientEvent
 import ru.souz.backend.http.BackendHttpDependencies
+import ru.souz.backend.http.ClientFrameByteBudget
+import ru.souz.backend.http.publicClientFrameBytes
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.InvalidClientFrameException
 import ru.souz.backend.http.decodeClientFrame
 import ru.souz.backend.http.parseClient
 import ru.souz.backend.http.sendClient
 import ru.souz.backend.http.toPublicDto
+import com.fasterxml.jackson.databind.node.ObjectNode
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.async
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
+import ru.souz.backend.client.exceedsToolResultContentLimits
 
 internal class PublicClientConnection(
     private val socket: DefaultWebSocketServerSession,
@@ -63,12 +74,16 @@ internal class PublicClientConnection(
     private val clientType: String,
     private val boundChat: Chat?,
     private val socketId: String,
+    private val frameBytes: ClientFrameByteBudget = publicClientFrameBytes,
 ) {
     private val service = deps.publicClientService
     private val subscriptions = mutableMapOf<UUID, Job>()
     private val sendMutex = Mutex()
+    private val resultSlots = Semaphore(16)
 
     suspend fun run(afterSeq: Long) = coroutineScope {
+        val resultJobs = Job(coroutineContext[Job])
+        val results = CoroutineScope(coroutineContext + resultJobs)
         try {
             if (boundChat != null) {
                 withBackendLogContext("userId" to boundChat.userId, "chatId" to boundChat.id) {
@@ -79,17 +94,24 @@ internal class PublicClientConnection(
             }
             for (frame in socket.incoming) {
                 if (frame is Frame.Text) {
-                    if (!processFrame(frame, this)) break
+                    if (!processFrame(frame, this, results)) break
                 } else {
                     socketLogger.warn("WebSocket frame ignored frameType={}", frame.frameType)
                 }
             }
         } finally {
             subscriptions.values.forEach { it.cancel() }
+            withContext(NonCancellable) { resultJobs.cancelAndJoin() }
         }
     }
 
-    private suspend fun processFrame(frame: Frame.Text, scope: CoroutineScope): Boolean {
+    private suspend fun processFrame(frame: Frame.Text, scope: CoroutineScope, results: CoroutineScope): Boolean {
+        // Admit before readText/JSON parsing, DTO binding or capturing a result in a preparation job.
+        val frameLease = frameBytes.tryReserve(frame.data.size) ?: run {
+            socket.close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Client frame byte capacity exceeded."))
+            return false
+        }
+        var releaseFrame = true
         val started = TimeSource.Monotonic.markNow()
         var stage = "decode"
         var logNode: JsonNode? = null
@@ -180,7 +202,12 @@ internal class PublicClientConnection(
                                             }
                                         }.let { service.handleMessage(target, it) }
                                         "history.append" -> service.handleHistory(target, decode(HistoryAppendFrame::class.java))
-                                        "tool.result" -> service.handleToolResult(target, decode(ToolResultFrame::class.java))
+                                        "tool.result" -> {
+                                            val oversized = node.path("result").get("content").exceedsToolResultContentLimits()
+                                            // Keep the envelope valid for correlation without rebinding the oversized subtree.
+                                            if (oversized) (node as ObjectNode).putObject("result")
+                                            service.handleToolResult(target, decode(ToolResultFrame::class.java), oversized)
+                                        }
                                         "thread.cancel" -> service.handleCancel(target, decode(ThreadCancelFrame::class.java))
                                         else -> throw InvalidClientFrameException("Unsupported frame kind.")
                                     }
@@ -200,6 +227,49 @@ internal class PublicClientConnection(
                         }
                         rejectedFor(node, kind, error)
                     }
+                }
+                if (kind == "tool.result") {
+                    val handled = handle() // Reserve before scheduling image IO or waiting for a socket write.
+                    onSendFailure = handled.onSendFailure
+                    if (!resultSlots.tryAcquire()) {
+                        withTimeoutOrNull(TOOL_RESULT_ACK_TIMEOUT) {
+                            sendMutex.withLock {
+                                socket.sendClient(rejectedFor(node, kind,
+                                    ClientError("client_tool_failed", "Too many results being prepared.")).response)
+                            }
+                        }
+                        handled.onSendFailure()
+                    } else {
+                        results.launch(mdcContext(), start = CoroutineStart.UNDISPATCHED) {
+                            releaseFrame = false // This job owns the bytes through worker cleanup and ACK.
+                            try {
+                                supervisorScope {
+                                    try {
+                                        yield() // Install cleanup now, but never normalize on the receive loop.
+                                        val preparation = async { handled.prepare() }
+                                        val prepared = withTimeoutOrNull(TOOL_RESULT_PREPARATION_TIMEOUT) { preparation.await() } != null
+                                        if (!prepared) preparation.cancel()
+                                        // Settle the waiter before joining a timed-out worker. Blocking I/O can
+                                        // outlast cancellation, so the worker and socket still hold their permits.
+                                        withTimeout(TOOL_RESULT_ACK_TIMEOUT) {
+                                            sendMutex.withLock {
+                                                socket.sendClient(handled.response)
+                                                if (prepared) handled.afterSend() else handled.onSendFailure()
+                                            }
+                                        }
+                                        socketLogger.info("WebSocket tool result acknowledged")
+                                    } finally {
+                                        handled.onSendFailure()
+                                    }
+                                }
+                            } finally {
+                                resultSlots.release()
+                                frameLease.close()
+                            }
+                        }
+                    }
+                    onSendFailure = null
+                    return@withContext
                 }
                 // Joining a subscription sender must happen outside the lock it uses to write.
                 val subscriptionReply = if (kind == "chat.subscribe" || kind == "chat.unsubscribe") handle() else null
@@ -243,6 +313,7 @@ internal class PublicClientConnection(
             }
             throw failure
         } finally {
+            if (releaseFrame) frameLease.close()
             onSendFailure?.invoke()
             val interrupted = !scope.isActive
             withContext(NonCancellable + mdcContext()) {
@@ -376,6 +447,9 @@ internal suspend fun AgentEventStream.forwardPublicEvents(
         }
     }
 }
+
+private val TOOL_RESULT_PREPARATION_TIMEOUT = 20.seconds
+private val TOOL_RESULT_ACK_TIMEOUT = 5.seconds
 
 private val socketLogger = LoggerFactory.getLogger("SouzClientWebSocket")
 private val clientFrameKinds = setOf("chat.create", "chat.subscribe", "chat.unsubscribe", "message.submit", "history.append", "tool.result", "thread.cancel")
