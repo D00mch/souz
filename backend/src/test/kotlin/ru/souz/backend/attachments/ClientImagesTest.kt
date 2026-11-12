@@ -78,6 +78,18 @@ class ClientImagesTest {
                 assertEquals(restJsonMapper.valueToTree(mapOf("type" to "resource_link", "uri" to "attachment:${image.fileId}",
                     "name" to image.name, "mimeType" to "image/png")), screenshot.result!!["content"].single())
             }
+            for ((index, uri) in listOf("file:///screen.png", "screen://capture/0").withIndex()) {
+                fun embedded(blob: String) = mapOf("type" to "resource", "resource" to mapOf("uri" to uri, "blob" to blob))
+                val normalized = images.store(user, "untyped-$index", outcome(listOf(embedded(encoded))))
+                assertEquals("succeeded", normalized.status)
+                assertEquals("image/png", normalized.files.single().mimeType)
+                assertFalse(encoded in normalized.result.toString())
+                for (content in listOf(List(6) { embedded(encoded) }, listOf(embedded("ZG9jdW1lbnQ=")))) {
+                    val rejected = images.store(user, "untyped-invalid-$index", outcome(content))
+                    assertEquals("tool_image_unavailable", rejected.error?.code)
+                    assertNull(rejected.result)
+                }
+            }
             assertEquals("tool_image_unavailable", images.store(user, "broken-link",
                 outcome(listOf(link("attachment:${broken.id}")))).error?.code)
             val owned = images.store(user, "owned", outcome(listOf(link("attachment:${saved.fileId}", "text/plain"))))

@@ -36,8 +36,9 @@ internal class ClientImages(private val storage: AttachmentStorage) : AutoClosea
         items.forEachIndexed { index, item ->
             val resource = item["resource"]
             if (item["type"]?.asText() == "resource" && isImageContent(item)) {
-                items.set(index, restJsonMapper.createObjectNode().put("type", "image").put("mimeType", resource["mimeType"].asText())
-                    .set<JsonNode>("data", resource["blob"]))
+                val image = restJsonMapper.createObjectNode().put("type", "image")
+                resource["mimeType"]?.takeIf { it.isTextual && it.asText().isNotBlank() }?.let { image.set<JsonNode>("mimeType", it) }
+                items.set(index, image.set<JsonNode>("data", resource["blob"]))
             }
         }
         if (items.none { it.attachmentUri() != null || isImageContent(it) }) return normalized
@@ -144,13 +145,22 @@ internal fun oversizedToolResult(): ClientToolOutcome =
 internal fun isImageContent(item: JsonNode): Boolean =
     when (item["type"]?.asText()) {
         "image" -> true
-        "resource" -> item["resource"]?.get("mimeType")?.asText()?.startsWith("image/") == true
+        "resource" -> item["resource"]?.let { resource ->
+            resource["mimeType"]?.asText()?.startsWith("image/") == true ||
+                resource["uri"].hasImageSuffix() ||
+                // MIME is optional in MCP. Ambiguous binary resources must pass image validation
+                // (or be rejected without storage), never escape as raw base64 in text/history.
+                (resource.has("blob") && resource["mimeType"]?.takeIf { it.isTextual }?.asText().isNullOrBlank())
+        } == true
         "resource_link" -> item["mimeType"]?.asText()?.startsWith("image/") == true ||
-            item["uri"]?.asText()?.substringBefore('?')?.lowercase()?.let { uri ->
-                listOf(".png", ".jpg", ".jpeg", ".webp").any(uri::endsWith)
-            } == true
+            item["uri"].hasImageSuffix()
         else -> false
     }
+
+private fun JsonNode?.hasImageSuffix(): Boolean =
+    this?.asText()?.substringBefore('?')?.substringBefore('#')?.lowercase()?.let { uri ->
+        listOf(".png", ".jpg", ".jpeg", ".webp").any(uri::endsWith)
+    } == true
 
 /** Drops client-supplied internal file references even when image storage is disabled. */
 internal fun ClientToolOutcome.withoutClientAttachments(): ClientToolOutcome {

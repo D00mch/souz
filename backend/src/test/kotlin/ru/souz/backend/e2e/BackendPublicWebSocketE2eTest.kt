@@ -608,6 +608,9 @@ class BackendPublicWebSocketE2eTest {
             Triple(8, """{"content":[{"type":"image","mimeType":"image/png","data":"$encoded"}]}""", "tool_image_unavailable"),
             Triple(9, """{"content":[{"type":"resource","resource":{"uri":"screen://capture","mimeType":"image/png","blob":"$encoded"}}]}""", "tool_image_unavailable"),
             Triple(10, """{"content":[{"type":"resource_link","uri":"https://example.invalid/screen.png"}]}""", "tool_image_unavailable"),
+            Triple(12, """{"content":[{"type":"resource","resource":{"uri":"file:///screen.png","blob":"$encoded"}}]}""", "tool_image_unavailable"),
+            Triple(13, """{"content":[{"type":"resource","resource":{"uri":"screen://capture/0","blob":"$encoded"}}]}""", "tool_image_unavailable"),
+            Triple(14, """{"content":[{"type":"resource","resource":{"uri":"screen://capture/0","mimeType":null,"blob":"$encoded"}}]}""", "tool_image_unavailable"),
             Triple(11, """{"content":[
                 {"type":"resource","resource":{"uri":"file:///notes.txt","mimeType":"text/plain","text":"Notes"}},
                 {"type":"resource","resource":{"uri":"file:///report.pdf","mimeType":"application/pdf","blob":"ZG9jdW1lbnQ="}},

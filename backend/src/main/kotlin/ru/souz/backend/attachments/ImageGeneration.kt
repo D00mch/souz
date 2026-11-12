@@ -1,19 +1,16 @@
 package ru.souz.backend.attachments
 
 import java.util.UUID
-import javax.sql.DataSource
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
-import ru.souz.backend.storage.postgres.write
 import ru.souz.llms.*
 import ru.souz.llms.runtime.*
 
 /** Durable admission for one paid image operation; an uncertain attempt is never replayed automatically. */
 internal class ImageGeneration(
     private val storage: AttachmentStorage,
-    private val dataSource: DataSource,
     private val executionQuotas: ExecutionQuotaManager,
 ) {
     suspend fun generate(
@@ -40,28 +37,9 @@ internal class ImageGeneration(
         storage.find(meta.userId, key)?.let { return@withImageProjectionPermit it.toContent(FilePresentation.image) }
         // Decode within the shared raster budget before claiming a paid attempt; retain order and original bytes.
         val images = sources.map { ImageSource.read(storage.read(it)) }
-        val claimed = dataSource.write(networkTimeoutMillis = 15_000) { connection ->
-            connection.prepareStatement(
-                """
-                    insert into image_generation_attempts(user_id, execution_id, fingerprint) values (?, ?, ?)
-                    on conflict do nothing
-                """.trimIndent(),
-            ).use {
-                it.queryTimeout = 10
-                it.setString(1, meta.userId)
-                it.setObject(2, UUID.fromString(execution))
-                it.setString(3, fingerprint)
-                it.executeUpdate() == 1
-            }
-        }
-        if (!claimed) throw AttachmentException("image_previously_attempted")
-        val image = gateway.generate(ImageGenerationInput(prompt.trim(), images = images)).image
-        storage.save(
-            meta.userId,
-            key,
-            "image.${image.mimeType.substringAfter('/')}",
-            image.bytes.inputStream(),
-        ).toContent(FilePresentation.image)
+        storage.saveGeneratedImage(meta.userId, key, UUID.fromString(execution), fingerprint) {
+            gateway.generate(ImageGenerationInput(prompt.trim(), images = images)).image
+        }.toContent(FilePresentation.image)
     }
 }
 

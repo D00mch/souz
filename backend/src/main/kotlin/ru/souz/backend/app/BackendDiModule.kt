@@ -208,7 +208,7 @@ fun backendDiModule(
         bindSingleton { AttachmentStorage(config, instance(), instance(), instance()) }
         bindSingleton { AttachmentCleanupWorker(instance()) }
         bindSingleton { BackendAttachmentAccess(instance(), instance()) }
-        bindSingleton { ImageGeneration(instance(), instance<HikariDataSource>(), instance()) }
+        bindSingleton { ImageGeneration(instance(), instance()) }
         bindSingleton { ClientImages(instance()) }
     }
     bindSingleton<BackendFeatureFlags> { appConfig.featureFlags }

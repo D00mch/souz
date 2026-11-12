@@ -50,6 +50,8 @@ import ru.souz.backend.events.model.AgentLiveEvent
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.events.model.isPublicClientEvent
 import ru.souz.backend.http.BackendHttpDependencies
+import ru.souz.backend.http.ClientFrameByteBudget
+import ru.souz.backend.http.publicClientFrameBytes
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.InvalidClientFrameException
 import ru.souz.backend.http.decodeClientFrame
@@ -72,6 +74,7 @@ internal class PublicClientConnection(
     private val clientType: String,
     private val boundChat: Chat?,
     private val socketId: String,
+    private val frameBytes: ClientFrameByteBudget = publicClientFrameBytes,
 ) {
     private val service = deps.publicClientService
     private val subscriptions = mutableMapOf<UUID, Job>()
@@ -103,6 +106,12 @@ internal class PublicClientConnection(
     }
 
     private suspend fun processFrame(frame: Frame.Text, scope: CoroutineScope, results: CoroutineScope): Boolean {
+        // Admit before readText/JSON parsing, DTO binding or capturing a result in a preparation job.
+        val frameLease = frameBytes.tryReserve(frame.data.size) ?: run {
+            socket.close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Client frame byte capacity exceeded."))
+            return false
+        }
+        var releaseFrame = true
         val started = TimeSource.Monotonic.markNow()
         var stage = "decode"
         var logNode: JsonNode? = null
@@ -232,6 +241,7 @@ internal class PublicClientConnection(
                         handled.onSendFailure()
                     } else {
                         results.launch(mdcContext(), start = CoroutineStart.UNDISPATCHED) {
+                            releaseFrame = false // This job owns the bytes through worker cleanup and ACK.
                             try {
                                 supervisorScope {
                                     try {
@@ -254,6 +264,7 @@ internal class PublicClientConnection(
                                 }
                             } finally {
                                 resultSlots.release()
+                                frameLease.close()
                             }
                         }
                     }
@@ -302,6 +313,7 @@ internal class PublicClientConnection(
             }
             throw failure
         } finally {
+            if (releaseFrame) frameLease.close()
             onSendFailure?.invoke()
             val interrupted = !scope.isActive
             withContext(NonCancellable + mdcContext()) {

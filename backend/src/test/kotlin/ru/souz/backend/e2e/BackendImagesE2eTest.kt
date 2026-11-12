@@ -9,6 +9,7 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import java.nio.file.Files
 import java.time.Duration
+import java.time.Instant
 import java.util.Base64
 import java.util.UUID
 import kotlin.test.*
@@ -54,6 +55,55 @@ class BackendImagesE2eTest {
     private val settings = object : BackendConfigSource {
         override fun env(key: String) = "image-test-key".takeIf { key == "OPENAI_API_KEY" }
         override fun property(key: String): String? = null
+    }
+
+    @Test
+    fun `output quotas reject before payment and roll back receipts for a later retry`() {
+        for (ownerLimit in listOf(false, true)) for (byteLimit in listOf(false, true)) {
+            val base = AttachmentMinio.config()
+            val bound = 2 * png.size
+            val config = AttachmentStorageConfig(base.endpoint, base.bucket, base.accessKey, base.secretKey,
+                maxFileBytes = bound,
+                maxOwnerBytes = if (ownerLimit && byteLimit) 3L * png.size else Long.MAX_VALUE,
+                maxTotalBytes = if (!ownerLimit && byteLimit) 3L * png.size else Long.MAX_VALUE,
+                maxOwnerFiles = if (ownerLimit && !byteLimit) 1 else 100,
+                maxTotalFiles = if (!ownerLimit && !byteLimit) 1 else 100)
+            val clock = AttachmentClock(Instant.now())
+            backendE2eTest("image_output_quota", attachments = config, clock = clock) {
+                val user = UUID.randomUUID().toString()
+                val chat = createPublicChat(user)
+                client.patch(BackendHttpRoutes.SETTINGS) {
+                    trusted(user); jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}"}""")
+                }
+                val execution = backend.dependencies.executionService.executeChatTurn(user, UUID.fromString(chat), "hello").execution
+                backend.awaitExecution(execution.id)
+                val meta = ToolInvocationMeta(user, chat, execution.id.toString())
+                val storage = backend.attachmentStorage
+                val service = backend.imageGeneration
+                storage.save(if (ownerLimit) user else "another-owner", "full", "full.png", (png + png).inputStream())
+                var calls = 0
+                val gateway = ImageGenerationGateway {
+                    calls++
+                    GeneratedImage(ImageSource.read(png), "OPENAI", DEFAULT_IMAGE_MODEL)
+                }
+                assertEquals("attachment_quota_exceeded", assertFailsWith<AttachmentException> {
+                    service.generate(meta, "draw", emptyList(), "route", gateway)
+                }.code)
+                assertEquals(0, calls)
+                clock.now = clock.now.plus(ATTACHMENT_RETENTION)
+                assertEquals(1, storage.cleanup(), "Quota failure must leave no pending output row")
+                val file = service.generate(meta, "draw", emptyList(), "route", gateway)
+                assertEquals(1, calls, "Quota failure must leave no paid receipt")
+                assertEquals("image.png", file.name)
+                assertContentEquals(png, storage.read(user, UUID.fromString(file.fileId)))
+                assertEquals(file, service.generate(meta, "draw", emptyList(), "route", gateway))
+                assertEquals(1, calls, "A cached output needs no new storage allowance")
+                if (byteLimit) {
+                    service.generate(meta, "another", emptyList(), "route", gateway)
+                    assertEquals(2, calls, "Completion must shrink maximum reserved bytes to actual output size")
+                }
+            }
+        }
     }
 
     @Test fun `generation editing and explicit reply selection share the configured image route`() {
@@ -155,7 +205,7 @@ class BackendImagesE2eTest {
                 backend.awaitExecution(execution.id)
                 meta = ToolInvocationMeta(user, chat, execution.id.toString())
             }
-            val service = ImageGeneration(backend.attachmentStorage, backend.dataSource, backend.executionQuotas)
+            val service = ImageGeneration(backend.attachmentStorage, backend.executionQuotas)
             val result = service.generate(meta, "draw", emptyList(), "route", gateway)
             if (restarted) assertEquals(saved, result) else saved = result
             if (!restarted) {
@@ -180,7 +230,7 @@ class BackendImagesE2eTest {
 
     @Test
     fun `concurrent paid attempts call the provider once and successful retries reuse storage`() = backendE2eTest(
-        "image_concurrent_attempts", attachments = AttachmentMinio.config(),
+        "image_concurrent_attempts", attachments = AttachmentMinio.config(maxTotalFiles = 1),
     ) {
         val user = UUID.randomUUID().toString()
         val chat = createPublicChat(user)
@@ -190,7 +240,7 @@ class BackendImagesE2eTest {
         val execution = backend.dependencies.executionService.executeChatTurn(user, UUID.fromString(chat), "hello").execution
         backend.awaitExecution(execution.id)
         val meta = ToolInvocationMeta(user, chat, execution.id.toString())
-        val service = ImageGeneration(backend.attachmentStorage, backend.dataSource, backend.executionQuotas)
+        val service = ImageGeneration(backend.attachmentStorage, backend.executionQuotas)
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         var calls = 0
@@ -207,6 +257,10 @@ class BackendImagesE2eTest {
                 assertEquals("image_previously_attempted", assertFailsWith<AttachmentException> {
                     service.generate(meta, "draw", emptyList(), "route", gateway)
                 }.code)
+                assertEquals("attachment_quota_exceeded", assertFailsWith<AttachmentException> {
+                    service.generate(meta, "competing output", emptyList(), "route", gateway)
+                }.code, "The in-flight paid call must already own the output slot")
+                assertEquals(1, calls)
             } finally {
                 release.complete(Unit)
             }
@@ -238,7 +292,7 @@ class BackendImagesE2eTest {
             reads++
             backend.attachmentStorage.read(firstArg())
         }
-        val service = ImageGeneration(storage, backend.dataSource, quotas)
+        val service = ImageGeneration(storage, quotas)
         runTest {
             val prepared = CompletableDeferred<Unit>()
             val cleanup = CompletableDeferred<Unit>()
@@ -493,7 +547,7 @@ class BackendImagesE2eTest {
             assertEquals("screen.capture", started["payload"]["name"].asText())
             val result = toolResultFrame(started, "succeeded", mapOf("content" to documentLinks + listOf(
                 mapOf("type" to "resource_link", "uri" to "https://example.invalid/report.txt", "attachment" to forged),
-                mapOf("type" to "image", "mimeType" to "image/png", "data" to base64))))
+                mapOf("type" to "resource", "resource" to mapOf("uri" to "file:///screen.png", "blob" to base64)))))
             socket.send(Frame.Text(result))
             assertEquals("accepted", readJson(socket)["status"].asText())
             assertEquals("thread.completed", readJson(socket)["type"].asText())

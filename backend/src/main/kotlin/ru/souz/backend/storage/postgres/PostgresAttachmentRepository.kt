@@ -67,6 +67,24 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
             config, validateContent = false)
     }
 
+    /** Quota rejection must roll back the paid receipt as well as the output reservation. */
+    internal suspend fun reserveGeneratedImage(userId: String, sourceKey: String, executionId: UUID,
+        fingerprint: String, size: Int, now: Instant, config: AttachmentStorageConfig): StoredAttachment =
+        dataSource.write(networkTimeoutMillis = 15_000) { connection ->
+            val claimed = connection.attachmentStatement("""
+                insert into image_generation_attempts(user_id, execution_id, fingerprint) values (?, ?, ?)
+                on conflict do nothing
+            """.trimIndent()).use {
+                it.setString(1, userId)
+                it.setObject(2, executionId)
+                it.setString(3, fingerprint)
+                it.executeUpdate() == 1
+            }
+            if (!claimed) throw AttachmentException("image_previously_attempted")
+            connection.reserve(userId, sourceKey, "image", "application/octet-stream", size.toLong(), "", now,
+                config, validateContent = false)
+        }
+
     private fun Connection.reserve(userId: String, sourceKey: String, name: String, mimeType: String,
         size: Long, sha256: String, now: Instant, config: AttachmentStorageConfig, validateContent: Boolean): StoredAttachment {
         lockAdmission()

@@ -97,6 +97,10 @@ If no result arrives before `deadlineAt`, the caller receives `client_tool_timed
 A result with a `content` array allows up to 64 blocks and 16 `attachment:` resource links, counting
 repeats. Souz allows 16 concurrent result jobs per socket and eight concurrent attachment
 preparations per backend instance. Over-limit results fail with `client_tool_failed`.
+Public sockets share a 192 MiB in-flight frame budget, reserving six times the wire size
+(at least 4 KiB) before JSON parsing through result preparation and ACK cleanup. Budget
+exhaustion closes that socket with code 1008. Embedded binary resources without MIME metadata
+are validated as images or rejected with `tool_image_unavailable`; raw blobs do not enter history.
 
 Active-thread submit/tool/cancel operations must reach the runtime owner in multi-replica deployments. Durable replay and thread status can be read from any process.
 

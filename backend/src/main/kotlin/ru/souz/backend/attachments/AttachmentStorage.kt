@@ -51,14 +51,27 @@ class AttachmentStorage(
         if (reserved.state == "ready") return@withPermit available(reserved)
         // Failure or cancellation leaves the reservation for the normal pending cleanup, including
         // cancellation just after its transaction commits. No untracked S3 object can be created.
-        val bytes = load(bound)
-        require(bytes.size <= bound)
+        saveReservedImage(reserved, "tool-image", load(bound), declaredMime)
+    }
+
+    /** Reserve the maximum output and paid receipt together before invoking the provider. */
+    internal suspend fun saveGeneratedImage(userId: String, sourceKey: String, executionId: UUID, fingerprint: String,
+        generate: suspend () -> ImageSource): StoredAttachment = transfers.withPermit {
+        val reserved = repository.reserveGeneratedImage(userId, sourceKey, executionId, fingerprint,
+            minOf(ImageSource.MAX_BYTES, config.maxFileBytes), clock.instant(), config)
+        val image = generate()
+        saveReservedImage(reserved, "image", image.bytes, image.mimeType)
+    }
+
+    private suspend fun saveReservedImage(reserved: StoredAttachment, name: String, bytes: ByteArray,
+        declaredMime: String?): StoredAttachment {
+        require(bytes.size <= reserved.sizeBytes)
         val source = ImageSource.read(bytes)
         require(declaredMime == null || declaredMime == source.mimeType)
-        val file = repository.prepareClientImage(reserved, "tool-image.${source.mimeType.substringAfter('/')}",
+        val file = repository.prepareClientImage(reserved, "$name.${source.mimeType.substringAfter('/')}",
             source.mimeType, bytes.size, bytes.sha256Hex(), clock.instant())
         objects.put(file, bytes)
-        available(repository.complete(file, clock.instant()))
+        return available(repository.complete(file, clock.instant()))
     }
 
     suspend fun get(userId: String, id: UUID): StoredAttachment =
