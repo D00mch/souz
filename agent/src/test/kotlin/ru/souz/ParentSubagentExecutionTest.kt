@@ -226,7 +226,7 @@ private class ParentHarness(
         val nodesCommon = NodesCommon(mockk(relaxed = true), mockk<AgentSettingsProvider>(relaxed = true), SystemAgentRuntimeEnvironment)
         val nodesErrors = NodesErrorHandling(mockk(relaxed = true))
         val nodesMemory = NodesMemory(NoopConversationMemoryRuntime, captureScope)
-        val inventory = NodesSkillInventory(catalog, filter, bundles)
+        val inventory = NodesSkillInventory({ catalog }, filter, bundles)
         val toolUse = NodesToolUseWithKnowledge(AgentToolExecutor(), knowledgeStore = null)
         agent = if (id == AgentId.SKILLS_GRAPH) {
             SkillsGraphBasedAgent(restJsonMapper, nodesLLM, nodesCommon, nodesErrors, nodesMemory, inventory, toolUse, coreTools)

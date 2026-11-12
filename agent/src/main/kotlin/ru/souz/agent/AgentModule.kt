@@ -66,7 +66,7 @@ fun agentDiModule(
     }
     bindSingleton {
         NodesSkillInventory(
-            toolCatalog = instance(),
+            toolCatalogProvider = { instance() },
             toolsFilter = instance(),
             skillBundleProvider = instance<SkillRegistryRepository>(),
             llmApi = instance(),

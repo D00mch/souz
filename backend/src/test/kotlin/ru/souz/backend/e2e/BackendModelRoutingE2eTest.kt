@@ -62,7 +62,7 @@ class BackendModelRoutingE2eTest {
         var verdict: () -> Boolean = { false }
         backendE2eTest(
             "e2e_model_routing", settingsSource = source, localModels = emptyList(),
-            providerClients = ProviderHttpClients(standard = http, openAi = http),
+            providerClients = ProviderHttpClients(standard = http, openAi = http, mcp = http),
             complexityClassifier = TaskComplexityClassifier { _, _ -> classified.incrementAndGet(); TaskClassification(verdict()) },
         ) {
             val userId = UUID.randomUUID().toString()

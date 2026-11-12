@@ -174,8 +174,8 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
     }
     bindSingleton {
         ToolGetSkillsByCategory(
-            getSkillByName = instance(),
-            getSkillsNamesByCategory = instance(),
+            catalogProvider = { instance() },
+            toolsFilter = instance(),
         )
     }
     bindSingleton {

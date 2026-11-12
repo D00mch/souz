@@ -59,6 +59,7 @@ kotlin {
             resources.srcDir("src/jvmMain/resources")
             dependencies {
                 implementation(projects.native)
+                implementation(libs.mcp.client)
                 implementation(libs.commons.csv)
                 implementation(libs.tika.core)
                 implementation(libs.tika.parsersStandardPackage)

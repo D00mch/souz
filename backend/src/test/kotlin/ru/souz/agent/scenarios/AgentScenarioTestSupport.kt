@@ -144,7 +144,7 @@ suspend fun ScenarioLiveModel.runScenario(
                 runtimeEnvironment = ScenarioRuntimeEnvironment,
                 coreTools = AgentCoreTools(
                     getSkillByName = lookup,
-                    getSkillsByCategory = ToolGetSkillsByCategory(lookup, names),
+                    getSkillsByCategory = ToolGetSkillsByCategory({ catalog }, RuntimePassThroughToolsFilter),
                     getSkillsNamesByCategory = names,
                     getKnowledge = production.direct.instance<ToolGetKnowledge>(),
                     searchKnowledge = production.direct.instance<ToolSearchKnowledge>(),

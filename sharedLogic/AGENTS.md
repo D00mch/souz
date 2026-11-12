@@ -23,6 +23,8 @@ Keep this module UI-free. Compose resources and UI adapters belong in `:sharedUI
 
 ## Pain points
 
+- [MCP servers](../backend/docs/mcp.md) — SDK schemas and results, dedicated transport, bounded discovery and session lifetime.
+
 - [Runtime sandbox and skills](docs/runtime-sandbox-and-skills.md) — invocation scope, storage layouts, platform runtimes, and Docker fixtures.
 - [Web tools](docs/web-tools.md) — evidence handling, citations, provider behavior, sandboxed output, and URL limitations.
 - [Observability](docs/observability.md) — request bookkeeping, structured events, and host-owned logging sinks.

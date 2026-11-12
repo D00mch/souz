@@ -113,8 +113,8 @@ internal fun LLMToolSetup.toDetail(): ToolSkillDetail = ToolSkillDetail(
     skillId = fn.name,
     name = fn.name,
     description = fn.description,
-    inputSchema = fn.parameters,
-    returnSchema = fn.returnParameters,
+    inputSchema = (this as? SkillToolSchemas)?.skillInputSchema ?: fn.parameters,
+    returnSchema = (this as? SkillToolSchemas)?.skillReturnSchema ?: fn.returnParameters,
     fewShotExamples = fn.fewShotExamples.orEmpty(),
 )
 
@@ -154,8 +154,8 @@ internal data class ToolSkillDetail(
     override val skillId: String,
     val name: String,
     val description: String,
-    val inputSchema: LLMRequest.Parameters,
-    val returnSchema: LLMRequest.Parameters?,
+    val inputSchema: Any,
+    val returnSchema: Any?,
     val fewShotExamples: List<LLMRequest.FewShotExample>,
 ) : SkillDetail
 

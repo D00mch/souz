@@ -14,59 +14,12 @@ import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.plugins.sse.SSE
 import io.ktor.http.HttpHeaders
 import io.ktor.serialization.jackson.jackson
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.TimeUnit
 import okhttp3.ConnectionPool
 import okhttp3.Protocol
 import kotlin.time.Duration.Companion.seconds
 import org.slf4j.LoggerFactory
 import ru.souz.llms.openai.openAiTlsDefaults
-
-/** Process-owned HTTP clients shared by provider adapters. */
-class ProviderHttpClients(
-    val standard: HttpClient,
-    val openAi: HttpClient,
-    val jev: HttpClient = standard,
-) : AutoCloseable {
-    constructor() : this(createProviderHttpClients())
-
-    private constructor(clients: List<HttpClient>) : this(clients[0], clients[1], clients[2])
-
-    private val closed = AtomicBoolean(false)
-
-    override fun close() {
-        if (!closed.compareAndSet(false, true)) return
-
-        var failure: Throwable? = null
-        for (client in listOf(standard, openAi, jev).distinct()) {
-            try {
-                client.close()
-            } catch (closeFailure: Throwable) {
-                if (failure == null) {
-                    failure = closeFailure
-                } else {
-                    failure.addSuppressed(closeFailure)
-                }
-            }
-        }
-        failure?.let { throw it }
-    }
-}
-
-private fun createProviderHttpClients(): List<HttpClient> {
-    val clients = mutableListOf<HttpClient>()
-    try {
-        clients += createStandardProviderHttpClient()
-        clients += createOpenAiProviderHttpClient()
-        clients += createOkHttpProviderHttpClient()
-        return clients
-    } catch (failure: Throwable) {
-        clients.forEach { client ->
-            runCatching { client.close() }.exceptionOrNull()?.let(failure::addSuppressed)
-        }
-        throw failure
-    }
-}
 
 fun createStandardProviderHttpClient(): HttpClient =
     HttpClient(CIO) {
