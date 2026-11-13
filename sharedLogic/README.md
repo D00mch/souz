@@ -11,7 +11,7 @@ Export `JEV_TOKEN` in the environment that starts Souz, then run `./gradlew :bac
 - Set `FRIDA_URL` to the vLLM `/pooling` endpoint to enable the Skill-selection fallback, with optional `FRIDA_TOKEN` and `FRIDA_MODEL`. See [FRIDA client configuration](src/main/kotlin/ru/souz/frida/FridaClient.kt) and [FRIDA classification](src/main/kotlin/ru/souz/llms/runtime/FridaClassifier.kt).
 - `JEV_WAIT_CATEGORY_THRESHOLD` controls confidence for a specific waiting message. See [backend configuration](../backend/src/main/kotlin/ru/souz/backend/app/BackendAppConfig.kt) and [model routing](../agent/docs/execution-lifecycle.md#model-routing).
 
-Skill selection tries Jev, configured FRIDA, then the execution LLM on failure. See [Skill inventory and approval](../agent/docs/skill-activation.md) for discovery behavior. See [provider HTTP lifecycle](docs/provider-http-lifecycle.md) for transport ownership and request-local credentials, and [HTTP client profiles](src/main/kotlin/ru/souz/llms/http/ProviderHttpClients.kt) for transport settings.
+See [Skill inventory and approval](../agent/docs/skill-activation.md) for classifier fallback. See [provider HTTP lifecycle](docs/provider-http-lifecycle.md) for transport ownership and request-local credentials, and [HTTP client profiles](src/main/kotlin/ru/souz/llms/http/ProviderHttpClients.kt) for transport settings.
 
 Run the opt-in hosted Jev test with `JEV_TOKEN` exported.
 

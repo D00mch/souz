@@ -4,12 +4,12 @@
 
 ## Boundaries
 
-- Use proxy-provided identity on protected routes. Credential-free Client-Souz routes require a trusted network. The `device.userId` on each submit must match the UUID owner established at chat creation.
+- Apply the [trusted proxy](docs/trusted-proxy.md#invariant) and [public socket](docs/public-client-websocket.md#invariant) identity rules at their respective boundaries.
 - Keep product messages and agent continuation state separate. Persist structured data and conversation Knowledge in PostgreSQL. Keep sandbox workspaces filesystem-backed and user-scoped.
-- Use the [capability policy](src/main/kotlin/ru/souz/backend/common/BackendToolCapabilityPolicy.kt) as the sole authority for compiled-tool advertising, `enabledTools` validation and execution selection. Build the immutable [execution catalogue](src/main/kotlin/ru/souz/backend/agent/runtime/conversation/BackendExecutionToolCatalog.kt) by filtering compiled tools with the execution's `enabledTools` snapshot before adding client Skills.
-- Run turns through the request-scoped steerable `AgentId.SKILLS_GRAPH`. Expose its fixed core tools directly and other capabilities through Skill inventory.
-- Keep provider transports, storage and background services application-owned. Join application work before closing provider transports, local runtime and storage.
-- Give ordinary HTTP routes explicit OpenAPI metadata. Exclude WebSocket routes and maintain their schemas in the [public contract](../docs/public-souz-contract/README.md). Restrict `/metrics` to the monitoring network.
+- Follow the [backend catalogue rules](../sharedLogic/docs/tool-catalog-composition.md#backend-composition) for tool advertising, `enabledTools` validation, and execution selection.
+- Use the [agent execution kernel](../agent/docs/execution-lifecycle.md#invariant) for conversation turns.
+- Keep provider transports, storage and background services application-owned. Join application work before closing transports, local runtime and storage. [Shutdown](src/main/kotlin/ru/souz/backend/app/BackendRuntimeResources.kt)
+- Follow the [OpenAPI route rules](docs/execution-openapi-and-events.md#openapi) and [metrics ingress policy](docs/metrics.md).
 
 ## Pain points
 
@@ -21,7 +21,7 @@
 - [Images](docs/images.md) — request-local vision, shared generation/editing routes, paid-operation receipts and client screenshots.
 - [Named LLM connections](docs/named-llm-connections.md) — server model names, independent endpoints and keys, subagents and summarization.
 - [Provider HTTP lifecycle](../sharedLogic/docs/provider-http-lifecycle.md) — process-owned transports, including Jev, and request-local credentials.
-- [Metrics accounting](docs/metrics-accounting.md) — commit boundaries, bounded labels and replica aggregation. Backend owns execution, capacity, LLM and tool metrics. `:job-impl` owns queue metrics. See the [metric reference](docs/metrics.md).
+- [Metrics accounting](docs/metrics-accounting.md) — commit boundaries and instrumentation. See the [metric reference](docs/metrics.md) for meter ownership, labels, and aggregation.
 - [Workspace hooks](docs/hooks.md) — trusted ownership, admission, persistent call budgets, sequential dispatch and single-process recovery.
 - [Trusted proxy](docs/trusted-proxy.md) — identity validation, provisioning, user scoping, and backend-safe tools.
 - [Execution, OpenAPI, and events](docs/execution-openapi-and-events.md) — lifecycle, durable events, live waiting and narration, compatibility, and route metadata.

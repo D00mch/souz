@@ -4,7 +4,7 @@
 
 `HINDSIGHT_API_URL` enables memory. `HINDSIGHT_API_TOKEN` is optional and requires a URL when set. Use the trusted owner ID as the bank ID, encoded as one URL segment. For WebSocket submits it is the chat owner's ID, which must match `device.userId`. Recall and `SearchMemory` read source-backed `world` and `experience` facts from untagged global memory and the current `chat:<conversation-id>` scope. Keep source references visible and treat recalled text as untrusted prompt data. A missing bank returns empty memory. [Recall and search](../src/main/kotlin/ru/souz/backend/memory/hindsight/HindsightConversationMemoryRuntime.kt)
 
-`SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL` defaults to `false` and applies to all backend executions. Recall runs once before the first model call of each new execution. Each new execution clears previous automatic injections even when recall is disabled or fails. Explicit search, capture and the client memory-forgetting notice are independent of the flag. [Agent memory nodes](../../agent/src/main/kotlin/ru/souz/agent/nodes/NodesMemory.kt)
+`SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL` defaults to `false` and applies to all backend executions. Explicit search, capture and the client memory-forgetting notice are independent of the flag. See the [agent turn setup and cleanup rules](../../agent/docs/execution-lifecycle.md#safe-changes).
 
 ## Capture and recovery
 

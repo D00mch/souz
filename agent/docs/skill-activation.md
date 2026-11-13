@@ -2,7 +2,7 @@
 
 ## Invariant
 
-[Inventory](../src/main/kotlin/ru/souz/agent/nodes/NodesSkillInventory.kt) runs after memory recall and before host context enrichment. List filtered compiled tools and user-scoped file-backed IDs. Treat IDs and selected descriptions as escaped discovery data. Select descriptions from bounded recent dialogue and the current request using host classifiers with execution-LLM fallback. Keep ID-only discovery if selection fails. Preserve classification of confirmations and fragments. [Read-only inventory](../../sharedLogic/docs/runtime-sandbox-and-skills.md#invariants)
+[Inventory](../src/main/kotlin/ru/souz/agent/nodes/NodesSkillInventory.kt) follows the [turn setup order](execution-lifecycle.md#safe-changes). List filtered compiled tools and user-scoped file-backed IDs. Treat IDs and selected descriptions as escaped discovery data. Select descriptions from bounded recent dialogue and the current request using the primary host classifier, the configured fallback host classifier on failure, then the execution LLM if neither answers. Keep ID-only discovery if selection fails. Preserve classification of confirmations and fragments. [Read-only inventory](../../sharedLogic/docs/runtime-sandbox-and-skills.md#invariants)
 
 Execution-bound server discovery may preload selected servers before reading the live catalog. Keep every server discoverable, bound the loaded-tool hints, and preserve the [core-tool boundary](skills-oriented-graph.md). [MCP discovery](../../backend/docs/mcp.md#discovery)
 
