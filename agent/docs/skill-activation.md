@@ -2,35 +2,18 @@
 
 ## Invariant
 
-The skills graph prepares inventory after history input and memory recall, then enriches context before LLM execution. Inventory lists enabled tool-backed IDs and user-scoped file-backed IDs. It selects relevant descriptions using description metadata and bounded recent conversation, with a host classifier, an optional fallback classifier when it fails, and execution-LLM fallback. Selection failure retains ID-only discovery.
+[Inventory](../src/main/kotlin/ru/souz/agent/nodes/NodesSkillInventory.kt) runs after memory recall and before host context enrichment. List filtered compiled tools and user-scoped file-backed IDs. Treat IDs and selected descriptions as escaped discovery data. Select descriptions from bounded recent dialogue and the current request using host classifiers with execution-LLM fallback. Keep ID-only discovery if selection fails. Preserve classification of confirmations and fragments. [Read-only inventory](../../sharedLogic/docs/runtime-sandbox-and-skills.md#invariants)
 
-Hosts may supply an execution-bound `AgentToolServerSource`. Inventory classifies server descriptions through the same fallback chain and preloads selected servers before reading the live catalogue. Every server remains discoverable and contributes routing hints; at most 20 loaded-tool hints enter the prompt. Remote clients stay outside `:agent`, and preloading preserves the core-tool boundary.
+Execution-bound server discovery may preload selected servers before reading the live catalog. Keep every server discoverable, bound the loaded-tool hints, and preserve the [core-tool boundary](skills-oriented-graph.md). [MCP discovery](../../backend/docs/mcp.md#discovery)
 
-`GetSkillByName`, generic `RunSkillCommand`, and explicit `SpawnSubagent` selection load full file-backed bundles on demand. Hosts may pass `SkillApprovalGate` to require cached or fresh approval before exposing `SKILL.md` or executing bundled commands; without a gate, these paths use the loaded bundle directly. The backend intentionally passes no gate for classpath- and sandbox-backed Skills. When enabled, validation cache identity is the user, canonical skill ID, canonical bundle hash, and policy version. A changed bundle gets a different cache key. Changing validation rules requires a new policy version.
-
-Hosts supply core Skill tools through `AgentCoreTools`, outside `AgentToolCatalog`; see the [skills graph](skills-oriented-graph.md) for exposure rules. Its optional spawn factory binds the parent's settings when the execution starts and again when [model routing](execution-lifecycle.md#model-routing) chooses the turn's model. Enabled compiled tools take precedence over stored bundles with the same ID; disabled tools do not hide a stored bundle. Selected child bundles are approved before prompt preparation and remain scoped to that child invocation.
-
-## Why this is fragile
-
-Loading bundles into the inventory would expand the prompt and trust surface. For hosts that enable approval, reusing it across users, hashes, or policies can return or execute content that was never approved.
-
-The core tools merge compiled tools and stored bundles into one ID namespace. Category discovery covers filtered compiled-tool categories only; bundle detail and execution load the current bundle by exact Skill ID. Generic bundle execution must bind the current bundle identity internally before using the concrete command executor.
+Load full bundles by exact ID for detail, invocation and explicit subagent selection. Enabled compiled tools win collisions, and disabled tools leave same-ID bundles discoverable. Category discovery lists only filtered compiled tools. Keep bundle identity, paths and supporting files internal, and scope selected child bundles to that invocation. [Shared resolver](../../sharedLogic/src/main/kotlin/ru/souz/tool/skills/SkillResolver.kt) · [Subagent execution](subagents.md)
 
 ## Safe changes
 
-- Keep discovery compact and user-scoped. ID listing reads no loose `SKILL.md`; description listing may read bounded frontmatter but never supporting files or bundle hashes.
-- Escape IDs and selected descriptions as untrusted metadata. Descriptions are bounded discovery hints; full instructions require bundle lookup and approval where enabled.
-- Pass bounded classification history as separate messages ending with the new user message. Preserve short messages, use head/tail truncation for long messages, and pass the execution's configured context size. Each classifier renders the typed request for its engine. Jev Skill selection uses the last two earlier non-empty messages, each cut to its first 300 characters.
-- Skip selection only for a whole message that is a known thanks or greeting phrase; keep confirmations and fragments such as "тебе" classified, since they may approve an offered action or answer a question.
-- When approval is enabled, keep the order structural validation, static validation, then bounded LLM validation. Cache both approvals and rejections for the exact identity.
-- When approval is enabled, treat a per-skill rejection as local to that skill lookup or invocation. Do not return `SKILL.md` or execute commands for rejected bundles.
-- Rethrow coroutine cancellation from every phase.
-- Keep supporting-file content out of inventory; load it only as part of bounded validation and execution paths.
-- Keep `AgentCoreTools` out of `AgentToolCatalog`; graph nodes install them explicitly.
-- Preserve compiled-tool precedence consistently in summary, detail, and execution paths. Load a stored bundle only after enabled-tool lookup fails.
-- Never expose `activeSkills`, bundle hashes, storage paths, or supporting-file content through skill discovery. Generic execution binds those values internally.
-- Validate composite command step shapes and references when parsing the manifest. Tool names and script paths are static; references can target declared inputs or earlier steps only. Share template traversal with execution so accepted syntax cannot resolve differently at runtime.
+When configured, [approval](../src/main/kotlin/ru/souz/agent/skills/validation/README.md) must succeed before exposing `SKILL.md`, executing bundled commands or preparing a child prompt. Keep rejection local to the requested Skill and propagate cancellation. The backend uses ungated classpath and sandbox bundles.
+
+Keep [composite command](../../docs/composite-skill-commands.md) manifest validation and runtime template resolution aligned so accepted references resolve the same way at execution.
 
 ## Verification
 
-Run `./gradlew :agent:test` for graph and approval changes. For core-tool changes, also run `./gradlew :sharedLogic:test`.
+Run `./gradlew :agent:test :sharedLogic:test` for runtime changes. See [inventory tests](../src/test/kotlin/ru/souz/agent/nodes/NodesSkillInventoryTest.kt), [approval tests](../src/test/kotlin/ru/souz/agent/skills/SkillApprovalGateTest.kt), and [Skill tool tests](../../sharedLogic/src/test/kotlin/ru/souz/tool/skills/SkillRuntimeToolsTest.kt).
