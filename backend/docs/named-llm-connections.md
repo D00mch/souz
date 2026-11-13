@@ -34,9 +34,7 @@ The optional `reasoningEfforts` map supplies nonblank effort strings for built-i
 
 `CONTEXT_SIZE` is the single server context window for conversation, subagents and summaries (default `125000`). Startup rejects values that are not integers of at least `24000` tokens. All configured models must support that window; no model-specific effective window is calculated. Users and HTTP request options cannot override it, and continuations use the running server value.
 
-Prepared conversation and summary input must fit 80% of `CONTEXT_SIZE`, including instructions and tool schemas. Compaction starts when input exceeds that limit; exactly 80% fits. One summary call includes the full history before the last user message and the summarization prompt. If that request cannot fit, history cannot be compacted, or the rebuilt conversation still exceeds 80%, the conversation is rejected. Empty and length-truncated summaries are rejected. System instructions and the active user/tool exchange stay intact.
-
-`maxTokens` only limits provider output and does not reduce the input budget: conversation uses 4,096 tokens, summaries 1,024, and classification 512. `OPENAI_SUMMARIZATION_PARAMETERS` still controls other provider parameters; the explicit request output limit takes precedence.
+The [agent context-budget invariant](../../agent/docs/skills-oriented-graph.md#invariant) defines input limits, compaction, and conversation and summary output caps. Classification caps output at 512 tokens. The explicit summary output limit overrides any output limit in `OPENAI_SUMMARIZATION_PARAMETERS`.
 
 Names are case-sensitive, nonblank, trimmed and must not collide with built-in selectors, legacy subagent IDs or the trimmed `OPENAI_MODEL` value. These collisions reject startup; shared upstream `modelId` values remain valid. Invalid URLs (including ports outside 1–65535), unknown fields, duplicate JSON keys, missing secrets and unresolved references reject startup. Only environment variable names belong in the JSON file.
 
