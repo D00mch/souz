@@ -18,6 +18,10 @@ Send to one connected, unarchived public channel owned by the user and declaring
 
 The live `tool.call.started` event carries `seq:null` and `{parameters, revision}`. `parameters` contains `voice`, `appeal`, `style`, `personality`, and the selected receiver's `your_name` when present. Keep delivery out of durable receipts and replay. The receiver replies with `tool.result` and echoes the sent revision for `applied` or `unchanged`. A `stale` reply indicates supersession only if its revision matches a newer local revision. [Public WebSocket contract](../../docs/public-souz-contract/README.md)
 
+```json
+{"parameters":{"voice":"joy","appeal":"no_official","style":"informal","personality":""},"revision":2}
+```
+
 ## Deployment
 
 Deploy V26 with the matching backend and receivers that support the dictionary snapshot. Rollback to the old backend requires restoring its settings columns and copying back the latest prompts and revisions. Move legacy style text embedded in system prompts explicitly. For a direct database change, increment the revision atomically and reconnect Orion. [V26 migration](../src/main/resources/db/migration/V26__personality_parameters.sql)

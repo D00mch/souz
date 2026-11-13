@@ -78,7 +78,7 @@ Backend startup requires `SOUZ_MASTER_KEY`. Protected routes require a shared `S
 
 Backend logs are one-line JSON on stdout. See [Logback configuration](backend/src/main/resources/logback.xml) for root and application log levels.
 
-Enabled bot integrations require `TELEGRAM_TOKEN_ENCRYPTION_KEY` or `VK_TOKEN_ENCRYPTION_KEY` for the corresponding service. Generate each with `openssl rand -base64 32`. For VK, enable Bots Long Poll and `message_new` in the community settings, then send the binding's `pendingLinkCommand` in a private message to the community. See [Telegram bindings](backend/docs/telegram-bindings.md) and [VK bindings](backend/docs/vk-bindings.md).
+For bot setup, see [Telegram bindings](backend/docs/telegram-bindings.md#setup) and [VK bindings](backend/docs/vk-bindings.md#setup).
 
 ## Development and verification
 

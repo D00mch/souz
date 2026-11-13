@@ -12,7 +12,7 @@ Body-provided identities create an alternate authority path on protected routes.
 
 - Apply trusted ownership checks to every user resource, including nested resources. Scope sandbox access and file-backed Skill discovery and execution by `ToolInvocationMeta.userId` alone.
 - Follow the [backend catalogue rules](../../sharedLogic/docs/tool-catalog-composition.md#backend-composition) when exposing or saving tool selections.
-- Keep Codex credentials server-managed and encrypted in PostgreSQL as one set. Persist PostgreSQL data and keep the master key outside the database. See the [deployment boundary](distributed-backend-boundary.md#invariant) for refresh coordination.
+- Keep Codex credentials server-managed and encrypted in PostgreSQL as one set. The per-user provider-key endpoint rejects `codex`. Persist PostgreSQL data and keep the master key outside the database. See the [deployment boundary](distributed-backend-boundary.md#invariant) for refresh coordination.
 - Document both proxy headers as jointly required OpenAPI security schemes for protected operations. Keep `POST /v1/chats` unsecured in OpenAPI and maintain WebSocket schemas in the public contract.
 
 ## Verification

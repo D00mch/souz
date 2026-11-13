@@ -92,6 +92,13 @@ change risk are advisory. Repository-wide refactoring and performance
 recommendations are published separately by
 [RepoWise Maintenance](../.github/workflows/repowise-maintenance.yml).
 
+Generate the source reports from a locally indexed checkout.
+
+```bash
+repowise health . --no-workspace --format json
+repowise health . --no-workspace --refactoring-targets --format json
+```
+
 [Qodana Community](../.github/workflows/qodana.yml) runs on PRs, main pushes,
 and manual dispatch without a cloud token. Findings are advisory and the
 workflow disables direct comments, annotations, and automatic fixes.

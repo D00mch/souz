@@ -1,5 +1,11 @@
 # VK bindings
 
+## Setup
+
+Set `ENABLE_BACKEND_VK_FEATURE=true` and supply `VK_TOKEN_ENCRYPTION_KEY` as 32 bytes encoded in Base64. Generate the key with `openssl rand -base64 32`. Enable Bots Long Poll and `message_new` events in the community settings.
+
+Use trusted-proxy `PUT /v1/chats/{chatId}/vk-bot` with `{"token":"..."}` to bind a community. Send the returned `pendingLinkCommand` to the community in a private message. Use `GET` or `DELETE` on the same route to inspect or remove the binding. [Route metadata](../src/main/kotlin/ru/souz/backend/http/routes/VkRoutes.kt)
+
 ## Invariants
 
 VK binding routes use trusted-proxy identity and require an owned chat. Tokens are encrypted with AES-GCM; only token and one-time link-secret hashes are searchable. API responses contain safe metadata and expose the secret only on binding. The community and token are each unique across bindings.

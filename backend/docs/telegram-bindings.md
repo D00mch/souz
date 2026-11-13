@@ -1,5 +1,9 @@
 # Telegram bindings
 
+## Setup
+
+Set `ENABLE_BACKEND_TG_FEATURE=true` and supply `TELEGRAM_TOKEN_ENCRYPTION_KEY` as 32 bytes encoded in Base64. Generate the key with `openssl rand -base64 32`.
+
 ## Invariant
 
 Backend Telegram bindings are feature-gated and owned by a Souz user and chat. Binding validates the bot token with Telegram, removes any webhook before long polling, encrypts the token at rest, stores only a hash of the one-time link secret, and returns safe metadata plus the one-time `/start` command. Raw tokens and token hashes never appear in API responses.

@@ -2,7 +2,9 @@
 
 ## Invariant
 
-[PostgreSQL enforces one active execution per chat](../src/main/resources/db/migration/V4__stage12_option_rename.sql). Only the [Client-Souz public WebSocket thread path](public-client-websocket.md#invariant) has distributed-safe execution ownership. Route active-thread submits, tool results, and cancellation to the runtime owner. A local runtime miss on a still-active thread means unavailable. The owner renews its durable lease and holds live waiters in its process. Cross-channel tool callers and target subscriptions must share that process. Threadless history append can commit on any replica without consulting the live registry. [Thread recovery](../src/main/kotlin/ru/souz/backend/client/ClientThreadRecoveryService.kt) fails expired public leases and ensures a terminal `thread.failed` event.
+[PostgreSQL enforces one active execution per chat](../src/main/resources/db/migration/V4__stage12_option_rename.sql). Only the [Client-Souz public WebSocket thread path](public-client-websocket.md#invariant) has distributed-safe execution ownership. Route active-thread submits, tool results, and cancellation to the runtime owner. A local runtime miss on a still-active thread means unavailable. The owner renews its durable lease and holds live waiters in its process. Cross-channel tool callers and target subscriptions must share that process. Threadless history append can commit on any replica without consulting the live registry.
+
+Run [thread recovery](../src/main/kotlin/ru/souz/backend/client/ClientThreadRecoveryService.kt) before accepting connections and periodically thereafter. Fail expired public leases and persist any missing terminal `thread.failed` events.
 
 Ordinary trusted-proxy HTTP executions, Telegram/VK-triggered executions and [scheduled-task occurrences](scheduled-tasks.md) have process-local runtimes without renewable execution leases. [Job claims](../../job-impl/docs/job-ownership.md), [hook receipts](hooks.md), and [JVM plugin leases and pins](jvm-plugins.md) protect only the jobs, receipts, and invocations they own.
 

@@ -13,6 +13,19 @@ Export `JEV_TOKEN` in the environment that starts Souz, then run `./gradlew :bac
 
 See [Skill inventory and approval](../agent/docs/skill-activation.md) for classifier fallback. See [provider HTTP lifecycle](docs/provider-http-lifecycle.md) for transport ownership and request-local credentials, and [HTTP client profiles](src/main/kotlin/ru/souz/llms/http/ProviderHttpClients.kt) for transport settings.
 
+Inject `JevClient` to evaluate a named question directly.
+
+```kotlin
+import com.fasterxml.jackson.databind.JsonNode
+import ru.souz.jev.JevClient
+import ru.souz.llms.restJsonMapper
+
+suspend fun needsCalendar(jev: JevClient, message: String): Double = jev.evaluate(
+    state = restJsonMapper.valueToTree<JsonNode>(message),
+    questions = mapOf("calendar" to "Does this request require calendar access?"),
+).getValue("calendar")
+```
+
 Run the opt-in hosted Jev test with `JEV_TOKEN` exported.
 
 ```zsh
