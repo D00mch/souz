@@ -1,6 +1,7 @@
 package ru.souz.ui.main.usecases
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
@@ -42,6 +43,7 @@ class VoiceInputUseCase(
     private val speechUseCase: SpeechUseCase,
     private val permissionsUseCase: PermissionsUseCase,
     private val permissionPromptService: PermissionPromptService,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : VoiceInputController {
     private val l = LoggerFactory.getLogger(VoiceInputUseCase::class.java)
     private var lastRecognizedText: String? = null
@@ -142,7 +144,7 @@ class VoiceInputUseCase(
                 )
             }
 
-            val started = withContext(Dispatchers.IO) {
+            val started = withContext(ioDispatcher) {
                 audioRecorder.start()
             }
             if (!started) {
@@ -161,7 +163,7 @@ class VoiceInputUseCase(
         val recognizedInput = captureMutex.withLock {
             val route = pendingCaptureRoute ?: return@withLock null
             val audioData = try {
-                withContext(Dispatchers.IO) { audioRecorder.stop() }
+                withContext(ioDispatcher) { audioRecorder.stop() }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {

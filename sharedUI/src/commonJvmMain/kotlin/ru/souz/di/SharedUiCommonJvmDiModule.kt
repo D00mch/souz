@@ -103,7 +103,7 @@ fun sharedUiCommonJvmDiModule(): DI.Module = DI.Module("sharedUiCommonJvm") {
 
 fun sharedUiMainViewModelUseCasesDiModule(): DI.Module = DI.Module("sharedUiMainViewModelUseCases") {
     bind<SpeechUseCase>() with scoped(mainViewModelDiScope).singleton {
-        SpeechUseCase(instance())
+        SpeechUseCase(instance(), ioDispatcher = context.ioDispatcher)
     }
     bind<ToolModifyReviewUseCase>() with scoped(mainViewModelDiScope).singleton {
         ToolModifyReviewUseCase(instance())

@@ -4,7 +4,8 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.service.telegram.TelegramChatCandidate
@@ -13,7 +14,6 @@ import ru.souz.service.telegram.TelegramChatSelectionBroker
 import ru.souz.service.telegram.TelegramMessageView
 import ru.souz.service.telegram.TelegramService
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 class ToolTelegramGetHistoryTest {
 
@@ -23,8 +23,15 @@ class ToolTelegramGetHistoryTest {
         chatSelectionBroker = TelegramChatSelectionBroker(),
     )
 
-    @Test
-    fun `loads 100 messages with force refresh by default`() = runTest {
+    @ParameterizedTest(name = "default options: {0}")
+    @ValueSource(booleans = [true, false])
+    fun `history forwards options and serializes populated or empty results`(defaultOptions: Boolean) = runTest {
+        val input = if (defaultOptions) {
+            ToolTelegramGetHistory.Input(chatName = "Проект Альфа")
+        } else {
+            ToolTelegramGetHistory.Input(chatName = "Проект Альфа", limit = 25, forceRefresh = false)
+        }
+        val expectedLimit = if (defaultOptions) 100 else 25
         val candidate = TelegramChatCandidate(
             chatId = 42L,
             title = "Проект Альфа",
@@ -42,66 +49,30 @@ class ToolTelegramGetHistoryTest {
                 unixTime = 1_710_000_000L,
                 text = "Привет",
             )
-        )
+        ).take(if (defaultOptions) 1 else 0)
 
         coEvery {
             telegramService.resolveChatTarget("Проект Альфа")
         } returns TelegramChatLookupResult.Resolved(candidate)
         coEvery {
-            telegramService.getHistoryByChatId(42L, 100, true)
+            telegramService.getHistoryByChatId(42L, expectedLimit, defaultOptions)
         } returns history
 
         val result = restJsonMapper.readTree(
             tool.suspendInvoke(
-                ToolTelegramGetHistory.Input(chatName = "Проект Альфа"),
+                input,
                 ToolInvocationMeta.localDefault(),
             )
         )
 
-        assertEquals(1, result.path("count").asInt())
+        assertEquals(history.size, result.path("count").asInt())
         assertEquals(42L, result.path("chatId").asLong())
         assertEquals("Проект Альфа", result.path("chatTitle").asText())
-        assertTrue(result.path("forceRefresh").asBoolean())
-        assertEquals("Привет", result.path("messages").first().path("text").asText())
+        assertEquals(defaultOptions, result.path("forceRefresh").asBoolean())
+        assertEquals(history.map { it.text }, result.path("messages").map { it.path("text").asText() })
 
         coVerify(exactly = 1) { telegramService.resolveChatTarget("Проект Альфа") }
-        coVerify(exactly = 1) { telegramService.getHistoryByChatId(42L, 100, true) }
+        coVerify(exactly = 1) { telegramService.getHistoryByChatId(42L, expectedLimit, defaultOptions) }
     }
 
-    @Test
-    fun `passes explicit limit and force refresh flag`() = runTest {
-        val candidate = TelegramChatCandidate(
-            chatId = 7L,
-            title = "Работа",
-            unreadCount = 3,
-            linkedUserId = null,
-            lastMessageText = "Тест",
-            score = 990,
-        )
-
-        coEvery {
-            telegramService.resolveChatTarget("Работа")
-        } returns TelegramChatLookupResult.Resolved(candidate)
-        coEvery {
-            telegramService.getHistoryByChatId(7L, 25, false)
-        } returns emptyList()
-
-        val result = restJsonMapper.readTree(
-            tool.suspendInvoke(
-                ToolTelegramGetHistory.Input(
-                    chatName = "Работа",
-                    limit = 25,
-                    forceRefresh = false,
-                ),
-                ToolInvocationMeta.localDefault(),
-            )
-        )
-
-        assertEquals(0, result.path("count").asInt())
-        assertEquals(7L, result.path("chatId").asLong())
-        assertEquals("Работа", result.path("chatTitle").asText())
-        assertTrue(!result.path("forceRefresh").asBoolean())
-
-        coVerify(exactly = 1) { telegramService.getHistoryByChatId(7L, 25, false) }
-    }
 }

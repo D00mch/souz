@@ -11,6 +11,8 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.EnumSource
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import ru.souz.db.SettingsProvider
@@ -45,11 +47,7 @@ class SetupViewModelTest {
     @Test
     fun `setup enables proceed when at least one key exists`() = runTest(dispatcher) {
         val settingsProvider = settingsProviderStub(
-            giga = "",
             qwen = "qwen-token",
-            aiTunnel = "",
-            speech = "",
-            onboardingCompleted = false,
         )
         val viewModel = createViewModel(settingsProvider)
 
@@ -64,11 +62,7 @@ class SetupViewModelTest {
     @Test
     fun `proceed marks onboarding as needed for first-time setup`() = runTest(dispatcher) {
         val settingsProvider = settingsProviderStub(
-            giga = "",
             qwen = "qwen-token",
-            aiTunnel = "",
-            speech = "",
-            onboardingCompleted = false,
         )
         val viewModel = createViewModel(settingsProvider)
 
@@ -89,13 +83,7 @@ class SetupViewModelTest {
 
     @Test
     fun `setup stays when there are no keys`() = runTest(dispatcher) {
-        val settingsProvider = settingsProviderStub(
-            giga = "",
-            qwen = "",
-            aiTunnel = "",
-            speech = "",
-            onboardingCompleted = false,
-        )
+        val settingsProvider = settingsProviderStub()
         val viewModel = createViewModel(settingsProvider)
 
         advanceUntilIdle()
@@ -110,9 +98,6 @@ class SetupViewModelTest {
     fun `proceed does not re-enable onboarding when already completed`() = runTest(dispatcher) {
         val settingsProvider = settingsProviderStub(
             giga = "giga-token",
-            qwen = "",
-            aiTunnel = "",
-            speech = "",
             onboardingCompleted = true,
         )
         val viewModel = createViewModel(settingsProvider)
@@ -124,114 +109,30 @@ class SetupViewModelTest {
         verify(exactly = 0) { settingsProvider.needsOnboarding = true }
     }
 
-    @Test
-    fun `setup picks qwen default model when first configured key is qwen`() = runTest(dispatcher) {
-        val settingsProvider = settingsProviderStub(
-            giga = "",
-            qwen = "",
-            aiTunnel = "",
-            speech = "",
-            onboardingCompleted = false,
-            gigaModel = LLMModel.Max,
-        )
-        val viewModel = createViewModel(settingsProvider)
-
-        advanceUntilIdle()
-        viewModel.send(SetupEvent.InputQwenChatKey("qwen-token"))
-        advanceUntilIdle()
-
-        assertEquals(LLMModel.QwenMax, settingsProvider.gigaModel)
-    }
-
-    @Test
-    fun `setup picks ai tunnel default model when first configured key is ai tunnel`() = runTest(dispatcher) {
-        val settingsProvider = settingsProviderStub(
-            giga = "",
-            qwen = "",
-            aiTunnel = "",
-            anthropic = "",
-            speech = "",
-            onboardingCompleted = false,
-            gigaModel = LLMModel.Max,
-        )
-        val viewModel = createViewModel(settingsProvider)
-
-        advanceUntilIdle()
-        viewModel.send(SetupEvent.InputAiTunnelKey("ait-token"))
-        advanceUntilIdle()
-
-        val expectedModel = if (supportsProvider(LlmProvider.AI_TUNNEL)) {
-            LLMModel.AiTunnelClaudeHaiku
-        } else {
-            LLMModel.Max
+    @ParameterizedTest(name = "first configured key: {0}")
+    @EnumSource(LlmProvider::class, names = ["QWEN", "AI_TUNNEL", "ANTHROPIC", "OPENAI"])
+    fun `setup picks the provider default model for the first key`(provider: LlmProvider) = runTest(dispatcher) {
+        val (event, defaultModel) = when (provider) {
+            LlmProvider.QWEN -> SetupEvent.InputQwenChatKey("token") to LLMModel.QwenMax
+            LlmProvider.AI_TUNNEL -> SetupEvent.InputAiTunnelKey("token") to LLMModel.AiTunnelClaudeHaiku
+            LlmProvider.ANTHROPIC -> SetupEvent.InputAnthropicKey("token") to LLMModel.AnthropicHaiku45
+            LlmProvider.OPENAI -> SetupEvent.InputOpenAiKey("token") to LLMModel.OpenAIGpt5Mini
+            else -> error("Unexpected provider: $provider")
         }
-        assertEquals(expectedModel, settingsProvider.gigaModel)
-    }
-
-    @Test
-    fun `setup picks anthropic default model when first configured key is anthropic`() = runTest(dispatcher) {
-        val settingsProvider = settingsProviderStub(
-            giga = "",
-            qwen = "",
-            aiTunnel = "",
-            anthropic = "",
-            openai = "",
-            speech = "",
-            onboardingCompleted = false,
-            gigaModel = LLMModel.Max,
-        )
+        val settingsProvider = settingsProviderStub()
         val viewModel = createViewModel(settingsProvider)
 
         advanceUntilIdle()
-        viewModel.send(SetupEvent.InputAnthropicKey("anthropic-token"))
+        viewModel.send(event)
         advanceUntilIdle()
 
-        val expectedModel = if (supportsProvider(LlmProvider.ANTHROPIC)) {
-            LLMModel.AnthropicHaiku45
-        } else {
-            LLMModel.Max
-        }
-        assertEquals(expectedModel, settingsProvider.gigaModel)
-    }
-
-    @Test
-    fun `setup picks openai default model when first configured key is openai`() = runTest(dispatcher) {
-        val settingsProvider = settingsProviderStub(
-            giga = "",
-            qwen = "",
-            aiTunnel = "",
-            anthropic = "",
-            openai = "",
-            speech = "",
-            onboardingCompleted = false,
-            gigaModel = LLMModel.Max,
-        )
-        val viewModel = createViewModel(settingsProvider)
-
-        advanceUntilIdle()
-        viewModel.send(SetupEvent.InputOpenAiKey("openai-token"))
-        advanceUntilIdle()
-
-        val expectedModel = if (supportsProvider(LlmProvider.OPENAI)) {
-            LLMModel.OpenAIGpt5Mini
-        } else {
-            LLMModel.Max
-        }
+        val expectedModel = if (supportsProvider(provider)) defaultModel else LLMModel.Max
         assertEquals(expectedModel, settingsProvider.gigaModel)
     }
 
     @Test
     fun `setup prefers giga model when giga key appears during first setup`() = runTest(dispatcher) {
-        val settingsProvider = settingsProviderStub(
-            giga = "",
-            qwen = "",
-            aiTunnel = "",
-            anthropic = "",
-            openai = "",
-            speech = "",
-            onboardingCompleted = false,
-            gigaModel = LLMModel.Max,
-        )
+        val settingsProvider = settingsProviderStub()
         val viewModel = createViewModel(settingsProvider)
 
         advanceUntilIdle()
@@ -253,10 +154,6 @@ class SetupViewModelTest {
     fun `setup does not auto-change model when setup starts with existing keys`() = runTest(dispatcher) {
         val settingsProvider = settingsProviderStub(
             giga = "giga-token",
-            qwen = "",
-            aiTunnel = "",
-            speech = "",
-            onboardingCompleted = false,
             gigaModel = LLMModel.Pro,
         )
         val viewModel = createViewModel(settingsProvider)
@@ -270,13 +167,7 @@ class SetupViewModelTest {
 
     @Test
     fun `setup updates profile toggle and persists selection`() = runTest(dispatcher) {
-        val settingsProvider = settingsProviderStub(
-            giga = "",
-            qwen = "",
-            aiTunnel = "",
-            speech = "",
-            onboardingCompleted = false,
-        )
+        val settingsProvider = settingsProviderStub()
         val viewModel = createViewModel(settingsProvider)
 
         advanceUntilIdle()
@@ -312,13 +203,13 @@ class SetupViewModelTest {
         LlmBuildProfile.defaultsForEdition(BuildEdition.RU)[provider] != null
 
     private fun settingsProviderStub(
-        giga: String,
-        qwen: String,
-        aiTunnel: String,
+        giga: String = "",
+        qwen: String = "",
+        aiTunnel: String = "",
         anthropic: String = "",
         openai: String = "",
-        speech: String,
-        onboardingCompleted: Boolean,
+        speech: String = "",
+        onboardingCompleted: Boolean = false,
         gigaModel: LLMModel = LLMModel.Max,
     ): SettingsProvider {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)

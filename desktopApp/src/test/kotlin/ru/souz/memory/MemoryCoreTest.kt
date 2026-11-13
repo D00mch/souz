@@ -896,14 +896,26 @@ class MemoryCoreTest {
     }
 
     @Test
-    fun `dreamer consolidates pending scope into provenance linked replacement`() = runTest {
+    fun `dreamer consolidates a subset with provenance and preserves unrelated facts`() = runTest {
         val (fixture, scope, first, second, sourceEventIds) = createDreamerFixture()
+        val unrelated = fixture.createManual(title = "Storage", body = "The project stores data in SQLite.", scope = scope)
         val controller = DesktopMemoryMaintenanceController(
             dbPath = fixture.dbPath,
             settingsStore = InMemoryMemoryMaintenanceSettingsStore(),
             worker = MemoryMaintenanceWorker(
                 dbPath = fixture.dbPath,
-                consolidator = FixedMemoryConsolidator(sourceEventIds),
+                consolidator = FixedCandidatesMemoryConsolidator(
+                    MemoryConsolidationCandidate(
+                        kind = MemoryFactKind.PROJECT_DECISION,
+                        title = "Memory rollout boundary",
+                        body = "Memory stays desktop-only until backend wiring is explicitly added.",
+                        canonicalKey = "project.decision.memory.rollout.boundary",
+                        confidence = 0.9f,
+                        importance = 0.9f,
+                        sourceFactIds = listOf(first.id, second.id),
+                        evidenceSourceEventIds = sourceEventIds,
+                    )
+                ),
                 embeddingModel = fixture.embedder.model,
             ),
         )
@@ -918,7 +930,9 @@ class MemoryCoreTest {
                 statuses = setOf(MemoryFactStatus.ACTIVE),
             )
         )
-        val replacement = activeFacts.single()
+        assertEquals(MemoryFactStatus.ACTIVE, fixture.repository.getFact(unrelated.id)?.status)
+        val replacement = activeFacts.single { it.createdBy == "dreamer" }
+        assertEquals(setOf(unrelated.id, replacement.id), activeFacts.map { it.id }.toSet())
         val replacementDetails = fixture.repository.getFactDetails(replacement.id)
 
         assertEquals(0, status.pendingClusters)
@@ -934,7 +948,7 @@ class MemoryCoreTest {
             dreamerSupersededFactIds(fixture.dbPath, replacement.id),
         )
         assertEquals(1, countRows(fixture.dbPath, "memory_index_jobs", "fact_id = '${replacement.id}'"))
-        assertEquals(1, countRows(fixture.dbPath, "memory_maintenance_jobs", "status = 'DONE'"))
+        assertEquals(2, countRows(fixture.dbPath, "memory_maintenance_jobs", "status = 'DONE'"))
     }
 
     @Test
@@ -969,45 +983,6 @@ class MemoryCoreTest {
         assertEquals(MemoryFactStatus.ACTIVE, fixture.repository.getFact(first.id)?.status)
         assertEquals(MemoryFactStatus.ACTIVE, fixture.repository.getFact(second.id)?.status)
         assertEquals(0, countRows(fixture.dbPath, "memory_facts", "created_by = 'dreamer'"))
-    }
-
-    @Test
-    fun `dreamer replaces duplicate subset and preserves unrelated region facts`() = runTest {
-        val fixture = createFixture(owner = MemoryOwnerId("desktop-owner"))
-        val scope = projectScope()
-        val first = fixture.createManual(title = "Same target", body = "The project targets desktop users.", scope = scope)
-        val second = fixture.createManual(title = "Desktop target", body = "Desktop users are the project target.", scope = scope)
-        val unrelated = fixture.createManual(title = "Storage", body = "The project stores data in SQLite.", scope = scope)
-        val sources = listOf(first, second).map { fact ->
-            fixture.repository.getFactDetails(fact.id)?.evidence?.single()?.sourceEvent?.id
-                ?: error("missing source")
-        }
-        val controller = DesktopMemoryMaintenanceController(
-            dbPath = fixture.dbPath,
-            settingsStore = InMemoryMemoryMaintenanceSettingsStore(),
-            worker = MemoryMaintenanceWorker(
-                dbPath = fixture.dbPath,
-                consolidator = FixedCandidatesMemoryConsolidator(
-                    MemoryConsolidationCandidate(
-                        kind = MemoryFactKind.PROJECT_DECISION,
-                        title = "Desktop target",
-                        body = "The project targets desktop users.",
-                        canonicalKey = null,
-                        confidence = 0.9f,
-                        sourceFactIds = listOf(first.id, second.id),
-                        evidenceSourceEventIds = sources,
-                    )
-                ),
-            ),
-        )
-        controller.savePreferences(MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY))
-
-        controller.runNow()
-
-        assertEquals(MemoryFactStatus.RETIRED, fixture.repository.getFact(first.id)?.status)
-        assertEquals(MemoryFactStatus.RETIRED, fixture.repository.getFact(second.id)?.status)
-        assertEquals(MemoryFactStatus.ACTIVE, fixture.repository.getFact(unrelated.id)?.status)
-        assertEquals(1, countRows(fixture.dbPath, "memory_facts", "created_by = 'dreamer' and status = 'ACTIVE'"))
     }
 
     @Test
@@ -1223,11 +1198,18 @@ class MemoryCoreTest {
         )
 
         assertFailsWith<IllegalStateException> {
-            fixture.repository.updateFact(staleAttempt, expectedUpdatedAt = stale.updatedAt)
+            fixture.repository.updateFact(
+                fact = staleAttempt,
+                expectedUpdatedAt = stale.updatedAt,
+                embedding = fixture.embedder.embedDocument(staleAttempt.embeddingText()),
+                embeddingModel = fixture.embedder.model,
+            )
         }
 
         assertEquals(MemoryFactStatus.ACTIVE, fixture.repository.getFact(active.id)?.status)
-        assertEquals(MemoryFactStatus.ACTIVE, fixture.repository.getFact(updatedElsewhere.id)?.status)
+        val stored = assertNotNull(fixture.repository.getFact(updatedElsewhere.id))
+        assertEquals(MemoryFactStatus.ACTIVE, stored.status)
+        assertEquals("Updated elsewhere", stored.title)
     }
 
     @Test
@@ -1297,46 +1279,6 @@ class MemoryCoreTest {
     }
 
     @Test
-    fun `repository updateFact rejects stale updatedAt`() = runTest {
-        val fixture = createFixture()
-        val fact = fixture.createManual(
-            scope = projectScope(),
-            kind = MemoryFactKind.PROJECT_DECISION,
-            title = "Initial storage",
-            body = "Use Postgres for memory storage.",
-        )
-        val snapshot = fixture.repository.getFact(fact.id)
-        assertNotNull(snapshot)
-
-        val firstUpdate = snapshot.copy(
-            title = "First storage",
-            updatedAt = snapshot.updatedAt.plusMillis(1),
-        )
-        fixture.repository.updateFact(
-            fact = firstUpdate,
-            expectedUpdatedAt = snapshot.updatedAt,
-            embedding = fixture.embedder.embedDocument(firstUpdate.embeddingText()),
-            embeddingModel = fixture.embedder.model,
-        )
-
-        val staleUpdate = snapshot.copy(
-            title = "Stale storage",
-            updatedAt = snapshot.updatedAt.plusMillis(2),
-        )
-        val result = kotlin.runCatching {
-            fixture.repository.updateFact(
-                fact = staleUpdate,
-                expectedUpdatedAt = snapshot.updatedAt,
-                embedding = fixture.embedder.embedDocument(staleUpdate.embeddingText()),
-                embeddingModel = fixture.embedder.model,
-            )
-        }
-
-        assertTrue(result.isFailure)
-        assertEquals("First storage", fixture.repository.getFact(fact.id)?.title)
-    }
-
-    @Test
     fun `capture keeps fact after embedding failure`() = runTest {
         val fixture = createFixture(
             writer = FixedWriter(
@@ -1362,7 +1304,7 @@ class MemoryCoreTest {
     }
 
     @Test
-    fun `out-of-scope writer candidate is rejected`() = runTest {
+    fun `writer cannot invent a scope outside the capture`() = runTest {
         val fixture = createFixture(
             writer = FixedWriter(
                 candidate(
@@ -1372,29 +1314,6 @@ class MemoryCoreTest {
                     scope = chatScope("other-chat"),
                     confidence = 0.9f,
                     evidenceText = "We use other-chat here."
-                )
-            )
-        )
-
-        val created = fixture.capture(
-            primaryScope = chatScope("my-chat"),
-            scopes = listOf(chatScope("my-chat"))
-        )
-
-        assertTrue(created.isEmpty())
-    }
-
-    @Test
-    fun `invented scope is rejected`() = runTest {
-        val fixture = createFixture(
-            writer = FixedWriter(
-                candidate(
-                    kind = MemoryFactKind.SEMANTIC,
-                    title = "Invented rule",
-                    body = "This is an invented rule.",
-                    scope = chatScope("invented-chat"),
-                    confidence = 0.9f,
-                    evidenceText = "We use invented-chat here."
                 )
             )
         )
@@ -1829,24 +1748,6 @@ class MemoryCoreTest {
             releaseFirstCall.await()
             return candidates.toList()
         }
-    }
-
-    private class FixedMemoryConsolidator(
-        private val sourceEventIds: List<String>,
-    ) : MemoryConsolidator {
-        override suspend fun consolidate(input: MemoryConsolidationInput): List<MemoryConsolidationCandidate> =
-            listOf(
-                MemoryConsolidationCandidate(
-                    kind = MemoryFactKind.PROJECT_DECISION,
-                    title = "Memory rollout boundary",
-                    body = "Memory stays desktop-only until backend wiring is explicitly added.",
-                    canonicalKey = "project.decision.memory.rollout.boundary",
-                    confidence = 0.9f,
-                    importance = 0.9f,
-                    sourceFactIds = input.facts.map { it.fact.id },
-                    evidenceSourceEventIds = sourceEventIds,
-                )
-            )
     }
 
     private class FailingOnceMemoryConsolidator : MemoryConsolidator {

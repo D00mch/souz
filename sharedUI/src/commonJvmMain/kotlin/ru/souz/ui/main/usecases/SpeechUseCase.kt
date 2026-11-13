@@ -1,6 +1,7 @@
 package ru.souz.ui.main.usecases
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -12,6 +13,7 @@ import ru.souz.ui.main.MainState
 
 class SpeechUseCase(
     private val speechPlayer: UiSpeechPlayer,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val l = LoggerFactory.getLogger(SpeechUseCase::class.java)
 
@@ -41,14 +43,14 @@ class SpeechUseCase(
     }
 
     fun playMacPingSafely(scope: CoroutineScope) {
-        scope.launch(Dispatchers.IO) {
+        scope.launch(ioDispatcher) {
             runCatching { speechPlayer.playMacPing() }
                 .onFailure { l.warn("Failed to play mac ping: {}", it.message) }
         }
     }
 
     fun playMacPingMsgSafely(scope: CoroutineScope) {
-        scope.launch(Dispatchers.IO) {
+        scope.launch(ioDispatcher) {
             runCatching { speechPlayer.playMacPingMsg() }
                 .onFailure { l.warn("Failed to play mac ping msg: {}", it.message) }
         }
