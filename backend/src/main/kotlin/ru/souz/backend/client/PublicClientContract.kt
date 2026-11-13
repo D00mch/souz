@@ -15,6 +15,8 @@ data class CreateClientChatRequest(
     val clientType: String,
     val title: String? = null,
     val tools: List<ClientToolDefinition> = emptyList(),
+    @param:JsonSetter(nulls = Nulls.FAIL, contentNulls = Nulls.FAIL)
+    val parameters: Map<String, String> = emptyMap(),
 )
 
 data class CreateClientChatResponse(
@@ -32,6 +34,8 @@ data class ChatCreatePayload(
     val userId: String,
     val title: String? = null,
     val tools: List<ClientToolDefinition> = emptyList(),
+    @param:JsonSetter(nulls = Nulls.FAIL, contentNulls = Nulls.FAIL)
+    val parameters: Map<String, String> = emptyMap(),
 )
 
 data class ChatCreateFrame(val kind: String, val requestId: String, val payload: ChatCreatePayload)

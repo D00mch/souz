@@ -13,4 +13,5 @@ data class Chat(
     val clientType: String = "backend",
     val requestId: String = "internal:$id",
     val payloadHash: String = "internal:$id",
+    val yourName: String? = null,
 )

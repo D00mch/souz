@@ -6,6 +6,7 @@ import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.client.ClientToolChannel
 import ru.souz.backend.client.ClientToolDefinition
 import ru.souz.backend.client.DiscoveredClientTools
+import ru.souz.backend.settings.model.PersonalityParameters
 
 class ChatRequestConflictException(
     val userId: String,
@@ -13,7 +14,11 @@ class ChatRequestConflictException(
 ) : RuntimeException("Chat request $requestId for user $userId already exists.")
 
 interface ChatRepository {
-    suspend fun create(chat: Chat, tools: List<ClientToolDefinition> = emptyList()): Chat
+    suspend fun create(
+        chat: Chat,
+        tools: List<ClientToolDefinition> = emptyList(),
+        initialPersonality: PersonalityParameters? = null,
+    ): Chat
     /** Inserts by primary key, or returns the existing chat without changing it. */
     suspend fun getOrCreate(chat: Chat): Chat
     /** Deletes a scheduled-task chat with no execution or message, after a concurrent admission commits. */
