@@ -7,6 +7,7 @@ Before changing this module, read the relevant pain-point topics below.
 ## Boundaries
 
 - Treat proxy-provided identity as the authority for proxy routes. The public Client-Souz boundary accepts trusted UUID user identity in `POST /v1/chats`, `chat.create.payload.userId`, and `message.submit.payload.device.userId` and must keep those values equal for chat ownership.
+- Account personality initialization through chat creation requires verified proxy headers matching the body owner. Credential-free creation may store the chat activation word but must not insert an account personality row.
 - Credential-free Client-Souz turns must not load owner MCP settings, advertise their servers, or expose MCP discovery and invocation.
 - Keep destructive memory tools out of credential-free Client-Souz, hook and scheduled executions. Matching caller-supplied UUIDs and authenticated integrations do not authorize owner memory deletion. Only authenticated interactive owner turns may expose them when Hindsight is configured.
 - Expose only the tools `BackendToolCapabilityPolicy` allows; desktop integrations and UI dependencies must stay outside this module. Change that policy, not its callers, when backend tool exposure changes.

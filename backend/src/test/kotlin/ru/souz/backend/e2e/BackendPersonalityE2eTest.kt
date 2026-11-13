@@ -3,6 +3,7 @@ package ru.souz.backend.e2e
 import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.websocket.Frame
@@ -232,16 +233,117 @@ class BackendPersonalityE2eTest {
     }
 
     @Test
+    fun `account personality initialization requires the authenticated owner over HTTP and WebSocket`() =
+        backendE2eTest("personality_creation_auth") {
+            val fields = mapOf("voice" to "sber", "appeal" to "official", "style" to "formal", "personality" to "Injected instructions")
+            withMultiChatSocket { socket ->
+                for ((key, value) in fields) {
+                    val payload = mapOf("userId" to owner, "parameters" to mapOf(key to value))
+                    val response = client.post(BackendHttpRoutes.CHATS) {
+                        jsonBody(json.writeValueAsString(payload + mapOf("requestId" to key, "clientType" to "backend")))
+                    }
+                    assertEquals(401, response.status.value)
+                    assertEquals("untrusted_proxy", response.jsonBody()["error"]["code"].asText())
+                    socket.send(Frame.Text(json.writeValueAsString(mapOf("kind" to "chat.create", "requestId" to key, "payload" to payload))))
+                    val ack = readRawJson(socket)
+                    assertEquals("rejected", ack["status"].asText())
+                    assertEquals("untrusted_proxy", ack["error"]["code"].asText())
+                }
+            }
+            val headers = listOf(
+                mapOf("X-User-Id" to owner),
+                mapOf("X-Souz-Proxy-Auth" to E2E_PROXY_TOKEN),
+                mapOf("X-User-Id" to owner, "X-Souz-Proxy-Auth" to "forged"),
+            )
+            for (values in headers) {
+                val rejected = client.post(BackendHttpRoutes.CHATS) {
+                    values.forEach { (key, value) -> header(key, value) }
+                    jsonBody(json.writeValueAsString(mapOf("userId" to owner, "requestId" to "forged", "clientType" to "backend", "parameters" to fields)))
+                }
+                assertEquals(401, rejected.status.value)
+                // The same middleware rejects these headers before WebSocket upgrade.
+                assertEquals(401, client.get("${BackendHttpRoutes.WS}?clientType=backend") {
+                    values.forEach { (key, value) -> header(key, value) }
+                }.status.value)
+            }
+            val attacker = UUID.randomUUID().toString()
+            val rejected = client.post(BackendHttpRoutes.CHATS) {
+                trusted(attacker)
+                jsonBody(json.writeValueAsString(mapOf("userId" to owner, "requestId" to "mismatch", "clientType" to "backend", "parameters" to fields)))
+            }
+            assertEquals(403, rejected.status.value)
+            assertEquals("user_identity_mismatch", rejected.jsonBody()["error"]["code"].asText())
+            withMultiChatSocket(attacker) { socket ->
+                socket.send(Frame.Text(json.writeValueAsString(mapOf("kind" to "chat.create", "requestId" to "mismatch", "payload" to mapOf("userId" to owner, "parameters" to fields)))))
+                val ack = readRawJson(socket)
+                assertEquals("rejected", ack["status"].asText())
+                assertEquals("user_identity_mismatch", ack["error"]["code"].asText())
+            }
+            assertEquals(json.readTree("""{"voice":"joy","appeal":"no_official","style":"informal","personality":""}"""), settings()["personalityParameters"])
+            assertEquals(0, client.get(BackendHttpRoutes.CHATS) { trusted(owner) }.jsonBody()["items"].size())
+            val accepted = client.post(BackendHttpRoutes.CHATS) {
+                trusted(owner)
+                jsonBody(json.writeValueAsString(mapOf("userId" to owner, "requestId" to "personality", "clientType" to "backend", "parameters" to fields)))
+            }
+            assertEquals(201, accepted.status.value)
+            assertEquals(json.valueToTree<JsonNode>(fields), settings()["personalityParameters"])
+            val retryPayload = mapOf("userId" to owner, "parameters" to fields)
+            assertEquals(401, client.post(BackendHttpRoutes.CHATS) {
+                jsonBody(json.writeValueAsString(retryPayload + mapOf("requestId" to "personality", "clientType" to "backend")))
+            }.status.value)
+            withMultiChatSocket { socket ->
+                socket.send(Frame.Text(json.writeValueAsString(mapOf("kind" to "chat.create", "requestId" to "personality", "payload" to retryPayload))))
+                val ack = readRawJson(socket)
+                assertEquals("rejected", ack["status"].asText())
+                assertEquals("untrusted_proxy", ack["error"]["code"].asText())
+            }
+            assertEquals(json.valueToTree<JsonNode>(fields), settings()["personalityParameters"])
+        }
+
+    @Test
+    fun `credential-free creation preserves activation words without claiming first personality initialization`() =
+        backendE2eTest("personality_creation_public") {
+            val tools = json.readTree(clientToolsJson(PERSONALITY_SYNC_COMMAND))
+            val created = client.post(BackendHttpRoutes.CHATS) {
+                jsonBody(json.writeValueAsString(mapOf("userId" to owner, "requestId" to "public-http", "clientType" to "backend", "tools" to tools)))
+            }
+            assertEquals(201, created.status.value)
+            val httpChat = created.jsonBody()["chat"]["id"].asText()
+            val initial = mapOf("voice" to "sber", "appeal" to "official", "style" to "neutral", "personality" to "Owner instructions")
+            withMultiChatSocket { socket ->
+                val payload = mapOf("userId" to owner, "tools" to tools, "parameters" to mapOf("your_name" to "  Луна ", "future" to "a"))
+                socket.send(Frame.Text(json.writeValueAsString(mapOf("kind" to "chat.create", "requestId" to "public-ws", "payload" to payload))))
+                val ack = readRawJson(socket)
+                assertEquals("accepted", ack["status"].asText())
+                val defaults = snapshot(socket)
+                assertEquals("  Луна ", defaults["payload"]["arguments"]["parameters"]["your_name"].asText())
+                acknowledge(socket, defaults, null, 1)
+                val response = client.post(BackendHttpRoutes.CHATS) {
+                    trusted(owner)
+                    jsonBody(json.writeValueAsString(mapOf("userId" to owner, "requestId" to "owner", "clientType" to "backend", "parameters" to initial)))
+                }
+                assertEquals(201, response.status.value)
+                assertEquals(json.valueToTree<JsonNode>(initial), settings()["personalityParameters"])
+            }
+            withPublicSocket(httpChat) { socket ->
+                val frame = snapshot(socket)
+                assertEquals(json.valueToTree<JsonNode>(initial), frame["payload"]["arguments"]["parameters"])
+                acknowledge(socket, frame, "Owner instructions", 1)
+            }
+        }
+
+    @Test
     fun `HTTP and WebSocket creation share user preferences but each receiver keeps its own activation word`() =
         backendE2eTest("personality_creation", llm = personalityApi()) {
             val initial = mapOf("voice" to "sber", "appeal" to "official", "style" to "neutral", "personality" to "")
             val tools = json.readTree(clientToolsJson(PERSONALITY_SYNC_COMMAND))
             val payload = mapOf("userId" to owner, "parameters" to initial + mapOf("your_name" to "  Луна ", "future" to "a"), "tools" to tools)
             suspend fun create(id: String, body: Map<String, Any>) = client.post(BackendHttpRoutes.CHATS) {
+                trusted(owner)
                 jsonBody(json.writeValueAsString(body + mapOf("requestId" to id, "clientType" to "backend")))
             }
             patch("""{"temperature":0.2}""")
-            withMultiChatSocket { socket ->
+            withMultiChatSocket(owner) { socket ->
                 socket.send(Frame.Text(json.writeValueAsString(mapOf("kind" to "chat.create", "requestId" to "first", "payload" to payload))))
                 val ack = readRawJson(socket)
                 assertEquals("accepted", ack["status"].asText())

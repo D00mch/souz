@@ -67,6 +67,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import ru.souz.backend.client.exceedsToolResultContentLimits
+import ru.souz.backend.security.requestIdentityOrNull
 
 internal class PublicClientConnection(
     private val socket: DefaultWebSocketServerSession,
@@ -148,7 +149,8 @@ internal class PublicClientConnection(
                             "chat.create" -> {
                                 val create = decode(ChatCreateFrame::class.java, "create_chat")
                                 val (created, duplicate) = deps.createClientChat(
-                                    CreateClientChatRequest(create.payload.userId, create.requestId, clientType, create.payload.title, create.payload.tools, create.payload.parameters)
+                                    CreateClientChatRequest(create.payload.userId, create.requestId, clientType, create.payload.title, create.payload.tools, create.payload.parameters),
+                                    socket.call.requestIdentityOrNull(),
                                 )
                                 chat = created
                                 withContext(mdcContext()) {

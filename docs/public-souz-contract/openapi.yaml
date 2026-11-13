@@ -11,7 +11,16 @@ paths:
       operationId: createClientChat
       tags: [Client Chats]
       summary: Create a chat
-      description: Creates a user-owned Souz chat for either WebSocket endpoint. Shares creation idempotency with `chat.create` on `/v1/ws?clientType=backend`. The request is idempotent by `(userId, requestId)`, with `userId` supplied in the JSON body. This API is only exposed inside a trusted environment, so credentials are not required.
+      description: Creates a user-owned Souz chat for either WebSocket endpoint. Shares creation idempotency with `chat.create` on `/v1/ws?clientType=backend`. The request is idempotent by `(userId, requestId)`, with `userId` supplied in the JSON body. Credential-free creation leaves account preferences untouched. Supplying voice, appeal, style or personality requires both trusted proxy headers with identity matching userId, including retries. For WebSocket creation, supply these headers on the upgrade. If either header is present, both must be valid.
+      parameters:
+        - name: X-Souz-Proxy-Auth
+          in: header
+          description: Proxy credential. Required together with X-User-Id for account personality initialization.
+          schema: {type: string}
+        - name: X-User-Id
+          in: header
+          description: Verified proxy identity. Must match the creation userId when supplied.
+          schema: {type: string}
       requestBody:
         required: true
         content:
@@ -33,6 +42,18 @@ paths:
                 $ref: "#/components/schemas/CreateChatResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Missing authentication for account parameters, or invalid proxy headers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Creation userId differs from the authenticated identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           $ref: "#/components/responses/Conflict"
   /v1/chats/{chatId}/threads/{threadId}:
@@ -111,7 +132,7 @@ components:
           $ref: "#/components/schemas/PersonalityParameters"
     PersonalityParameters:
       type: object
-      description: A string dictionary. Only the named fields are persisted. The entire dictionary is compared on creation retries.
+      description: A string dictionary. Only the named fields are persisted. The entire dictionary is compared on creation retries. At creation, voice, appeal, style and personality require verified proxy authentication matching the owner; your_name and additional string keys can be supplied without credentials.
       maxProperties: 128
       propertyNames: {maxLength: 256}
       additionalProperties: {type: string, maxLength: 16384}

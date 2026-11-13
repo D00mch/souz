@@ -5,7 +5,11 @@ Ordinary settings PATCH cannot change them. The enabled `personality.update` Ski
 `request` and an optional `action`: `update` (default) replaces the style, `append` preserves unrelated
 preferences only for explicit additions, and `reset` restores Joy defaults without a request. Each mutation selects and saves the four user fields together.
 
-The first public chat initializes a new owner's preferences in the same transaction as the chat.
+The first proxy-authenticated chat initializes a new owner's preferences in the same transaction as the chat.
+HTTP creation or the WebSocket upgrade must supply verified `X-Souz-Proxy-Auth` and `X-User-Id` headers;
+the authenticated identity must equal the creation `userId`. Supplying `voice`, `appeal`, `style` or
+`personality` without authentication rejects creation, including retries. Credential-free creation
+accepts `your_name` and additional string keys without inserting an account personality row.
 Concurrent creation, a retry or another speaker cannot overwrite an existing personality.
 Defaults are `voice=joy`, `appeal=no_official` (ты), `style=informal` and `personality=""`.
 The validator may also select Sber (calm and restrained) or Afina (composed and businesslike),

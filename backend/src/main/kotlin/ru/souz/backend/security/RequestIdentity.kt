@@ -28,7 +28,9 @@ val RequestIdentityPlugin = createApplicationPlugin(
         if (!call.request.path().startsWith(pluginConfig.protectedPathPrefix)) {
             return@onCall
         }
-        if (call.isPublicClientContractRequest()) return@onCall
+        if (call.isPublicClientContractRequest() &&
+            call.request.header(PROXY_AUTH_HEADER) == null && call.request.header(USER_ID_HEADER) == null
+        ) return@onCall
         val identity = resolveRequestIdentity(
             call = call,
             trustedProxyToken = pluginConfig.trustedProxyToken(),
@@ -50,12 +52,15 @@ private fun ApplicationCall.isPublicClientContractRequest(): Boolean {
 }
 
 fun ApplicationCall.requestIdentity(): RequestIdentity =
-    attributes.getOrNull(RequestIdentityAttributeKey)
+    requestIdentityOrNull()
         ?: throw BackendV1Exception(
             status = HttpStatusCode.InternalServerError,
             code = "internal_error",
             message = "Trusted request identity is unavailable.",
         )
+
+internal fun ApplicationCall.requestIdentityOrNull(): RequestIdentity? =
+    attributes.getOrNull(RequestIdentityAttributeKey)
 
 private suspend fun resolveRequestIdentity(
     call: ApplicationCall,

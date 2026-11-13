@@ -65,7 +65,11 @@ class ChatService(
         title: String?,
         tools: List<ClientToolDefinition> = emptyList(),
         parameters: Map<String, String> = emptyMap(),
+        authenticatedUserId: String? = null,
     ): CreateClientChatResult {
+        if (authenticatedUserId != null && authenticatedUserId != userId) {
+            throw BackendV1Exception(HttpStatusCode.Forbidden, "user_identity_mismatch", "Chat userId must match the authenticated user.")
+        }
         val normalizedTitle = title?.trim()?.takeIf { it.isNotEmpty() }
         val normalizedTools = tools.normalizeClientTools(serverToolNames)
         if (parameters.size > 128 || parameters.any { (key, value) -> key.length > 256 || value.length > PersonalitySnapshot.MAX_PROMPT_LENGTH } ||
@@ -77,6 +81,10 @@ class ChatService(
             PersonalityParameters.from(parameters)
         } catch (e: IllegalArgumentException) {
             throw invalidV1Request(e.message ?: "Invalid personality parameters.")
+        }
+        val hasPersonalityParameters = "voice" in parameters || "appeal" in parameters || "style" in parameters || "personality" in parameters
+        if (authenticatedUserId == null && hasPersonalityParameters) {
+            throw BackendV1Exception(HttpStatusCode.Unauthorized, "untrusted_proxy", "Trusted proxy authentication is required for personality initialization.")
         }
         // Preserve creation receipts for legacy chats with no catalogue.
         val payloadHash = PublicPayloadHash.ofValue(buildMap {
@@ -101,7 +109,10 @@ class ChatService(
                 yourName = parameters["your_name"],
             )
             try {
-                return CreateClientChatResult(chatRepository.create(chat, normalizedTools, initial), duplicate = false)
+                return CreateClientChatResult(
+                    chatRepository.create(chat, normalizedTools, initial.takeIf { authenticatedUserId != null }),
+                    duplicate = false,
+                )
             } catch (conflict: ChatRequestConflictException) {
                 if (conflict.userId != userId || conflict.requestId != requestId) throw conflict
                 existing = chatRepository.findByRequestId(userId, requestId) ?: throw conflict

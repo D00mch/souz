@@ -6,7 +6,7 @@ Channels supporting server-driven [`prompt.personality.set`](../../backend/docs/
 declare it through chat creation or discovery. The command remains hidden from model tools. Style changes
 prefer the current eligible connected channel, otherwise another eligible receiver; no receiver means
 synchronization is skipped without delaying saving or requesting discovery. Supporting channels also receive the saved snapshot on subscription/reconnection.
-Creation accepts an optional string dictionary `parameters`. The first public chat initializes
+Creation accepts an optional string dictionary `parameters`. The first proxy-authenticated chat initializes
 `voice`, `appeal`, `style` and `personality` for a new owner. Every chat keeps its own optional
 `your_name` activation word verbatim. Snapshots carry `{parameters, revision}` and include only the
 receiving chat’s activation word. These live commands use `seq:null` and the normal `tool.result` acknowledgement.
@@ -15,7 +15,13 @@ receiving chat’s activation word. These live commands use `seq:null` and the n
 
 Connect to `/v1/ws?clientType=backend`. One WebSocket can serve multiple users' chats; chat-scoped frames carry `chatId`. Each chat's `clientType` must match the connection.
 
-This API requires a trusted environment: the client validates identity upstream and supplies `userId`; the API requires no credentials. Submit device ownership must match the chat.
+This API requires a trusted environment: the client validates identity upstream and supplies `userId`. Submit device ownership must match the chat.
+Credential-free creation accepts a chat activation word and additional string keys, leaving account preferences untouched.
+Supplying any of `voice`, `appeal`, `style` or `personality` requires `X-Souz-Proxy-Auth` and `X-User-Id`
+on HTTP creation or the WebSocket upgrade, including creation retries. The verified identity must match
+the creation `userId`. A socket with these headers can initialize only that owner's preferences.
+If either proxy header is present, both must be valid. Missing authentication rejects account parameters
+with `untrusted_proxy`; a different authenticated owner returns `user_identity_mismatch`.
 
 A **chat** stores history; a **thread** is a task inside it. A **subscription** delivers a chat's events over the existing socket. It opens no extra connection and does not own the execution.
 
