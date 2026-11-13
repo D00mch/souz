@@ -2,9 +2,9 @@
 
 ## Invariants
 
-[`AgentToolCatalog`](../../agent/src/main/kotlin/ru/souz/agent/spi/AgentToolCatalog.kt) owns immutable tool membership and name indexing. Construction, filtering, transformation, and composition preserve `ToolCategory.entries` order and reject duplicate function names. Tool instances retain their invocation behavior; catalog immutability applies to the outer and inner maps.
+Keep membership immutable and reject duplicate function names across categories. Preserve category order during filtering, transformations, and composition. [Catalog contract](../../agent/src/main/kotlin/ru/souz/agent/spi/AgentToolCatalog.kt)
 
-Runtime factories expose their catalog through `.catalog`. Execution-bound LLM tools use the current execution's model and provider unless an explicit capability route is configured, such as the [vision model](../../backend/docs/images.md#model-input) for `ViewImage`; process-owned runtime catalogs do not retain execution settings.
+Execution-bound LLM tools inherit the current model and provider unless a capability has its own route. Keep execution settings out of process-owned catalogs. [Vision routing](../../backend/docs/images.md#model-input)
 
 Category discovery reads one filtered snapshot directly, with shared strict pagination and a 16 KiB result budget.
 
@@ -12,7 +12,7 @@ Skill lookup, invocation, and subagent selection read a host-supplied catalog pr
 
 ## Backend composition
 
-Use the [capability policy](../../backend/src/main/kotlin/ru/souz/backend/common/BackendToolCapabilityPolicy.kt) as the sole authority for advertising compiled tools, validating `enabledTools`, and selecting execution tools. Keep compiled web tools out of the backend catalogue. Persist explicit `enabledTools` selections only. An absent selection follows the advertised set as it grows.
+Use one policy for advertising compiled tools, validating `enabledTools`, and selecting execution tools. Only client `web.search` can populate the backend's `WEB_SEARCH` category. Persist explicit `enabledTools` selections only so users without one inherit newly advertised tools. [Capability policy](../../backend/src/main/kotlin/ru/souz/backend/common/BackendToolCapabilityPolicy.kt)
 
 The [execution catalogue](../../backend/src/main/kotlin/ru/souz/backend/agent/runtime/conversation/BackendExecutionToolCatalog.kt) filters compiled, execution-bound, and plugin tools by the execution's `enabledTools` snapshot before merging [client Skills](../../backend/docs/public-client-websocket.md#safe-change-guidance). Apply few-shot filtering after the merge.
 
@@ -20,7 +20,6 @@ The [execution catalogue](../../backend/src/main/kotlin/ru/souz/backend/agent/ru
 
 - Bind runtime tools in DI and include them in `RuntimeToolsFactory` together; verify invocation through the backend's composed catalogs.
 - Add an LLM-dependent tool to the canonical name set and concrete catalog together.
-- Use `AgentToolCatalog.filter` and `mapTools` for execution-specific selection and transformations; each returns an immutable catalog without changing its source.
 
 ## Verification
 

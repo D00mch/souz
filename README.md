@@ -60,17 +60,11 @@ For custom endpoints and server-managed model aliases, see [named LLM connection
 
 ## Project structure
 
-See the [module map and dependency boundaries](AGENTS.md#module-map), [agent architecture](agent/README.md), and [runtime setup](sharedLogic/README.md). The [backend capability policy](backend/src/main/kotlin/ru/souz/backend/common/BackendToolCapabilityPolicy.kt) controls which compiled tools are exposed.
+See the [module map and dependency boundaries](AGENTS.md#module-map), [agent architecture](agent/README.md), and [runtime setup](sharedLogic/README.md).
 
 ## Backend behavior
 
-Protected routes derive user identity from [trusted proxy headers](backend/docs/trusted-proxy.md). Keep credential-free [Client-Souz routes](docs/public-souz-contract/README.md) on a trusted network.
-
-### Storage
-
-PostgreSQL stores structured data and durable execution state. Sandbox workspaces are filesystem-backed. See the [distributed deployment boundary](backend/docs/distributed-backend-boundary.md) before running multiple replicas.
-
-### Configuration
+Keep credential-free Client-Souz routes on a trusted network. See the [public contract](docs/public-souz-contract/README.md), [trusted proxy](backend/docs/trusted-proxy.md), and [distributed deployment boundary](backend/docs/distributed-backend-boundary.md).
 
 Backend startup requires `SOUZ_MASTER_KEY`. Protected routes require a shared `SOUZ_BACKEND_PROXY_TOKEN`. Keep the Compose secrets for local development only. `POSTGRES_DSN` overrides the database address and name. Supply database credentials separately. See [backend configuration](backend/src/main/kotlin/ru/souz/backend/app/BackendAppConfig.kt) for defaults and validation.
 
@@ -82,25 +76,12 @@ For bot setup, see [Telegram bindings](backend/docs/telegram-bindings.md#setup) 
 
 ## Development and verification
 
-Use JDK 21 and the Gradle wrapper. PostgreSQL-backed backend, job, and OAuth tests fail when Docker is unavailable.
-
-For `./gradlew :backend:run`, start PostgreSQL and configure the database connection and backend secrets first.
-
-```bash
-./gradlew :backend:run
-./gradlew build :backend:installDist :build-logic:check --no-parallel
-./gradlew test :koverXmlReport :koverHtmlReport koverLog -Psouz.coverage --no-parallel
-./gradlew souzGateFast --configuration-cache --configuration-cache-problems=fail
-npm ci --prefix quality
-./gradlew souzDuplicationCheck
-```
-
-Runtime Docker sandbox tests are opt-in. See [runtime sandbox setup](sharedLogic/README.md#sandbox-modes). Build the backend image with [scripts/build-backend-image.sh](scripts/build-backend-image.sh).
+To run without Compose, start PostgreSQL, configure backend secrets, then run `./gradlew :backend:run` with JDK 21. Build a local distribution with `./gradlew :backend:installDist`. [Verification](AGENTS.md#verification) · [Quality gates](docs/quality-gates.md) · [Backend image build](scripts/build-backend-image.sh)
 
 ## Operational references
 
 - [WebSocket ownership](backend/docs/public-client-websocket.md) and [subagents](docs/subagents.md)
-- [Backend testing](backend/docs/testing.md) and [quality gates](docs/quality-gates.md)
+- [Backend testing](backend/docs/testing.md)
 - [External memory](backend/docs/external-memory.md), [conversation Knowledge](backend/docs/conversation-knowledge.md), and [personality settings](backend/docs/personality-settings.md)
 - [Scheduled tasks](backend/docs/scheduled-tasks.md), [workspace hooks](docs/hooks.md), and [file tools](docs/file-tools.md)
 - [S3 file storage](backend/docs/s3-storage.md) and [Prometheus metrics](backend/docs/metrics.md)

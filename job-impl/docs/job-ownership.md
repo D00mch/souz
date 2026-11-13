@@ -10,7 +10,7 @@ Handlers have at-least-once delivery. Expired leases permit another attempt, so 
 
 ## Recovery and operations
 
-Failed or abandoned claims spend an attempt. Exhaustion records durable occurrence failure history, including after the final lease expires. One-offs and recurring jobs fail on exhaustion by default. With `continueAfterFailure`, cron jobs record the failure and advance to the next future occurrence. Later successes preserve prior failures.
+Failed or abandoned claims spend an attempt. Exhaustion, including expiry of the final lease, records durable failure history. Jobs stop on exhaustion unless a recurring job opts into `continueAfterFailure`. When recurrence advances, skip missed occurrences and preserve prior failures.
 
 Join workers before closing the data source. Keep job migrations in a separate Flyway location and history table. Scrape the blocking queue gauge on an IO dispatcher. [Queue metric and replica aggregation](../../backend/docs/metrics.md#queries)
 

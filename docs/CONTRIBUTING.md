@@ -19,12 +19,9 @@ Implementations overview:
 - [Backend JVM runtime](../sharedLogic/README.md)
 - [Public client contract](public-souz-contract/README.md)
 
-Use each documentation surface for one purpose:
-
 - [AGENTS.md](../AGENTS.md) files contain durable engineering instructions, ownership boundaries, and verification commands.
-- Add a focused pain-point topic for a lasting, non-obvious constraint. Put it directly under the owning module's `docs/` and index it in the module's `Pain points` section of `AGENTS.md`. Cover the invariant, failure modes, safe changes, and focused verification.
-- README files contain human-facing architecture and usage descriptions.
-- Source code and generated API documentation are authoritative for exact routes, configuration keys, constants, and file inventories.
+- Document intent, invariants, restrictions, failure modes, and focused verification in the owning module's `docs/`. Index each topic under `Pain points` in its `AGENTS.md`.
+- Keep setup and runnable examples in usage guides. Link to source for implementation and generated API documentation for wire details.
 
 Keep documentation current-state only and update the smallest owning document instead of copying the same fact into several files.
 

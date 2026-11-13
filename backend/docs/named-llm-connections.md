@@ -34,7 +34,7 @@ The optional `reasoningEfforts` map supplies nonblank effort strings for built-i
 
 `CONTEXT_SIZE` is the single server context window for conversation, subagents and summaries (default `125000`). Startup rejects values that are not integers of at least `24000` tokens. All configured models must support that window; no model-specific effective window is calculated. Users and HTTP request options cannot override it, and continuations use the running server value.
 
-The [agent context-budget invariant](../../agent/docs/skills-oriented-graph.md#invariant) defines input limits, compaction, and conversation and summary output caps. Classification caps output at 512 tokens. The explicit summary output limit overrides any output limit in `OPENAI_SUMMARIZATION_PARAMETERS`.
+See [input limits and compaction](../../agent/docs/skills-oriented-graph.md#context-budget-and-compaction). The runtime's summary output cap takes precedence over `OPENAI_SUMMARIZATION_PARAMETERS`.
 
 Use unique, case-sensitive names distinct from built-in selectors, legacy subagent IDs and `OPENAI_MODEL`. Keep secrets in the environment. Different connections can serve identical upstream IDs with separate server keys. A user's legacy OpenAI key cannot override a named connection. Embeddings keep their own provider configuration. [Request routing](../src/main/kotlin/ru/souz/backend/llm/BackendExecutionLlmChatApi.kt)
 

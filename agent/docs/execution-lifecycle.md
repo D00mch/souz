@@ -2,13 +2,13 @@
 
 ## Invariant
 
-The [execution kernel](../src/main/kotlin/ru/souz/agent/AgentExecutionKernel.kt) isolates each skills-graph execution and normalizes unsupported persisted agent IDs to `SKILLS_GRAPH`. The host owns durable execution state. The [skills graph](skills-oriented-graph.md) owns core-tool exposure, and [subagents](subagents.md) describes parent-owned child cleanup and the bounded child loop.
+The [execution kernel](../src/main/kotlin/ru/souz/agent/AgentExecutionKernel.kt) isolates each execution and normalizes unsupported persisted agent IDs to `SKILLS_GRAPH`. The host owns durable execution state.
 
 ### Model routing
 
-The first model call can route to a simple or complex target. The simple target has empty advertised and executable tool sets, and its stream stays private until the classifier selects it. Complex and fallback calls retain core tools. Classifier failure falls back to the turn's configured model. The selected provider and model serve subsequent calls and become the default child route. All targets share [request preparation and compaction](skills-oriented-graph.md#invariant). See [model calls](../src/main/kotlin/ru/souz/agent/nodes/NodesLLM.kt) for speculative execution and fallback.
+Only confidently tool-free requests qualify for the simple route. Jev sends attachments and oversized current requests directly to complex, without truncating the current request to make it eligible. The simple route advertises and executes no tools and withholds output until selected. Complex and fallback calls retain core tools. Classifier failure uses the turn's configured model. The selected provider and model serve later calls and become the default child route. All routes share [request preparation and compaction](skills-oriented-graph.md#context-budget-and-compaction). [Model calls](../src/main/kotlin/ru/souz/agent/nodes/NodesLLM.kt)
 
-Classification receives bounded, untrusted [capability hints](../src/main/kotlin/ru/souz/agent/nodes/NodesSkillInventory.kt) from the filtered inventory, separate from dialogue and without tool schemas. [Jev](../../sharedLogic/src/main/kotlin/ru/souz/llms/runtime/JevClassifier.kt) separates the current request from reference history.
+Classification receives bounded, untrusted capability hints from the filtered inventory without schemas or additional discovery. Treat earlier dialogue as reference and keep the current request separate. [Jev](../../sharedLogic/src/main/kotlin/ru/souz/llms/runtime/JevClassifier.kt)
 
 Simple routing suppresses `InitialWait` for the execution. Other routes can emit it once with the classifier's category when available. The host owns [best-effort waiting delivery](../../backend/docs/execution-openapi-and-events.md#live-and-replayed-events).
 
@@ -22,7 +22,7 @@ Publishing input before durable commit can put unsaved history in the model cont
 - Keep LLM responses provisional until the controller accepts the tool batch or seals for finalization. [Steering](../src/main/kotlin/ru/souz/agent/nodes/SteerableChatNode.kt) cancels only the superseded model attempt and replans from its input context. Started tools finish before queued input returns directly to the LLM. Parent and provider cancellation still propagate.
 - Advance the revision on each accepted continuation. Tag chunks with the revision captured before the attempt starts and discard older revisions at consumption. Emit ordered, nonblank assistant blocks only after tool-batch acceptance and before execution. Preserve whitespace and exclude reasoning and final answers.
 - Restrict graph retries to provider nodes handling `LLMException`. Keep compaction inside request preparation and preserve consumed input across retries. Retrying a tool batch or its coordination can replay side effects. [Tool telemetry](../src/main/kotlin/ru/souz/agent/runtime/AgentToolExecutor.kt) records one completion with the typed failure even if cancellation interrupts event delivery.
-- Run [memory recall](../src/main/kotlin/ru/souz/agent/nodes/NodesMemory.kt) once per turn after history input and before Skill inventory and host context enrichment. Clear prior injected memory even when recall is disabled or fails. Snapshot the accepted exchange at graph finalization and schedule capture only after finalization succeeds. Capture failures stay isolated from the returned turn.
+- Run [memory recall](../src/main/kotlin/ru/souz/agent/nodes/NodesMemory.kt) after history input and before Skill inventory and host context enrichment. Clear structurally marked recall even when automatic recall is disabled or fails. Explicit memory tools and capture remain independent of that flag. Snapshot the accepted exchange at graph finalization and schedule asynchronous capture only after finalization succeeds. Capture failures stay isolated from the returned turn.
 
 ## Verification
 

@@ -1,6 +1,6 @@
 # Remote MCP servers
 
-Souz uses the Kotlin MCP SDK with Streamable HTTP. Each execution snapshots one owner's enabled servers, owns their sessions, and checks owner identity on discovery and tool calls.
+Souz uses Streamable HTTP. Each execution snapshots one owner's enabled servers and owns their sessions. Check owner identity on discovery and invocation.
 
 ## Configuration
 
@@ -28,13 +28,13 @@ The [MCP catalogue](../../sharedLogic/src/main/kotlin/ru/souz/mcp/McpToolCatalog
 
 ## Transport and limits
 
-The dedicated host-owned transport disables proxies, redirects, and connection-failure retries. For hosts outside the allowlist, reject non-public literals and any DNS set containing a non-public answer. Bound JSON and SSE response bytes and nesting before SDK buffering. See [transport guards](../../sharedLogic/src/main/kotlin/ru/souz/mcp/McpHttpClient.kt).
+Use the dedicated transport without proxies, redirects, or connection retries. Outside the operator allowlist, reject non-public literals and any DNS set containing a non-public answer. Accept only UTF-8 and identity encoding. Bound JSON and SSE bytes and nesting before SDK buffering. [Transport guards](../../sharedLogic/src/main/kotlin/ru/souz/mcp/McpHttpClient.kt)
 
 Reject duplicate tool names and repeated listing cursors. Cap work time, listing pages, and retained tools and metadata across all servers in an execution. See [MCP limits](../../sharedLogic/src/main/kotlin/ru/souz/mcp/McpLimits.kt).
 
 ## Results and cleanup
 
-Preserve SDK result JSON, including `isError`. `mcp_timeout` and `mcp_request_failed` may leave the remote outcome unknown. Never automatically replay tool calls. Propagate caller cancellation and keep URLs, arguments, and remote error text out of diagnostics.
+Preserve SDK result JSON, including `isError`. `mcp_timeout` and `mcp_request_failed` can leave the outcome unknown. Never replay tool calls automatically. Propagate cancellation and omit URLs, arguments, and remote errors from diagnostics.
 
 After child cleanup, close sessions concurrently even on cancellation or failure. Keep independent deadlines for protocol notifications and remote termination, then always close local session resources. The backend closes the borrowed transport after application work stops. See [session lifecycle](../../sharedLogic/src/main/kotlin/ru/souz/mcp/McpHttpSession.kt).
 

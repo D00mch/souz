@@ -8,11 +8,11 @@ The [graph](../src/main/kotlin/ru/souz/SkillsGraphBasedAgent.kt) replaces advert
 
 ### Context budget and compaction
 
-All conversational routes, including child calls, share the configured `CONTEXT_SIZE`. Conversational and summary inputs may use up to 80% of that budget. Count prepared message text, tool arguments and schemas without transport escaping. Provider output caps of 4,096 conversation tokens and 1,024 summary tokens are independent. [Request preparation](../src/main/kotlin/ru/souz/agent/nodes/NodesLLM.kt)
+Conversation, child and summary inputs may use up to 80% of the server context window. Count prepared message text, tool arguments and schemas without transport escaping. Output caps are independent. [Request preparation](../src/main/kotlin/ru/souz/agent/nodes/NodesLLM.kt)
 
 Snapshot ephemeral host instructions once per conversational call and reuse them after compaction. Keep them out of stored history, classification and summary requests. Render file references as text only in provider requests and carry a host-bounded set of recent structured references onto the summary. [Attachment contracts](../../backend/docs/attachments.md#history-and-persistence)
 
-[Compaction](../src/main/kotlin/ru/souz/agent/nodes/NodesSummarization.kt) summarizes the completed prefix in one request and preserves system messages and the entire active exchange, including memory, host context, tool exchanges and mid-run inputs. Track the boundary through history edits in execution state only. If the full prefix and summary prompt cannot fit together, keep history intact and reject the oversized request. Reject oversized requests with no compactable history or that still exceed budget after rebuilding. Empty and length-truncated summaries fail compaction.
+[Compaction](../src/main/kotlin/ru/souz/agent/nodes/NodesSummarization.kt) runs during request preparation and preserves system messages and the entire active exchange, including memory, host context, tools and mid-run inputs. Track the boundary through history edits in execution state only. Reject oversized input when there is no completed prefix, when the full prefix and summary prompt cannot fit in one call, or when the rebuilt request still exceeds the limit. Empty and length-truncated summaries fail compaction without replacing history.
 
 ### Tool-result offloading
 

@@ -8,7 +8,7 @@ Run [thread recovery](../src/main/kotlin/ru/souz/backend/client/ClientThreadReco
 
 Ordinary trusted-proxy HTTP executions, Telegram/VK-triggered executions and [scheduled-task occurrences](scheduled-tasks.md) have process-local runtimes without renewable execution leases. [Job claims](../../job-impl/docs/job-ownership.md), [hook receipts](hooks.md), and [JVM plugin leases and pins](jvm-plugins.md) protect only the jobs, receipts, and invocations they own.
 
-Server-managed Codex OAuth is safe for a single backend process through process-local refresh coordination. A terminal refresh rejection suppresses deployment credentials only while the configured refresh token matches the rejected value. A different `CODEX_REFRESH_TOKEN` lifts suppression, so replace all four deployment values together before restarting. Multi-replica deployments must not enable it unless refresh is database-coordinated and replaces the access token, refresh token, account ID, and expiry as one credential set.
+Enable server-managed Codex OAuth on one process only. A terminal refresh rejection suppresses deployment credentials until the configured refresh token changes. Replace the access token, refresh token, account ID, and expiry together before restarting.
 
 ## Why it is fragile
 
@@ -18,7 +18,7 @@ If a process-local ordinary execution is stranded in `queued`, `running`, or `ca
 
 - Keep `waiting_option` separate from owned runtime work. Clear any runtime lease when entering `waiting_option`, and acquire a fresh lease when an option continuation resumes.
 - Use a shared ownership model when extending recovery. In multi-replica deployments, fail an ordinary execution on startup only when ownership proves it was abandoned.
-- Coordinate multi-replica Codex refresh with a database-backed lock or compare-and-set that rereads credentials before refresh and stores the rotated set atomically.
+- Multi-replica Codex OAuth requires database-coordinated refresh that rereads credentials before refresh and stores the rotated set atomically.
 
 ## Verification
 

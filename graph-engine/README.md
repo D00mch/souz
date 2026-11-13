@@ -5,7 +5,7 @@
 ## Execution model
 
 - `edgeTo(target)` wires a static route. `edgeTo { output -> nextNode }` chooses a route from the node output. Multiple edges enqueue fan-out in registration order and run breadth-first. Reaching `nodeFinish` ends that graph even if siblings remain queued.
-- `start` creates a fresh runtime. Subgraphs share the run's retry policy, step budget, and `onStep` tracing. The runner calls `onStep` after each successful node.
+- Each run has a fresh runtime. Subgraphs share retries, tracing, and the `maxSteps` loop guard.
 - Cancellation bypasses retries. A `CancellationException` caught by the runner is wrapped in `GraphCancellation` with the last context that runner recorded. [Runner](src/main/kotlin/ru/souz/graph/GraphRunner.kt) · [Trace fields](src/main/kotlin/ru/souz/graph/GraphRuntime.kt)
 
 ## Example

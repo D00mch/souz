@@ -15,12 +15,9 @@ checks. See [check definitions](../build-logic/src/main/kotlin/ru/souz/build/qua
 
 ## Repository and module policy
 
-Keep the root `Module Map` in sync with Gradle projects. Each module policy
-needs a `Pain points` heading and a link there to every Markdown topic
-directly under its `docs/`. The v1 local-link check validates filesystem
-targets from policy files and Markdown files directly under their adjacent
-`docs/` directories.
-See [RepositoryContracts](../build-logic/src/main/kotlin/ru/souz/build/quality/RepositoryContracts.kt).
+Keep the root [module map](../AGENTS.md#module-map) aligned with Gradle projects.
+Each module policy requires a `Pain points` heading indexing the module's direct
+`docs/` topics. Keep local documentation links resolvable. [Repository checks](../build-logic/src/main/kotlin/ru/souz/build/quality/RepositoryContracts.kt)
 
 Direct production dependencies must follow the [module allowlist](../AGENTS.md#production-dependency-boundaries).
 Unclassified project-dependency configurations fail closed. Use standard
@@ -117,12 +114,11 @@ are limited to changed files, and the advisory leaves required CI checks
 independent. See the [publisher](../quality/pr_advisory.cjs) for rendering
 and output limits.
 
-Analysis jobs have read-only repository access. The publisher executes
-trusted default-branch code and reads untrusted artifacts as data outside
-the checkout. Keep permissions scoped to repository and Actions reads,
-plus checks and PR writes. The publisher resolves PR identities through
-GitHub, supports forks, skips closed PRs, outdated heads, and older runs,
-and escapes artifact text before rendering it.
+Analysis jobs have read-only repository access. Run only trusted default-branch
+code in the publisher. Treat PR artifacts as untrusted data outside the checkout.
+Limit permissions to repository and Actions reads plus checks and PR writes.
+Resolve PR identity through GitHub, skip closed PRs and stale heads or runs,
+and escape artifact text before rendering.
 
 ## Reports
 

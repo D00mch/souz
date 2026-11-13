@@ -12,7 +12,7 @@ Use fresh saved style for each conversational call, including later calls in the
 
 ## Orion delivery
 
-Commit independently of receiver availability. After commit, application-owned delivery survives turn cancellation. `saved:true` confirms persistence, and `sync:synced` confirms delivery. `sync:skipped` means no eligible connected receiver. Retry delivery of the committed snapshot only.
+Commit independently of receiver availability. Application-owned delivery survives turn cancellation. `saved:true` confirms persistence. Only `sync:synced` confirms delivery, and `sync:skipped` means no eligible receiver. Retry transient delivery failures with the committed snapshot and fresh call IDs. Permanent protocol errors stop retries.
 
 Send to one connected, unarchived public channel owned by the user and declaring `prompt.personality.set` through creation or discovery. Prefer the current channel when eligible. A supporting subscription sends the latest snapshot, including the empty initial style, after durable replay. Discovery alone leaves delivery for a later update or subscription. [Receiver selection and delivery retries](../src/main/kotlin/ru/souz/backend/personality/PersonalitySync.kt) · [Subscription ordering](../src/main/kotlin/ru/souz/backend/http/routes/PublicClientConnection.kt)
 

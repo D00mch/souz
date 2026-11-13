@@ -6,17 +6,13 @@ Set `ENABLE_BACKEND_TG_FEATURE=true` and supply `TELEGRAM_TOKEN_ENCRYPTION_KEY` 
 
 ## Invariant
 
-Backend Telegram bindings are feature-gated and owned by a Souz user and chat. Binding validates the bot token with Telegram, removes any webhook before long polling, encrypts the token at rest, stores only a hash of the one-time link secret, and returns safe metadata plus the one-time `/start` command. Raw tokens and token hashes never appear in API responses.
+Bindings belong to a Souz user and chat. Validate the bot token, remove any webhook, and discard pending updates before polling. Encrypt tokens, hash link secrets, and keep both tokens and token hashes out of API responses.
 
 A binding remains pending until the exact secret arrives from a private Telegram chat. The first valid private sender/chat pair becomes the permanent account binding; stale, non-matching, or later traffic from another account is rejected.
 
 Each poller holds a renewable per-binding lease. Submit accepted text with an update-derived client message ID for idempotent retries. Check ownership before each reply or checkpoint write and advance `lastUpdateId` only after processing completes under that owner. [Polling and replies](../src/main/kotlin/ru/souz/backend/telegram/TelegramBotPollingService.kt)
 
 Bot replies and cross-channel deliveries use [`sendRichMessage`](https://core.telegram.org/bots/api#sendrichmessage) with JSON `rich_message.markdown`. Chunking conservatively limits source Markdown to 32,768 UTF-16 units; splitting can interrupt Markdown constructs in oversized replies. Preserve the original Markdown in conversation storage.
-
-## Why it is fragile
-
-Tokens, one-time secrets, Telegram identity, and poller ownership are separate security boundaries. Advancing a checkpoint early, replying after lease loss, or accepting a public/foreign sender can lose updates, duplicate agent turns, leak a bot credential, or bind the wrong account.
 
 ## Safe-change guidance
 
