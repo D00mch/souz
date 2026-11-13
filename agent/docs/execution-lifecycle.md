@@ -2,7 +2,7 @@
 
 ## Invariant
 
-`AgentExecutionKernelFactory` creates an isolated skills-graph execution with its own context factory and executor. Backend conversation runtime owns execution state and continuation; concurrent executions must not share graph instances or mutable context.
+[`AgentExecutionKernelFactory`](../src/main/kotlin/ru/souz/agent/AgentExecutionKernel.kt) creates an isolated skills-graph execution with its own context factory and executor. The backend conversation runtime owns execution state and continuation.
 
 `ToolLoopGraphBasedAgent` implements the same `Agent` contract with a bounded model/tool loop. It preserves the caller's context and exposes streaming, step callbacks, and cancellation through the shared execution delegate. Its turn counter resets per execution; concurrent executions require separate agent instances. Delegation and context isolation belong to `SubagentTool`. The execution delegate owns a coroutine-scoped subagent registry for each graph run and cancels and joins unfinished children on every exit. Lifecycle tools share that registry across model routing and queued input; see [subagents](subagents.md).
 
@@ -18,7 +18,7 @@ The request-scoped kernel exposes one steerable skills graph under `AgentId.SKIL
 
 `AgentSettings.routing` marks a skills-graph turn whose first LLM call may run on a simple or a complex model. With a `TaskComplexityClassifier`, `NodesLLM` starts the simple model at once and publishes none of its streamed output until the classifier decides; a complex decision cancels that call and calls the complex model, and a classifier failure keeps the turn's own model. The simple target clears both advertised and executable tools; complex and fallback targets retain them. Each target call uses ordinary request preparation: conversation instructions, the turn's context budget, and compaction that keeps the active exchange. The chosen settings, without routing, serve the rest of the turn, and the core tools are rebound to them, so a `SpawnSubagent` child defaults to the chosen model.
 
-Inventory supplies execution-local capability names with descriptions capped at 240 characters, reusing metadata reads and retaining unselected descriptions or ID-only entries. Classification receives these hints separately from dialogue, without tool schemas or additional discovery.
+Inventory supplies execution-local capability names with descriptions capped at 240 characters, reusing metadata reads and retaining unselected descriptions or ID-only entries. Classification receives these untrusted hints separately from dialogue, without tool schemas or additional discovery. [Jev](../../sharedLogic/src/main/kotlin/ru/souz/llms/runtime/JevClassifier.kt) treats dialogue as untrusted and keeps the current request separate from reference history.
 
 `NodesLLM` decides initial waiting once per execution: non-simple routing emits `InitialWait` after classification with the classifier's waiting category, if any, and execution without routing emits it without a category before its first call. Simple routing suppresses it throughout the execution. Retries, tool loops and queued inputs do not repeat it; child sinks discard it.
 
@@ -41,7 +41,7 @@ Execution context, continuation state, model routing, and event delivery have re
 - Preserve cancellation propagation through `AgentExecutor`, `Agent`, and `GraphExecutionDelegate`.
 - Tool telemetry records one completion in `finally`, retaining the typed failure for host accounting even when cancellation interrupts runtime failure-event delivery.
 - Skill selection receives descriptions from the same filtered catalog used for inventory. Keep the focused history and typed model/provider route intact.
-- Keep memory recall immediately after history input and before core-tool installation. Identify injected memory through its structural provenance marker and remove the previous turn's injection even when the host disables `automaticMemoryRecall`. The flag does not disable explicit memory tools or completed-turn capture. Keep capture inside graph finalization: snapshot the completed exchange, schedule only after finalization succeeds, and isolate capture failures from the returned turn.
+- Run memory recall immediately after history input, before core-tool installation. Remove the previous turn's structurally marked memory even when the host disables `automaticMemoryRecall`. Explicit memory tools and completed-turn capture remain independent of the flag. Snapshot the accepted exchange in graph finalization and schedule asynchronous capture only after finalization succeeds. Isolate capture failures from the returned turn.
 
 ## Verification
 

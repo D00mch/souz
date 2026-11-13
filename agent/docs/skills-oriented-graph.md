@@ -17,8 +17,9 @@ request is checked against the same limit. Exactly 80% fits. `maxTokens` only li
 (4,096 tokens for conversation, 1,024 for summaries); it does not change the input budget.
 
 Compaction sends the completed prefix before `AgentContext.activeExchangeStartIndex`, followed by the
-summarization prompt, in one call. Both must fit the same 80% limit. System instructions and the entire
-active exchange, including fresh memory, host context, tools, and mid-run inputs, stay intact.
+summarization prompt, in one call. History input resets this execution-local boundary and history edits adjust it.
+Keep the index out of persistence and provider requests. Both summary inputs must fit the same 80% limit together.
+System instructions and the entire active exchange, including fresh memory, host context, tools, and mid-run inputs, stay intact.
 History is neither split nor dropped to fit the summary
 request; if it cannot fit, history stays unchanged and the conversational request is rejected.
 Requests without compactable history or still over the limit after compaction are also rejected.

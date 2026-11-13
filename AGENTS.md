@@ -3,6 +3,7 @@
 Souz is a backend-only Kotlin/JVM AI assistant with a Ktor HTTP host, graph-based agent execution, and PostgreSQL persistence.
 
 - Read and maintain this file before changing the repository. Before editing a module, read its linked `AGENTS.md`, any applicable nested instructions, and relevant topics linked in its `Pain points` section.
+- Follow the [documentation policy](docs/CONTRIBUTING.md#documentation) when adding pain-point topics.
 - Keep runtime documentation and `docs/public-souz-contract/` concise and current-state only. Do not write change-history phrases such as “now we do”.
 - Keep pre-implementation client agreements under `docs/proposals/`, explicitly marked as proposed and not implemented; exclude them from the implemented public API schemas.
 

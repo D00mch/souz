@@ -2,8 +2,6 @@
 
 `:backend` is the headless JVM HTTP host. It owns product messages, execution lifecycle, durable receipts and replay, and persistence for the shared `:agent` kernel.
 
-Before changing this module, read the relevant pain-point topics below.
-
 ## Boundaries
 
 - Use proxy-provided identity on protected routes. Credential-free Client-Souz routes require a trusted network. The `device.userId` on each submit must match the UUID owner established at chat creation.
@@ -39,8 +37,6 @@ Before changing this module, read the relevant pain-point topics below.
 - [Model scenario tests](docs/agent-scenario-tests.md) — opt-in model evaluation against the full production catalog with mocked execution and scenario fixtures.
 - [Container builds](docs/container-builds.md) — JVM temporary files and Kaniko snapshots.
 - [External memory](docs/external-memory.md) — Hindsight owner isolation, scope tags, grounded capture, and safe mutation boundaries.
-
-Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.
 
 ## Verification
 

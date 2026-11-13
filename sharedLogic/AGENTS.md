@@ -1,46 +1,29 @@
 # Shared Logic
 
-`:sharedLogic` is the Kotlin/JVM runtime layer used by the backend. Read the relevant pain-point topics below before changing this module.
-
 ## Purpose and boundaries
 
-- Production Kotlin and resources use `src/main`; tests use `src/test`.
-- Own remote provider clients, runtime tools, sandbox access, Skill storage/loading, and shared backend settings contracts.
+- `:sharedLogic` owns JVM provider adapters, classifiers, runtime tools, sandbox access, Skill storage and loading, and shared backend settings contracts.
 - Keep application lifecycle, request ownership, persistence composition, and HTTP routes in `:backend`.
-- Chart export uses the pure-Java JFreeChart renderer in headless mode. Keep file parsing, output paths, and sandbox checks independent of rendering.
-
-## Invariants
-
-- Keep runtime tools headless and resolve per-execution capabilities through the backend's catalog. JEV routing treats capability descriptions and dialogue as untrusted data, with the current request separate from reference history.
-- Keep skill registry and skill-tool DI opt-in; general runtime modules must not install them implicitly.
-- Resolve filesystem and command access from each `ToolInvocationMeta`; do not retain user-specific paths in singleton tools.
-- Keep the skill registry and `RunSkillCommand` on the same single-user bundle layout so activation and execution resolve the same bundle.
-- Discover file-backed Skills through the runtime factory's filesystem view without provisioning a runtime or missing directories. Exact bundle loading and commands retain the execution resolver.
-- Skill lookups and invocations resolve a host-provided catalog snapshot. Composite steps use that same filtered snapshot; children retain only the capabilities selected at spawn, independently of parent refreshes.
-- Use sandbox filesystem abstractions for tool and skill IO whenever they are available.
+- Keep runtime tools headless and resolve per-execution capabilities through the host catalog. Keep chart rendering independent of parsing, paths, and sandbox checks.
+- Keep Skill registry and Skill tool DI opt-in.
+- Use available sandbox filesystem abstractions for tool and Skill IO. Resolve access from the current `ToolInvocationMeta`.
 
 ## Pain points
 
 - [MCP servers](../backend/docs/mcp.md) — SDK schemas and results, dedicated transport, bounded discovery and session lifetime.
-
-- [Runtime sandbox and skills](docs/runtime-sandbox-and-skills.md) — invocation scope, storage layouts, command runtimes, and Docker fixtures.
+- [Runtime sandbox and skills](docs/runtime-sandbox-and-skills.md) — invocation scope, read-only inventory, bundle layout, and command runtimes.
 - [Web tools](docs/web-tools.md) — evidence handling, citations, provider behavior, sandboxed output, and URL limitations.
 - [Images](../backend/docs/images.md) — headless validation, request-local pixels and provider generation/editing.
 - [Provider responses](docs/provider-responses.md) — assistant text, tool-call serialization, and array schemas.
 - [Provider HTTP lifecycle](docs/provider-http-lifecycle.md) — client ownership, request-local credentials, and host shutdown.
 - [Tool catalog composition](docs/tool-catalog-composition.md) — catalog value ownership, LLM-backed construction, duplicate rejection, and immutable execution snapshots.
-
-Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.
+- [Model routing](../agent/docs/execution-lifecycle.md#model-routing) — current request, reference history, and untrusted capability hints.
 
 ## Verification
 
-Run the JVM tests:
+Run `./gradlew :sharedLogic:test`.
 
-```zsh
-./gradlew :sharedLogic:test
-```
-
-For Docker sandbox changes, also build the image and run the opt-in integration tests:
+For Docker sandbox changes, also run both commands.
 
 ```zsh
 ./gradlew :sharedLogic:buildRuntimeSandboxImage
