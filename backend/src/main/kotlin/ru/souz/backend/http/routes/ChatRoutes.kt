@@ -46,6 +46,8 @@ import ru.souz.backend.http.describePublic
 import ru.souz.backend.http.clientFrameMapper
 import java.util.UUID
 import ru.souz.backend.chat.service.CreateClientChatResult
+import ru.souz.backend.security.RequestIdentity
+import ru.souz.backend.security.requestIdentityOrNull
 
 internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
     get(BackendHttpRoutes.CHATS) {
@@ -94,7 +96,7 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
         } catch (_: Exception) {
             throw ru.souz.backend.http.invalidV1Request("Request body does not match CreateChatRequest.")
         }
-        val result = deps.createClientChat(request)
+        val result = deps.createClientChat(request, call.requestIdentityOrNull())
         call.respond(
             if (result.duplicate) HttpStatusCode.OK else HttpStatusCode.Created,
             CreateClientChatResponse(
@@ -110,7 +112,7 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
         operationId = "createClientChat",
         tag = BackendOpenApiTags.CHATS,
         summary = "Create a chat",
-        description = "Creates a client chat idempotently by (userId, requestId).",
+        description = "Creates a client chat idempotently by (userId, requestId). Personality parameters require trusted proxy authentication with a matching X-User-Id.",
     ) {
         requestBody {
             jsonBody<CreateClientChatRequest>(description = "Trusted client chat creation request.")
@@ -119,6 +121,8 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
             jsonResponse<CreateClientChatResponse>(HttpStatusCode.OK, "An idempotent retry.")
             jsonResponse<CreateClientChatResponse>(HttpStatusCode.Created, "The newly created chat.")
             jsonResponse<BackendV1ErrorEnvelope>(HttpStatusCode.BadRequest, "Invalid request.")
+            jsonResponse<BackendV1ErrorEnvelope>(HttpStatusCode.Unauthorized, "Missing or invalid proxy authentication for personality initialization.")
+            jsonResponse<BackendV1ErrorEnvelope>(HttpStatusCode.Forbidden, "Chat userId differs from the authenticated user.")
             jsonResponse<BackendV1ErrorEnvelope>(HttpStatusCode.Conflict, "Idempotency conflict.")
             jsonResponse<BackendV1ErrorEnvelope>(HttpStatusCode.InternalServerError, "Internal server error.")
         }
@@ -282,6 +286,7 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
 
 internal suspend fun BackendHttpDependencies.createClientChat(
     request: CreateClientChatRequest,
+    identity: RequestIdentity?,
 ): CreateClientChatResult {
     val userId = request.userId.requireUuid("userId")
     val requestId = request.requestId.trim().takeIf { it.isNotEmpty() }
@@ -296,6 +301,8 @@ internal suspend fun BackendHttpDependencies.createClientChat(
         clientType = request.clientType,
         title = request.title,
         tools = request.tools,
+        parameters = request.parameters,
+        authenticatedUserId = identity?.userId,
     )
 }
 

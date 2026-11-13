@@ -42,7 +42,7 @@ internal class PersonalitySync(
                 val chat = (eligible.firstOrNull { it.chat.id !in busyChannels } ?: eligible.firstOrNull())?.chat
                     ?: return "skipped"
                 val reply = dispatcher.call(chat, PERSONALITY_SYNC_COMMAND,
-                    mapOf("prompt" to snapshot.prompt.orEmpty(), "revision" to snapshot.revision),
+                    mapOf("parameters" to snapshot.parameters.forChannel(chat.yourName), "revision" to snapshot.revision),
                     Duration.ofSeconds(10), execution, threadId = execution ?: UUID.randomUUID())
                 if (reply.error?.code == "client_tool_busy") busyChannels += chat.id
                 if (reply.error?.code in permanentErrors) return "failed"

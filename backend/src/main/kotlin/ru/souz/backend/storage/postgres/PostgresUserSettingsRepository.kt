@@ -1,9 +1,11 @@
 package ru.souz.backend.storage.postgres
 
+import com.fasterxml.jackson.module.kotlin.readValue
 import javax.sql.DataSource
 import ru.souz.backend.settings.model.PersonalitySnapshot
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
+import ru.souz.backend.settings.model.PersonalityParameters
 
 class PostgresUserSettingsRepository(
     private val dataSource: DataSource,
@@ -42,22 +44,33 @@ class PostgresUserSettingsRepository(
         }
     }
 
-    override suspend fun compareAndSetPersonality(userId: String, revision: Long, prompt: String?): PersonalitySnapshot? {
-        require(prompt == null || prompt.isNotBlank() && prompt.length <= PersonalitySnapshot.MAX_PROMPT_LENGTH)
-        return dataSource.write { connection ->
-            connection.prepareStatement("""
-                update user_settings
-                set personality_prompt = ?, personality_revision = personality_revision + 1, updated_at = now()
-                where user_id = ? and personality_revision = ? and personality_revision < 9007199254740991
-                returning personality_revision
-            """.trimIndent()).use { statement ->
-                statement.setString(1, prompt)
-                statement.setString(2, userId)
-                statement.setLong(3, revision)
-                statement.executeQuery().use { rows ->
-                    if (rows.next()) PersonalitySnapshot(prompt, rows.getLong(1)) else null
-                }
+    override suspend fun personality(userId: String): PersonalitySnapshot = dataSource.read { connection ->
+        connection.prepareStatement("select parameters, revision from user_personalities where user_id = ?").use { statement ->
+            statement.setString(1, userId)
+            statement.executeQuery().use { rows ->
+                if (rows.next()) PersonalitySnapshot(postgresStorageMapper.readValue(rows.getString("parameters")), rows.getLong("revision"))
+                else PersonalitySnapshot()
             }
+        }
+    }
+
+    override suspend fun compareAndSetPersonality(
+        userId: String,
+        previous: PersonalitySnapshot,
+        parameters: PersonalityParameters,
+    ): PersonalitySnapshot? = dataSource.write { connection ->
+        val next = PersonalitySnapshot(parameters, previous.revision + 1)
+        connection.prepareStatement("""
+            insert into user_personalities(user_id, parameters, revision) values (?, ?::jsonb, ?)
+            on conflict (user_id) do update set parameters = excluded.parameters, revision = excluded.revision
+            where user_personalities.revision = ? and user_personalities.parameters = ?::jsonb
+        """.trimIndent()).use { statement ->
+            statement.setString(1, userId)
+            statement.setString(2, postgresStorageMapper.writeValueAsString(parameters))
+            statement.setLong(3, next.revision)
+            statement.setLong(4, previous.revision)
+            statement.setString(5, postgresStorageMapper.writeValueAsString(previous.parameters))
+            next.takeIf { statement.executeUpdate() == 1 }
         }
     }
 }

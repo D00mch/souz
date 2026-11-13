@@ -6,18 +6,20 @@ import ru.souz.backend.client.supportedClientTypes
 import ru.souz.backend.client.ClientToolDefinition
 import ru.souz.backend.client.DiscoveredClientTools
 import ru.souz.llms.restJsonMapper
+import java.sql.Connection
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRequestConflictException
 import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.settings.model.PersonalityParameters
 
 class PostgresChatRepository(
     private val dataSource: DataSource,
 ) : ChatRepository {
-    override suspend fun create(chat: Chat, tools: List<ClientToolDefinition>): Chat =
-        checkNotNull(insert(chat, tools, ignoreDuplicate = false))
+    override suspend fun create(chat: Chat, tools: List<ClientToolDefinition>, initialPersonality: PersonalityParameters?): Chat =
+        checkNotNull(insert(chat, tools, ignoreDuplicate = false, initialPersonality = initialPersonality))
 
     override suspend fun getOrCreate(chat: Chat): Chat =
         insert(chat, emptyList(), ignoreDuplicate = true) ?: get(chat.userId, chat.id)
@@ -44,15 +46,17 @@ class PostgresChatRepository(
         chat: Chat,
         tools: List<ClientToolDefinition>,
         ignoreDuplicate: Boolean,
+        initialPersonality: PersonalityParameters? = null,
     ): Chat? = dataSource.write { connection ->
         try {
+            if (initialPersonality != null) initializePersonality(connection, chat.userId, initialPersonality)
             connection.prepareStatement(
                 """
                 insert into chats(
                   id, user_id, client_type, request_id, payload_hash,
-                  title, archived, created_at, updated_at, client_tools
+                  title, archived, created_at, updated_at, client_tools, your_name
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)
                 ${if (ignoreDuplicate) "on conflict do nothing" else ""}
                 returning $CHAT_COLUMNS
                 """.trimIndent()
@@ -67,6 +71,7 @@ class PostgresChatRepository(
                 statement.setInstant(8, chat.createdAt)
                 statement.setInstant(9, chat.updatedAt)
                 statement.setString(10, restJsonMapper.writeValueAsString(tools))
+                statement.setString(11, chat.yourName)
                 statement.executeQuery().use { resultSet ->
                     if (resultSet.next()) resultSet.toChat() else null
                 }
@@ -76,6 +81,17 @@ class PostgresChatRepository(
                 throw ChatRequestConflictException(chat.userId, chat.requestId)
             }
             throw error
+        }
+    }
+
+    private fun initializePersonality(connection: Connection, userId: String, initial: PersonalityParameters) {
+        // Credential-free receivers may already have applied the implicit defaults at revision 1.
+        connection.prepareStatement("""
+            insert into user_personalities(user_id, parameters, revision) values (?, ?::jsonb, 2) on conflict (user_id) do nothing
+        """.trimIndent()).use {
+            it.setString(1, userId)
+            it.setString(2, postgresStorageMapper.writeValueAsString(initial))
+            it.executeUpdate()
         }
     }
 
@@ -271,4 +287,4 @@ class PostgresChatRepository(
     }
 }
 
-private const val CHAT_COLUMNS = "id, user_id, client_type, request_id, payload_hash, title, archived, created_at, updated_at"
+private const val CHAT_COLUMNS = "id, user_id, client_type, request_id, payload_hash, title, archived, created_at, updated_at, your_name"

@@ -11,7 +11,16 @@ paths:
       operationId: createClientChat
       tags: [Client Chats]
       summary: Create a chat
-      description: Creates a user-owned Souz chat for either WebSocket endpoint. Shares creation idempotency with `chat.create` on `/v1/ws?clientType=backend`. The request is idempotent by `(userId, requestId)`, with `userId` supplied in the JSON body. This API is only exposed inside a trusted environment, so credentials are not required.
+      description: Creates a user-owned Souz chat for either WebSocket endpoint. Shares creation idempotency with `chat.create` on `/v1/ws?clientType=backend`. The request is idempotent by `(userId, requestId)`, with `userId` supplied in the JSON body. Credential-free creation leaves account preferences untouched. Supplying voice, appeal, style or personality requires both trusted proxy headers with identity matching userId, including retries. For WebSocket creation, supply these headers on the upgrade. If either header is present, both must be valid.
+      parameters:
+        - name: X-Souz-Proxy-Auth
+          in: header
+          description: Proxy credential. Required together with X-User-Id for account personality initialization.
+          schema: {type: string}
+        - name: X-User-Id
+          in: header
+          description: Verified proxy identity. Must match the creation userId when supplied.
+          schema: {type: string}
       requestBody:
         required: true
         content:
@@ -33,6 +42,18 @@ paths:
                 $ref: "#/components/schemas/CreateChatResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Missing authentication for account parameters, or invalid proxy headers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Creation userId differs from the authenticated identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           $ref: "#/components/responses/Conflict"
   /v1/chats/{chatId}/threads/{threadId}:
@@ -107,6 +128,20 @@ components:
           type: [string, "null"]
         tools:
           $ref: "#/components/schemas/ClientToolCatalogue"
+        parameters:
+          $ref: "#/components/schemas/PersonalityParameters"
+    PersonalityParameters:
+      type: object
+      description: A string dictionary. Only the named fields are persisted. The entire dictionary is compared on creation retries. At creation, voice, appeal, style and personality require verified proxy authentication matching the owner; your_name and additional string keys can be supplied without credentials.
+      maxProperties: 128
+      propertyNames: {maxLength: 256}
+      additionalProperties: {type: string, maxLength: 16384}
+      properties:
+        voice: {type: string, enum: [joy, sber, afina]}
+        appeal: {type: string, enum: [official, no_official]}
+        style: {type: string, enum: [informal, neutral, formal]}
+        personality: {type: string, maxLength: 16384, description: Empty clears the custom prompt.}
+        your_name: {type: string, maxLength: 16384, description: Activation word supplied for this chat. Preserved verbatim.}
     ClientToolCatalogue:
       type: array
       maxItems: 256
@@ -355,6 +390,8 @@ components:
               type: [string, "null"]
             tools:
               $ref: "#/components/schemas/ClientToolCatalogue"
+            parameters:
+              $ref: "#/components/schemas/PersonalityParameters"
     ChatSubscribe:
       description: Acknowledges before replay and live delivery. Explicit afterSeq replaces this chat subscription on the same socket and returns duplicate=false. Without afterSeq, an existing subscription is kept with duplicate=true. Does not execute input; requestId is for correlation only.
       type: object
@@ -1137,11 +1174,11 @@ components:
         hidden from model tools; supporting channels also receive the snapshot on subscription/reconnection.
       type: object
       additionalProperties: false
-      required: [prompt, revision]
+      required: [parameters, revision]
       properties:
-        prompt:
-          type: string
-          description: Complete style, at most 16384 UTF-16 units. Empty clears the preference.
+        parameters:
+          $ref: "#/components/schemas/PersonalityParameters"
+          required: [voice, appeal, style, personality]
         revision:
           type: integer
           minimum: 1

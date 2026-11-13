@@ -6,13 +6,22 @@ Channels supporting server-driven [`prompt.personality.set`](../../backend/docs/
 declare it through chat creation or discovery. The command remains hidden from model tools. Style changes
 prefer the current eligible connected channel, otherwise another eligible receiver; no receiver means
 synchronization is skipped without delaying saving or requesting discovery. Supporting channels also receive the saved snapshot on subscription/reconnection.
-These live commands use `seq:null` and the normal `tool.result` acknowledgement.
+Creation accepts an optional string dictionary `parameters`. The first proxy-authenticated chat initializes
+`voice`, `appeal`, `style` and `personality` for a new owner. Every chat keeps its own optional
+`your_name` activation word verbatim. Snapshots carry `{parameters, revision}` and include only the
+receiving chat’s activation word. These live commands use `seq:null` and the normal `tool.result` acknowledgement.
 
 ## Connection
 
 Connect to `/v1/ws?clientType=backend`. One WebSocket can serve multiple users' chats; chat-scoped frames carry `chatId`. Each chat's `clientType` must match the connection.
 
-This API requires a trusted environment: the client validates identity upstream and supplies `userId`; the API requires no credentials. Submit device ownership must match the chat.
+This API requires a trusted environment: the client validates identity upstream and supplies `userId`. Submit device ownership must match the chat.
+Credential-free creation accepts a chat activation word and additional string keys, leaving account preferences untouched.
+Supplying any of `voice`, `appeal`, `style` or `personality` requires `X-Souz-Proxy-Auth` and `X-User-Id`
+on HTTP creation or the WebSocket upgrade, including creation retries. The verified identity must match
+the creation `userId`. A socket with these headers can initialize only that owner's preferences.
+If either proxy header is present, both must be valid. Missing authentication rejects account parameters
+with `untrusted_proxy`; a different authenticated owner returns `user_identity_mismatch`.
 
 A **chat** stores history; a **thread** is a task inside it. A **subscription** delivers a chat's events over the existing socket. It opens no extra connection and does not own the execution.
 
@@ -20,7 +29,7 @@ A **chat** stores history; a **thread** is a task inside it. A **subscription** 
 
 | Kind | Purpose |
 | --- | --- |
-| `chat.create` | Create or retrieve a chat with `requestId` and `payload:{userId,title?,tools?}`. ACK returns `chatId`; `clientType` comes from the socket. |
+| `chat.create` | Create or retrieve a chat with `requestId` and `payload:{userId,title?,tools?,parameters?}`. ACK returns `chatId`; `clientType` comes from the socket. |
 | `chat.subscribe` | Replay and receive live events using `chatId`, `requestId` and optional `afterSeq`. |
 | `chat.unsubscribe` | Close this socket's subscription to `chatId`, with a correlated `requestId` ACK. |
 | `message.submit` | Submit user input. Explicit `threadId` continues that thread; omission selects the active thread or creates one. |
@@ -181,7 +190,7 @@ Durable public events are `thread.completed|failed|cancelled`, and out-of-band `
 | `message.submit`, `history.append`, `thread.cancel` | Shared `(chatId, requestId)` |
 
 
-For durable operations, the same key, operation and normalized payload return the original result with `duplicate:true`, without repeating execution. Changes conflict with `idempotency_conflict`. Creation compares `clientType`, `title`, and normalized `tools` (omitted tools and `[]` are equivalent). Tool results use `(chatId, threadId, toolCallId)` only for live correlation; accepted ACKs have `duplicate:false`, and further results are rejected with `tool_call_not_found`. For `chat.subscribe` and `chat.unsubscribe`, `requestId` is only for correlation; each request applies to the current connection state.
+For durable operations, the same key, operation and normalized payload return the original result with `duplicate:true`, without repeating execution. Changes conflict with `idempotency_conflict`. Creation compares `clientType`, `title`, the full `parameters` dictionary (omitted and `{}` are equivalent), and normalized `tools` (omitted tools and `[]` are equivalent). Tool results use `(chatId, threadId, toolCallId)` only for live correlation; accepted ACKs have `duplicate:false`, and further results are rejected with `tool_call_not_found`. For `chat.subscribe` and `chat.unsubscribe`, `requestId` is only for correlation; each request applies to the current connection state.
 
 Frame envelopes reject unknown fields; tool arguments/results are generic JSON. Malformed JSON and unsupported kinds close the socket; recoverable errors receive correlated rejection ACKs.
 

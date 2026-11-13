@@ -14,7 +14,7 @@ Desktop selection prompts queue across sources and expire with their callers; di
 
 Desktop [local model profiles](native/docs/model-assets-and-context-budget.md#desktop-text-models) own download sets, RAM gates and model-specific prompt/output handling. The persisted Qwen3 4B selector resolves to Qwen3.5 4B without reusing the old GGUF.
 
-Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts. Revisioned snapshots go to the current connected channel if it declares `prompt.personality.set`, otherwise to another declaring channel. Settings save independently of discovery; no known receiver means synchronization is skipped.
+Backend [personality settings](backend/docs/personality-settings.md) belong to the user. Chat creation initializes them only with verified proxy identity matching the owner; credential-free creation leaves them untouched. Each chat owns its optional activation word. Revisioned snapshots go to the current connected channel if it declares `prompt.personality.set`, otherwise to another declaring channel. Settings save independently of discovery; no known receiver means synchronization is skipped.
 
 Backend remote [MCP servers](backend/docs/mcp.md) use owner-scoped settings and execution-scoped sessions. Credential-free Client-Souz turns cannot access owner MCP configuration or tools. Classifier-selected servers preload; all enabled servers remain discoverable through `LoadMcpTools`. Keep transport limits, owner checks, atomic catalogue publication and bounded cleanup intact.
 

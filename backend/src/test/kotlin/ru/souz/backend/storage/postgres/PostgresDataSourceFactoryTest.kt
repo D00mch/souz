@@ -2,6 +2,8 @@ package ru.souz.backend.storage.postgres
 
 import com.zaxxer.hikari.HikariDataSource
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import ru.souz.backend.settings.model.PersonalityParameters
+import ru.souz.backend.settings.model.PersonalitySnapshot
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -74,6 +76,28 @@ class PostgresDataSourceFactoryTest {
 
         PostgresDataSourceFactory.create(config).use { dataSource ->
             assertEquals(job, PostgresJobService(dataSource).listJobs(owner).items.single())
+        }
+    }
+
+    @Test
+    fun `migrates legacy users including owners without a settings row`() = runBlocking {
+        val config = postgresAppConfig(newPostgresSchema("legacy_personality")).postgres
+        val pg = SharedPostgresContainer.instance
+        Flyway.configure().dataSource(pg.jdbcUrl, pg.username, pg.password).schemas(config.schema)
+            .locations("classpath:db/migration").target("25").load().migrate()
+        pg.createConnection("").use { connection ->
+            connection.schema = config.schema
+            connection.createStatement().use {
+                it.executeUpdate("insert into users(id) values ('custom'), ('defaults')")
+                it.executeUpdate("""insert into user_settings(user_id, settings_json, personality_prompt, personality_revision)
+                    values ('custom', '{}', 'My style', 12)""")
+            }
+        }
+        PostgresDataSourceFactory.create(config).use { ds ->
+            val repo = PostgresUserSettingsRepository(ds)
+            assertEquals(PersonalitySnapshot(PersonalityParameters(personality = "My style"), 12), repo.personality("custom"))
+            assertEquals(PersonalitySnapshot(), repo.personality("defaults"))
+            assertEquals(null, repo.get("defaults"))
         }
     }
 

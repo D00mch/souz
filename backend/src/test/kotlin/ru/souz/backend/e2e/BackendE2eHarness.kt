@@ -254,12 +254,12 @@ internal class BackendE2eScope(
     suspend fun <T> withPublicSocket(chatId: String, block: suspend (DefaultClientWebSocketSession) -> T): T =
         withSocket("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend", block)
 
-    suspend fun <T> withMultiChatSocket(block: suspend (DefaultClientWebSocketSession) -> T): T =
-        withSocket("${BackendHttpRoutes.WS}?clientType=backend", block)
+    suspend fun <T> withMultiChatSocket(userId: String? = null, block: suspend (DefaultClientWebSocketSession) -> T): T =
+        withSocket("${BackendHttpRoutes.WS}?clientType=backend", block, userId)
 
-    private suspend fun <T> withSocket(url: String, block: suspend (DefaultClientWebSocketSession) -> T): T =
+    private suspend fun <T> withSocket(url: String, block: suspend (DefaultClientWebSocketSession) -> T, userId: String? = null): T =
         webSocketClient().use { client ->
-            val session = client.webSocketSession(url)
+            val session = client.webSocketSession(url) { if (userId != null) trusted(userId) }
             try {
                 block(session)
             } finally {

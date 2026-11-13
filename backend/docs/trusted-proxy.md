@@ -6,6 +6,11 @@ Every `/v1/**` request except `POST /v1/chats`, `GET /v1/chats/{chatId}/ws`, `GE
 
 The Client-Souz routes are credential-free inside a trusted network. HTTP and WebSocket chat creation accept a trusted UUID `userId`; each submitted device must repeat the same UUID. WebSocket and thread-status reads are scoped by the stored chat and matching `clientType`. Public root, health, readiness, and documentation routes also require no headers. Credential-free WebSocket executions cannot expose destructive memory tools; those require an authenticated interactive owner message. Hooks and scheduled executions also lack deletion authority. Credential-free Client-Souz executions receive no JVM plugin catalog or bindings, including plugins enabled in the claimed owner's settings.
 
+If either proxy header is supplied on a Client-Souz route, both are verified by the identity middleware.
+Account personality initialization requires this verified identity, matching the creation `userId`.
+Supply the headers on HTTP creation or the multi-chat WebSocket upgrade. Without them, creation can
+store a chat's activation word but cannot initialize account preferences; see [personality settings](personality-settings.md).
+
 `GET /health` checks process liveness. `GET /ready` returns an empty `200` when PostgreSQL reports `transaction_read_only = off`, or an empty `503` on read-only, connection failure, or timeout. The query has a two-second network timeout on its borrowed connection; Hikari resets it on return. Pool borrowing can exceed that deadline while validating stale connections, up to the pool's connection timeout. Configure deployment readiness probes on `/ready` with `timeoutSeconds: 3` and keep liveness probes on `/health`; `POSTGRES_DSN` needs no change. Probe SQL failures log only the exception class and SQLState, without driver messages containing host names.
 
 ## Why it is fragile
