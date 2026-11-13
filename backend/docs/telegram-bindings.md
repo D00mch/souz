@@ -6,7 +6,7 @@ Backend Telegram bindings are feature-gated and owned by a Souz user and chat. B
 
 A binding remains pending until the exact secret arrives from a private Telegram chat. The first valid private sender/chat pair becomes the permanent account binding; stale, non-matching, or later traffic from another account is rejected.
 
-Each poller holds a renewable per-binding lease. Accepted text is submitted through `AgentExecutionService` with an update-derived client message ID and non-streaming message delivery. Reply and checkpoint writes are fenced by current lease ownership, and `lastUpdateId` advances only after processing completes under that owner. Long assistant replies are split to Telegram's message limit, with a short fallback response when delivery content is unavailable.
+Each poller holds a renewable per-binding lease. Submit accepted text with an update-derived client message ID for idempotent retries. Check ownership before each reply or checkpoint write and advance `lastUpdateId` only after processing completes under that owner. [Polling and replies](../src/main/kotlin/ru/souz/backend/telegram/TelegramBotPollingService.kt)
 
 Bot replies and cross-channel deliveries use [`sendRichMessage`](https://core.telegram.org/bots/api#sendrichmessage) with JSON `rich_message.markdown`. Chunking conservatively limits source Markdown to 32,768 UTF-16 units; splitting can interrupt Markdown constructs in oversized replies. Preserve the original Markdown in conversation storage.
 
@@ -17,15 +17,12 @@ Tokens, one-time secrets, Telegram identity, and poller ownership are separate s
 ## Safe-change guidance
 
 - Opt-in progress shares the formatted reply path and lease checks; follow the [live delivery lifecycle](execution-openapi-and-events.md).
-- Preserve encrypted token custody, unique token hashes, hashed link secrets, and redacted API DTOs.
-- Require the exact private-chat link handshake before activating a binding; never infer ownership from a username or untrusted message field.
-- Renew leases during in-flight work and verify ownership before every externally visible reply or checkpoint side effect.
+- Enforce unique token hashes and derive linked ownership from the private-chat handshake. Renew leases during in-flight work.
 - Keep one independent poll loop per enabled binding. Limit update processing, never idle long polls, and recheck lease ownership after waiting for a processing permit.
-- Keep Telegram update IDs in the client-message identity so retried updates remain idempotent.
 - Treat plaintext-compatible rows as migration input only; rebinding or an application rewrite must place them on encrypted storage before removing compatibility support.
 
 ## Verification
 
-Run `./gradlew :backend:test`. Cover feature gating, token redaction/encryption, one-time linking, foreign-account rejection, lease takeover and renewal, reply fencing, checkpoint advancement, idempotent retries, message chunking, and persistence constraints.
+Run `./gradlew :backend:test` with Docker. See the [binding and delivery workflows](../src/test/kotlin/ru/souz/backend/e2e/BackendTelegramE2eTest.kt) and [lease and checkpoint tests](../src/test/kotlin/ru/souz/backend/telegram/PostgresTelegramBotBindingRepositoryTest.kt).
 
 Use the shared [manual polling checks](testing.md#verification) to verify cross-binding independence and cancellation.
