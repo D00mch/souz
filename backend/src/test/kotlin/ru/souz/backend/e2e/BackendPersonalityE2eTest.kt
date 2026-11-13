@@ -310,7 +310,7 @@ class BackendPersonalityE2eTest {
             assertEquals(201, created.status.value)
             val httpChat = created.jsonBody()["chat"]["id"].asText()
             val initial = mapOf("voice" to "sber", "appeal" to "official", "style" to "neutral", "personality" to "Owner instructions")
-            withMultiChatSocket { socket ->
+            val publicChat = withMultiChatSocket { socket ->
                 val payload = mapOf("userId" to owner, "tools" to tools, "parameters" to mapOf("your_name" to "  Луна ", "future" to "a"))
                 socket.send(Frame.Text(json.writeValueAsString(mapOf("kind" to "chat.create", "requestId" to "public-ws", "payload" to payload))))
                 val ack = readRawJson(socket)
@@ -324,11 +324,18 @@ class BackendPersonalityE2eTest {
                 }
                 assertEquals(201, response.status.value)
                 assertEquals(json.valueToTree<JsonNode>(initial), settings()["personalityParameters"])
+                ack["chatId"].asText()
+            }
+            withPublicSocket(publicChat) { socket ->
+                val frame = snapshot(socket)
+                assertEquals(json.valueToTree<JsonNode>(initial + ("your_name" to "  Луна ")), frame["payload"]["arguments"]["parameters"])
+                // This receiver already applied defaults at revision 1 before the owner authenticated.
+                acknowledge(socket, frame, "Owner instructions", 2)
             }
             withPublicSocket(httpChat) { socket ->
                 val frame = snapshot(socket)
                 assertEquals(json.valueToTree<JsonNode>(initial), frame["payload"]["arguments"]["parameters"])
-                acknowledge(socket, frame, "Owner instructions", 1)
+                acknowledge(socket, frame, "Owner instructions", 2)
             }
         }
 
@@ -349,7 +356,7 @@ class BackendPersonalityE2eTest {
                 assertEquals("accepted", ack["status"].asText())
                 val frame = snapshot(socket)
                 assertEquals(json.valueToTree<JsonNode>(initial + ("your_name" to "  Луна ")), frame["payload"]["arguments"]["parameters"])
-                acknowledge(socket, frame, null, 1)
+                acknowledge(socket, frame, null, 2)
                 val retry = create("first", payload)
                 assertEquals(200, retry.status.value)
                 assertEquals(ack["chatId"], retry.jsonBody()["chat"]["id"])
@@ -364,13 +371,13 @@ class BackendPersonalityE2eTest {
             withPublicSocket(id) { socket ->
                 val frame = snapshot(socket)
                 assertEquals(json.valueToTree<JsonNode>(initial + ("your_name" to "")), frame["payload"]["arguments"]["parameters"])
-                acknowledge(socket, frame, null, 1)
+                acknowledge(socket, frame, null, 2)
                 coroutineScope {
                     val updating = async { turn(id, "formal") }
                     val updated = snapshot(socket)
                     val expected = mapOf("voice" to "afina", "appeal" to "official", "style" to "formal", "personality" to "formal")
                     assertEquals(json.valueToTree<JsonNode>(expected + ("your_name" to "")), updated["payload"]["arguments"]["parameters"])
-                    acknowledge(socket, updated, "formal", 2)
+                    acknowledge(socket, updated, "formal", 3)
                     updating.await()
                     assertEquals(json.valueToTree<JsonNode>(expected), settings()["personalityParameters"])
                 }

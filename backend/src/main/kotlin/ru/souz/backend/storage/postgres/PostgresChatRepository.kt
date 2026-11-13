@@ -85,8 +85,9 @@ class PostgresChatRepository(
     }
 
     private fun initializePersonality(connection: Connection, userId: String, initial: PersonalityParameters) {
+        // Credential-free receivers may already have applied the implicit defaults at revision 1.
         connection.prepareStatement("""
-            insert into user_personalities(user_id, parameters) values (?, ?::jsonb) on conflict (user_id) do nothing
+            insert into user_personalities(user_id, parameters, revision) values (?, ?::jsonb, 2) on conflict (user_id) do nothing
         """.trimIndent()).use {
             it.setString(1, userId)
             it.setString(2, postgresStorageMapper.writeValueAsString(initial))

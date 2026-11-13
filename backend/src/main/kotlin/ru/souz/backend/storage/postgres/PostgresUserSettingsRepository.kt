@@ -69,7 +69,6 @@ class PostgresUserSettingsRepository(
             statement.setString(2, postgresStorageMapper.writeValueAsString(parameters))
             statement.setLong(3, next.revision)
             statement.setLong(4, previous.revision)
-            // A first public chat may have supplied different initial parameters at revision 1.
             statement.setString(5, postgresStorageMapper.writeValueAsString(previous.parameters))
             next.takeIf { statement.executeUpdate() == 1 }
         }

@@ -31,8 +31,10 @@ context-budget error. The style never enters persisted history or auxiliary summ
 V26 moves each owner's prompt and revision into `user_personalities` and removes the old settings columns.
 Deploy this schema with the matching backend and receivers of the dictionary snapshot. Rolling back to the old
 backend requires restoring its columns and copying back the latest prompts and revisions.
-A separate user-owned row keeps ordinary settings writes independent of personality updates. Revisions
-start at 1 and increase on every update/reset, up to 9,007,199,254,740,991. Prompts are limited to 16,384
+A separate user-owned row keeps ordinary settings writes independent of personality updates. Implicit
+defaults use revision 1; authenticated chat initialization starts at revision 2, above any published
+fallback snapshot. Migrated rows retain their revisions. Every update/reset increases the revision,
+up to 9,007,199,254,740,991. Prompts are limited to 16,384
 UTF-16 units. Validation runs outside transactions; a competing write triggers revalidation, at most
 three attempts. Saving does not require discovering channel capabilities. No known supporting receiver
 returns `saved:true` with `sync:skipped`. After commit, delivery belongs to the application scope and
