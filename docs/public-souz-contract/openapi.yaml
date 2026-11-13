@@ -107,6 +107,20 @@ components:
           type: [string, "null"]
         tools:
           $ref: "#/components/schemas/ClientToolCatalogue"
+        parameters:
+          $ref: "#/components/schemas/PersonalityParameters"
+    PersonalityParameters:
+      type: object
+      description: A string dictionary. Only the named fields are persisted. The entire dictionary is compared on creation retries.
+      maxProperties: 128
+      propertyNames: {maxLength: 256}
+      additionalProperties: {type: string, maxLength: 16384}
+      properties:
+        voice: {type: string, enum: [joy, sber, afina]}
+        appeal: {type: string, enum: [official, no_official]}
+        style: {type: string, enum: [informal, neutral, formal]}
+        personality: {type: string, maxLength: 16384, description: Empty clears the custom prompt.}
+        your_name: {type: string, maxLength: 16384, description: Activation word supplied for this chat. Preserved verbatim.}
     ClientToolCatalogue:
       type: array
       maxItems: 256
@@ -355,6 +369,8 @@ components:
               type: [string, "null"]
             tools:
               $ref: "#/components/schemas/ClientToolCatalogue"
+            parameters:
+              $ref: "#/components/schemas/PersonalityParameters"
     ChatSubscribe:
       description: Acknowledges before replay and live delivery. Explicit afterSeq replaces this chat subscription on the same socket and returns duplicate=false. Without afterSeq, an existing subscription is kept with duplicate=true. Does not execute input; requestId is for correlation only.
       type: object
@@ -1137,11 +1153,11 @@ components:
         hidden from model tools; supporting channels also receive the snapshot on subscription/reconnection.
       type: object
       additionalProperties: false
-      required: [prompt, revision]
+      required: [parameters, revision]
       properties:
-        prompt:
-          type: string
-          description: Complete style, at most 16384 UTF-16 units. Empty clears the preference.
+        parameters:
+          $ref: "#/components/schemas/PersonalityParameters"
+          required: [voice, appeal, style, personality]
         revision:
           type: integer
           minimum: 1

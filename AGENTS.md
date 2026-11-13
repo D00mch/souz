@@ -10,7 +10,7 @@ Backend uses one startup-validated `CONTEXT_SIZE` (minimum 24,000 tokens) for al
 
 Subagents run asynchronously with admission limits and cooperative deadlines (`SUBAGENT_TASK_TIMEOUT_MS`, default 600000) within one parent execution; parent-only tools wait for or cancel children. A zero-timeout wait polls status. See [subagent lifecycle](agent/docs/subagents.md).
 
-Backend [personality settings](backend/docs/personality-settings.md) are separate from system prompts. Revisioned snapshots go to the current connected channel if it declares `prompt.personality.set`, otherwise to another declaring channel. Settings save independently of discovery; no known receiver means synchronization is skipped.
+Backend [personality settings](backend/docs/personality-settings.md) belong to the user. Each chat owns its optional activation word. Revisioned snapshots go to the current connected channel if it declares `prompt.personality.set`, otherwise to another declaring channel. Settings save independently of discovery; no known receiver means synchronization is skipped.
 
 Remote [MCP servers](backend/docs/mcp.md) use owner-scoped settings and execution-scoped sessions. Classifier-selected servers preload; all enabled servers remain discoverable through `LoadMcpTools`. Keep transport limits, owner checks, atomic catalogue publication and bounded cleanup intact.
 

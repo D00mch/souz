@@ -1,6 +1,7 @@
 package ru.souz.backend.execution.service
 
 import com.fasterxml.jackson.module.kotlin.readValue
+import ru.souz.backend.settings.model.PersonalitySnapshot
 import io.mockk.coEvery
 import io.mockk.mockk
 import java.util.UUID
@@ -24,6 +25,7 @@ class ProgressSettingsTest {
         for (intermediate in listOf(null, false, true)) for (narrate in listOf(false, true)) {
             var stored = UserSettings("user", defaultModel = "test-chat", narrateSteps = narrate, intermediateMessages = intermediate)
             val repository = mockk<UserSettingsRepository>()
+            coEvery { repository.personality(any()) } returns PersonalitySnapshot()
             coEvery { repository.get("user") } answers { stored }
             val resolver = EffectiveSettingsResolver(LlmSettingsStub(), repository, mockk(), BackendFeatureFlags(),
                 TestToolCatalog(), namedModelNames = setOf("test-chat"))
