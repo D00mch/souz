@@ -1,6 +1,8 @@
 # File Tool Conventions
 
-File tools resolve paths in the invocation's sandbox. Use `~`, `$HOME`, `HOME`, or `home` for its home directory. The sandbox checks effective paths against the workspace root and forbidden folders. [Path resolution and Souz documents directory](../sharedLogic/src/commonJvmMain/kotlin/ru/souz/runtime/files/FilesToolUtil.kt) · [Sandbox rules](../sharedLogic/docs/runtime-sandbox-and-skills.md)
+File tools resolve paths in the invocation's sandbox. Use `~`, `$HOME`, or `home` for its home directory. [Path resolution and Souz documents directory](../sharedLogic/src/commonJvmMain/kotlin/ru/souz/runtime/files/FilesToolUtil.kt)
+
+LOCAL checks effective paths against its canonical home root and user-forbidden folders. A workspace at `~/project` still permits access to `~/Documents` unless explicitly forbidden. DOCKER checks effective paths against its mounted sandbox root and configured forbidden paths. [LOCAL boundary](../sharedLogic/src/jvmMain/kotlin/ru/souz/runtime/sandbox/local/LocalSandboxFileSystem.kt) · [DOCKER boundary](../sharedLogic/src/jvmMain/kotlin/ru/souz/runtime/sandbox/docker/DockerSandboxFileSystem.kt) · [Sandbox rules](../sharedLogic/docs/runtime-sandbox-and-skills.md)
 
 The attachment path normalizer trims whitespace, unwraps simple quotes, strips `file://`, and expands `~`. It returns a canonical absolute path for an existing regular file and `null` otherwise. [Normalization](../sharedLogic/src/commonJvmMain/kotlin/ru/souz/runtime/files/FilesToolUtil.kt)
 
