@@ -41,6 +41,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import org.jetbrains.compose.resources.stringResource
+import ru.souz.LocalWindowScope
 import ru.souz.agent.session.GraphSession
 import ru.souz.agent.session.GraphStepRecord
 import ru.souz.ui.GraphColors
@@ -53,6 +56,11 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.JsonNode
 import androidx.compose.material.icons.rounded.Check
 import java.awt.Cursor
+import souz.sharedui.generated.resources.Res
+import souz.sharedui.generated.resources.graph_session_export
+import souz.sharedui.generated.resources.graph_session_export_failed
+import souz.sharedui.generated.resources.graph_session_export_notice
+import souz.sharedui.generated.resources.graph_session_export_saved
 
 private val jsonMapper = ObjectMapper()
 private val horizontalResizePointerIcon = PointerIcon(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR))
@@ -461,6 +469,12 @@ fun GraphVisualizationScreen(
     session: GraphSession,
     onBack: () -> Unit,
 ) {
+    val owner = LocalWindowScope.current?.window
+    val exportViewModel = viewModel(key = "session-export-${session.id}") {
+        val exporter = GraphSessionExporter { fileName -> chooseGraphSessionExportDestination(owner, fileName) }
+        GraphSessionExportViewModel(exporter::export)
+    }
+    val exportState by exportViewModel.uiState.collectAsState()
     var collapsedSubgraphs by remember { mutableStateOf(setOf<String>()) }
     val graphData = remember(session, collapsedSubgraphs) { 
         processSessionData(session, collapsedSubgraphs) 
@@ -559,8 +573,26 @@ fun GraphVisualizationScreen(
             Column(modifier = Modifier.fillMaxSize()) {
                 // Header - Draggable area for window
                 DraggableWindowArea {
-                    HeaderRow(session = session, onBack = onBack)
+                    HeaderRow(
+                        session = session,
+                        onBack = onBack,
+                        isExporting = exportState.isExporting,
+                        onExport = { exportViewModel.export(session) },
+                    )
                 }
+                Text(
+                    text = when {
+                        exportState.failed -> stringResource(Res.string.graph_session_export_failed)
+                        exportState.savedPath != null -> stringResource(
+                            Res.string.graph_session_export_saved, exportState.savedPath.toString()
+                        )
+                        else -> stringResource(Res.string.graph_session_export_notice)
+                    },
+                    modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (exportState.failed) MaterialTheme.colorScheme.error
+                        else MaterialTheme.glassColors.textPrimary,
+                )
 
                 // Main Content Split
                 BoxWithConstraints(
@@ -666,7 +698,9 @@ fun GraphVisualizationScreen(
 @Composable
 fun HeaderRow(
     session: GraphSession,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    isExporting: Boolean,
+    onExport: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -682,7 +716,7 @@ fun HeaderRow(
                 tint = MaterialTheme.glassColors.textPrimary
             )
         }
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = "Session Visualization",
                 style = MaterialTheme.typography.titleMedium,
@@ -694,6 +728,9 @@ fun HeaderRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
             )
+        }
+        OutlinedButton(onClick = onExport, enabled = !isExporting) {
+            Text(stringResource(Res.string.graph_session_export))
         }
     }
 }

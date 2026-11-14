@@ -361,6 +361,10 @@
 
     <!-- Graph Sessions -->
     <string name="graph_sessions_title">История сессий графа</string>
+    <string name="graph_session_export">Экспорт JSON</string>
+    <string name="graph_session_export_notice">Экспорт содержит запросы и данные инструментов. Проверьте файл перед отправкой.</string>
+    <string name="graph_session_export_saved">Сессия экспортирована в %1$s</string>
+    <string name="graph_session_export_failed">Не удалось экспортировать сессию. Попробуйте ещё раз и выберите доступную для записи папку.</string>
     <string name="graph_sessions_count_format">%d сессий</string>
     <string name="action_close">Закрыть</string>
     <string name="graph_sessions_empty">Нет сохранённых сессий.\nОтправьте запрос агенту, чтобы создать первую сессию.</string>

@@ -365,6 +365,10 @@
 
     <!-- Graph Sessions -->
     <string name="graph_sessions_title">Graph Session History</string>
+    <string name="graph_session_export">Export JSON</string>
+    <string name="graph_session_export_notice">Export includes prompts and tool data. Review the file before sharing.</string>
+    <string name="graph_session_export_saved">Session exported to %1$s</string>
+    <string name="graph_session_export_failed">Could not export the session. Try again and choose a writable location.</string>
     <string name="graph_sessions_count_format">%d sessions</string>
     <string name="action_close">Close</string>
     <string name="graph_sessions_empty">No saved sessions.\nSend a request to the agent to create the first session.</string>
