@@ -1,24 +1,13 @@
 # JVM plugins
 
-Plugins are trusted in-process Java 21 code. The independent [SDK](../../plugin-api/docs/plugin-contract.md)
-exposes stateless suspending tool handlers with JSON string schemas, arguments and results.
-There are no lifecycle callbacks. Only the SDK, Kotlin and coroutines are shared;
-private classes, resources and service providers cannot fall back to the backend classpath.
-Plugin context classloaders follow coroutine suspension. Local JAR resource handles are not cached globally.
+Run only reviewed Java 21 plugins with backend process privileges. Expose tools through
+`enabledTools` and reserve their names even when unavailable. [SDK contract](../../plugin-api/docs/plugin-contract.md)
 
-The backend uses one concrete PostgreSQL repository for registry, state, leases and incidents.
-`BackendPluginRuntime` owns versions, execution references and actual calls; polling, renewals and
-failure deadlines use reserved control threads independently of shared Default CPU work and foreign IO workers.
-Lifecycle deadlines include time queued for a worker. Cancellation callbacks run outside the coordinator
-and control threads, with recovery observation armed before cancellation.
-Invocation deadlines also belong to control, so they do not require a starved caller to resume.
-`PluginServices` creates one revocable owner-bound context per
-invocation. A dedicated administration service coordinates authenticated REST mutations
-with the repository and immutable artifact store.
+Credential-free Client-Souz executions receive no plugin catalogue or bindings, regardless of the claimed owner's enabled-tool selection. Matching caller-supplied UUIDs do not authorize plugin services.
 
 ## Configuration and administration
 
-Configure a private artifact bucket separately from expiring user-file storage:
+Configure a private artifact bucket separately from expiring user-file storage.
 
 ```text
 SOUZ_PLUGINS_S3_ENDPOINT=https://s3.example.com
@@ -30,122 +19,64 @@ SOUZ_PLUGINS_S3_PATH_STYLE=true
 SOUZ_PLUGINS_ADMIN_TOKEN=...
 ```
 
-Artifact runtime configuration is optional. Administration is disabled without its token.
-Use `Authorization: Bearer <SOUZ_PLUGINS_ADMIN_TOKEN>`; user/proxy credentials do not authorize it.
-All operations appear in the generated OpenAPI document and Swagger UI, including a binary file picker.
+Administration requires artifact storage and the dedicated operator bearer token. Swagger at
+`/docs` documents mutations, limits, and errors. Run from the repository root after
+[building the hello example](../../plugin-api/docs/plugin-contract.md#build-and-package).
 
-| Method | Path under `/admin/v1/plugins` | Input |
-| --- | --- | --- |
-| POST | `/install` | Multipart `jar` file and `expectedRevision` |
-| GET | empty path | Registry and serving replica status |
-| GET | `/{id}` | One plugin's status |
-| PUT | `/{id}/selection` | JSON `version`, `expectedRevision` |
-| POST | `/{id}/disable` | JSON `expectedRevision` |
-| POST | `/{id}/versions/{version}/retire` | JSON `expectedRevision` |
-| POST | `/{id}/versions/{version}/reenable` | JSON `expectedRevision` |
+```bash
+curl --fail-with-body -H "Authorization: Bearer ${SOUZ_PLUGINS_ADMIN_TOKEN}" \
+  -F "jar=@plugin-api/examples/hello/build/libs/souz-plugin-hello.jar" \
+  -F "expectedRevision=0" http://localhost:8080/admin/v1/plugins/install
+curl --fail-with-body -H "Authorization: Bearer ${SOUZ_PLUGINS_ADMIN_TOKEN}" \
+  http://localhost:8080/admin/v1/plugins/hello
+```
 
-Revision zero creates a plugin; subsequent mutations compare the current revision.
-Uploads authenticate before body consumption, stream to a temporary file, and allow at most
-64 MiB in 120 seconds. Manifest identity, SHA-256, ABI fingerprint, Java requirement,
-bounded expanded archive and exactly one local ServiceLoader provider are checked without executing plugin code.
-Identity never comes from the uploaded filename.
+Require the current revision for mutations, or zero for a new plugin. Authenticate before consuming
+uploads and validate bounded archives without running plugin code. Persist the immutable artifact
+before updating selection. Each ID/version binds to one digest. Retain artifacts for exact restoration.
+`202 Accepted` confirms the desired state commit. Check the serving replica's applied state for rollout.
+[Administration](../src/main/kotlin/ru/souz/backend/plugins/PluginAdministration.kt)
 
-The host stores immutable `plugins/<sha256>.jar` objects before committing registry selection
-in PostgreSQL. The same ID/version cannot refer to different bytes. Mutations return
-`202 Accepted` with committed desired version, digest and revision; acceptance does not mean rollout completed.
-Status includes authoritative desired state and the serving replica's ID and observed/applied state.
-Structured errors distinguish invalid input, unauthorized access, revision/identity conflict,
-upload timeout/size and unavailable storage. Failed mutations preserve working registry state.
-Retain all installed artifacts; garbage collection is not implemented.
+## Versions and durable pins
 
-## Reconciliation and versions
+Each logical request persists exact `(pluginId, version, digest)` pins with its settings.
+Subagents inherit the catalogue. Saved user waits release in-memory references and restore the
+same pins on continuation. Missing, corrupt, incompatible or quarantined pins fail explicitly.
+Legacy executions without pins receive no plugins.
 
-Each replica reconciles immediately at startup, then waits 60 seconds plus independently sampled
-uniform 0–15 second jitter after each completed poll. Preparation runs separately. Failed preparation
-becomes retry-eligible after 30 seconds and retries during a later poll.
-Lease renewals and invocation admission operate independently of this poll cadence.
+A failed rollout can leave an eligible previous default applied. Retirement blocks new assignments
+but preserves pinned continuations. Unload retired code only after references and calls drain.
+Reselecting a retired version restores eligibility. Disable blocks every version's new calls.
+Quarantine blocks new calls to the digest, including pinned calls, until explicitly cleared.
+Already admitted calls may finish.
+[Runtime](../src/main/kotlin/ru/souz/backend/plugins/BackendPluginRuntime.kt) ·
+[`SOUZ_PLUGINS_*` settings and defaults](../src/main/kotlin/ru/souz/backend/plugins/PluginRuntimeConfig.kt)
 
-Enabled plugins keep every eligible non-retired version loaded, including idle and unselected versions.
-Disabled plugins do not start background preparation; exact existing pins may still restore their code,
-while authoritative invocation admission rejects further calls.
-Installing a new default does not retire an earlier version. Failed activation retains the previous
-applied default only while that version remains eligible. Explicit retirement prevents new assignments;
-the selected version's retirement without replacement makes new requests unavailable.
-Retired artifacts unload after execution references and actual calls drain, and reload for valid durable pins.
-Explicit selection can reactivate a retired version. Quarantine blocks subsequent calls to a digest,
-including pinned continuations; selecting another version never clears it. Disable blocks every version's
-subsequent calls. Calls already admitted may finish.
+## Invocation and recovery
 
-Logical requests persist `(pluginId, version, digest)` alongside their settings snapshot before execution.
-Credential-free Client-Souz executions receive no plugin catalog or bindings, regardless of the claimed
-owner's enabled-tool selection. Matching caller-supplied user UUIDs do not authorize plugin services.
-Subagents inherit the selected catalog. Saved user waits release in-memory references while retaining pins;
-continuations restore only those artifacts. Missing, corrupt, incompatible or quarantined pins fail explicitly.
-Legacy executions with no pins receive no plugins. Working files are disposable, digest-verified and
-atomically published, then removed after unloading. There is no fixed loaded-version cap.
+Renewable leases serialize invocations by `(userId, pluginId)` across replicas and versions.
+Fence state operations transactionally and other services before dispatch. Release database
+connections while running plugin code. [Leases and state](../src/main/kotlin/ru/souz/backend/plugins/PostgresPluginRepository.kt)
 
-## Invocation services and recovery
+Queue timeout prevents handler start and any late claim must be released. Invocation timeout can
+leave effects uncertain. Never replay automatically. Cancellation, timeout, and lease loss revoke
+services and request cancellation. Keep renewing while timed-out code runs unless ownership is lost.
+Lease expiry can admit new work while old code runs, and dispatched effects can still complete.
 
-Complete invocations serialize by `(userId, pluginId)` across replicas and versions through renewable
-PostgreSQL leases. Waiting is cancellable; FIFO is not promised. No database connection or transaction
-stays open throughout plugin execution. Each admission has a unique fencing token. State writes verify
-current unexpired ownership atomically; other services check ownership before dispatch.
-Renewal starts at the invocation handoff, including time queued for a worker; handler entry checks current ownership.
+Keep watchdogs independent of plugin workers and cancellation callbacks. Arm recovery before
+cancelling and keep work accounted for and watched through cleanup, even after successful replies.
+The user/plugin breaker is database-coordinated and the version breaker is replica-local. Only
+technical failures count. After cooldown, one ordinary invocation probes recovery.
 
-State is owner/plugin-scoped JSON with 1 MiB records and paginated listing. It exposes no callbacks or CAS.
-Plugin JDBC operations bound socket reads, including transaction completion, to five seconds;
-pool acquisition retains the datasource's configured bound. Admission IO belongs to the runtime,
-so queue timeout or caller cancellation stops waiting promptly and never starts a late handler.
-Late acquired leases are released by the host and stalled admission triggers recovery.
-HTTP accepts any HTTP(S) destination with bounded metadata and 1 MiB bodies, cancellation, and no inherited
-credentials, redirects, cookies or automatic retries. OAuth keeps tokens host-owned and permits bounded
-streaming responses up to 36 MiB. Owner-scoped
-S3 file IDs use existing attachment limits and retention without resolving a sandbox. Channel sends use
-existing owner-scoped providers; failed/interrupted delivery may have an unknown outcome. Log only bounded
-operational messages, never credentials, arguments or stored user data.
-
-Cancellation, timeout and lease loss revoke service access and request cancellation, while actual code
-retains resource accounting until it exits. Renewal continues while timed-out code remains active unless
-ownership is lost. Lease expiry may admit another invocation while old code still runs; dispatched external
-effects cannot be undone by fencing. Never automatically replay a call. Queue timeout means the handler
-did not start; invocation timeout means its outcome may be unknown.
-The grace watchdog remains active through outcome persistence, renewal shutdown and lease release,
-including successful calls. The reply can precede this cleanup; accounting ends only when cleanup exits.
-
-All numeric settings use `SOUZ_PLUGINS_` plus these suffixes (milliseconds unless stated):
-
-| Setting suffix | Default |
-| --- | ---: |
-| `POLL_MILLIS` / `JITTER_MILLIS` | 60000 / 15000 |
-| `QUEUE_MILLIS` / `CALL_MILLIS` | 60000 / 60000 |
-| `LEASE_MILLIS` / `RENEW_MILLIS` | 90000 / 10000 |
-| `PREPARE_MILLIS` / `RETRY_MILLIS` | 30000 / 30000 |
-| `CLEANUP_MILLIS` / `GRACE_MILLIS` | 10000 / 30000 |
-| `SHUTDOWN_MILLIS` / `UPLOAD_MILLIS` | 30000 / 120000 |
-| `USER_FAILURE_THRESHOLD` | 5 consecutive technical failures |
-| `VERSION_FAILURE_THRESHOLD` / `VERSION_MINIMUM_USERS` | 10 failures / 3 users |
-| `VERSION_WINDOW_MILLIS` / `COOLDOWN_MILLIS` | 60000 / 30000 |
-| `SEVERE_INCIDENT_THRESHOLD` | 3 incidents per digest |
-
-The user/plugin breaker is database-coordinated; the version breaker is replica-local. After cooldown,
-one ordinary invocation probes recovery. Authorization, validation, business errors and caller cancellation
-do not count as technical failures. Stuck work beyond grace or unrecoverable cleanup creates an idempotent
-durable severe incident. Successful calls do not reset the count; explicit re-enable does.
-Admission and reconciliation prune expired version-failure history, including idle loaded versions.
-
-Unrecoverable incidents stop intake, persist diagnostics/quarantine, and trigger bounded process shutdown.
-A process watchdog forces failure exit if shutdown stalls. Shared services remain open beneath live plugin
-code. Deploy with restart-on-failure, as in the repository Compose service. Routine updates and retirement
-do not restart the backend. Plugin leases do not implement general agent-execution failover.
-Runtime-owned polling cannot hold up the earlier application-work join. Every shutdown phase, including
-poller/work/control joins and filesystem cleanup, shares the shutdown budget. Concurrent and repeated
-shutdown callers observe one drain task; a budget expiry returns false while actual work remains owned.
-These guarantees localize defective trusted plugins; arbitrary in-process code can still exhaust process resources.
+Stalled work or unrecoverable cleanup stops intake, records a durable incident once, and triggers
+bounded process shutdown. Repeated incidents quarantine the digest. Only explicit re-enable resets
+the incident count. Share one shutdown drain and keep host resources open while plugin code runs.
+Force failure exit on a stalled drain and deploy with restart-on-failure. [Compose](../../compose.yaml)
 
 ## Verification
 
 Run `./gradlew :backend:test :plugin-api:check` with Java 21 and Docker.
-The backend tests compile independent Java/Kotlin JARs and use PostgreSQL and MinIO.
-Reference artifacts run through the production catalog, including owner isolation and state restoration on another backend. Non-cooperative code
-and process termination are checked only in disposable JVMs. Build the independent SDK example using
-the [SDK instructions](../../plugin-api/docs/plugin-contract.md).
+[Admin E2E](../src/test/kotlin/ru/souz/backend/plugins/PluginAdministrationE2eTest.kt) exercises uploads
+against PostgreSQL and MinIO. [Execution E2E](../src/test/kotlin/ru/souz/backend/e2e/BackendPluginExecutionE2eTest.kt)
+covers production catalogue and pin restoration. Verify non-cooperative work and process termination
+in [disposable JVMs](../src/test/kotlin/ru/souz/backend/plugins/PluginLifecycleLivenessProcessTest.kt).

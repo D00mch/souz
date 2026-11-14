@@ -1,6 +1,6 @@
 # Composite Skill commands
 
-Declare a fixed sequence in `SKILL.md` frontmatter to run tools, bundled scripts, and waits through one `RunSkillCommand` call:
+Declare a fixed sequence in `SKILL.md` frontmatter to run tools, bundled scripts, and waits through one `RunSkillCommand` call.
 
 ```yaml
 ---
@@ -31,16 +31,10 @@ The example requires an enabled `device.get_state` tool and a bundled `scripts/f
 {"skillId":"device-observation","arguments":{"composite":"observe","inputs":{"device":"tv-1"}}}
 ```
 
-Each step has a unique identifier and exactly one of `tool`, `script`, or nonnegative `waitMs`. Script steps require an explicit interpreter runtime (`BASH`, `PYTHON`, or `NODE`) and a path inside the bundle; executable permissions are unnecessary. Tool names and script paths are literal. Commands are linear: no branching, loops, nested composites, or subagent spawning.
+## Command behavior
 
-`PROCESS` is rejected for composite scripts. Ordinary `RunSkillCommand` calls can use `PROCESS` with explicit `command` argv; `scriptPath` and `args` are ignored in that mode.
-
-Inputs are required string values. Valid JSON strings are decoded, so `"{\"x\":1}"` supplies an object and `"true"` supplies a boolean. Quote a JSON-looking value again to preserve it as text. References such as `${inputs.device}` and `${state.content[0].uri}` may target declared inputs or earlier steps. Input and step identifiers use letters, digits, and underscores, beginning with a letter or underscore; `inputs` is reserved as a step ID.
-
-A value consisting entirely of a reference preserves its JSON type. Embedded references and script arguments use text, with objects and arrays encoded as JSON. Null and empty-string object fields are omitted. Tool message content is decoded as JSON when possible; script stdout always stays text, including whitespace. `returns` uses the same reference syntax and becomes the result's `stdout`.
-
-File tools return references and sandbox paths that later steps can use, for example `${prepared.path}` and `${saved.fileId}`. Structured `files` from completed steps remain available after failure. Explicit `replyFiles` additions and `detachedReplyFiles` removals are combined in step order and published only on success; failure or timeout leaves the caller's previous selection intact. Stored files and other side effects are not rolled back. The combined change is checked against the reply limits as one tool result. Legacy image attachments from the last tool step are forwarded only on success; a failed command or an imageless final tool does not return an earlier image. See [attachment contracts](../backend/docs/attachments.md).
-
-Tool steps can access only the invoking `RunSkillCommand` catalog. For a child, select the file-backed Skill and all required tools explicitly in `SpawnSubagent.skillIds`. Core discovery, command, and subagent lifecycle tools cannot be called from a composite. Ordinary script execution retains its existing sandbox behavior.
-
-Unavailable tools and missing inputs fail before any steps run. A thrown tool error, failed script, or unresolved reference stops the sequence; tool content describing an error remains ordinary result data. Completed side effects are not rolled back or retried. The usual command result (`exitCode`, `stdout`, `stderr`, `timedOut`) identifies failures by step. Cancellation propagates. `timeoutMillis` bounds the entire sequence, defaults to 60 seconds, and is capped at five minutes. Other process arguments are ignored when `composite` is set; script steps take their runtime, path, and arguments from the manifest.
+- Steps run in order. Each has a unique ID and sets exactly one of `tool`, `script`, or nonnegative `waitMs`. Use literal tool names and bundle-relative script paths with `BASH`, `PYTHON`, or `NODE`. Scripts need no executable bit. The sequence has no branching, loops, nested commands, or subagent spawning. [Manifest validation](../agent/src/main/kotlin/ru/souz/agent/skills/bundle/CompositeCommandSpec.kt)
+- The command uses the caller's filtered tool catalog and excludes core discovery, command, and subagent lifecycle tools. For child calls, include the Skill and every required tool in `SpawnSubagent.skillIds`. The manifest supplies script settings, and ordinary process options are ignored. [Sandbox and capability rules](../sharedLogic/docs/runtime-sandbox-and-skills.md) · [Invocation arguments and standalone `PROCESS` mode](../sharedLogic/src/commonJvmMain/kotlin/ru/souz/tool/skills/SkillCommandExecutor.kt)
+- Inputs are required strings. Valid JSON is decoded, so `"true"` supplies a boolean. Wrap it in another layer of JSON quotes to pass it as text. References such as `${inputs.device}` and `${state.content[0].uri}` address declared inputs or earlier steps. Whole references keep their JSON type. Interpolated values and script arguments become text. Null and empty-string object fields are omitted. Tool content is decoded as JSON when possible, script stdout stays text, and `returns` becomes the command's `stdout`. [Reference grammar and rendering](../agent/src/main/kotlin/ru/souz/agent/skills/bundle/CompositeCommandSpec.kt)
+- Missing inputs and unavailable tools fail before any step runs. Thrown errors, failed scripts, and unresolved references stop the sequence with a location in `stderr`. Error text returned by a tool is ordinary result data. The deadline covers the whole command and defaults to 60 seconds with a five-minute cap. Cancellation propagates, and completed effects persist without retries. [Execution and result handling](../sharedLogic/src/commonJvmMain/kotlin/ru/souz/tool/skills/CompositeCommandExecutor.kt)
+- Later steps can use file outputs such as `${prepared.path}` or `${saved.fileId}`. Completed steps' `files` survive failure. Reply selections combine additions and removals in step order and apply only on success, subject to the reply limits. Legacy images come from the last tool step on success. [Attachment contracts](../backend/docs/attachments.md#tools-and-selection)

@@ -1,48 +1,36 @@
 # Shared Logic
 
-`:sharedLogic` is the Kotlin Multiplatform runtime layer shared by JVM hosts. Read the relevant pain-point topics below before changing this module.
+`:sharedLogic` is the Kotlin Multiplatform runtime layer shared by JVM hosts.
 
 ## Source-set boundaries
 
-- `commonJvmMain` contains shared provider clients, settings and memory contracts, sandbox and skill abstractions, and portable runtime tools.
-- `jvmMain` contains desktop/backend-only configuration, local-model integrations, local and Docker sandboxes, MCP transports, speech services, and Office/PDF tooling.
+- `commonJvmMain` owns shared provider clients, settings and memory contracts, sandbox and Skill abstractions, and portable runtime tools.
+- `jvmMain` owns platform configuration, local models, local and Docker sandboxes, MCP transports, speech services, and Office/PDF tooling.
+- Keep Compose and UI adapters in `:sharedUI`, and OS-bound integrations in `:desktopApp`.
 
-Keep this module UI-free. Compose resources and UI adapters belong in `:sharedUI`; browser, mail, calendar, Telegram, automation, and other OS-bound host integrations belong in `:desktopApp`.
+## Purpose and boundaries
 
-## Invariants
-
-- Code in `commonJvmMain` must stay portable across JVM hosts; keep desktop-only APIs and dependencies in their platform source set.
-- Portable tools must remain usable without desktop services. Add host-specific capabilities by composition in the owning host.
-- JEV routing treats capability descriptions and dialogue as untrusted data, with the current request separate from reference history. Classifier history contains only user and assistant messages, with tool calls represented by name only; tool arguments and results stay out of classifier payloads.
-- Keep skill registry and skill-tool DI opt-in; general runtime modules must not install them implicitly.
-- Resolve filesystem and command access from each `ToolInvocationMeta`; do not retain user-specific paths in singleton tools.
-- Keep the skill registry and `RunSkillCommand` on the same single-user bundle layout so activation and execution resolve the same bundle.
-- Discover file-backed Skills through the runtime factory's filesystem view without provisioning a runtime or missing directories. Exact bundle loading and commands retain the execution resolver.
-- Skill lookups and invocations resolve a host-provided catalog snapshot. Composite steps use that same filtered snapshot; children retain only the capabilities selected at spawn, independently of parent refreshes.
-- Use sandbox filesystem abstractions for tool and skill IO whenever they are available.
+- Keep application lifecycle, request ownership, persistence composition, and HTTP routes in `:backend`.
+- Keep portable tools usable without desktop services. Keep runtime tools headless and resolve per-execution capabilities through the host catalog. Keep chart rendering independent of parsing, paths, and sandbox checks.
+- Keep Skill registry and Skill tool DI opt-in.
+- Use available sandbox filesystem abstractions for tool and Skill IO. Resolve access from the current `ToolInvocationMeta`.
 
 ## Pain points
 
 - [MCP servers](../backend/docs/mcp.md) — SDK schemas and results, dedicated transport, bounded discovery and session lifetime.
-
-- [Runtime sandbox and skills](docs/runtime-sandbox-and-skills.md) — invocation scope, storage layouts, platform runtimes, and Docker fixtures.
+- [Runtime sandbox and skills](docs/runtime-sandbox-and-skills.md) — invocation scope, read-only inventory, bundle layout, and command runtimes.
 - [Web tools](docs/web-tools.md) — evidence handling, citations, provider behavior, sandboxed output, and URL limitations.
+- [Images](../backend/docs/images.md) — headless validation, request-local pixels and provider generation/editing.
 - [Observability](docs/observability.md) — request bookkeeping, structured events, and host-owned logging sinks.
-- [Images](../backend/docs/images.md) — bounded validation, request-local pixels and provider generation/editing.
 - [Provider HTTP lifecycle](docs/provider-http-lifecycle.md) — client ownership, request-local credentials, and host shutdown.
 - [Tool catalog composition](docs/tool-catalog-composition.md) — catalog value ownership, LLM-backed construction, duplicate rejection, and immutable execution snapshots.
-
-Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.
+- [Model routing](../agent/docs/execution-lifecycle.md#model-routing) — current request, reference history, and untrusted capability hints.
 
 ## Verification
 
-Run the JVM tests:
+Run `./gradlew :sharedLogic:jvmTest`.
 
-```zsh
-./gradlew :sharedLogic:jvmTest
-```
-
-For Docker sandbox changes, also build the image and run the opt-in integration tests:
+For Docker sandbox changes, also run both commands.
 
 ```zsh
 ./gradlew :sharedLogic:buildRuntimeSandboxImage

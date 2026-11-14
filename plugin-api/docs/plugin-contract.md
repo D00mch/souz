@@ -1,102 +1,56 @@
 # Trusted JVM plugin SDK
 
-Plugins are reviewed, operator-installed Java 21 code running inside the backend.
-Classloaders isolate dependencies, not privileges, CPU, memory or native code.
-The SDK supplies stateless handlers; resources belong to the host. Constructors
-and tool metadata must be side-effect-free. Do not retain invocation contexts,
-create threads, or launch detached work. Await structured coroutines before
-returning and propagate cancellation.
+Operators install reviewed Java 21 code that runs with backend process privileges.
+Classloaders isolate dependencies. Plugins share process resources and can exhaust them.
+The host owns resources and invokes stateless handlers.
+Keep constructors and metadata side-effect-free. Do not retain invocation contexts, create
+threads or launch detached work. Await structured coroutines and propagate cancellation.
 
 ## Build and package
 
-Publish the SDK locally with `./gradlew :plugin-api:publishToMavenLocal` and compile
-against `compileOnly("ru.souz:plugin-api:2.0.0")`. The
-[standalone example](../examples/hello/build.gradle.kts) builds using
-`./gradlew -p plugin-api/examples/hello jar`.
+Run from the repository root with Java 21.
 
-Implement `ru.souz.plugins.api.SouzPlugin` with one public no-argument provider.
-Register its class in `META-INF/services/ru.souz.plugins.api.SouzPlugin`. Each
-`PluginTool` contains a local name, description, JSON object input schema, domain
-category such as `MAIL`, and a suspending `(String, PluginContext) -> String`
-handler. Both arguments and results are JSON strings. The host validates schemas
-and arguments and exposes names as `plugin.<pluginId>.<toolId>`.
-
-The JAR manifest requires:
-
-```text
-Souz-Plugin-Id: hello
-Souz-Plugin-Version: 1.0.0
-Souz-Plugin-Api: 2;kotlin=2.4.10;coroutines=1.11.0
-Souz-Plugin-Jvm: 21
+```bash
+./gradlew :plugin-api:publishToMavenLocal
+./gradlew -p plugin-api/examples/hello jar
 ```
 
-Artifacts must match the declared ABI fingerprint.
-Shared ABI classes are compile-only: `ru.souz.plugins.api.*`, `kotlin.*` and
-`kotlinx.coroutines.*`. Bundle all other dependencies, including any JSON library,
-and their resources/SPI in a flat JAR. External manifest `Class-Path` dependencies
-are unsupported. Private dependencies never fall back to the backend classpath.
-The context classloader follows calls across suspension. Library reflection caches
-and plugin-specific serializers remain private to the loaded version.
-Private libraries must not leave plugin objects in shared-worker thread locals.
-For Jackson factories, use `JsonRecyclerPools.nonRecyclingPool()`; the default
-thread-local buffer recycler can retain retired classloaders through soft references.
-Serialize nodes through that configured mapper: `JsonNode.toString()` and
-`toPrettyString()` use Jackson's separate internal default mapper and recycler pool.
+Use the [hello build](../examples/hello/build.gradle.kts) for the compile-only SDK dependency,
+Java toolchain and required manifest attributes. Implement one public no-argument
+[`SouzPlugin` provider](../examples/hello/src/main/kotlin/example/HelloPlugin.kt) and register it
+in [`META-INF/services/ru.souz.plugins.api.SouzPlugin`](../examples/hello/src/main/resources/META-INF/services/ru.souz.plugins.api.SouzPlugin).
+The [SDK signatures](../src/main/kotlin/ru/souz/plugins/api/Plugin.kt) define the ABI fingerprint
+and stateless suspending handlers with JSON object input schemas, JSON arguments and JSON results.
+The host exposes names as `plugin.<pluginId>.<toolId>` in the declared domain category.
+Use the [operator commands](../../backend/docs/jvm-plugins.md#configuration-and-administration) to install and verify rollout.
 
-Upload the JAR through the authenticated operator API in Swagger. Upload validates
-the archive without constructing its provider. A successful upload acknowledges
-registry acceptance; replica application is asynchronous.
+Keep the SDK, Kotlin and coroutines compile-only. Bundle private dependencies and their resources
+and service providers in a flat JAR. External manifest `Class-Path` entries are unsupported.
+Private classes and resources have no backend classpath fallback. The plugin context classloader
+follows suspension. Keep reflection and serializer caches private to each loaded version.
+Avoid storing plugin objects in shared-worker thread locals. For Jackson, use a mapper with
+`JsonRecyclerPools.nonRecyclingPool()` and serialize nodes through that mapper. `JsonNode.toString()`
+and `toPrettyString()` use the default recycler, which can retain retired classloaders.
+[Plugin classloader](../../backend/src/main/kotlin/ru/souz/backend/plugins/PluginClassLoader.kt)
 
 ## Invocation services
 
-The host supplies trusted identity, request/conversation IDs, locale and timezone.
-Arguments never select the storage owner or OAuth user.
+Use the host-supplied owner and invocation metadata. Arguments cannot select the storage owner
+or OAuth user. [Service implementation and limits](../../backend/src/main/kotlin/ru/souz/backend/plugins/PluginServices.kt)
 
-- `state` stores JSON strings under user/plugin-scoped keys, shared across
-  conversations and plugin versions. It supports get, put, delete and ordered
-  keyset listing. Records are bounded to 1 MiB. Complete invocations for the same
-  user/plugin are serialized by renewable PostgreSQL leases across replicas;
-  individual state operations use short transactions. No author-facing CAS or
-  transaction callback is required. Keep formats compatible across active versions.
-- `http` accepts HTTP(S) destinations and repeated headers, with bounded bodies and
-  deadlines. It has no backend authentication, redirects, retries or shared cookies.
-  Trusted authors validate destinations and external API semantics.
-- `oauth` supplies SDK-owned transport values and delegates authorization to the
-  host. Provider scopes and HTTPS host restrictions apply; tokens never cross the
-  boundary. `PluginReconnectRequired` carries a consent URL. Responses are bounded
-  while streaming, at most 36 MiB; `maxResponseBytes` can request a smaller bound.
-- `files.loadStored` and `files.saveStored` use owner-scoped
-  S3 file IDs and the existing file-storage size and expiry policy, without resolving
-  a sandbox.
-- `channels.send` uses the user's channel providers. A false result, exception or
-  cancellation may mean uncertain delivery. Persist intent before sending.
-- `log` suspends to verify invocation ownership, like the other host services. It
-  is for bounded operational messages, never tokens, arguments, HTTP bodies
-  or stored user data. `PluginException` contains a safe code/message and a failure
-  kind; use `TECHNICAL` for provider outages, not ordinary business or authorization
-  outcomes.
+- `state` stores bounded JSON shared across conversations and versions for one user/plugin. Keep
+  input and state formats compatible across coexisting versions. Publish a new capability ID
+  for breaking behavior. Selecting an earlier version leaves stored state intact.
+- `http` supports HTTP(S) without inherited credentials, redirects, shared cookies or automatic
+  retries. Validate destinations. `oauth` uses host-owned tokens and enforces provider scopes
+  and HTTPS host restrictions. Handle `PluginReconnectRequired` for consent.
+- `files` uses owner-scoped stored-file IDs and existing size and expiry rules without resolving
+  a sandbox. A false result, exception or cancellation from `channels.send` can mean uncertain
+  delivery. Persist business intent before sending and reconcile uncertain effects before retrying.
+- `log` and `PluginException` messages must be safe to expose. Omit credentials, arguments, HTTP
+  bodies and stored user data. Reserve `TECHNICAL` for failures such as provider outages.
 
-## Lifetime and failure
-
-One logical request keeps the same ID/version/digest through subagents, saved user
-waits and restarts. New requests use the selected default. User tool-setting changes
-affect new requests; operator disable and version quarantine block subsequent calls
-from existing bindings too. Retirement stops new assignments but permits pinned
-continuations. Selecting another version does not retire the previous version.
-
-The default slot wait is 60 seconds; after admission, the invocation deadline is
-60 seconds. A queue timeout means the handler did not start. An invocation timeout
-can mean an external action occurred without acknowledgement. The host never
-automatically replays an invocation. Resources remain accounted for until actual
-work exits, even when cancellation is ignored.
-
-On cancellation or lease loss, service use is revoked. A renewable lease cannot
-stop arbitrary code or retract an already dispatched external action; expiry can
-admit another invocation while uncooperative old code still runs. Durable business
-reservations remain necessary to avoid duplicate external effects. Do not swallow
-lease failures to continue a workflow.
-
-Authors preserve old inputs and shared data formats across coexisting versions,
-or publish a new capability ID for breaking behavior. Rollback does not roll back
-stored user state. Old artifacts remain in S3 for exact pinned continuations;
-incompatible or missing artifacts fail restoration explicitly.
+On cancellation or lease failure, stop work and propagate the failure. Use durable reservations
+for external effects that could otherwise repeat after an uncertain outcome.
+[Versions and pins](../../backend/docs/jvm-plugins.md#versions-and-durable-pins) ·
+[Invocation and recovery](../../backend/docs/jvm-plugins.md#invocation-and-recovery)
