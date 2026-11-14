@@ -1,45 +1,16 @@
 # Graph Engine
 
-`graph-engine` is a small, framework-free runtime for composing suspendable Kotlin nodes into typed execution graphs. The public API lives in `ru.souz.graph` and stays intentionally narrow: `Node`, `Graph`, `buildGraph`, `graph`, `GraphRuntime`, `RetryPolicy`, `StepInfo`, and `GraphCancellation`.
-
-## Core API
-
-- `Node<IN, OUT>` is the basic unit of work: `suspend fun execute(ctx: IN, runtime: GraphRuntime): OUT`.
-- `Node(name) { input -> ... }` is the convenience factory for simple nodes. The generated runtime name keeps the provided label and adds a unique suffix.
-- `Graph<IN, OUT>` also implements `Node<IN, OUT>`, so a graph can be used as a node inside another graph.
-- `GraphBuilder<IN, OUT>` exposes `nodeInput` and `nodeFinish` sentinel nodes for graph entry and exit.
-- `source.edgeTo(target)` registers a static transition. Calling it multiple times from the same source creates fan-out.
-- `source.edgeTo { output -> nextNode }` registers a dynamic transition that chooses the next node from the previous output.
-- `buildGraph(...)` builds a graph eagerly.
-- `graph(...)` returns a lazy property delegate that builds once on first access and then caches the graph.
-
-Use the lambda factory for most nodes. If a node needs access to `GraphRuntime`, implement `Node<IN, OUT>` directly instead of using `Node(name) { ... }`.
+`graph-engine` is a framework-free runtime for composing suspendable Kotlin nodes into typed execution graphs. Build a graph eagerly with `buildGraph` or lazily with the `graph` property delegate. A graph is itself a node and can run inside another graph. [Graph API](src/main/kotlin/ru/souz/graph/Graph.kt) · [Node API](src/main/kotlin/ru/souz/graph/Node.kt)
 
 ## Execution model
 
-- `graph.start(seed, maxSteps, onStep)` creates a fresh `GraphRuntime` and executes the graph.
-- The runner uses a FIFO queue, so sibling branches are explored breadth-first.
-- A graph finishes when `nodeFinish` is executed. In practice, terminal nodes should always route explicitly to `nodeFinish`.
-- `maxSteps` protects against accidental loops.
-- Nested graphs reuse the same runtime, so retries, step counting, and tracing flow through subgraphs.
-- `RetryPolicy(maxAttempts, shouldRetry)` decides whether a failed node should be retried. `CancellationException` is never retried.
-- Coroutine cancellation is wrapped into `GraphCancellation(lastContext)`, which preserves the last successfully produced context.
-- `onStep` is invoked after each successful node execution and receives `(StepInfo, node, from, to)`.
-- `StepInfo.index` is the global step counter for the whole run.
-- `StepInfo.currentGraphIndex` currently reflects the frame depth inside the active graph run.
-- `StepInfo.graphName`, `graphDepth`, and `isSubgraph` describe the current graph scope and nested subgraph depth.
+- `edgeTo(target)` wires a static route. `edgeTo { output -> nextNode }` chooses a route from the node output. Multiple edges enqueue fan-out in registration order and run breadth-first. Reaching `nodeFinish` ends that graph even if siblings remain queued.
+- Each run has a fresh runtime. Subgraphs share retries, tracing, and the `maxSteps` loop guard.
+- Cancellation bypasses retries. A `CancellationException` caught by the runner is wrapped in `GraphCancellation` with the last context that runner recorded. [Runner](src/main/kotlin/ru/souz/graph/GraphRunner.kt) · [Trace fields](src/main/kotlin/ru/souz/graph/GraphRuntime.kt)
 
 ## Example
 
-The executable example lives in `src/test/kotlin/ru/souz/graph/GraphReadmeExampleTest.kt`.
-It covers:
-
-- a typed pipeline built with `buildGraph`
-- a nested subgraph used as a node
-- a custom `RetryPolicy`
-- step tracing through `onStep`
-
-Run it with:
+Run the typed pipeline with dynamic routing, a nested graph, custom retries, and tracing. [Executable example](src/test/kotlin/ru/souz/graph/GraphReadmeExampleTest.kt)
 
 ```bash
 ./gradlew :graph-engine:test --tests ru.souz.graph.GraphReadmeExampleTest
@@ -49,9 +20,7 @@ For lazy initialization inside an owning class, use `val pipeline by graph<Strin
 
 ## Guidelines
 
-- Keep node types explicit. The target node input type must match the source node output type.
-- Use dynamic routing when only one branch should continue from a node.
-- Use fan-out only when it is acceptable for multiple siblings to be queued and executed.
+- Match the target input type to the source output and route every terminal branch to `nodeFinish`. Use a single dynamic edge when only one branch should continue.
 - Keep reusable detail inside subgraphs and wire top-level graphs in business-level steps.
 - Limit retries to idempotent or otherwise safe nodes.
-- If you only care about the top-level flow in `onStep`, filter out `step.isSubgraph`.
+- Filter out `step.isSubgraph` to trace only the top-level flow.

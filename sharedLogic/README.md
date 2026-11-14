@@ -1,218 +1,67 @@
 # Shared Logic
 
-`:sharedLogic` is the Kotlin/JVM runtime layer used by the backend. Production code and resources live under `src/main`; tests live under `src/test`.
-
-It provides remote LLM clients, Skill storage and command execution, sandboxed filesystem access, and backend-safe runtime tools. Application composition and persistence ownership stay in `:backend`.
+`:sharedLogic` provides the backend's Kotlin/JVM provider clients, classifiers, Skill runtime, sandboxes, and tools. See [sandbox and Skill storage](docs/runtime-sandbox-and-skills.md) and [tool catalog composition](docs/tool-catalog-composition.md).
 
 ## Jev classification
 
-`ru.souz.jev.JevClient` evaluates named yes/no questions through the [hosted TypeSafe API](https://api.typesafe.ai/docs)
-and returns their probabilities. Shared runtime DI binds it lazily using the host-owned HTTP client.
-Jev's fixed transport is OkHttp HTTP/1.1 with a shared pool, 60-second idle retention, and automatic
-connection-failure retries disabled. Backend shutdown closes it after application work stops.
-The measurement reference is [PR #852](https://github.com/D00mch/souz/pull/852).
-The skills graph selects relevant file-backed Skill descriptions with Jev and execution-LLM fallback; it does not classify tool categories. Inventory keeps every exact ID and adds only selected descriptions as bounded, escaped metadata. Full instructions and supporting files load on demand with approval where enabled.
+Export `JEV_TOKEN` in the environment that starts Souz, then run `./gradlew :backend:run`.
 
-`JevClassifier.selectSkills` sends the conversation as plain text built by `jevState`: the new user message first, then earlier
-non-empty user and assistant messages newest first, each cut to its first 300 characters. Each Skill gets one
-yes/no question naming it with its description; the shared `true` and `false` sides say that a step of the request
-must need it and that a mentioned topic alone does not count. Skill selection uses the last two earlier messages. A whole message that is one of a fixed set of thanks, greeting or goodbye
-phrases skips Skill selection: it gets no selected Skill descriptions. Confirmations such as "да" or "ок"
-and fragments such as "тебе" are still classified, since they may approve an offered action or answer a question.
+- `JEV_MODEL` selects the hosted model. See [Jev client configuration](src/main/kotlin/ru/souz/jev/JevClient.kt).
+- `JEV_THRESHOLD` controls Skill selection. See [classifier wiring](src/main/kotlin/ru/souz/runtime/di/RuntimeSharedDiModules.kt) and [Jev classification and prompts](src/main/kotlin/ru/souz/llms/runtime/JevClassifier.kt).
+- Set `FRIDA_URL` to the vLLM `/pooling` endpoint to enable the Skill-selection fallback, with optional `FRIDA_TOKEN` and `FRIDA_MODEL`. See [FRIDA client configuration](src/main/kotlin/ru/souz/frida/FridaClient.kt) and [FRIDA classification](src/main/kotlin/ru/souz/llms/runtime/FridaClassifier.kt).
+- `JEV_WAIT_CATEGORY_THRESHOLD` controls confidence for a specific waiting message. See [backend configuration](../backend/src/main/kotlin/ru/souz/backend/app/BackendAppConfig.kt) and [model routing](../agent/docs/execution-lifecycle.md#model-routing).
 
-| Variable | Behavior |
-| --- | --- |
-| `JEV_TOKEN` | Required, nonblank Bearer credential for Jev and its live tests. |
-| `JEV_MODEL` | Hosted model ID or alias; defaults to `jev-latest`. |
-| `JEV_THRESHOLD` | Finite probability in `[0, 1]`; defaults to `0.5`. Skills must score strictly above it. |
-| `JEV_WAIT_CATEGORY_THRESHOLD` | Backend waiting-category confidence: finite probability in `[0, 1]`, default `0.5`. The winning category must score at least this value; invalid configuration fails startup. |
-| `FRIDA_URL` | Optional FRIDA-Decisions `POST /pooling` endpoint of its vLLM server; enables the FRIDA fallback. |
-| `FRIDA_TOKEN` | Optional Bearer credential for `FRIDA_URL`. |
-| `FRIDA_MODEL` | Optional served model name sent with each FRIDA request. |
+See [Skill inventory and approval](../agent/docs/skill-activation.md) for classifier fallback. See [provider HTTP lifecycle](docs/provider-http-lifecycle.md) for transport ownership and request-local credentials, and [HTTP client profiles](src/main/kotlin/ru/souz/llms/http/ProviderHttpClients.kt) for transport settings.
 
-Export `JEV_TOKEN` in the environment that starts Souz, then run:
-
-```zsh
-JEV_MODEL=jev-latest JEV_THRESHOLD=0.5 ./gradlew :backend:run
-```
-
-Each classifier request (Jev, FRIDA) times out after 2 seconds. With `FRIDA_URL` set, shared runtime DI binds
-`FridaClassifier` under `FRIDA_FALLBACK_TAG`, and FRIDA answers whenever Jev fails: invalid configuration such as a
-missing `JEV_TOKEN`, a timeout, a network or HTTP error (bad key, rate limit, no credit, outage), or an invalid response.
-A low-confidence Jev answer is still an answer. Skill selection
-runs Jev, then FRIDA, then the current execution LLM, and keeps ID-only inventory when all of them fail. Cancellation
-propagates. FRIDA asks one choice question over the same state and descriptions, with a `none` option for Skills; it
-selects the top option plus every option at least 3 above the mean margin, and nothing when `none` wins.
-
-Other shared-runtime callers can inject `JevClient` directly, without a graph or tool catalog:
+Inject `JevClient` to evaluate a named question directly.
 
 ```kotlin
 import com.fasterxml.jackson.databind.JsonNode
 import ru.souz.jev.JevClient
 import ru.souz.llms.restJsonMapper
 
-suspend fun needsCalendar(jev: JevClient, message: String): Double {
-    return jev.evaluate(
-        state = restJsonMapper.valueToTree<JsonNode>(message),
-        questions = mapOf("calendar" to "Does this request require calendar access?"),
-    ).getValue("calendar")
-}
+suspend fun needsCalendar(jev: JevClient, message: String): Double = jev.evaluate(
+    state = restJsonMapper.valueToTree<JsonNode>(message),
+    questions = mapOf("calendar" to "Does this request require calendar access?"),
+).getValue("calendar")
 ```
 
-`JevClient.evaluateAndChoose` combines Noul questions and one choice question in one HTTP request. Invalid choice data does not discard valid Noul answers.
-`JevClassifier.classify` uses a `simple` probability of at least `0.9` to admit a confident text-only answer requiring no tools. With waiting categories supplied, the same request also chooses an activity; `other`, a missing/invalid choice or confidence below `JEV_WAIT_CATEGORY_THRESHOLD` selects generic waiting. Attachments and current requests longer than 4,000 characters select complex without calling JEV. Requests of exactly 4,000 characters can still be classified in full; only reference history is truncated. Its structured state separates `current_request`, up to nine non-system messages in `previous_dialogue` (4,000 characters each, including tool results), and `available_capabilities` from prepared inventory. Past tasks supply references, not pending work; supplied successful memory results can supply facts. Uncertainty and missing facts select complex. Logs contain probabilities and counts, not dialogue. When Jev fails, the turn keeps its own model without asking FRIDA.
-
-Optional `criteria` describe a question's `true` and `false` sides. Callers can pass
-credentials and a model to `JevClient(http, token, model)`. The client validates probabilities
-but leaves selection policy to callers and never closes the supplied transport.
-
-Regular tests use mock HTTP responses. Run the opt-in hosted test with the same `JEV_TOKEN`:
+Run the opt-in hosted Jev test with `JEV_TOKEN` exported.
 
 ```zsh
 SOUZ_TEST_JEV=1 ./gradlew :sharedLogic:test --tests 'ru.souz.jev.JevIntegrationTest' --rerun-tasks
 ```
 
-Description listing reads stored metadata or bounded, strict UTF-8 loose frontmatter and isolates malformed Skills. Exact lookup or invocation returns `skill_invalid_bundle` with the Skill ID, parsing problem, and repair guidance.
+## Sandbox modes
 
-## Sandbox Modes
-
-`DefaultRuntimeSandboxFactory` chooses the active sandbox with `SOUZ_SANDBOX_MODE`.
-
-- `local`: default when `SOUZ_SANDBOX_MODE` is unset.
-- `docker`: uses `DockerRuntimeSandbox` and the `souz-runtime-sandbox:latest` image.
-
-Local mode is enough for normal development:
+Run from the repository root with `SOUZ_SANDBOX_MODE` unset for local mode.
 
 ```zsh
 unset SOUZ_SANDBOX_MODE
 ./gradlew :backend:run
 ```
 
-Docker mode runs sandboxed command execution and sandbox filesystem access through Docker:
+For Docker mode, start Docker and build the sandbox image before launching the backend.
 
 ```zsh
 ./gradlew :sharedLogic:buildRuntimeSandboxImage
 SOUZ_SANDBOX_MODE=docker ./gradlew :backend:run
 ```
 
-The same image definition is used by local runs and Docker integration tests. The Dockerfile lives at:
+The [Dockerfile](Dockerfile) defines the image contents. The [entrypoint](docker/entrypoint.sh) seeds bundled Skills into the mounted registry on startup.
 
-```text
-sharedLogic/Dockerfile
-```
-
-The default image name expected by the app is:
-
-```text
-souz-runtime-sandbox:latest
-```
-
-## Docker Image
-
-The runtime sandbox image provides:
-
-- `bash`
-- `python3`
-- Node.js
-- a development copy of the `paper-summarize-academic` skill
-
-The paper skill source lives under:
-
-```text
-sharedLogic/docker/skills/paper-summarize-academic/
-```
-
-At container startup, `sharedLogic/docker/entrypoint.sh` seeds bundled skills into the mounted sandbox state registry:
-
-```text
-/souz/state/skills/paper-summarize-academic/stored-skill.json
-/souz/state/skills/paper-summarize-academic/bundles/{bundleHash}/...
-```
-
-In Docker mode, `~` resolves to `/souz/home` inside the container and to the per-sandbox host directory under:
-
-```text
-~/.local/state/souz/runtime-sandboxes/docker/
-```
-
-The bind mount covers `/souz`, so Docker image files copied directly to `/souz/...` would be hidden at runtime. Bundled image assets are kept under `/opt/souz/skills` and copied into the mounted sandbox state registry on startup.
-
-## Testing Docker Sandbox
-
-Docker integration tests are opt-in:
-
-```zsh
-SOUZ_TEST_DOCKER=1 ./gradlew :sharedLogic:test --tests 'ru.souz.runtime.sandbox.docker.*'
-```
-
-Those tests build `souz-runtime-sandbox:test` from `sharedLogic/Dockerfile` when needed. They verify:
-
-- container startup
-- `bash`, `python3`, and Node execution
-- sandbox filesystem safety
-- the seeded `paper-summarize-academic` skill can be discovered through `SkillRegistryRepository`
-
-Run regular runtime tests without Docker:
+## Tests
 
 ```zsh
 ./gradlew :sharedLogic:test
+SOUZ_TEST_DOCKER=1 ./gradlew :sharedLogic:test --tests 'ru.souz.runtime.sandbox.docker.*'
 ```
 
-## Skills Flow
-
-`FileSystemSkillRegistryRepository` owns stored skill metadata, immutable bundle contents, and validation records.
-The backend composes command, Knowledge, memory, Skill discovery, and delegation tools with its request-scoped catalog. Registry storage is opt-in through
-`fileSystemSkillRegistryDiModule`; general runtime DI does not install it implicitly. The backend binds its PostgreSQL `ConversationKnowledgeStore`; see the [Knowledge storage contract](docs/runtime-sandbox-and-skills.md).
-
-Skills use one host-local storage layout:
-
-```text
-{state}/skills/{skillId}/stored-skill.json
-{state}/skills/{skillId}/bundles/{bundleHash}/...
-{state}/skill-validations/{skillId}/policies/{policy}/{bundleHash}.json
-```
-
-The Docker image seeds the bundled paper skill directly into the registry-compatible sandbox state:
-
-```text
-/souz/state/skills/paper-summarize-academic/stored-skill.json
-/souz/state/skills/paper-summarize-academic/bundles/{bundleHash}/...
-```
-
-The agent pipeline selects skills returned by:
-
-```kotlin
-SkillRegistryRepository.listSkills(userId)
-```
-
-The current runtime integration test covers that the Docker-seeded skill is visible through the registry.
+The Docker suite is opt-in. See [sandbox verification](docs/runtime-sandbox-and-skills.md#verification) for focused runtime checks.
 
 ## Troubleshooting
 
-If Docker mode fails with:
-
-```text
-Docker sandbox image 'souz-runtime-sandbox:latest' is unavailable.
-```
-
-build the image:
-
-```zsh
-./gradlew :sharedLogic:buildRuntimeSandboxImage
-```
-
-If Docker mode appears unexpectedly, check your shell profile, IDE run configuration, or launch script for `SOUZ_SANDBOX_MODE=docker`.
-
-If `:sharedLogic:buildRuntimeSandboxImage` cannot find Docker from Gradle, set the Docker CLI path explicitly:
-
-```zsh
-SOUZ_DOCKER_CLI=/path/to/docker ./gradlew :sharedLogic:buildRuntimeSandboxImage
-```
-
-If a seeded skill does not appear, remove the per-sandbox `state/skills/<skill>` directory under `~/.local/state/souz/runtime-sandboxes/docker/` and restart the container. The entrypoint does not overwrite existing `stored-skill.json` metadata.
-
-## Runtime tools
-
-`RuntimeToolsFactory` builds an immutable catalog of filesystem, PDF/text, analytics, calculator, and optional OAuth tools. Backend capability policy selects the advertised and executable subset; client web search is supplied separately through Client-Souz Skills. Execution-bound image tools use the current execution's LLM routing.
-
-Chart export uses JFreeChart in headless mode. CSV/XLS/XLSX input, category aggregation, BAR/LINE/SCATTER/PIE chart types, 800×600 PNG output, and sandboxed input/output paths are shared across LOCAL and DOCKER execution. `openAfterCreate` is accepted for compatibility and does not open a GUI.
+- If `souz-runtime-sandbox:latest` is unavailable, run `./gradlew :sharedLogic:buildRuntimeSandboxImage`.
+- If Docker mode starts unexpectedly, check your shell profile, IDE run configuration, or launch script for `SOUZ_SANDBOX_MODE=docker`.
+- If Gradle cannot find Docker, run `SOUZ_DOCKER_CLI=/path/to/docker ./gradlew :sharedLogic:buildRuntimeSandboxImage`.
+- If the bundled `paper-summarize-academic` Skill is missing, start the sandbox to seed it. To reseed an existing copy, back up any edits, remove its `state/skills/paper-summarize-academic` directory inside the sandbox's host root, and restart the container. The entrypoint preserves existing files. See [host root selection](src/main/kotlin/ru/souz/runtime/sandbox/RuntimeSandboxFactory.kt).

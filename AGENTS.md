@@ -2,27 +2,18 @@
 
 Souz is a backend-only Kotlin/JVM AI assistant with a Ktor HTTP host, graph-based agent execution, and PostgreSQL persistence.
 
-Client Skill guidance is bundled under `backend/src/main/resources/skills/client/`. Only `orion.tools.list` is injected into every public WebSocket channel. Declarations and discovery describe that channel’s tools; all conversations can use their user’s unarchived channels. Discovery overrides matching declarations on its provider. Equal definitions share one Skill with provider metadata; conflicting names and server control commands are hidden from the model. `user.ask` is supported when declared or discovered. Local calls default to the current channel; explicit routing takes priority, and only model-callable `web.search` can automatically select another provider. Discovery is explicit and persists across backend restarts, including successful empty catalogues.
-
-Complexity routing admits only confident tool-free turns to the light model. Public-client executions attempt one best-effort live waiting phrase unless routed simple or `intermediateMessages` is off; progress or completion can overtake it. See [model routing](agent/docs/execution-lifecycle.md#model-routing).
-
-Backend uses one startup-validated `CONTEXT_SIZE` (minimum 24,000 tokens) for all models, including summaries. Compaction and input validation share an 80% limit independent of output limits; context size is not a user or execution setting.
-
-Subagents run asynchronously with admission limits and cooperative deadlines (`SUBAGENT_TASK_TIMEOUT_MS`, default 600000) within one parent execution; parent-only tools wait for or cancel children. A zero-timeout wait polls status. See [subagent lifecycle](agent/docs/subagents.md).
-
-Backend [personality settings](backend/docs/personality-settings.md) belong to the user. Each chat owns its optional activation word. Revisioned snapshots go to the current connected channel if it declares `prompt.personality.set`, otherwise to another declaring channel. Settings save independently of discovery; no known receiver means synchronization is skipped.
-
-Remote [MCP servers](backend/docs/mcp.md) use owner-scoped settings and execution-scoped sessions. Classifier-selected servers preload; all enabled servers remain discoverable through `LoadMcpTools`. Keep transport limits, owner checks, atomic catalogue publication and bounded cleanup intact.
-
-Backend [attachment contracts](backend/docs/attachments.md) carry owner-scoped file references through messages, tools and sessions. Public WebSocket attachments use opaque bucket keys stored in `object_key`, independently of internal file UUIDs. Import completed uploads before acceptance, resolve accepted retries before storage access, and snapshot reply descriptors during the final transaction for terminal delivery and replay.
-
 - Read and maintain this file before changing the repository. Before editing a module, read its linked `AGENTS.md`, any applicable nested instructions, and relevant topics linked in its `Pain points` section.
+- Follow the [documentation policy](docs/CONTRIBUTING.md#documentation) when adding pain-point topics.
 - Keep runtime documentation and `docs/public-souz-contract/` concise and current-state only. Do not write change-history phrases such as “now we do”.
 - Keep pre-implementation client agreements under `docs/proposals/`, explicitly marked as proposed and not implemented; exclude them from the implemented public API schemas.
 
-Client commands share one live-only dispatcher, permit concurrent correlated calls, and have no durable result receipts or command replay.
+## Runtime topics
 
-File-backed Skill discovery reads existing storage without provisioning a user runtime. Stored-file reply selection uses owner-scoped storage metadata; workspace transfers and script execution retain LOCAL/DOCKER runtime boundaries.
+- [Client tools and live commands](backend/docs/public-client-websocket.md)
+- [Model routing](agent/docs/execution-lifecycle.md#model-routing) and [public waiting messages](backend/docs/execution-openapi-and-events.md#safe-change-guidance)
+- [Server context configuration](backend/docs/named-llm-connections.md) and [context budget and compaction](agent/docs/skills-oriented-graph.md#invariant)
+- [Subagent lifecycle](agent/docs/subagents.md) and [read-only Skill inventory](sharedLogic/docs/runtime-sandbox-and-skills.md#invariants)
+- [Personality settings](backend/docs/personality-settings.md), [attachment contracts](backend/docs/attachments.md), [remote MCP servers](backend/docs/mcp.md), and [images](backend/docs/images.md)
 
 ## Development principles
 
@@ -59,8 +50,6 @@ Only these direct production project dependencies are allowed. Standard test-sou
 - `:plugin-api` `main` → none.
 - `:sharedLogic` `main` → `:agent`, `:llms`, `:skill-oauth-api`.
 - `:backend` `main` → `:agent`, `:llms`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`, `:job-api`, `:job-impl`, `:plugin-api`.
-
-For [image support](backend/docs/images.md), persist references only and never automatically repeat uncertain paid generation.
 
 ## Verification
 

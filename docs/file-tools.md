@@ -1,78 +1,14 @@
 # File Tool Conventions
 
-This document describes shared file-tool behavior and path conventions.
+File tools resolve paths in the invocation's sandbox. Use `~`, `$HOME`, or `home` for its home directory. The sandbox checks effective paths against the workspace root and forbidden folders. [Path resolution and Souz documents directory](../sharedLogic/src/main/kotlin/ru/souz/runtime/files/FilesToolUtil.kt) · [Sandbox rules](../sharedLogic/docs/runtime-sandbox-and-skills.md)
 
-## Shared Path Rules
-
-- `FilesToolUtil.applyDefaultEnvs()` resolves paths through the invocation's sandbox, including leading `~`, `home`, and `$HOME`.
-- Paths are validated against the canonical home directory and user-forbidden folders.
-- Safety checks use canonical paths, so simple traversal/alias tricks are rejected.
-
-## Canonical Souz File Roots
-
-- `souzDocumentsDirectoryPath` resolves the sandbox's Souz documents directory.
-
-## Existing-File Path Normalization
-
-- `FilesToolUtil.normalizeExistingFilePath()` is the shared path normalizer used by attachment-oriented flows.
-- It trims whitespace, removes simple wrapping quotes, strips `file://`, expands `~`, and returns a canonical absolute path only if the target already exists as a regular file.
-- Otherwise it returns `null`.
+The attachment path normalizer trims whitespace, unwraps simple quotes, strips `file://`, and expands `~`. It returns a canonical absolute path for an existing regular file and `null` otherwise. [Normalization](../sharedLogic/src/main/kotlin/ru/souz/runtime/files/FilesToolUtil.kt#L448)
 
 ## Tool Guarantees
 
-### `ListFiles`
-
-- Accepts any safe path that resolves to an existing directory.
-- Walks the directory tree top-down from the requested base path.
-- Skips forbidden directories and dot-prefixed entries.
-- Returns an array-like string of absolute child paths rooted at the requested directory.
-- Directories are suffixed with a trailing `/`.
-- If the formatted result exceeds `25000` characters, it returns an explicit size-limit error.
-
-### `NewFile`
-
-- Creates either a text file or a directory.
-- A trailing slash means "create a folder".
-- File creation auto-creates missing parent directories.
-- Refuses to overwrite an existing path.
-
-### `EditFile`
-
-- Works only on an existing safe file path.
-- Works only on plain text, code, and config files that are valid UTF-8 text.
-- Uses exact string replacement, not a caller-supplied patch.
-- Input is:
-  - `path`
-  - `oldString`
-  - `newString`
-  - optional `replaceAll`
-- Input and path validation happen before the write; backend execution policy controls permission to invoke the tool.
-- Fails when:
-  - `oldString` is empty
-  - `oldString` and `newString` are identical
-  - `oldString` is not found in the current file
-  - `oldString` matches multiple locations and `replaceAll` is `false`
-  - the file is not an editable text/code/config file
-- The tool normalizes line endings internally for matching, preserves untouched line endings exactly, and uses the file's detected separator as a fallback for newly inserted lines.
-- The tool writes immediately after validation.
-- Before applying the prepared replacement, it rereads the file. If the file changed after preparation, it fails and asks the caller to read again rather than overwriting the external change.
-- Writes use a temp file plus atomic-move fallback instead of invoking the system `patch` binary.
-
-### `MoveFile`
-
-- Moves only regular files, not directories.
-- Both source and destination must be safe paths.
-- Source and destination must differ.
-- Destination must not already exist.
-- Missing destination parent directories are created automatically.
-- The move requests `ATOMIC_MOVE` first and falls back to a regular move if needed.
-
-### `DeleteFile`
-
-- Deletes by moving to Trash, not by unlinking in place.
-- Works for both files and folders.
-- LOCAL sandbox Trash targets are tried in this order:
-  - `~/.Trash`
-  - `~/.local/share/Trash/files`
-  - `${java.io.tmpdir}/souz-trash`
-- If a same-name item already exists in the Trash target, the tool appends a timestamped suffix before moving.
+- `ListFiles` walks a safe existing directory and returns a bracketed string of absolute child paths, with `/` after directories. LOCAL skips forbidden paths and dot-prefixed directories. DOCKER hides all dot-prefixed entries and rejects unsafe non-symlink descendants. Listings over 25,000 characters return an error. [Tool and example](../sharedLogic/src/main/kotlin/ru/souz/tool/files/ToolListFiles.kt) · [LOCAL](../sharedLogic/src/main/kotlin/ru/souz/runtime/sandbox/local/LocalSandboxFileSystem.kt) · [DOCKER](../sharedLogic/src/main/kotlin/ru/souz/runtime/sandbox/docker/DockerSandboxFileSystem.kt)
+- `NewFile` creates a text file and any missing parent directories. A trailing slash creates a directory. Existing paths are rejected. [Tool and examples](../sharedLogic/src/main/kotlin/ru/souz/tool/files/ToolNewFile.kt)
+- `EditFile` replaces exact text in an existing UTF-8 text, code, or config file. Empty or missing search text and no-op replacements fail. Multiple matches require `replaceAll`. Matching normalizes line endings and preserves untouched text. If the file changed after the edit was prepared, read it again and retry. The backend catalogue controls tool availability. [Tool and example](../sharedLogic/src/main/kotlin/ru/souz/tool/files/ToolModifyFile.kt) · [Replacement rules](../sharedLogic/src/main/kotlin/ru/souz/tool/files/ToolModifyFilePlanner.kt)
+- `MoveFile` moves a regular file to a distinct, unused path and creates missing destination parents. [Tool and example](../sharedLogic/src/main/kotlin/ru/souz/tool/files/ToolMoveFile.kt)
+- `DeleteFile` moves files and directories to the sandbox's Trash and adds a timestamp suffix on name collisions. [Tool and example](../sharedLogic/src/main/kotlin/ru/souz/tool/files/ToolDeleteFile.kt) · [LOCAL Trash locations](../sharedLogic/src/main/kotlin/ru/souz/runtime/sandbox/local/LocalSandboxFileSystem.kt)
+- `CreatePlot` writes a PNG from CSV, XLS, or XLSX. The backend accepts `openAfterCreate` for compatibility and leaves opening the file to the caller. [Tool and examples](../sharedLogic/src/main/kotlin/ru/souz/tool/dataAnalytics/ToolCreatePlotFromCsv.kt)

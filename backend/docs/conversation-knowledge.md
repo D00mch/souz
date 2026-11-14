@@ -2,9 +2,9 @@
 
 ## Invariants and safe changes
 
-- Backend writers, `GetKnowledge`, and `SearchKnowledge` share `PostgresConversationKnowledgeStore` and the existing datasource/Flyway schema. Knowledge never resolves a sandbox or falls back to files; file-backed Skills still require a filesystem.
+- Use the same [PostgreSQL Knowledge store](../src/main/kotlin/ru/souz/backend/storage/postgres/PostgresConversationKnowledgeStore.kt) for writers and retrieval. Keep Knowledge independent of the sandbox filesystem.
 - Every access uses exact user/chat ownership. Writes lock the owned chat through commit and publish references only afterward. They never create chats or overwrite UUID records, including on collision. Cleanup is scoped and idempotent; chat/user deletion cascades, while archiving retains records. There is no TTL, startup cleanup, or sandbox import.
-- Preserve `KnowledgeRecordCodec` and the [shared retention/search contract](../../sharedLogic/docs/runtime-sandbox-and-skills.md). Store serialized JSON as text: PostgreSQL `jsonb` rejects NUL.
+- Preserve the [record codec](../../sharedLogic/src/main/kotlin/ru/souz/knowledge/KnowledgeRecordCodec.kt) and the [shared retention and search contract](../../sharedLogic/docs/runtime-sandbox-and-skills.md). Store serialized JSON as text because PostgreSQL `jsonb` rejects NUL.
 - Missing/invalid scope is unavailable; foreign/nonexistent chats reject writes, and missing/cross-scope records return `knowledge_not_found`. Database/corrupt-record reads return `storage_failure`; failed writes retain the original result inline. Cancellation propagates. Test commit failures as well as connection failures.
 
 ## Deployment
@@ -22,4 +22,4 @@ With Docker running, from the repository root:
 bash tools/knowledge-readonly-smoke.sh
 ```
 
-The smoke script writes, then retrieves/searches/clears from a replacement Java 21 container. Both run unprivileged with read-only roots/mounts and no writable temporary directory or Docker socket; only PostgreSQL is writable. Containers and their private network are cleaned up on exit.
+The [smoke script](../../tools/knowledge-readonly-smoke.sh) verifies that Knowledge survives container replacement with unprivileged containers, read-only filesystems and PostgreSQL as the only writable service.

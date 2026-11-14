@@ -1,28 +1,19 @@
 # Job ownership and recovery
 
-## Invariant
+## Ownership and fencing
 
-One worker calls the host's `awaitCapacity`, claims the earliest eligible job atomically with `FOR UPDATE SKIP LOCKED`, and commits before running its handler. The callback may wait for capacity and returns owners to exclude; their jobs remain pending without spending attempts. Unsuccessful claims use the default five-second polling delay. PostgreSQL time governs eligibility and lease validity. Renewals and outcome writes lock the row before validating the matching token, running status, and lease against current database time in the same transaction.
+Keep creation, listing, cancellation, and failure history owner-scoped. Start one sequential worker per host scope with an explicit handler. Await host capacity before claiming. Excluded owners' jobs stay pending without spending attempts. [Job API](../../job-api/src/main/kotlin/ru/souz/jobs/JobService.kt) · [Worker lifecycle](../src/main/kotlin/ru/souz/jobs/impl/PostgresJobService.kt)
 
-Recover expired running leases before claiming: requeue attempts below the limit with their existing availability time, and fail exhausted attempts. Both eligibility scans use `statement_timestamp()` as an index range boundary; the ordered claim reads only pending rows. Recovery skips locked rows. Lease creation and post-lock ownership checks use `clock_timestamp()`.
+Commit the claim before running the handler. PostgreSQL time governs eligibility and leases across replicas. Renewals and outcomes must check the running status, matching token, and unexpired lease in the same transaction after locking the row. [Claims, fencing, and recovery](../src/main/kotlin/ru/souz/jobs/impl/PostgresJobStore.kt)
 
-One row represents a logical job. Its scheduled occurrence timestamp stays unchanged across retries and changes only when recurrence advances. A failed or abandoned claim consumes an attempt. Exhaustion records an owner-scoped `job_occurrence_failures` entry, including final expired leases. Recurring jobs stop by default; hosts can set `continueAfterFailure` at creation to advance to the next future cron occurrence after recording the failure. One-offs still fail. Occurrence failures survive later successful runs and are available through `listFailedOccurrences`, which reads the latest three per requested job. `listJobs` filters by status and limits in SQL, ordered by `(created_at, id)` descending; its cursor is the last job ID of the previous page. Recurrence skips missed timestamps after completion.
+Handlers have at-least-once delivery. Expired leases permit another attempt, so deduplicate external effects by `(jobId, scheduledAt)`. Keep that identity stable across retries and keep credentials outside payloads. Cancellation is cooperative. Keep the handler and heartbeat in one scope and join the heartbeat before writing the outcome. Treat handler cancellation as an attempt failure while the worker remains active. Propagate application cancellation so interrupted claims remain recoverable.
 
-`bindMetrics` registers `souz.jobs.oldest.due` (Prometheus: `souz_jobs_oldest_due_seconds`) without IO. Each gauge read queries the oldest due pending job in PostgreSQL time, including excluded owners; future jobs do not contribute, and an empty due queue reports zero. The host scrapes on an IO dispatcher. This label-free gauge describes shared database state; aggregate replicas with `max`. Execution metrics belong to the host.
+## Recovery and operations
 
-## Why it is fragile
+Failed or abandoned claims spend an attempt. Exhaustion, including expiry of the final lease, records durable failure history. Jobs stop on exhaustion unless a recurring job opts into `continueAfterFailure`. When recurrence advances, skip missed occurrences and preserve prior failures.
 
-Lease recovery can run an occurrence more than once. Fencing protects queue state but cannot reverse effects performed by an old handler. Cancellation is cooperative and a running handler learns of it through its heartbeat. Database or shutdown failures must leave interrupted claims recoverable without refunding attempts.
-
-## Safe-change guidance
-
-- Use `(jobId, scheduledAt)` to deduplicate external effects; keep credentials outside payloads.
-- Keep handler and heartbeat in one coroutine scope. Join the heartbeat before writing the outcome. Record handler cancellation as a failed attempt when the worker context remains active; propagate application cancellation.
-- Reuse one service instance and one worker per host scope. Start workers explicitly with a supplied handler; stop application work before closing the datasource.
-- Keep service migrations in their own Flyway location and history table so host and service versions cannot collide.
+Join workers before closing the data source. Keep job migrations in a separate Flyway location and history table. Scrape the blocking queue gauge on an IO dispatcher. [Queue metric and replica aggregation](../../backend/docs/metrics.md#queries)
 
 ## Verification
 
-Run `./gradlew :job-impl:test` with Docker available. Cover excluded owners, queue age, competing claims, expired final attempts, stale renewals and outcomes, cancellation races, retry identity, opt-in recurrence after exhaustion, durable occurrence failures, bounded listing pages, and interrupted shutdown.
-
-Database tests share the `jobTest` fixture, which cancels and joins worker coroutines before closing the connection pool.
+For runtime changes, run `./gradlew :job-impl:test` with Docker. [Store tests](../src/test/kotlin/ru/souz/jobs/impl/PostgresJobStoreTest.kt) · [Worker tests](../src/test/kotlin/ru/souz/jobs/impl/JobWorkerTest.kt)

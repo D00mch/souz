@@ -2,26 +2,19 @@
 
 ## Invariant
 
-Every `/v1/**` request except `POST /v1/chats`, `GET /v1/chats/{chatId}/ws`, `GET /v1/ws`, and `GET /v1/chats/{chatId}/threads/{threadId}` derives identity only from the proxy-managed `X-Souz-Proxy-Auth` and `X-User-Id` headers. The proxy secret must match configured server state, and the opaque user ID must pass shape validation. Request identity middleware provisions the user before settings, provider keys, legacy chat reads, or other proxy services run.
-
-The Client-Souz routes are credential-free inside a trusted network. HTTP and WebSocket chat creation accept a trusted UUID `userId`; each submitted device must repeat the same UUID. WebSocket and thread-status reads are scoped by the stored chat and matching `clientType`. Public root, health, readiness, and documentation routes also require no headers.
+Protected `/v1/` routes derive identity from the proxy-managed `X-Souz-Proxy-Auth` and `X-User-Id` headers. The [request identity plugin](../src/main/kotlin/ru/souz/backend/security/RequestIdentity.kt) checks the configured proxy secret, validates the opaque user ID, and provisions the user before route logic runs. Public root, health, readiness, and documentation routes require no headers.
 
 ## Why it is fragile
 
-Allowing the Client-Souz body identity outside creation and execute device metadata creates an alternate authority path. These boundaries can still cross chat ownership if the stored chat user, frame chat ID, and device user are not compared before execution.
+Body-provided identities create an alternate authority path on protected routes. Keep their use inside the [public client identity boundary](public-client-websocket.md#invariant).
 
 ## Safe-change guidance
 
-- Obtain proxy-route identity through the installed request-identity boundary.
-- On the Client-Souz boundary, validate UUID shape, provision the create-chat `userId`, and require every `message.submit.payload.device.userId` to equal the chat owner.
-- Apply ownership checks to every user resource, including nested chat, execution, option, event, Telegram, and provider-key operations.
-- Pass `ToolInvocationMeta.userId` into backend runtime work. Backend sandbox scope is user-scoped and does not currently add conversation scope.
-- Keep `BackendToolCapabilityPolicy` the only place that decides compiled backend tool exposure. It owns the backend-safe categories and execution-bound LLM tool names; bootstrap capabilities, `enabledTools` validation, and execution selection all read it. Exclude compiled web categories and search names from both execution and advertising.
-- Persist `enabledTools` only as the user's own selection. A missing value follows every advertised tool, so storing the advertised set as a default hides every later tool from that user.
-- Build execution catalog snapshots by restricting policy-hostable compiled tool-backed Skills with the trusted user’s effective `enabledTools` snapshot, then add the shared catalogue of their unarchived public channels. Discovery overrides matching declarations on each provider; equal definitions share one Skill and conflicts are unavailable. Only `orion.tools.list` is implicit. Use the user-scoped sandbox provider for file-backed Skill discovery and execution.
-- Keep backend Codex access server-managed. Its OAuth access token, refresh token, account ID, and expiry belong to one backend credential set stored in Postgres with application-layer encryption; do not treat the per-user provider-key `apiKey` field as a complete Codex session. Container deployments must persist Postgres data and keep the master key outside the database.
-- Document both proxy headers as jointly required OpenAPI security schemes for protected `/v1` operations. Keep `POST /v1/chats` unsecured in OpenAPI and the WebSocket contract in `docs/public-souz-contract`.
+- Apply trusted ownership checks to every user resource, including nested resources. Scope sandbox access and file-backed Skill discovery and execution by `ToolInvocationMeta.userId` alone.
+- Follow the [backend catalogue rules](../../sharedLogic/docs/tool-catalog-composition.md#backend-composition) when exposing or saving tool selections.
+- Keep Codex credentials server-managed and encrypted in PostgreSQL as one set. The per-user provider-key endpoint rejects `codex`. Persist PostgreSQL data and keep the master key outside the database. See the [deployment boundary](distributed-backend-boundary.md#invariant) for refresh coordination.
+- Document both proxy headers as jointly required OpenAPI security schemes for protected operations. Keep `POST /v1/chats` unsecured in OpenAPI and maintain WebSocket schemas in the public contract.
 
 ## Verification
 
-Run `./gradlew :backend:test`. Cover proxy rejection and provisioning, public chat UUID validation and idempotency, WebSocket client-type and device-owner checks, OpenAPI security exceptions, and sandbox/tool user scoping.
+Run `./gradlew :backend:test` with Docker. See [request identity](../src/test/kotlin/ru/souz/backend/security/RequestIdentityTest.kt), [resource ownership](../src/test/kotlin/ru/souz/backend/e2e/BackendOwnershipE2eTest.kt), and [OpenAPI security](../src/test/kotlin/ru/souz/backend/e2e/BackendCompositionE2eTest.kt) tests. Follow [public WebSocket verification](public-client-websocket.md#verification) for public identity and routing.

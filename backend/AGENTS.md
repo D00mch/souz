@@ -1,48 +1,32 @@
 # Backend
 
-`:backend` is the headless JVM HTTP host. It exposes public health and readiness, generated API documentation, and the credential-free Client-Souz chat creation and WebSocket boundary. Other `/v1/**` operations stay behind the trusted proxy. Chat turns run through the shared `:agent` kernel.
-
-Before changing this module, read the relevant pain-point topics below.
+`:backend` is the headless JVM HTTP host. It owns product messages, execution lifecycle, durable receipts and replay, and persistence for the shared `:agent` kernel.
 
 ## Boundaries
 
-- Treat proxy-provided identity as the authority for proxy routes. The public Client-Souz boundary accepts trusted UUID user identity in `POST /v1/chats`, `chat.create.payload.userId`, and `message.submit.payload.device.userId` and must keep those values equal for chat ownership.
-- Expose only the tools `BackendToolCapabilityPolicy` allows. Change that policy, not its callers, when backend tool exposure changes.
-- Build immutable catalog snapshots by applying each execution's enabled-tool snapshot to policy-hostable compiled tools before adding Client-Souz tool-backed Skills. The backend excludes compiled web tools; its `WEB_SEARCH` category contains only client `web.search`. Executions without a current client can target a connected client channel with `channelId`.
-- Persist creation declarations atomically with the chat and retain their original idempotency hash. Inject only canonical `orion.tools.list` for each public WebSocket channel. Store discovery on its supplying channel, overriding matching declarations, and expose the same user’s unarchived channel catalogues to all conversations. Merge equal definitions with provider lists; hide conflicting names and host-supplied server control names. Validate and persist complete discovery before refreshing the execution snapshot. Metadata reads exclude catalogues. Discovery is explicit, survives restart and distinguishes unknown from successfully empty; absent tools in completed catalogues do not trigger rediscovery. Only the parent discovers; children receive selected immutable snapshots. Identify the current channel in both prompts and default local commands to it; explicit `channelId` wins, and only `web.search` may automatically select another provider. Revalidate ownership, definition, provider membership and connectivity on invocation. List channel destinations without the chat-history pagination limit.
-- Public WebSocket messages import completed S3 uploads by opaque `objectKey` and assign independent internal UUIDs. Resolve accepted receipts before import; preserve structured files in initial and follow-up input. Capture reply `{objectKey, name, presentation}` under attachment-row locks in the final transaction and retain the snapshot in message metadata. Terminal and forwarded events persist descriptors so replay needs no storage access. Revalidate follow-up attachments before any acceptance mutations. File selection is transport-independent; destinations validate file support and ownership.
-- Enrich declared known client tools with bundled `skills/client` instructions, categories, and deadlines. Preserve their exact names, persisted descriptions, and input schemas. Custom client tools use a one-minute deadline.
-- Build every turn with the backend's single request-scoped steerable `AgentId.SKILLS_GRAPH`. Advertise only its fixed core Skill tools and discover catalog capabilities through Skill inventory.
-- Reuse the application-owned Jev HTTP/1.1 client across users and executions; provider resources close it after application work stops. See [provider HTTP lifecycle](../sharedLogic/docs/provider-http-lifecycle.md).
-- Synchronize personality only through owned, unarchived connected channels that declare or discover `prompt.personality.set`. Prefer the current channel, then another eligible receiver; do not broadcast. Reconnect sync requires support on the reconnecting channel. Save independently of discovery; no known eligible receiver returns `sync: skipped`. Keep control commands hidden from model tools.
-- Keep product messages, thread lifecycle, agent continuation state, idempotency receipts, and replay events in their existing ownership layers. Client commands share one live-only dispatcher and independently correlated waiters; resume only after the result ACK. Commands have no durable receipt or replay.
-- Telegram and VK bindings use encrypted tokens, private-account linking, and independent leased poll loops. Their shared poll scheduler keeps idle long polls outside the processing limit; channel providers use platform-specific formatting and shared chunk delivery bookkeeping.
-- Public-client executions attempt one best-effort initial waiting phrase unless routed simple; narration, parent tool starts or completion can overtake it. Other assistant progress is opt-in through `narrateSteps`; live-only bot observers stop delivery before the final reply. The per-user `intermediateMessages` setting, on by default, suppresses both when off. See [execution events](docs/execution-openapi-and-events.md).
-- PostgreSQL stores structured repositories and [conversation Knowledge](docs/conversation-knowledge.md). Sandbox workspaces remain filesystem-backed and user-scoped.
-- File-backed Skill inventory reads existing host-backed storage without starting Docker or creating a workspace. Stored-file reply selection and detachment do not resolve a sandbox; preparation and saving from workspace paths require Docker isolation. See [attachment contracts](docs/attachments.md).
-- Trusted JVM plugins use independent SDK handlers and invocation-bound services. PostgreSQL owns registry state, execution pins and fenced owner/plugin leases; immutable JARs live in separate S3 storage. Use the dedicated admin REST token and the existing `enabledTools` policy. See [JVM plugins](docs/jvm-plugins.md).
-- Bind one `JobService` and `PostgresJobService` instance to the application datasource. `BackendRuntime.startBackgroundServices` starts the only job worker with the scheduled-task handler; shutdown joins application work before closing storage. See [job ownership](../job-impl/docs/job-ownership.md).
-- Scheduled tasks are `JobService` jobs managed by the `SCHEDULING` tools. The agent chooses at-least-once or at-most-once delivery per task; occurrence IDs and an atomic execution insert enforce it, and the handler returns without awaiting the agent. Admission limits each process to one active execution per owner and a configurable total; capacity remains occupied through cancellation cleanup. Dispatch reserves a durable per-user UTC daily quota with execution insertion and checks delivery permissions. See [scheduled tasks](docs/scheduled-tasks.md).
-- Workspace hooks authenticate before agent setup and persist receipts before acknowledgement. Each new receipt owns a separate hidden technical chat; duplicate deliveries reuse the receipt. Hook recovery is single-process and only touches receipt-linked executions; see [the hook contract](../docs/hooks.md).
-- Hook intake capacity is isolated per configured owner and survives reload. Verifier commands use the trusted owner's configured LOCAL/DOCKER sandbox through `SandboxCommandExecutor`, before Skill discovery or LLM use. They share that sandbox's permissions and do not create a separate verification container.
-- Give each ordinary HTTP route explicit OpenAPI metadata. Keep the WebSocket routes out of the generated document and maintain its schema in `docs/public-souz-contract`.
-- Backend owns execution, capacity, LLM, and tool metrics; `:job-impl` owns queue metrics and binds them to the shared registry at composition. Restrict `/metrics` at ingress; its [metric reference](docs/metrics.md) defines accounting and replica semantics.
+- Apply the [trusted proxy](docs/trusted-proxy.md#invariant) and [public socket](docs/public-client-websocket.md#invariant) identity rules at their respective boundaries.
+- Keep product messages and agent continuation state separate. Persist structured data and conversation Knowledge in PostgreSQL. Keep sandbox workspaces filesystem-backed and user-scoped.
+- Follow the [backend catalogue rules](../sharedLogic/docs/tool-catalog-composition.md#backend-composition) for tool advertising, `enabledTools` validation, and execution selection.
+- Use the [agent execution kernel](../agent/docs/execution-lifecycle.md#invariant) for conversation turns.
+- Keep provider transports, storage and background services application-owned. Join application work before closing transports, local runtime and storage. [Shutdown](src/main/kotlin/ru/souz/backend/app/BackendRuntimeResources.kt)
+- Follow the [OpenAPI route rules](docs/execution-openapi-and-events.md#openapi) and [metrics ingress policy](docs/metrics.md).
 
 ## Pain points
 
 - [MCP servers](docs/mcp.md) — owner settings, live discovery, network policy, budgets and execution cleanup.
-
-- [JVM plugins](docs/jvm-plugins.md) — artifact uploads, isolation, replica reconciliation, durable pins, invocation leases and process recovery.
-- [Personality settings](docs/personality-settings.md) — validated user style, conversational scope and Orion snapshots.
+- [JVM plugins](docs/jvm-plugins.md) — trusted in-process code, dedicated admin authorization, durable pins and fenced invocation leases. Tool exposure follows `enabledTools`.
+- [Personality settings](docs/personality-settings.md) — revisioned user style, per-chat activation words and live Orion sync.
 - [User file storage](docs/s3-storage.md) — private S3 bucket, owner-scoped metadata, expiry and retryable cleanup.
-- [Attachment contracts](docs/attachments.md) — message references, session persistence, sandbox preparation, and explicit reply selection.
+- [Attachment contracts](docs/attachments.md) — owner-bound references, acceptance and replay, Docker-only workspace transfers and stored-file selection.
 - [Images](docs/images.md) — request-local vision, shared generation/editing routes, paid-operation receipts and client screenshots.
 - [Named LLM connections](docs/named-llm-connections.md) — server model names, independent endpoints and keys, subagents and summarization.
-- [Metrics accounting](docs/metrics-accounting.md) — commit boundaries, bounded labels, waiting time and replica ownership; see the [metric reference](docs/metrics.md).
+- [Provider HTTP lifecycle](../sharedLogic/docs/provider-http-lifecycle.md) — process-owned transports, including Jev, and request-local credentials.
+- [Metrics accounting](docs/metrics-accounting.md) — commit boundaries and instrumentation. See the [metric reference](docs/metrics.md) for meter ownership, labels, and aggregation.
 - [Workspace hooks](docs/hooks.md) — trusted ownership, admission, persistent call budgets, sequential dispatch and single-process recovery.
 - [Trusted proxy](docs/trusted-proxy.md) — identity validation, provisioning, user scoping, and backend-safe tools.
-- [Execution, OpenAPI, and events](docs/execution-openapi-and-events.md) — runtime ownership, event durability, compatibility, and route documentation.
-- [Public client WebSocket](docs/public-client-websocket.md) — public idempotency, thread/runtime coordination, client tools, acknowledgement ordering, and replay.
+- [Execution, OpenAPI, and events](docs/execution-openapi-and-events.md) — lifecycle, durable events, live waiting and narration, compatibility, and route metadata.
+- [Public client WebSocket](docs/public-client-websocket.md) — client catalogue discovery and routing, live command ACK ordering, durable receipts and replay.
+- [Runtime sandbox and Skills](../sharedLogic/docs/runtime-sandbox-and-skills.md#invariants) — read-only file-backed Skill inventory and sandbox restrictions.
 - [Distributed backend boundary](docs/distributed-backend-boundary.md) — which backend entry points have distributed runtime ownership and recovery.
 - [Job ownership and recovery](../job-impl/docs/job-ownership.md) — explicitly started workers, PostgreSQL claims, and at-least-once handlers.
 - [Scheduled tasks](docs/scheduled-tasks.md) — hidden occurrence chats, delivery semantics, non-blocking handler, budgets, and failure handling.
@@ -53,8 +37,6 @@ Before changing this module, read the relevant pain-point topics below.
 - [Model scenario tests](docs/agent-scenario-tests.md) — opt-in model evaluation against the full production catalog with mocked execution and scenario fixtures.
 - [Container builds](docs/container-builds.md) — JVM temporary files and Kaniko snapshots.
 - [External memory](docs/external-memory.md) — Hindsight owner isolation, scope tags, grounded capture, and safe mutation boundaries.
-
-Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.
 
 ## Verification
 

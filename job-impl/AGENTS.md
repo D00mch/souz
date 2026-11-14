@@ -1,24 +1,15 @@
 # Job Implementation
 
-Before changing this module, read the relevant pain-point topics below.
-
 ## Purpose and boundaries
 
-- `:job-impl` owns PostgreSQL persistence, migrations, cron scheduling, leased claims, retries, cancellation, sequential coroutine workers, and queue metrics.
-- It implements `:job-api`; the host supplies a suspend handler and owns its application scope and credentials.
+- `:job-impl` implements `:job-api` with PostgreSQL persistence, scheduling, leased workers, and queue metrics.
+- The host supplies a suspend handler and owns its application scope and credentials.
 - Keep SQL helpers internal. Do not add repository interfaces or executor registries without another concrete implementation.
-- The host supplies its Micrometer registry through `bindMetrics`; gauge reads perform JDBC IO, so scrape on an IO dispatcher.
 
 ## Pain points
 
-- [Job ownership and recovery](docs/job-ownership.md) — claim fencing, at-least-once execution, recurrence, and shutdown.
-
-Add a focused topic under `docs/` only for a lasting, non-obvious constraint and link it here. Keep each topic current-state and operational.
+- [Job ownership and recovery](docs/job-ownership.md) — claim fencing, at-least-once execution, recurrence, shutdown, and queue metrics.
 
 ## Verification
 
-Run with Docker available; database tests must fail rather than skip when Docker is unavailable.
-
-```bash
-./gradlew :job-impl:test
-```
+Run `./gradlew :job-impl:test` with Docker available. Database tests must fail if Docker is unavailable.

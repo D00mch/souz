@@ -4,8 +4,6 @@
 
 Souz is a backend-only Kotlin/JVM AI assistant. A Ktor HTTP server runs request-scoped graph agents over cloud LLM providers, sandboxed tools, Skills, and PostgreSQL-backed conversations.
 
-The backend supports public Client-Souz HTTP/WebSocket integrations, trusted-proxy APIs, event replay, streaming, cancellation, subagents, scheduled jobs, workspace hooks, Telegram and VK bot bindings, encrypted provider credentials, and optional Hindsight memory. Client tools and device capabilities are delegated through the external client contract.
-
 ## Local backend
 
 Run the backend and PostgreSQL locally with Docker Compose:
@@ -14,11 +12,9 @@ Run the backend and PostgreSQL locally with Docker Compose:
 docker compose up --build
 ```
 
-The backend listens on `http://127.0.0.1:8080` and PostgreSQL listens on `127.0.0.1:5432`. Override host ports with `SOUZ_BACKEND_HOST_PORT` and `SOUZ_POSTGRES_HOST_PORT` when needed. Local defaults use `SOUZ_MASTER_KEY=local-dev-master-key` and `SOUZ_BACKEND_PROXY_TOKEN=local-dev-proxy-token`.
+Connect to the backend at `http://127.0.0.1:8080` and PostgreSQL at `127.0.0.1:5432`. For port overrides and local defaults, see [Compose](compose.yaml).
 
-Prometheus scrapes `GET /metrics`; see [backend metrics](backend/docs/metrics.md) for access restrictions, accounting and queries.
-
-Docker Compose uses `SOUZ_DOCKER_SUBNET`, defaulting to `10.254.250.0/24`, for the local service network. Set it to another private subnet before `docker compose up` if that range overlaps with VPN or corporate routes.
+If the Compose network overlaps with VPN or corporate routes, set `SOUZ_DOCKER_SUBNET` to an unused private subnet before startup.
 
 If a VPN route is reachable from the host but not from the backend container, run the backend with host networking:
 
@@ -26,7 +22,7 @@ If a VPN route is reachable from the host but not from the backend container, ru
 docker compose -f compose.yaml -f compose.backend-host-network.yaml up --build
 ```
 
-Protected `/v1` routes expect proxy-injected headers:
+Use the Compose development token to call a protected route locally:
 
 ```bash
 curl -H 'X-Souz-Proxy-Auth: local-dev-proxy-token' \
@@ -58,160 +54,37 @@ curl -X PATCH http://127.0.0.1:8080/v1/me/settings \
   -d '{"defaultModel":"gpt-5.2"}'
 ```
 
-Codex models use one server-managed OAuth session because the refresh token, account ID, and expiry must stay together. Configure `CODEX_ACCESS_TOKEN`, `CODEX_REFRESH_TOKEN`, `CODEX_ACCOUNT_ID`, and `CODEX_EXPIRES_AT` on the backend, then select a Codex alias such as `gpt-5.5` through the settings API. The backend stores rotated OAuth credentials in Postgres with application-layer encryption. Docker Compose persists them in `postgres-data`; preserve that data and use the same `SOUZ_MASTER_KEY` when recreating the backend container. The per-user provider-key endpoint does not accept `codex`.
+For server-managed Codex OAuth, configure `CODEX_ACCESS_TOKEN`, `CODEX_REFRESH_TOKEN`, `CODEX_ACCOUNT_ID`, and `CODEX_EXPIRES_AT` (Unix epoch seconds) together, then select a Codex alias such as `gpt-5.5` through the settings API. Preserve the `postgres-data` volume and the same `SOUZ_MASTER_KEY` across container replacements so the backend can read rotated credentials. See the [single-process restriction for Codex OAuth](backend/docs/distributed-backend-boundary.md#invariant).
+
+For custom endpoints and server-managed model aliases, see [named LLM connections](backend/docs/named-llm-connections.md).
 
 ## Project structure
 
-| Module | Responsibility |
-| --- | --- |
-| `:backend` | Ktor HTTP/WebSocket host, application lifecycle, persistence composition, integrations |
-| `:agent` | Skills graph, execution kernels, continuation, subagents, Skill discovery and approval |
-| `:graph-engine` | Framework-free typed graph execution |
-| `:llms` | Provider-neutral LLM contracts, model resolution, token accounting, state paths |
-| `:sharedLogic` | Remote provider clients, runtime tools, Skills, local/Docker sandboxes |
-| `:skill-oauth-api` | Provider-neutral Skill OAuth contracts |
-| `:skill-oauth-impl` | OAuth providers, callback routes, encrypted PostgreSQL storage |
-| `:job-api` | Owner-scoped job contracts |
-| `:job-impl` | PostgreSQL scheduling, leased workers, retries |
-
-`build-logic` is a separate included build for repository quality tooling. All product modules use Kotlin/JVM with standard `src/main` and `src/test` source sets and Java 21.
-
-Each backend execution owns one steerable `SkillsGraphBasedAgent`. Its fixed core tools discover the enabled catalog through compact Skill inventory; full instructions and commands load on demand. `SpawnSubagent` creates an isolated bounded model/tool loop with explicitly selected capabilities. See [agent architecture](agent/README.md), [subagents](docs/subagents.md), and [runtime setup](sharedLogic/README.md).
-
-Backend tools include filesystem operations, PDF/text extraction, image viewing and generation, CSV/Excel analytics, chart export, calculator, OAuth, channel messaging, and scheduling. Chart export uses JFreeChart in headless mode and produces 800×600 PNGs. The backend policy excludes compiled web tools; web search and device MCP capabilities come from client Skills.
-
-Supported chat providers are Qwen, AiTunnel, Anthropic, OpenAI-compatible APIs, and Codex OAuth. Server-managed [named connections](backend/docs/named-llm-connections.md) support independent endpoints, credentials, model IDs, subagents, and summarization. Giga is explicitly unsupported by the backend.
+See the [module map and dependency boundaries](AGENTS.md#module-map), [agent architecture](agent/README.md), and [runtime setup](sharedLogic/README.md).
 
 ## Backend behavior
 
-- Most `/v1/**` routes trust identity only from proxy-managed headers:
-  - `X-User-Id`
-  - `X-Souz-Proxy-Auth`
-- `X-User-Id` is treated as opaque and provisioned through `UserRepository.ensureUser(userId)`.
-- `POST /v1/chats`, `GET /v1/ws`, `GET /v1/chats/{chatId}/ws`, and `GET /v1/chats/{chatId}/threads/{threadId}` are credential-free Client-Souz exceptions for trusted environments.
-- HTTP chat creation accepts trusted UUID `userId` from the body; WebSocket `chat.create` accepts `payload.userId`. WebSocket `message.submit.payload.device.userId` must match the stored chat owner.
-- Other request bodies are never trusted for user identity.
-- Each chat, execution, option, and setting is scoped to the trusted user.
-- The backend composes request-scoped execution from shared agent contracts and graph nodes.
-- Backend turns run through one request-scoped steerable `SkillsGraphBasedAgent` under `AgentId.SKILLS_GRAPH`.
+Keep credential-free Client-Souz routes on a trusted network. See the [public contract](docs/public-souz-contract/README.md), [trusted proxy](backend/docs/trusted-proxy.md), and [distributed deployment boundary](backend/docs/distributed-backend-boundary.md).
 
-### Storage
+Backend startup requires `SOUZ_MASTER_KEY`. Protected routes require a shared `SOUZ_BACKEND_PROXY_TOKEN`. Keep the Compose secrets for local development only. `POSTGRES_DSN` overrides the database address and name. Supply database credentials separately. See [backend configuration](backend/src/main/kotlin/ru/souz/backend/app/BackendAppConfig.kt) for defaults and validation.
 
-PostgreSQL is the backend's only structured-data store. JDBC, HikariCP, and Flyway provide durable event replay, per-chat message/event sequence numbers, one active execution per chat, optimistic locking for `agent_conversation_state`, and durable tool-call audit rows.
-Telegram bot tokens are encrypted at rest via `TELEGRAM_TOKEN_ENCRYPTION_KEY`, pending links use one-time `/start <secret>` commands with only the secret hash stored server-side, and binding setup drops pending Telegram updates before long polling starts.
-VK community tokens use `VK_TOKEN_ENCRYPTION_KEY`. With `ENABLE_BACKEND_VK_FEATURE=true`, trusted-proxy clients manage bindings through `GET`, `PUT` (`{"token":"..."}`), and `DELETE /v1/chats/{chatId}/vk-bot`. Send the returned `pendingLinkCommand` as a private message to the community to link the account. Enable Bots Long Poll and `message_new` events in the community settings.
-Runtime sandbox workspaces remain filesystem-backed and are independent from backend database persistence.
+`SOUZ_BACKEND_SYSTEM_PROMPT` sets the default system prompt. `SOUZ_BACKEND_POLICY_PROMPT` appends operator instructions even when a user or request supplies its own prompt.
 
-### Configuration
+Backend logs are one-line JSON on stdout. See [Logback configuration](backend/src/main/resources/logback.xml) for root and application log levels.
 
-```bash
-# Server
-SOUZ_BACKEND_HOST=127.0.0.1
-SOUZ_BACKEND_PORT=8080
-SOUZ_BACKEND_PROXY_TOKEN=replace-with-shared-proxy-secret
-SOUZ_MASTER_KEY=replace-with-settings-secret
-
-# Server-managed provider keys, optional. Docker Compose local setup
-# usually uses /v1/me/provider-keys/{provider} instead.
-OPENAI_API_KEY=...
-ANTHROPIC_API_KEY=...
-QWEN_KEY=...
-AITUNNEL_KEY=...
-CODEX_ACCESS_TOKEN=...
-CODEX_REFRESH_TOKEN=...
-CODEX_ACCOUNT_ID=...
-CODEX_EXPIRES_AT=... # Unix epoch seconds
-
-# Feature flags
-SOUZ_FEATURE_WS_EVENTS=true
-SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL=false
-SOUZ_FEATURE_STREAMING_MESSAGES=true
-SOUZ_FEATURE_TOOL_EVENTS=true
-SOUZ_FEATURE_OPTIONS=true
-ENABLE_BACKEND_TG_FEATURE=true
-
-# Logging
-# One-line JSON logs go to stdout.
-LOG_LEVEL=INFO
-SOUZ_APP_LOG_LEVEL=INFO
-
-# Optional proxy-allowlisted User-Agent for outbound web tools.
-SOUZ_WEB_USER_AGENT=ProxyApprovedClient/1.0
-
-# Optional system prompts: the default one and operator rules appended to every chat's prompt.
-SOUZ_BACKEND_SYSTEM_PROMPT=...
-SOUZ_BACKEND_POLICY_PROMPT=...
-
-# Telegram bot
-SOUZ_TELEGRAM_POLLING_MAX_CONCURRENCY=4
-# Generate once with: openssl rand -base64 32
-TELEGRAM_TOKEN_ENCRYPTION_KEY=...
-
-# VK bot
-ENABLE_BACKEND_VK_FEATURE=false
-SOUZ_VK_POLLING_MAX_CONCURRENCY=4
-# Required when enabled; Base64 of 32 random bytes
-VK_TOKEN_ENCRYPTION_KEY=...
-
-# Scheduled tasks: planned runs per user per day, concurrent runs per process (one per user), run timeout
-# The daily value also caps launches per user per UTC day.
-SOUZ_SCHEDULED_TASK_RUNS_PER_USER_PER_DAY=100
-SOUZ_SCHEDULED_TASK_CONCURRENT_RUNS=16
-SOUZ_SCHEDULED_TASK_RUN_TIMEOUT_MILLIS=300000
-
-# Provider retries
-SOUZ_BACKEND_PROVIDER_MAX_429_RETRIES=2
-SOUZ_BACKEND_PROVIDER_BACKOFF_BASE_MS=500
-SOUZ_BACKEND_PROVIDER_BACKOFF_MAX_MS=5000
-
-# Postgres
-# Optional JDBC URL override for multi-host/TLS deployments.
-POSTGRES_DSN=jdbc:postgresql://123.45.67.89:5432,123.45.67.890:5432:5432/souz_preprod?sslmode=require
-SOUZ_BACKEND_DB_HOST=127.0.0.1
-SOUZ_BACKEND_DB_PORT=5432
-SOUZ_BACKEND_DB_NAME=souz
-SOUZ_BACKEND_DB_USER=souz
-SOUZ_BACKEND_DB_PASSWORD=...
-SOUZ_BACKEND_DB_SCHEMA=public
-SOUZ_BACKEND_DB_MAX_POOL_SIZE=10
-SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS=30000
-```
-
-The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `POSTGRES_DSN` must be a PostgreSQL JDBC URL and, when set, replaces `SOUZ_BACKEND_DB_HOST`, `SOUZ_BACKEND_DB_PORT`, and `SOUZ_BACKEND_DB_NAME`; user and password still come from `SOUZ_BACKEND_DB_USER` and `SOUZ_BACKEND_DB_PASSWORD`. `SOUZ_MASTER_KEY` is required for backend startup. Backend Logback writes one-line JSON records to stdout, including timestamp, level, logger, thread, message, formatted message, MDC, SLF4J key-value pairs, and throwable details. `LOG_LEVEL` controls the root logger, while `SOUZ_APP_LOG_LEVEL` keeps Souz application diagnostics such as public WebSocket request flow visible even when third-party logging is quieter. `SOUZ_WEB_USER_AGENT` overrides the browser-like default sent by web tools, including the HTTPS CONNECT request when a JVM HTTP proxy is selected. `SOUZ_BACKEND_SYSTEM_PROMPT` replaces the built-in default system prompt, and a prompt from user settings or a request replaces it in turn. `SOUZ_BACKEND_POLICY_PROMPT` follows that prompt in every chat; users cannot replace or remove it through settings or requests. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled and must be Base64 that decodes to exactly 32 bytes; generate one with `openssl rand -base64 32`. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
-
-Backend executions snapshot each user's effective `enabledTools`. The snapshot filters compiled tool-backed Skills once and is retained when an execution resumes from an option. Built-in Client-Souz Skills are merged afterward only for public client executions. The backend model sees only Skill core tools and reaches catalog capabilities through inventory, discovery, and `RunSkillCommand`.
-
-Run the backend:
-
-```bash
-./gradlew :backend:run
-```
-
-By default it binds to `127.0.0.1:8080`.
+For bot setup, see [Telegram bindings](backend/docs/telegram-bindings.md#setup) and [VK bindings](backend/docs/vk-bindings.md#setup).
 
 ## Development and verification
 
-Use JDK 21 and the Gradle wrapper. Docker is required for PostgreSQL-backed backend, job, and OAuth tests; these tests fail rather than skip when Docker is unavailable.
+To run without Compose, start PostgreSQL, configure backend secrets, then run `./gradlew :backend:run` with JDK 21. Build a local distribution with `./gradlew :backend:installDist`. [Verification](AGENTS.md#verification) · [Quality gates](docs/quality-gates.md) · [Backend image build](scripts/build-backend-image.sh)
 
-```bash
-./gradlew :backend:run
-./gradlew build :backend:installDist :build-logic:check --no-parallel
-./gradlew test :koverXmlReport :koverHtmlReport koverLog -Psouz.coverage --no-parallel
-./gradlew souzGateFast --configuration-cache --configuration-cache-problems=fail
-npm ci --prefix quality
-./gradlew souzDuplicationCheck
-```
+## Operational references
 
-Runtime Docker sandbox tests are separately opt-in; see [runtime sandbox setup](sharedLogic/README.md#sandbox-modes). Build the backend image with `scripts/build-backend-image.sh`.
-
-Operational references:
-
-- [Public client contract](docs/public-souz-contract/README.md) and [WebSocket ownership](backend/docs/public-client-websocket.md)
-- [Backend testing](backend/docs/testing.md) and [quality gates](docs/quality-gates.md)
+- [WebSocket ownership](backend/docs/public-client-websocket.md) and [subagents](docs/subagents.md)
+- [Backend testing](backend/docs/testing.md)
 - [External memory](backend/docs/external-memory.md), [conversation Knowledge](backend/docs/conversation-knowledge.md), and [personality settings](backend/docs/personality-settings.md)
 - [Scheduled tasks](backend/docs/scheduled-tasks.md), [workspace hooks](docs/hooks.md), and [file tools](docs/file-tools.md)
-- [Telegram bindings](backend/docs/telegram-bindings.md), [VK bindings](backend/docs/vk-bindings.md), and [S3 file storage](backend/docs/s3-storage.md)
-- [Metrics](backend/docs/metrics.md) and [trusted proxy](backend/docs/trusted-proxy.md)
+- [S3 file storage](backend/docs/s3-storage.md) and [Prometheus metrics](backend/docs/metrics.md)
 
 Read the owning `AGENTS.md` before changing a module.
 
