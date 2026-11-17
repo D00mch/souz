@@ -1,5 +1,7 @@
 package ru.souz.tool.notes
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import ru.souz.llms.ToolInvocationMeta
 
 import ru.souz.tool.*
@@ -24,26 +26,30 @@ class ToolOpenNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenNot
     )
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         if (input.noteName.isBlank()) throw BadInputException("Note name cannot be empty")
-        bash.apple(
+        return bash.apple(
             """
-                        tell application "Notes"
-                            activate
-                            set noteName to "${input.noteName}" 
-                            set foundNotes to (notes whose name is noteName)
-                            
-                            if (count of foundNotes) > 0 then
-                                set firstNote to item 1 of foundNotes
-                                show firstNote
-                            else
-                                display dialog "Заметка с названием ${input.noteName} не найдена." buttons {"OK"} default button 1
-                            end if
-                        end tell
-                    """).trimIndent()
-
-        return "Done"
+                on run argv
+                    set noteName to item 1 of argv
+                    tell application "Notes"
+                        activate
+                        set foundNotes to (notes whose name is noteName)
+                        if (count of foundNotes) > 0 then
+                            set firstNote to item 1 of foundNotes
+                            show firstNote
+                            return "Done"
+                        else
+                            return "Note not found: " & noteName
+                        end if
+                    end tell
+                end run
+            """.trimIndent(),
+            args = listOf(input.noteName),
+            timeoutMillis = 30_000,
+        )
     }
 
-    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String =
+        runInterruptible(Dispatchers.IO) { invoke(input, meta) }
 }
 
 fun main() {
