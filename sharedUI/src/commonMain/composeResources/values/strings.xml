@@ -196,6 +196,12 @@
     <!-- Support Settings -->
     <string name="label_support_email">Support Email</string>
     <string name="button_send_logs">Send logs</string>
+    <string name="clear_local_caches">Clear local caches</string>
+    <string name="clearing_local_caches">Clearing local caches…</string>
+    <string name="clear_local_caches_description">Clear local logs and saved graph history. Settings, models, memory and other application data are preserved.</string>
+    <string name="clear_local_caches_confirmation">Empty all local logs and permanently delete saved graph history? This cannot be undone. New activity will create logs and graph history again.</string>
+    <string name="local_caches_cleared">Local logs and saved graph history cleared.</string>
+    <string name="error_clear_local_caches">Some local caches could not be cleared. Please try again.</string>
     <string name="button_view_sessions">View graph sessions</string>
     <string name="label_privacy_policy">Privacy Policy</string>
     <string name="hint_privacy_policy">Open the bundled privacy policy in your default browser.</string>

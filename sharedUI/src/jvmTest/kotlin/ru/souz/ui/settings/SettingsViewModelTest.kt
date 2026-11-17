@@ -54,6 +54,7 @@ import ru.souz.ui.host.DesktopTelegramSettingsHost
 import ru.souz.ui.host.ExternalLinkOpener
 import ru.souz.ui.host.InMemorySettingsHostPreferences
 import ru.souz.ui.host.LocalModelUiHost
+import ru.souz.ui.host.LocalCacheCleaner
 import ru.souz.ui.host.NoopPrivacyPolicyOpener
 import ru.souz.ui.host.NoopSupportLogService
 import ru.souz.ui.host.PrivacyPolicyOpener
@@ -68,6 +69,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -414,6 +416,77 @@ class SettingsViewModelTest {
         assertEquals("", viewModel.uiState.value.telegramCodeInput)
         assertEquals("", viewModel.uiState.value.telegramPasswordInput)
     }
+
+    @Test
+    fun `cache cleanup requires confirmation and cancel does no work`() = runTest(dispatcher) {
+        val cleaner = mockk<LocalCacheCleaner>(relaxed = true)
+        val viewModel = cacheCleanupViewModel(cleaner)
+
+        viewModel.handleEvent(SettingsEvent.ConfirmClearLocalCaches)
+        viewModel.handleEvent(SettingsEvent.ClearLocalCaches)
+        assertTrue(viewModel.uiState.value.showClearLocalCachesConfirmation)
+        viewModel.handleEvent(SettingsEvent.CancelClearLocalCaches)
+        viewModel.handleEvent(SettingsEvent.ConfirmClearLocalCaches)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.showClearLocalCachesConfirmation)
+        coVerify(exactly = 0) { cleaner.clear() }
+    }
+
+    @Test
+    fun `confirmed cleanup runs once while busy and publishes success`() = runTest(dispatcher) {
+        val completion = CompletableDeferred<Unit>()
+        val cleaner = mockk<LocalCacheCleaner>()
+        coEvery { cleaner.clear() } coAnswers { completion.await() }
+        val viewModel = cacheCleanupViewModel(cleaner)
+
+        viewModel.handleEvent(SettingsEvent.ClearLocalCaches)
+        viewModel.handleEvent(SettingsEvent.ConfirmClearLocalCaches)
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isClearingLocalCaches)
+        assertFalse(viewModel.uiState.value.showClearLocalCachesConfirmation)
+        viewModel.handleEvent(SettingsEvent.ClearLocalCaches)
+        viewModel.handleEvent(SettingsEvent.ConfirmClearLocalCaches)
+        completion.complete(Unit)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { cleaner.clear() }
+        assertFalse(viewModel.uiState.value.isClearingLocalCaches)
+        assertNotNull(viewModel.uiState.value.clearLocalCachesMessage)
+    }
+
+    @Test
+    fun `failed cleanup reports failure and allows retry`() = runTest(dispatcher) {
+        val cleaner = mockk<LocalCacheCleaner>()
+        coEvery { cleaner.clear() } throws java.io.IOException("synthetic failure")
+        val viewModel = cacheCleanupViewModel(cleaner)
+        viewModel.handleEvent(SettingsEvent.ClearLocalCaches)
+        viewModel.handleEvent(SettingsEvent.ConfirmClearLocalCaches)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isClearingLocalCaches)
+        val failureMessage = viewModel.uiState.value.clearLocalCachesMessage
+        assertNotNull(failureMessage)
+        coEvery { cleaner.clear() } returns Unit
+        viewModel.handleEvent(SettingsEvent.ClearLocalCaches)
+        assertNull(viewModel.uiState.value.clearLocalCachesMessage)
+        viewModel.handleEvent(SettingsEvent.ConfirmClearLocalCaches)
+        advanceUntilIdle()
+
+        coVerify(exactly = 2) { cleaner.clear() }
+        assertFalse(viewModel.uiState.value.isClearingLocalCaches)
+        assertNotNull(viewModel.uiState.value.clearLocalCachesMessage)
+        assertTrue(viewModel.uiState.value.clearLocalCachesMessage != failureMessage)
+    }
+
+    private fun cacheCleanupViewModel(cleaner: LocalCacheCleaner) = SettingsViewModel(
+        di = DI {
+            bindSingleton<TelegramSettingsHost> { ru.souz.ui.host.NoopTelegramSettingsHost }
+            bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
+            bindSingleton<LocalCacheCleaner> { cleaner }
+        },
+        settingsDispatcher = dispatcher,
+    )
 
     private fun createViewModel(
         telegramHost: TelegramSettingsHost,

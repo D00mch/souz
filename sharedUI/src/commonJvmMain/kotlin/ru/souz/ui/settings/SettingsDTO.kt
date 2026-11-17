@@ -92,6 +92,9 @@ data class SettingsState(
     val isSendingLogs: Boolean = false,
     val sendLogsMessage: String? = null,
     val sendLogsPath: String? = null,
+    val showClearLocalCachesConfirmation: Boolean = false,
+    val isClearingLocalCaches: Boolean = false,
+    val clearLocalCachesMessage: String? = null,
     val isBalanceLoading: Boolean = false,
     val balance: List<LLMResponse.BalanceItem> = emptyList(),
     val balanceError: String? = null,
@@ -177,6 +180,9 @@ sealed interface SettingsEvent : VMEvent {
     object ChooseVoice : SettingsEvent
     object ResetSystemPrompt: SettingsEvent
     object SendLogsToSupport: SettingsEvent
+    object ClearLocalCaches : SettingsEvent
+    object ConfirmClearLocalCaches : SettingsEvent
+    object CancelClearLocalCaches : SettingsEvent
     object OpenPrivacyPolicy: SettingsEvent
     object RefreshBalance: SettingsEvent
     data class SelectDefaultCalendar(val name: String?) : SettingsEvent

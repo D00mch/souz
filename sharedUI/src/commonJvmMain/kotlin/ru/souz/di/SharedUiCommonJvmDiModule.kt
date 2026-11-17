@@ -41,6 +41,8 @@ import ru.souz.ui.host.NoopUiSpeechPlayer
 import ru.souz.ui.host.CalendarListProvider
 import ru.souz.ui.host.ChatCommandInputSource
 import ru.souz.ui.host.LocalModelUiHost
+import ru.souz.ui.host.LocalCacheCleaner
+import ru.souz.ui.host.NoopLocalCacheCleaner
 import ru.souz.ui.host.PathOpener
 import ru.souz.ui.host.PermissionPromptService
 import ru.souz.ui.host.PrivacyPolicyOpener
@@ -90,6 +92,7 @@ fun sharedUiCommonJvmDiModule(): DI.Module = DI.Module("sharedUiCommonJvm") {
     bindSingleton<ChatCommandInputSource> { NoopChatCommandInputSource }
     bindSingleton<TelegramSettingsHost> { NoopTelegramSettingsHost }
     bindSingleton<SupportLogService> { NoopSupportLogService }
+    bindSingleton<LocalCacheCleaner> { NoopLocalCacheCleaner }
     bindSingleton<PrivacyPolicyOpener> { NoopPrivacyPolicyOpener }
     bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
     bindSingleton<AmbientTranscriptionService> { NoopAmbientTranscriptionService }
