@@ -6,19 +6,21 @@ class ChatSearchEngine(
     private val projector: ChatSearchProjector = ChatSearchProjector(),
 ) {
 
-    fun buildProjections(messages: List<ChatMessage>): Map<String, ChatMessageSearchProjection> =
-        projector.buildProjections(messages)
+    fun buildProjections(
+        messages: List<ChatMessage>,
+        cached: Map<String, ChatMessageSearchProjection> = emptyMap(),
+    ): Map<String, ChatMessageSearchProjection> = projector.buildProjections(messages, cached)
 
     fun ensureProjections(
         messages: List<ChatMessage>,
         cached: Map<String, ChatMessageSearchProjection>,
     ): Map<String, ChatMessageSearchProjection> = if (
         cached.size == messages.size &&
-        messages.all { cached.containsKey(it.id) }
+        messages.all { cached[it.id]?.isFor(it) == true }
     ) {
         cached
     } else {
-        buildProjections(messages)
+        buildProjections(messages, cached)
     }
 
     fun updateQuery(
@@ -56,7 +58,7 @@ class ChatSearchEngine(
 
         val matches = buildList {
             messages.forEachIndexed { messageIndex, message ->
-                val projection = projections[message.id] ?: projector.project(message)
+                val projection = projector.project(message, projections[message.id])
                 var occurrenceIndexInMessage = 0
                 projection.parts.forEach { part ->
                     part.searchableText.findSearchMatchRanges(normalizedQuery).forEach { range ->
