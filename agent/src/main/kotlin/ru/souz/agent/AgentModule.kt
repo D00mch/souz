@@ -25,24 +25,18 @@ import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
-import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.agent.session.GraphSessionService
 import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.UserMessageClassifier
 
+/** Hosts must bind GraphSessionRepository when using the desktop facade and its session service. */
 fun agentDiModule(
     logObjectMapperTag: Any? = null,
     apiClassifierTag: Any? = null,
     localClassifierTag: Any? = null,
-    graphSessionRepositoryTag: Any? = null,
     fallbackClassifierTag: Any? = null,
 ): DI.Module = DI.Module("agent") {
-    bindSingleton {
-        graphSessionRepositoryTag
-            ?.let { tag -> instance<GraphSessionRepository>(tag = tag) }
-            ?: GraphSessionRepository()
-    }
     bindSingleton {
         GraphSessionService(
             repository = instance(),

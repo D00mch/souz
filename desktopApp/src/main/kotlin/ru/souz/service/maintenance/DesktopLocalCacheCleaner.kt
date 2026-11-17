@@ -1,5 +1,6 @@
 package ru.souz.service.maintenance
 
+import ru.souz.db.SqliteGraphSessionRepository
 import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.file.DirectoryIteratorException
@@ -19,6 +20,7 @@ import ru.souz.ui.host.LocalCacheCleaner
 internal class DesktopLocalCacheCleaner(
     private val paths: SouzPaths,
     private val logDirectory: Path,
+    private val sessions: SqliteGraphSessionRepository,
 ) : LocalCacheCleaner {
     override suspend fun clear() = withContext(Dispatchers.IO) {
         check(!Files.isSymbolicLink(paths.stateRoot)) { "Cannot clear a symbolic-link state root." }
@@ -27,7 +29,11 @@ internal class DesktopLocalCacheCleaner(
             // Keep open appenders attached to the same file, including during rollover.
             FileChannel.open(file, WRITE, NOFOLLOW_LINKS).use { it.truncate(0) }
         }
-        clearDirectory(paths.sessionsDir, ".json", failure) { Files.deleteIfExists(it) }
+        try {
+            sessions.clearAll()
+        } catch (error: Exception) {
+            failure.addSuppressed(error)
+        }
         if (failure.suppressed.isNotEmpty()) throw failure
     }
 

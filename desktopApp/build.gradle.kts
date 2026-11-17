@@ -129,7 +129,6 @@ dependencies {
     implementation(libs.jna)
     implementation(libs.jna.platform)
 
-    implementation(libs.lucene.core)
     implementation(libs.tika.core)
     implementation(libs.tika.parsersStandardPackage)
     implementation(libs.icu4j)

@@ -25,8 +25,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.io.TempDir
 import org.w3c.dom.Element
 import ru.souz.agent.session.GraphSession
-import ru.souz.agent.session.GraphSessionRepository
-import ru.souz.paths.DefaultSouzPaths
+import ru.souz.db.SqliteGraphSessionRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DesktopStateCleanupTest {
@@ -39,8 +38,7 @@ class DesktopStateCleanupTest {
 
     @Test
     fun `only files strictly older than each retention period expire`() = runTest {
-        val paths = DefaultSouzPaths(stateRoot)
-        val repository = GraphSessionRepository(paths)
+        val repository = sessions()
         val logCutoff = now.minus(Duration.ofDays(7))
         val sessionCutoff = now.minus(Duration.ofDays(30))
         val logs = listOf(-1L, 0L, 1L).mapIndexed { index, offset ->
@@ -48,11 +46,9 @@ class DesktopStateCleanupTest {
         }
         val telemetry = file("logs/telemetry.old.0.log", logCutoff.minusMillis(1))
         listOf(-1L, 0L, 1L).forEachIndexed { index, offset ->
-            repository.save(GraphSession("session-$index", sessionCutoff.toEpochMilli(), null, "input", emptyList()))
-            Files.setLastModifiedTime(paths.sessionsDir.resolve("session-$index.json"), FileTime.from(sessionCutoff.plusMillis(offset)))
+            sessions(sessionCutoff.plusMillis(offset)).save(GraphSession("session-$index", sessionCutoff.toEpochMilli(), null, "input", emptyList()))
         }
-        repository.save(GraphSession("recently-saved", sessionCutoff.minusSeconds(1).toEpochMilli(), null, "input", emptyList()))
-        Files.setLastModifiedTime(paths.sessionsDir.resolve("recently-saved.json"), FileTime.from(now))
+        sessions(now).save(GraphSession("recently-saved", sessionCutoff.minusSeconds(1).toEpochMilli(), null, "input", emptyList()))
 
         val job = cleanup().start()
         runCurrent()
@@ -84,7 +80,7 @@ class DesktopStateCleanupTest {
         runCurrent()
         assertFalse(Files.exists(next), "Relaunch must wait only the remaining interval")
 
-        val later = file("sessions/later.json")
+        val later = file("logs/later.log")
         advanceTimeBy(dayMillis)
         runCurrent()
         assertFalse(Files.exists(later), "Cleanup must repeat while the app stays open")
@@ -102,7 +98,7 @@ class DesktopStateCleanupTest {
         runCurrent()
         initialJob.cancel()
         advanceTimeBy(dayMillis * 3)
-        val expired = file("sessions/missed.json")
+        val expired = file("logs/missed.log")
 
         val nextJob = cleanup().start()
         runCurrent()
@@ -116,7 +112,7 @@ class DesktopStateCleanupTest {
         val preserved = listOf(
             "memory.db", "models/model.gguf", "native/bridge.dylib", "vector-index/index",
             "skills/skill.json", "knowledge/entry.json", "docker/state/sessions/session.json",
-            "logs/notes.txt", "logs/archive/nested.log", "sessions/notes.txt", "sessions/archive/nested.json",
+            "logs/notes.txt", "logs/archive/nested.log", "sessions/legacy.json", "sessions/notes.txt", "sessions/archive/nested.json",
         ).map { file(it) }
         val outside = Files.writeString(temporaryDirectory.resolve("outside.json"), "keep")
         Files.setLastModifiedTime(outside, FileTime.from(Instant.EPOCH))
@@ -196,7 +192,7 @@ class DesktopStateCleanupTest {
         assertFalse(Files.exists(stateRoot.resolve("logs")))
         assertFalse(Files.exists(stateRoot.resolve("sessions")))
 
-        val expired = file("sessions/new-directory.json")
+        val expired = file("logs/new-directory.log")
         advanceTimeBy(dayMillis)
         runCurrent()
         assertFalse(Files.exists(expired))
@@ -224,9 +220,14 @@ class DesktopStateCleanupTest {
         return path
     }
 
+    private fun sessions(savedAt: Instant = now) = SqliteGraphSessionRepository(
+        stateRoot.resolve("desktop.db"), Clock.fixed(savedAt, ZoneOffset.UTC),
+    )
+
     private fun TestScope.cleanup() = DesktopStateCleanup(
         stateRoot = stateRoot,
         scope = backgroundScope,
+        sessions = sessions(),
         clock = object : Clock() {
             override fun getZone(): ZoneId = ZoneOffset.UTC
             override fun withZone(zone: ZoneId): Clock = this

@@ -1,5 +1,6 @@
 package ru.souz.service.maintenance
 
+import ru.souz.db.SqliteGraphSessionRepository
 import java.nio.ByteBuffer
 import java.nio.channels.Channels
 import java.nio.channels.FileChannel
@@ -27,6 +28,7 @@ import org.slf4j.LoggerFactory
 internal class DesktopStateCleanup(
     private val stateRoot: Path,
     private val scope: CoroutineScope,
+    private val sessions: SqliteGraphSessionRepository,
     private val clock: Clock = Clock.systemUTC(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -72,7 +74,11 @@ internal class DesktopStateCleanup(
                 channel.force(true)
 
                 deleteExpired(stateRoot.resolve("logs"), ".log", now.minus(Duration.ofDays(7)))
-                deleteExpired(stateRoot.resolve("sessions"), ".json", now.minus(Duration.ofDays(30)))
+                try {
+                    sessions.deleteSavedBefore(now.minus(Duration.ofDays(30)))
+                } catch (error: Exception) {
+                    logger.warn("Graph session retention failed", error)
+                }
                 return DAY.toMillis()
             }
         }
