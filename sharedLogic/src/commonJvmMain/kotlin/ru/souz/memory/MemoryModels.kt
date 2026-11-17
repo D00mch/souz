@@ -367,32 +367,28 @@ fun stableMemoryContentHash(
     return digest.joinToString("") { "%02x".format(it) }
 }
 
-fun FloatArray.toBlob(): ByteArray {
-    val buffer = ByteBuffer.allocate(size * 4).order(ByteOrder.LITTLE_ENDIAN)
+fun FloatArray.toBlob(byteOrder: ByteOrder = ByteOrder.LITTLE_ENDIAN): ByteArray {
+    val buffer = ByteBuffer.allocate(size * Float.SIZE_BYTES).order(byteOrder)
     forEach(buffer::putFloat)
     return buffer.array()
 }
 
-fun ByteArray.toFloatArray(): FloatArray {
-    val buffer = ByteBuffer.wrap(this).order(ByteOrder.LITTLE_ENDIAN)
-    return FloatArray(size / 4) { buffer.getFloat() }
+fun ByteArray.toFloatArray(byteOrder: ByteOrder = ByteOrder.LITTLE_ENDIAN): FloatArray {
+    val buffer = ByteBuffer.wrap(this).order(byteOrder)
+    return FloatArray(size / Float.SIZE_BYTES) { buffer.getFloat() }
 }
 
-fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
-    if (a.size != b.size) return 0f
+fun cosineSimilarity(a: FloatArray, b: FloatArray): Float = cosineSimilarityDouble(a, b).toFloat()
 
-    var dot = 0f
-    var normA = 0f
-    var normB = 0f
+fun vectorNorm(vector: FloatArray): Double = sqrt(vector.sumOf { it.toDouble() * it })
 
-    for (index in a.indices) {
-        dot += a[index] * b[index]
-        normA += a[index] * a[index]
-        normB += b[index] * b[index]
-    }
-
-    if (normA == 0f || normB == 0f) return 0f
-    return dot / (sqrt(normA) * sqrt(normB))
+/** Double accumulation avoids Float overflow and permits score rescaling before rounding to Float. */
+fun cosineSimilarityDouble(a: FloatArray, b: FloatArray, normA: Double = vectorNorm(a)): Double {
+    if (a.size != b.size) return 0.0
+    val normB = vectorNorm(b)
+    if (normA == 0.0 || normB == 0.0) return 0.0
+    val dot = a.indices.sumOf { index -> a[index].toDouble() * b[index] }
+    return dot / (normA * normB)
 }
 
 /**

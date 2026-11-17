@@ -9,6 +9,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertContentEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -32,6 +33,14 @@ class DesktopSqliteStorageTest {
     private val dbPath get() = root.resolve("state/desktop.db")
     private fun item(text: String) = StorredData(text, StorredType.NOTES)
 
+    private fun storedVectors(): List<StorredData> = DriverManager.getConnection("jdbc:sqlite:$dbPath").use { connection ->
+        connection.createStatement().use { statement ->
+            statement.executeQuery("select text, type from desktop_vectors order by id").use { rows ->
+                buildList { while (rows.next()) add(StorredData(rows.getString(1), StorredType.valueOf(rows.getString(2)))) }
+            }
+        }
+    }
+
     @Test
     fun `desktop DI shares the SQLite session adapter with the agent and UI`() {
         val di = DI {
@@ -49,11 +58,10 @@ class DesktopSqliteStorageTest {
     @Test
     fun `vectors persist with cosine ranking threshold ties and limit`() {
         val db = VectorDB(dbPath)
-        db.initializeOnce()
         val data = listOf("opposite", "orthogonal", "near", "same", "tie").map(::item)
         db.insert(data, listOf(listOf(-1.0, 0.0), listOf(0.0, 1.0), listOf(3.0, 4.0), listOf(1.0, 0.0), listOf(2.0, 0.0)))
         val reopened = VectorDB(dbPath)
-        assertEquals(data, reopened.getAllData())
+        assertEquals(data, storedVectors())
         assertEquals(listOf(item("same"), item("tie"), item("near")), reopened.searchSimilar(listOf(1.0, 0.0)))
         assertEquals(listOf(item("same"), item("tie")), reopened.searchSimilar(listOf(1.0, 0.0), 2))
         assertEquals(listOf(item("same"), item("tie"), item("near"), item("orthogonal")), reopened.searchSimilar(listOf(1.0, 0.0), 5, 0.5f))
@@ -92,7 +100,7 @@ class DesktopSqliteStorageTest {
         val session = GraphSession("competing", 1, null, "synthetic", emptyList())
         SqliteGraphSessionRepository(dbPath).save(session)
         assertEquals(session, SqliteGraphSessionRepository(dbPath).loadById(session.id))
-        assertEquals(listOf(item("original"), item("batch")), VectorDB(dbPath).getAllData())
+        assertEquals(listOf(item("original"), item("batch")), storedVectors())
     }
 
     @Test
@@ -104,7 +112,7 @@ class DesktopSqliteStorageTest {
             db.insert(listOf(item("valid"), item("zero")), listOf(listOf(1.0, 1.0), listOf(0.0, 0.0)))
         }
         assertFailsWith<IllegalArgumentException> { db.insert(listOf(item("wrong dimension")), listOf(listOf(1.0))) }
-        assertEquals(listOf(item("original")), VectorDB(dbPath).getAllData())
+        assertEquals(listOf(item("original")), storedVectors())
         // Exercise transaction rollback after an actual SQLite write, not only argument validation.
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { connection ->
             connection.createStatement().use {
@@ -114,9 +122,9 @@ class DesktopSqliteStorageTest {
         assertFailsWith<java.sql.SQLException> {
             db.insert(listOf(item("accepted first"), item("reject")), listOf(listOf(1.0, 1.0), listOf(1.0, 1.0)))
         }
-        assertEquals(listOf(item("original")), db.getAllData())
+        assertEquals(listOf(item("original")), storedVectors())
         db.clearAllData()
-        assertTrue(VectorDB(dbPath).getAllData().isEmpty())
+        assertTrue(storedVectors().isEmpty())
         db.insert(listOf(item("new")), listOf(listOf(1.0)))
         assertEquals(listOf(item("new")), db.searchSimilar(listOf(1.0)))
     }
@@ -129,6 +137,22 @@ class DesktopSqliteStorageTest {
     }
 
     @Test
+    fun `vectors retain big endian blobs and double precision scores across reopen`() {
+        VectorDB(dbPath).insert(listOf(item("stored")), listOf(listOf(1.0, -2.0)))
+        DriverManager.getConnection("jdbc:sqlite:$dbPath").use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("select embedding from desktop_vectors").use { rows ->
+                    assertTrue(rows.next())
+                    assertContentEquals(byteArrayOf(63, -128, 0, 0, -64, 0, 0, 0), rows.getBytes(1))
+                }
+                // A blob written independently of the shared codec must remain searchable.
+                statement.executeUpdate("update desktop_vectors set embedding = X'7f7fffff00000000'")
+            }
+        }
+        assertEquals(listOf(item("stored")), VectorDB(dbPath).searchSimilar(listOf(Float.MAX_VALUE.toDouble(), 0.0), minScore = 1f))
+    }
+
+    @Test
     fun `sessions round trip upsert sort delete and retain by save time without touching legacy files`() {
         val legacy = Files.createDirectories(root.resolve("state/sessions")).resolve("old.json")
         Files.writeString(legacy, "legacy session")
@@ -137,7 +161,7 @@ class DesktopSqliteStorageTest {
         val time = Instant.parse("2026-11-01T00:00:00Z")
         fun repository(savedAt: Instant = time) = SqliteGraphSessionRepository(dbPath, Clock.fixed(savedAt, ZoneOffset.UTC))
         assertEquals(0, repository().count())
-        assertTrue(VectorDB(dbPath).getAllData().isEmpty())
+        assertTrue(storedVectors().isEmpty())
         val session = GraphSession("id/'quoted", 100, null, "Юникод\ninput", listOf(
             GraphStepRecord(0, "node", 200, "in", "out", "{\"x\":true}", "[]"),
         ))
@@ -157,7 +181,7 @@ class DesktopSqliteStorageTest {
         VectorDB(dbPath).insert(listOf(item("keep")), listOf(listOf(1.0)))
         repository().clearAll()
         assertEquals(0, repository().count())
-        assertEquals(listOf(item("keep")), VectorDB(dbPath).getAllData())
+        assertEquals(listOf(item("keep")), storedVectors())
         assertEquals("legacy session", Files.readString(legacy))
         assertEquals("legacy index", Files.readString(index))
         repository().save(session)

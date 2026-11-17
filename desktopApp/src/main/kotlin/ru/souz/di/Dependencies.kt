@@ -187,7 +187,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
 
     // DB
     bindSingleton { SqliteGraphSessionRepository(instance<SouzPaths>().stateRoot.resolve("desktop.db")) }
-    bindSingleton<GraphSessionRepository>(tag = "desktop-sessions") { instance<SqliteGraphSessionRepository>() }
+    bindSingleton<GraphSessionRepository> { instance<SqliteGraphSessionRepository>() }
     bindSingleton { VectorDB(instance<SouzPaths>().stateRoot.resolve("desktop.db")) }
     bindSingleton { LlmBuildProfile(instance(), instance()) }
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
@@ -520,7 +520,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             apiClassifierTag = DiTags.TAG_API,
             localClassifierTag = DiTags.TAG_LOCAL,
             fallbackClassifierTag = FRIDA_FALLBACK_TAG,
-            graphSessionRepositoryTag = "desktop-sessions",
         )
     )
     bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance(), mailSendApproval = instance()) }

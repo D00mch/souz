@@ -1,12 +1,12 @@
-@file:OptIn(kotlin.io.path.ExperimentalPathApi::class)
-
 package ru.souz.agent.session
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import java.nio.file.Files
-import java.nio.file.Path
-import kotlin.io.path.deleteRecursively
-import kotlin.test.AfterTest
+import io.mockk.every
+import io.mockk.just
+import io.mockk.mockk
+import io.mockk.runs
+import io.mockk.slot
+import io.mockk.verify
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -15,23 +15,13 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.memory.MemoryPromptFact
-import ru.souz.paths.DefaultSouzPaths
 
 class GraphSessionServiceTest {
-    private val createdPaths = mutableListOf<Path>()
-
-    @AfterTest
-    fun cleanup() {
-        createdPaths.asReversed().forEach { path ->
-            runCatching { path.deleteRecursively() }
-        }
-        createdPaths.clear()
-    }
-
     @Test
     fun `memory augmentation event stores only safe summary`() = runTest {
-        val stateRoot = Files.createTempDirectory("graph-session-memory-").also(createdPaths::add)
-        val repository = FileGraphSessionRepository(DefaultSouzPaths(stateRoot = stateRoot))
+        val repository = mockk<GraphSessionRepository>()
+        val savedSession = slot<GraphSession>()
+        every { repository.save(capture(savedSession)) } just runs
         val service = GraphSessionService(
             repository = repository,
             logObjectMapper = jacksonObjectMapper(),
@@ -57,7 +47,8 @@ class GraphSessionServiceTest {
         )
         service.finishTask()
 
-        val saved = repository.loadAll().single()
+        verify(exactly = 1) { repository.save(any()) }
+        val saved = savedSession.captured
         val step = saved.steps.single()
 
         assertEquals("Relevant memory:\n- Prefer Kotlin.", step.outputSummary)

@@ -4,6 +4,8 @@
 
 The [execution kernel](../src/main/kotlin/ru/souz/agent/AgentExecutionKernel.kt) isolates each execution and normalizes unsupported persisted agent IDs to `SKILLS_GRAPH`. The host owns durable execution state.
 
+Hosts using `agentDiModule` with the desktop facade bind [GraphSessionRepository](../src/main/kotlin/ru/souz/agent/session/GraphSessionRepository.kt) explicitly. Desktop supplies its SQLite adapter; backend owns execution persistence independently.
+
 The desktop [facade](../src/main/kotlin/ru/souz/agent/AgentFacade.kt) owns one conversation and one active execution. Starting a turn or changing agent/context cancels that execution; settings setters must not run concurrently with it. Keep cancellation, generation capture, session start and finish in one lifecycle. Update context only from the current execution and restore base invocation metadata after per-call overrides. Session callbacks are thread-safe but trace only one task. Concurrent callers need separate kernels, graphs and session state.
 
 Mid-run input uses the open controller rather than starting another facade task. A closed or sealed run rejects submission. Preserve classic turn ordering: history, memory recall, direct-tool classification, Skill inventory/core tools, desktop MCP, host context, then the model. The Skills graph omits direct classification and desktop MCP injection.

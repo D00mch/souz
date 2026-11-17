@@ -1,5 +1,6 @@
 package ru.souz.db
 
+import io.mockk.Called
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -43,7 +44,6 @@ class DesktopInfoRepositoryTest {
     @Test
     fun `rebuildIndexNow ignores same day guard and rebuilds immediately`() {
         val db = mockk<VectorDB>()
-        every { db.initializeOnce() } just runs
         every { db.clearAllData() } just runs
         every { db.insert(any(), any()) } just runs
 
@@ -79,7 +79,6 @@ class DesktopInfoRepositoryTest {
     @Test
     fun `storeDesktopDataDaily skips local embeddings until linked asset exists`() {
         val db = mockk<VectorDB>()
-        every { db.initializeOnce() } just runs
         every { db.clearAllData() } just runs
 
         val api = mockk<LLMChatAPI>(relaxed = true)
@@ -97,14 +96,13 @@ class DesktopInfoRepositoryTest {
             assertEquals(emptyList(), repository.search("query", 5))
         }
 
-        verify(exactly = 0) { db.clearAllData() }
+        verify { db wasNot Called }
         coVerify(exactly = 0) { api.embeddings(any()) }
     }
 
     @Test
     fun `search skips stale index after embeddings model switch`() {
         val db = mockk<VectorDB>()
-        every { db.initializeOnce() } just runs
         every { db.clearAllData() } just runs
         every { db.insert(any(), any()) } just runs
         every { db.searchSimilar(any(), any()) } returns listOf(StorredData("stale", StorredType.GENERAL_FACT))

@@ -65,9 +65,6 @@ class DesktopInfoRepository(
         }
     }
 
-    @Suppress("unused")
-    fun getDesktopData(): List<StorredData> = db.getAllData()
-
     /**
      * Convert the provided query to an embedding and return the most similar
      * stored texts from the database.
@@ -87,7 +84,6 @@ class DesktopInfoRepository(
     }
 
     private suspend fun refreshDesktopData(force: Boolean) = refreshMutex.withLock {
-        db.initializeOnce()
         if (!isEmbeddingsReady()) {
             l.info(
                 "Skip storeDesktopDataDaily: embeddings model {} is not ready",
