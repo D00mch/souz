@@ -3,13 +3,18 @@ package ru.souz.db
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.Connection
-import java.sql.DriverManager
+import org.sqlite.SQLiteConfig
 
 /** Short-lived JDBC connections keep ownership at the synchronous desktop persistence boundary. */
 internal class DesktopSqliteStore(private val dbPath: Path) {
+    private val config = SQLiteConfig().apply {
+        // Explicit transactions reserve the writer before any reads to avoid stale WAL snapshots.
+        setTransactionMode(SQLiteConfig.TransactionMode.IMMEDIATE)
+    }
+
     fun <T> withConnection(block: (Connection) -> T): T {
         Files.createDirectories(dbPath.toAbsolutePath().parent)
-        return DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { connection ->
+        return config.createConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { connection ->
             connection.createStatement().use {
                 it.execute("pragma busy_timeout = 5000")
                 it.execute("pragma journal_mode = WAL")

@@ -3,6 +3,7 @@ package ru.souz.db
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
+import java.sql.SQLException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.io.TempDir
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import org.sqlite.SQLiteErrorCode
 import kotlin.test.assertSame
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.di.mainDiModule
@@ -58,6 +60,39 @@ class DesktopSqliteStorageTest {
         assertEquals(listOf(item("same"), item("tie")), reopened.searchSimilar(listOf(1.0, 0.0), 5, 0.81f))
         assertTrue(reopened.searchSimilar(listOf(1.0, 0.0), 0).isEmpty())
         assertTrue(reopened.searchSimilar(listOf(1.0)).isEmpty())
+    }
+
+    @Test
+    fun `vector batch reserves the writer before reading dimensions`() {
+        val db = VectorDB(dbPath)
+        db.insert(listOf(item("original")), listOf(listOf(1.0)))
+        var competingWriteFailure: SQLException? = null
+        val batch = object : AbstractList<StorredData>() {
+            override val size = 1
+            override fun get(index: Int): StorredData {
+                // Iteration begins after the dimension read, before executeBatch. A deferred
+                // transaction lets this other WAL connection commit and invalidates its snapshot.
+                DriverManager.getConnection("jdbc:sqlite:$dbPath").use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.execute("pragma busy_timeout = 0")
+                        try {
+                            statement.executeUpdate("insert into graph_sessions values ('competing', 0, 0, '{}')")
+                        } catch (error: SQLException) {
+                            competingWriteFailure = error
+                        }
+                    }
+                }
+                return item("batch")
+            }
+        }
+
+        db.insert(batch, listOf(listOf(1.0)))
+
+        assertEquals(SQLiteErrorCode.SQLITE_BUSY.code, competingWriteFailure?.errorCode)
+        val session = GraphSession("competing", 1, null, "synthetic", emptyList())
+        SqliteGraphSessionRepository(dbPath).save(session)
+        assertEquals(session, SqliteGraphSessionRepository(dbPath).loadById(session.id))
+        assertEquals(listOf(item("original"), item("batch")), VectorDB(dbPath).getAllData())
     }
 
     @Test
