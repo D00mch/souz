@@ -16,6 +16,18 @@ class ModelResolutionTest {
             resolveChatModel("  GPT-6.1-SOL  ", supportedProviders = setOf(LlmProvider.CODEX)),
         )
         assertEquals(
+            ModelResolution.Resolved(LLMModel.CodexGpt62Sol),
+            resolveChatModel("  GPT-6.2-SOL  ", supportedProviders = setOf(LlmProvider.CODEX)),
+        )
+        assertEquals(
+            ModelResolution.Resolved(LLMModel.CodexGpt62Sol),
+            resolveChatModel("CodexGpt62Sol", supportedProviders = setOf(LlmProvider.CODEX)),
+        )
+        assertEquals(
+            ModelResolution.UnsupportedProvider(LLMModel.CodexGpt62Sol, LlmProvider.CODEX),
+            resolveChatModel("gpt-6.2-sol", supportedProviders = setOf(LlmProvider.OPENAI)),
+        )
+        assertEquals(
             ModelResolution.Unknown("not-a-model"),
             resolveChatModel(" not-a-model "),
         )

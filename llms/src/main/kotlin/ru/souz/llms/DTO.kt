@@ -175,6 +175,7 @@ enum class LLMModel(
     LocalQwen3_4B_Instruct_2507("Local Qwen3 4B Instruct", "local-qwen3-4b-instruct-2507", LlmProvider.LOCAL),
     LocalGemma4_E2B_It("Local Gemma 4 E2B Instruct", "local-gemma-4-e2b-it", LlmProvider.LOCAL),
     LocalGemma4_E4B_It("Local Gemma 4 E4B Instruct", "local-gemma-4-e4b-it", LlmProvider.LOCAL),
+    CodexGpt62Sol("GPT-6.2 Sol (Codex)", "gpt-6.2-sol", LlmProvider.CODEX),
     CodexGpt6Astra("GPT-6 Astra (Codex)", "gpt-6-astra", LlmProvider.CODEX),
     CodexGpt61Sol("GPT-6.1 Sol (Codex)", "gpt-6.1-sol", LlmProvider.CODEX),
     CodexGpt6Sol("GPT-6 Sol (Codex)", "gpt-6-sol", LlmProvider.CODEX),

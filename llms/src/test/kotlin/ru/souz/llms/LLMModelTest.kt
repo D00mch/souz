@@ -12,5 +12,6 @@ class LLMModelTest {
         assertEquals(LLMModel.Max, findLLMModel("GigaChat-Max"))
         assertEquals(LLMModel.Pro, findLLMModel("GigaChat-Pro"))
         assertEquals(LLMModel.Lite, findLLMModel("GigaChat"))
+        assertEquals(LLMModel.CodexGpt62Sol, findLLMModel("gpt-6.2-sol"))
     }
 }
