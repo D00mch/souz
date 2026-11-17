@@ -11,6 +11,10 @@ Keep signatures limited to SDK-owned values, JDK/Kotlin types, and suspending me
 ## Verification
 
 ```bash
-./gradlew :plugin-api:check :plugin-api:publishToMavenLocal :backend:test
-./gradlew -p plugin-api/examples/hello jar
+./gradlew :plugin-api:check :plugin-api:publishSdkPublicationToVerificationRepository :backend:test
+bash scripts/verify-plugin-sdk.sh
 ```
+
+Set `SOUZ_PLUGIN_MAVEN_URL` to the verification repository's file URI to test staged artifacts;
+leave it unset to test Maven Central. The verifier copies the example outside the
+checkout and builds with fresh Gradle and Maven local directories.
