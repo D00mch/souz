@@ -102,6 +102,7 @@ import ru.souz.ui.BaseViewModel
 import ru.souz.di.sharedUiMainViewModelUseCasesDiModule
 import ru.souz.ui.common.LocalModelDownloadPromptUi
 import ru.souz.ui.common.LocalModelDownloadStateUi
+import ru.souz.ui.common.parseMarkdownContent
 import ru.souz.ui.main.createMainViewModel
 import ru.souz.ui.main.mainViewModelDiScope
 import ru.souz.ui.main.usecases.FinderPathExtractor
@@ -1396,6 +1397,47 @@ class MainViewModelTest {
         } finally {
             harness.clear()
             tempFile.delete()
+        }
+    }
+
+    @Test
+    fun `streaming parses only changed messages and query navigation reuses projections`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
+        val harness = createHarness(executeBehavior = { response.await() })
+        var parses = 0
+        mockkStatic(::parseMarkdownContent)
+        every { parseMarkdownContent(any()) } answers {
+            parses += 1
+            callOriginal()
+        }
+
+        try {
+            val viewModel = harness.viewModel
+            runCurrent()
+            val history = List(40) { index ->
+                ChatMessage(text = "**target** $index\n\n```kotlin\ntarget\n```", isUser = false)
+            }
+            forceUiState(viewModel, viewModel.uiState.value.copy(chatMessages = history))
+            viewModel.handleEvent(MainEvent.UpdateChatSearchQuery("target"))
+            val firstProjection = viewModel.chatSearchProjectionFor(history.first().id)
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("continue"))
+            awaitState(viewModel) { it.isProcessing }
+            repeat(20) { index ->
+                harness.sideEffects.emit(AgentSideEffect.Text("**target** $index\n\n"))
+                val state = awaitState(viewModel) { it.chatSearch.matches.size == 80 + index + 1 }
+                assertEquals(index + 1, state.chatSearch.matches.count { it.messageId == state.chatMessages.last().id })
+            }
+
+            viewModel.handleEvent(MainEvent.UpdateChatSearchQuery("TARGET"))
+            viewModel.handleEvent(MainEvent.SelectNextChatSearchResult)
+            viewModel.handleEvent(MainEvent.SelectPreviousChatSearchResult)
+            assertEquals(100, viewModel.uiState.value.chatSearch.matches.size)
+            // Forty historical messages plus twenty versions of the streamed message.
+            assertEquals(60, parses)
+            assertSame(firstProjection, viewModel.chatSearchProjectionFor(history.first().id))
+        } finally {
+            harness.clear()
         }
     }
 

@@ -20,10 +20,14 @@ import org.intellij.markdown.parser.MarkdownParser
 class ChatSearchProjector {
 
     /**
-     * Builds projections for the current message list keyed by message id.
+     * Builds projections for the current message list, reusing unchanged content from [cached].
+     * The returned map retains only messages in the current list.
      */
-    fun buildProjections(messages: List<ChatMessage>): Map<String, ChatMessageSearchProjection> =
-        messages.associate { message -> message.id to project(message) }
+    fun buildProjections(
+        messages: List<ChatMessage>,
+        cached: Map<String, ChatMessageSearchProjection> = emptyMap(),
+    ): Map<String, ChatMessageSearchProjection> =
+        messages.associate { message -> message.id to project(message, cached[message.id]) }
 
     /**
      * Projects one message into searchable parts.
@@ -31,7 +35,12 @@ class ChatSearchProjector {
      * For markdown assistant content, `searchableText` is derived from visible markdown text rather
      * than raw source so match ranges line up with rendered content.
      */
-    fun project(message: ChatMessage): ChatMessageSearchProjection {
+    fun project(
+        message: ChatMessage,
+        cached: ChatMessageSearchProjection? = null,
+    ): ChatMessageSearchProjection {
+        if (cached != null && cached.isFor(message)) return cached
+
         val parts = if (message.isUser) {
             projectUserText(message.text)
         } else {
@@ -51,6 +60,8 @@ class ChatSearchProjector {
         return ChatMessageSearchProjection(
             messageId = message.id,
             parts = parts,
+            sourceText = message.text,
+            isUser = message.isUser,
         )
     }
 

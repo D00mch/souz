@@ -5,11 +5,31 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.test.assertIs
+import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 import ru.souz.ui.main.ChatMessage
 
 class ChatSearchProjectorTest {
 
     private val projector = ChatSearchProjector()
+
+    @Test
+    fun `cached projection is reused only for the same id text and role`() {
+        val original = ChatMessage(text = "**target**\n\n```kotlin\ntarget\n```", isUser = false)
+        val cached = projector.project(original)
+
+        assertSame(cached, projector.project(original.copy(isVoice = true), cached))
+        for (changed in listOf(
+            original.copy(id = "another-message"),
+            original.copy(text = "| target |\n| --- |\n| updated |"),
+            original.copy(text = ""),
+            original.copy(isUser = true),
+        )) {
+            val projection = projector.project(changed, cached)
+            assertNotSame(cached, projection)
+            assertEquals(projector.project(changed), projection)
+        }
+    }
 
     @Test
     fun `projector uses visible markdown text and keeps code blocks separate`() {

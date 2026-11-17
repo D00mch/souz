@@ -1,5 +1,7 @@
 package ru.souz.ui.main.search
 
+import ru.souz.ui.main.ChatMessage
+
 /**
  * Half-open text range `[start, endExclusive)` used by search indexing and highlighting.
  *
@@ -105,7 +107,12 @@ data class CodeBlockSearchPartProjection(
 data class ChatMessageSearchProjection(
     val messageId: String,
     val parts: List<ChatMessageSearchPartProjection>,
-)
+    internal val sourceText: String,
+    internal val isUser: Boolean,
+) {
+    internal fun isFor(message: ChatMessage): Boolean =
+        messageId == message.id && sourceText == message.text && isUser == message.isUser
+}
 
 /**
  * Returns all match ranges for one rendered part of a message.

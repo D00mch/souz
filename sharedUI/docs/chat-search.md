@@ -12,6 +12,8 @@ The renderer 0.27 custom hook consumes unknown nodes, including list items. `Cha
 
 The projection used to index a message is also the rendering contract for that message. Query text, matches, and active selection belong to `MainState.chatSearch`; the compact search panel owns only open/focus and keyboard display state.
 
+The ViewModel retains projections only for the current message list. A projection is reusable when message ID, source text, and user/assistant role match; metadata changes and query navigation do not require Markdown parsing. Streaming refreshes project only changed or added messages, preserving the indexed parts and leaf ranges of unchanged messages.
+
 ## Why it is fragile
 
 Markdown syntax, hidden nodes, whitespace, or code-block handling can change visible text length. If indexing and annotation parse the message differently, match ranges remain valid for one representation but highlight the wrong characters in another.

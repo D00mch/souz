@@ -456,7 +456,7 @@ class MainViewModel(
             when (output) {
                 is MainUseCaseOutput.State -> {
                     if (output.refreshChatSearch) {
-                        setStateAndRefreshChatSearch(output.reduce)
+                        setStateAndReindexChatSearch(output.reduce)
                     } else {
                         setState(output.reduce)
                     }
@@ -577,24 +577,6 @@ class MainViewModel(
         chatSearchProjections = projections
     }
 
-    private suspend fun setStateAndRefreshChatSearch(
-        reduce: MainState.() -> MainState,
-    ) {
-        var projections = emptyMap<String, ChatMessageSearchProjection>()
-        setState {
-            val updatedState = reduce()
-            projections = chatSearchEngine.buildProjections(updatedState.chatMessages)
-            updatedState.copy(
-                chatSearch = chatSearchEngine.reindex(
-                    messages = updatedState.chatMessages,
-                    projections = projections,
-                    search = updatedState.chatSearch,
-                )
-            )
-        }
-        chatSearchProjections = projections
-    }
-
     private fun CoroutineScope.launchDbSetup(repo: BackgroundIndexRefresher): Job = launch(ioDispatchers) {
         while (isActive) {
             runCatching { repo.storeDesktopDataDaily() }
@@ -630,7 +612,7 @@ class MainViewModel(
         chatUseCase.clearConversationContext()
         launchConversationCleanup(conversationMeta)
 
-        setStateAndRefreshChatSearch {
+        setStateAndReindexChatSearch {
             copy(
                 displayedText = startTips.randomOrNull() ?: "",
                 statusMessage = "",
@@ -828,7 +810,7 @@ class MainViewModel(
                 } else {
                     currentText
                 }
-                setStateAndRefreshChatSearch {
+                setStateAndReindexChatSearch {
                     copy(
                         displayedText = clearedText,
                         lastText = lastText,
@@ -849,7 +831,7 @@ class MainViewModel(
 
             true -> {
                 val clearedText = getString(Res.string.status_context_cleared_default)
-                setStateAndRefreshChatSearch {
+                setStateAndReindexChatSearch {
                     copy(
                         displayedText = clearedText,
                         userExpectCloseOnX = false,
