@@ -39,7 +39,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.db.VectorDB
 import ru.souz.db.SqliteGraphSessionRepository
 import ru.souz.agent.session.GraphSessionRepository
-import ru.souz.llms.giga.GigaVoiceAPI
+import ru.souz.llms.polza.PolzaVoiceAPI
 import ru.souz.llms.http.GigaHttpClientResource
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.giga.toGiga
@@ -97,7 +97,7 @@ import ru.souz.service.speech.MacOsSpeechBridge
 import ru.souz.service.speech.MacOsSpeechRecognitionProvider
 import ru.souz.service.speech.ModelAwareSpeechRecognitionProvider
 import ru.souz.service.speech.OpenAISpeechRecognitionProvider
-import ru.souz.service.speech.SaluteSpeechRecognitionProvider
+import ru.souz.service.speech.PolzaSpeechRecognitionProvider
 import ru.souz.service.speech.SpeechRecognitionLanguage
 import ru.souz.service.speech.SpeechRecognitionLanguageProvider
 import ru.souz.service.speech.SpeechRecognitionProvider
@@ -356,7 +356,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
 
     // API
     bindSingleton {
-        GigaVoiceAPI(instance(), instance(), instance<GigaHttpClientResource>().client)
+        PolzaVoiceAPI(instance(), instance<ProviderHttpClients>().standard)
     }
     bindSingleton<SpeechRecognitionLanguageProvider> {
         val settingsHostPreferences = instance<SettingsHostPreferences>()
@@ -396,7 +396,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         }
     }
     bindSingleton<AmbientBlockAnalyzer>(overrides = true) { LocalLlmAmbientBlockAnalyzer(instance()) }
-    bindSingleton { SaluteSpeechRecognitionProvider(instance(), instance()) }
+    bindSingleton { PolzaSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { OpenAISpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { AiTunnelSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton {

@@ -99,7 +99,7 @@ fun SettingsProvider.defaultVoiceRecognitionModel(
 }
 
 private fun LlmProvider.toVoiceRecognitionProviderOrNull(): VoiceRecognitionProvider? = when (this) {
-    LlmProvider.GIGA -> VoiceRecognitionProvider.SALUTE_SPEECH
+    LlmProvider.GIGA -> VoiceRecognitionProvider.POLZA
     LlmProvider.AI_TUNNEL -> VoiceRecognitionProvider.AI_TUNNEL
     LlmProvider.OPENAI -> VoiceRecognitionProvider.OPENAI
     LlmProvider.QWEN -> VoiceRecognitionProvider.OPENAI
@@ -109,7 +109,7 @@ private fun LlmProvider.toVoiceRecognitionProviderOrNull(): VoiceRecognitionProv
 }
 
 private fun VoiceRecognitionProvider.isEnabledInBuild(llmBuildProfile: LlmBuildProfile): Boolean = when (this) {
-    VoiceRecognitionProvider.SALUTE_SPEECH -> llmBuildProfile.supportsSaluteSpeechRecognition
+    VoiceRecognitionProvider.POLZA -> llmBuildProfile.supportsPolzaSpeechRecognition
     VoiceRecognitionProvider.AI_TUNNEL -> LlmProvider.AI_TUNNEL in llmBuildProfile.availableProviders
     VoiceRecognitionProvider.OPENAI -> LlmProvider.OPENAI in llmBuildProfile.availableProviders
     VoiceRecognitionProvider.LOCAL_MACOS -> false

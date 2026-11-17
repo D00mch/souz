@@ -11,7 +11,7 @@ data class ApiKeyValues(
     val aiTunnelKey: String,
     val anthropicKey: String,
     val openaiKey: String,
-    val saluteSpeechKey: String,
+    val polzaApiKey: String,
     val codexConnected: Boolean = false,
 )
 
@@ -44,7 +44,7 @@ class ApiKeyAvailabilityUseCase(
             ApiKeyField.AI_TUNNEL to values.aiTunnelKey,
             ApiKeyField.ANTHROPIC to values.anthropicKey,
             ApiKeyField.OPENAI to values.openaiKey,
-            ApiKeyField.SALUTE_SPEECH to values.saluteSpeechKey,
+            ApiKeyField.POLZA to values.polzaApiKey,
             ApiKeyField.CODEX to codexValue,
         ).count { (field, key) ->
             field in availableFields && key.isNotBlank()
@@ -57,8 +57,8 @@ class ApiKeyAvailabilityUseCase(
         val providers = llmBuildProfile.availableProviders
         if (LlmProvider.GIGA in providers) {
             add(ApiKeyField.GIGA_CHAT)
-            add(ApiKeyField.SALUTE_SPEECH)
         }
+        if (llmBuildProfile.supportsPolzaSpeechRecognition) add(ApiKeyField.POLZA)
         if (LlmProvider.QWEN in providers) add(ApiKeyField.QWEN_CHAT)
         if (LlmProvider.AI_TUNNEL in providers) add(ApiKeyField.AI_TUNNEL)
         if (LlmProvider.ANTHROPIC in providers) add(ApiKeyField.ANTHROPIC)
@@ -67,10 +67,11 @@ class ApiKeyAvailabilityUseCase(
     }
 
     private fun supportsVoiceRecognitionApiKeys(availableFields: Set<ApiKeyField>): Boolean =
-        ApiKeyField.SALUTE_SPEECH in availableFields || ApiKeyField.OPENAI in availableFields
+        ApiKeyField.POLZA in availableFields || ApiKeyField.OPENAI in availableFields
 
     private fun availableProviders(availableFields: Set<ApiKeyField>): List<ApiKeyProvider> = buildList {
         if (ApiKeyField.GIGA_CHAT in availableFields) add(ApiKeyProvider.SBER)
+        if (ApiKeyField.POLZA in availableFields) add(ApiKeyProvider.POLZA)
         if (ApiKeyField.OPENAI in availableFields) add(ApiKeyProvider.OPENAI)
         if (ApiKeyField.QWEN_CHAT in availableFields) add(ApiKeyProvider.QWEN)
         if (ApiKeyField.AI_TUNNEL in availableFields) add(ApiKeyProvider.AI_TUNNEL)

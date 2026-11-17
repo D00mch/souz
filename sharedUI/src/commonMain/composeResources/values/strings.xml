@@ -131,7 +131,7 @@
     <string name="label_openai_model_override">OpenAI-compatible model</string>
     <string name="placeholder_openai_base_url">https://api.openai.com/v1</string>
     <string name="placeholder_openai_model_override">Adds this model to the selector</string>
-    <string name="label_key_salutespeech">SaluteSpeech Key</string>
+    <string name="label_key_polza">Polza API Key</string>
     <string name="header_where_to_get_keys">Where to get keys</string>
     
     <!-- API Providers -->
@@ -143,9 +143,13 @@
     <string name="provider_qwen_desc">Keys and management for Qwen family models.</string>
     <string name="provider_qwen_details">Suitable for chat and generation on Qwen models.</string>
 
-    <string name="provider_sber_title">Sber Studio (GigaChat + Speech)</string>
-    <string name="provider_sber_desc">Cabinet for GigaChat and SaluteSpeech keys.</string>
-    <string name="provider_sber_details">If planning voice commands, get Speech API key here.</string>
+    <string name="provider_polza_title">Polza.ai</string>
+    <string name="provider_polza_desc">Russian speech recognition with GigaAM-v3.</string>
+    <string name="provider_polza_details">Get POLZA_API_KEY in your Polza.ai account.</string>
+
+    <string name="provider_sber_title">Sber Studio (GigaChat)</string>
+    <string name="provider_sber_desc">Cabinet for GigaChat keys.</string>
+    <string name="provider_sber_details">Get an API key for GigaChat models.</string>
 
     <string name="provider_anthropic_title">Anthropic Console</string>
     <string name="provider_anthropic_desc">Anthropic dashboard for managing Claude API keys.</string>

@@ -127,7 +127,7 @@
     <string name="label_openai_model_override">OpenAI-совместимая модель</string>
     <string name="placeholder_openai_base_url">https://api.openai.com/v1</string>
     <string name="placeholder_openai_model_override">Добавляет эту модель в список выбора</string>
-    <string name="label_key_salutespeech">SaluteSpeech ключ</string>
+    <string name="label_key_polza">Polza API ключ</string>
     <string name="header_where_to_get_keys">Где получить ключи</string>
     
     <!-- API Providers -->
@@ -139,9 +139,13 @@
     <string name="provider_qwen_desc">Ключи и управление для моделей семейства Qwen.</string>
     <string name="provider_qwen_details">Подходит для чата и генерации на моделях Qwen.</string>
 
-    <string name="provider_sber_title">Sber Studio (GigaChat + Speech)</string>
-    <string name="provider_sber_desc">Кабинет для ключей GigaChat и SaluteSpeech.</string>
-    <string name="provider_sber_details">Если планируете голосовые команды, здесь же получите ключ для Speech API.</string>
+    <string name="provider_polza_title">Polza.ai</string>
+    <string name="provider_polza_desc">Распознавание русской речи с GigaAM-v3.</string>
+    <string name="provider_polza_details">Получите POLZA_API_KEY в кабинете Polza.ai.</string>
+
+    <string name="provider_sber_title">Sber Studio (GigaChat)</string>
+    <string name="provider_sber_desc">Кабинет для ключей GigaChat.</string>
+    <string name="provider_sber_details">Получите API-ключ для моделей GigaChat.</string>
 
     <string name="provider_anthropic_title">Anthropic Console</string>
     <string name="provider_anthropic_desc">Кабинет Anthropic для ключей Claude API.</string>

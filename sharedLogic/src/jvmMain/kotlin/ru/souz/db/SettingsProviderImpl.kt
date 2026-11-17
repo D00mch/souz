@@ -8,6 +8,7 @@ import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
+import ru.souz.llms.findVoiceRecognitionModel
 import ru.souz.llms.findLLMModel
 import ru.souz.llms.local.LocalBridgeLoader
 import ru.souz.llms.local.LocalEmbeddingProfiles
@@ -127,7 +128,7 @@ class SettingsProviderImpl(
     override var codexExpiresAt: Long?
         get() = _codexExpiresAtDelegate?.toLongOrNull()
         set(value) { _codexExpiresAtDelegate = value?.toString() }
-    override var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
+    override var polzaApiKey: String? by keyDelegate(configKey = POLZA_API_KEY, envKey = POLZA_API_KEY)
 
     override fun hasKey(provider: LlmProvider): Boolean = when (provider) {
         LlmProvider.GIGA -> hasConfiguredValue(GIGA_CHAT_KEY, "GIGA_KEY")
@@ -141,7 +142,7 @@ class SettingsProviderImpl(
     }
 
     override fun hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
-        VoiceRecognitionProvider.SALUTE_SPEECH -> hasConfiguredValue(SALUTE_SPEECH_KEY, "VOICE_KEY")
+        VoiceRecognitionProvider.POLZA -> hasConfiguredValue(POLZA_API_KEY, POLZA_API_KEY)
         VoiceRecognitionProvider.AI_TUNNEL -> hasConfiguredValue(AI_TUNNEL_KEY, "AITUNNEL_KEY")
         VoiceRecognitionProvider.OPENAI -> hasConfiguredValue(OPENAI_KEY, "OPENAI_API_KEY")
         VoiceRecognitionProvider.LOCAL_MACOS -> true
@@ -294,13 +295,8 @@ class SettingsProviderImpl(
 
     override var voiceRecognitionModel: VoiceRecognitionModel
         get() = _voiceRecognitionModelDelegate?.let { value ->
-            VoiceRecognitionModel.entries.firstOrNull {
-                it.name.equals(value, ignoreCase = true) || it.alias.equals(
-                    value,
-                    ignoreCase = true
-                )
-            }
-        } ?: VoiceRecognitionModel.SaluteSpeech
+            findVoiceRecognitionModel(value)
+        } ?: VoiceRecognitionModel.PolzaGigaAm
         set(value) {
             _voiceRecognitionModelDelegate = value.name
         }
@@ -373,7 +369,7 @@ class SettingsProviderImpl(
         const val CODEX_REFRESH_TOKEN = "CODEX_REFRESH_TOKEN"
         const val CODEX_ACCOUNT_ID = "CODEX_ACCOUNT_ID"
         const val CODEX_EXPIRES_AT = "CODEX_EXPIRES_AT"
-        const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
+        const val POLZA_API_KEY = "POLZA_API_KEY"
         const val APP_LANGUAGE = "APP_LANGUAGE"
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
         private const val USE_STREAMING = "USE_STREAMING"

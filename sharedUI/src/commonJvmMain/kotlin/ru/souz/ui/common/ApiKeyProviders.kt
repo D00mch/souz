@@ -40,6 +40,12 @@ enum class ApiKeyProvider(
         description = Res.string.provider_sber_desc,
         details = Res.string.provider_sber_details,
     ),
+    POLZA(
+        title = Res.string.provider_polza_title,
+        url = "https://polza.ai/",
+        description = Res.string.provider_polza_desc,
+        details = Res.string.provider_polza_details,
+    ),
     CODEX(
         title = Res.string.provider_codex_title,
         url = "https://auth.openai.com/codex/device",
@@ -54,6 +60,6 @@ enum class ApiKeyField {
     AI_TUNNEL,
     ANTHROPIC,
     OPENAI,
-    SALUTE_SPEECH,
+    POLZA,
     CODEX,
 }

@@ -16,7 +16,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.StringResource
 import org.slf4j.LoggerFactory
-import ru.souz.llms.giga.MissingVoiceKeyException
+import ru.souz.llms.polza.MissingPolzaVoiceKeyException
 import ru.souz.llms.tunnel.MissingAiTunnelVoiceKeyException
 import ru.souz.llms.openai.MissingOpenAiVoiceKeyException
 import ru.souz.service.speech.LocalMacOsSpeechAppBundleMissingUsageDescriptionException
@@ -235,7 +235,7 @@ class VoiceInputUseCase(
     private suspend fun handleRecognitionFailure(cause: Throwable) {
         when (cause) {
             is CancellationException -> throw cause
-            is MissingVoiceKeyException,
+            is MissingPolzaVoiceKeyException,
             is MissingOpenAiVoiceKeyException,
             is MissingAiTunnelVoiceKeyException -> emitVoiceError(Res.string.voice_error_missing_key)
             is VoiceRecognitionUnavailableException -> emitVoiceError(Res.string.voice_error_recognition_unavailable)

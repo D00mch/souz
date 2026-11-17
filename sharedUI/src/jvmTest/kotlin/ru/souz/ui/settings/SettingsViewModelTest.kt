@@ -113,22 +113,22 @@ class SettingsViewModelTest {
         val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
         val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
 
-        val supportsSalute = llmBuildProfile.supportsSaluteSpeechRecognition
+        val supportsPolza = llmBuildProfile.supportsPolzaSpeechRecognition
         every { settingsProvider.hasKey(any<LlmProvider>()) } answers {
             firstArg<LlmProvider>() == LlmProvider.QWEN
         }
         every { settingsProvider.hasKey(any<VoiceRecognitionProvider>()) } answers {
             val provider = firstArg<VoiceRecognitionProvider>()
-            if (supportsSalute) {
-                provider == VoiceRecognitionProvider.SALUTE_SPEECH
+            if (supportsPolza) {
+                provider == VoiceRecognitionProvider.POLZA
             } else {
                 provider == VoiceRecognitionProvider.OPENAI
             }
         }
-        val configuredVoiceRecognitionModel = if (supportsSalute) {
+        val configuredVoiceRecognitionModel = if (supportsPolza) {
             VoiceRecognitionModel.OpenAIGpt4oTranscribe
         } else {
-            VoiceRecognitionModel.SaluteSpeech
+            VoiceRecognitionModel.PolzaGigaAm
         }
 
         val configuredModel = llmBuildProfile.availableModels.first {
@@ -142,8 +142,8 @@ class SettingsViewModelTest {
         every { settingsProvider.qwenChatKey } returns "qwen-key"
         every { settingsProvider.aiTunnelKey } returns ""
         every { settingsProvider.anthropicKey } returns ""
-        every { settingsProvider.openaiKey } returns if (supportsSalute) "" else "openai-key"
-        every { settingsProvider.saluteSpeechKey } returns if (supportsSalute) "salute-key" else ""
+        every { settingsProvider.openaiKey } returns if (supportsPolza) "" else "openai-key"
+        every { settingsProvider.polzaApiKey } returns if (supportsPolza) "polza-key" else ""
         every { settingsProvider.gigaModel } returns configuredModel
         var ambientAnalysisModelValue = LLMModel.Max
         every { settingsProvider.ambientAnalysisModel } answers { ambientAnalysisModelValue }
@@ -256,7 +256,7 @@ class SettingsViewModelTest {
         verify(exactly = 0) { settingsProvider.aiTunnelKey }
         verify(exactly = 0) { settingsProvider.anthropicKey }
         verify(exactly = 0) { settingsProvider.openaiKey }
-        verify(exactly = 0) { settingsProvider.saluteSpeechKey }
+        verify(exactly = 0) { settingsProvider.polzaApiKey }
 
         verify(exactly = 1) { agentFacade.setModel(expectedLlmModel) }
         coVerify(exactly = 1) { desktopInfoRepository.rebuildIndexNow() }
@@ -694,7 +694,7 @@ class SettingsViewModelTest {
         every { settingsProvider.gigaModel } returns gigaModel
         every { settingsProvider.ambientAnalysisModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
         every { settingsProvider.embeddingsModel } returns embeddingsModel
-        every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.SaluteSpeech
+        every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.PolzaGigaAm
         every { settingsProvider.getSystemPromptForAgentModel(any(), any()) } returns null
         every { settingsProvider.supportEmail } returns null
         every { settingsProvider.mcpServersJson } returns null
@@ -754,6 +754,32 @@ class SettingsViewModelTest {
             bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
         }
         return LocalModelSettingsFixture(agentFacade, SettingsViewModel(di, settingsDispatcher = dispatcher))
+    }
+
+    @Test
+    fun `saving and clearing Polza key refreshes selectable voice models`() = runTest(dispatcher) {
+        var key: String? = null
+        val fixture = createLocalModelSettingsFixture(configureSettingsProvider = { settings ->
+            every { settings.polzaApiKey } answers { key }
+            every { settings.polzaApiKey = any() } answers { key = firstArg() }
+            every { settings.hasKey(VoiceRecognitionProvider.POLZA) } answers { !key.isNullOrBlank() }
+        })
+        val viewModel = fixture.viewModel
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
+        assertFalse(VoiceRecognitionModel.PolzaGigaAm in viewModel.uiState.value.availableVoiceRecognitionModels)
+
+        viewModel.handleEvent(SettingsEvent.ToggleApiKeyVisibility(ApiKeyField.POLZA))
+        advanceUntilIdle()
+        viewModel.handleEvent(SettingsEvent.InputApiKey(ApiKeyField.POLZA, "pza_fixture"))
+        advanceUntilIdle()
+        assertEquals("pza_fixture", key)
+        assertTrue(VoiceRecognitionModel.PolzaGigaAm in viewModel.uiState.value.availableVoiceRecognitionModels)
+
+        viewModel.handleEvent(SettingsEvent.InputApiKey(ApiKeyField.POLZA, ""))
+        advanceUntilIdle()
+        assertNull(key)
+        assertFalse(VoiceRecognitionModel.PolzaGigaAm in viewModel.uiState.value.availableVoiceRecognitionModels)
     }
 
     @Test

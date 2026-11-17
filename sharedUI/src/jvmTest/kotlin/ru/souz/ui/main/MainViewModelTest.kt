@@ -47,6 +47,7 @@ import org.kodein.di.scoped
 import org.kodein.di.singleton
 import org.kodein.di.with
 import souz.sharedui.generated.resources.Res
+import souz.sharedui.generated.resources.voice_error_missing_key
 import souz.sharedui.generated.resources.ambient_error_missing_analysis_model
 import souz.sharedui.generated.resources.chat_action_web_search
 import souz.sharedui.generated.resources.onboarding_display_text
@@ -871,6 +872,19 @@ class MainViewModelTest {
             val recoveredState = awaitState(viewModel) { it.pendingVoiceInputDraft?.text == "short draft" }
             assertEquals("short draft", recoveredState.pendingVoiceInputDraft?.text)
             assertEquals(2, recognizeCalls)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `missing Polza key during recognition shows the missing key message`() = runTest(mainDispatcher) {
+        val harness = createHarness(recognizeBehavior = { throw ru.souz.llms.polza.MissingPolzaVoiceKeyException() })
+        try {
+            runCurrent()
+            recordVoiceInput(harness.viewModel, byteArrayOf(1, 2, 3, 4))
+            val expected = getString(Res.string.voice_error_missing_key)
+            assertEquals(expected, awaitState(harness.viewModel) { it.statusMessage == expected }.statusMessage)
         } finally {
             harness.clear()
         }

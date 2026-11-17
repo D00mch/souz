@@ -35,7 +35,7 @@ interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     var codexRefreshToken: String?
     var codexAccountId: String?
     var codexExpiresAt: Long?
-    var saluteSpeechKey: String?
+    var polzaApiKey: String?
     var supportEmail: String?
     override var regionProfile: String
     var ambientAnalysisModel: LLMModel
@@ -65,7 +65,7 @@ interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     }
 
     fun hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
-        VoiceRecognitionProvider.SALUTE_SPEECH -> !saluteSpeechKey.isNullOrBlank()
+        VoiceRecognitionProvider.POLZA -> !polzaApiKey.isNullOrBlank()
         VoiceRecognitionProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
         VoiceRecognitionProvider.OPENAI -> !openaiKey.isNullOrBlank()
         VoiceRecognitionProvider.LOCAL_MACOS -> true

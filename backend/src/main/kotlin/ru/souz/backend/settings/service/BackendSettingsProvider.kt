@@ -22,6 +22,7 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
+import ru.souz.llms.findVoiceRecognitionModel
 import ru.souz.llms.findLLMModel
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.local.LocalEmbeddingProfiles
@@ -66,7 +67,7 @@ class BackendSettingsProvider(
         }.orEmpty()
         restJsonMapper.writeValueAsString(defaults + restJsonMapper.readValue<Map<String, Any?>>(parameters))
     } ?: configured("OPENAI_SUMMARIZATION_PARAMETERS")
-    override var saluteSpeechKey: String? = configured("VOICE_KEY")
+    override var polzaApiKey: String? = configured("POLZA_API_KEY")
     override var supportEmail: String? = configured(SUPPORT_EMAIL)
     override var defaultCalendar: String? = configured(DEFAULT_CALENDAR)
     override var regionProfile: String = normalizeRegion(configured(APP_LANGUAGE))
@@ -111,11 +112,9 @@ class BackendSettingsProvider(
         ?: EmbeddingsModel.GigaEmbeddings
     override var voiceRecognitionModel: VoiceRecognitionModel = configured(VOICE_RECOGNITION_MODEL)
         ?.let { value ->
-            VoiceRecognitionModel.entries.firstOrNull {
-                it.name.equals(value, ignoreCase = true) || it.alias.equals(value, ignoreCase = true)
-            }
+            findVoiceRecognitionModel(value)
         }
-        ?: VoiceRecognitionModel.SaluteSpeech
+        ?: VoiceRecognitionModel.PolzaGigaAm
     override var mcpServersJson: String? = configured(MCP_SERVERS_JSON)
     override var mcpServersFile: String? = configured(MCP_SERVERS_FILE)
 
@@ -174,7 +173,7 @@ class BackendSettingsProvider(
     }
 
     override fun hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
-        VoiceRecognitionProvider.SALUTE_SPEECH -> !saluteSpeechKey.isNullOrBlank()
+        VoiceRecognitionProvider.POLZA -> !polzaApiKey.isNullOrBlank()
         VoiceRecognitionProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
         VoiceRecognitionProvider.OPENAI -> !openaiKey.isNullOrBlank()
         VoiceRecognitionProvider.LOCAL_MACOS -> true

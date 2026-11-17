@@ -14,6 +14,7 @@ Souz is a Kotlin Multiplatform AI assistant with desktop and backend hosts over 
 - [Server context configuration](backend/docs/named-llm-connections.md) and [context budget and compaction](agent/docs/skills-oriented-graph.md#invariant)
 - [Subagent lifecycle](agent/docs/subagents.md) and [read-only Skill inventory](sharedLogic/docs/runtime-sandbox-and-skills.md#invariants)
 - [Desktop chat and prompt ownership](sharedUI/docs/chat-execution.md), [clipboard transactions](desktopApp/docs/clipboard-transactions.md), and [local model profiles](native/docs/model-assets-and-context-budget.md#desktop-text-models)
+- [Voice transcription](docs/voice-transcription.md)
 - [External memory](backend/docs/external-memory.md)
 - [Personality settings](backend/docs/personality-settings.md), [attachment contracts](backend/docs/attachments.md), [remote MCP servers](backend/docs/mcp.md), and [images](backend/docs/images.md)
 

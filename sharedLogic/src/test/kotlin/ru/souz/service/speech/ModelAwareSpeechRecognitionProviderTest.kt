@@ -8,7 +8,7 @@ import kotlinx.coroutines.test.runTest
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
-import ru.souz.llms.giga.GigaVoiceAPI
+import ru.souz.llms.polza.PolzaVoiceAPI
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.tunnel.AiTunnelVoiceAPI
 import ru.souz.llms.openai.OpenAIVoiceAPI
@@ -18,6 +18,34 @@ import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 
 class ModelAwareSpeechRecognitionProviderTest {
+
+    @Test
+    fun `Polza model recognizes using the direct provider and never calls another cloud`() = runTest {
+        val settings = mockk<SettingsProvider> {
+            every { regionProfile } returns REGION_RU
+            every { polzaApiKey } returns "pza_fixture"
+            every { voiceRecognitionModel } returns VoiceRecognitionModel.PolzaGigaAm
+        }
+        val audio = byteArrayOf(1, 2, 3, 4)
+        val api = mockk<PolzaVoiceAPI> {
+            coEvery { recognize(audio) } returns "Проверка голоса"
+        }
+        val polza = PolzaSpeechRecognitionProvider(api, settings)
+        val openAi = mockk<OpenAISpeechRecognitionProvider> {
+            every { enabled } returns true
+            every { hasRequiredKey } returns true
+        }
+        val tunnel = mockk<AiTunnelSpeechRecognitionProvider> {
+            every { enabled } returns true
+            every { hasRequiredKey } returns true
+        }
+        val provider = ModelAwareSpeechRecognitionProvider(settings, polza, openAi, tunnel, mockk())
+
+        assertEquals("Проверка голоса", provider.recognize(audio))
+        coVerify(exactly = 1) { api.recognize(audio) }
+        coVerify(exactly = 0) { openAi.recognize(any()) }
+        coVerify(exactly = 0) { tunnel.recognize(any()) }
+    }
 
     @Test
     fun `openai speech provider is disabled outside en profile`() {
@@ -35,13 +63,13 @@ class ModelAwareSpeechRecognitionProviderTest {
     }
 
     @Test
-    fun `salute speech provider is disabled outside ru profile`() {
+    fun `polza speech provider is disabled outside ru profile`() {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.regionProfile } returns REGION_EN
-        every { settingsProvider.saluteSpeechKey } returns "salute-key"
+        every { settingsProvider.polzaApiKey } returns "polza-key"
 
-        val provider = SaluteSpeechRecognitionProvider(
-            gigaVoiceAPI = mockk<GigaVoiceAPI>(),
+        val provider = PolzaSpeechRecognitionProvider(
+            polzaVoiceAPI = mockk<PolzaVoiceAPI>(),
             settingsProvider = settingsProvider,
         )
 
@@ -69,9 +97,9 @@ class ModelAwareSpeechRecognitionProviderTest {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.AiTunnelGpt4oTranscribe
 
-        val saluteProvider = mockk<SaluteSpeechRecognitionProvider>()
-        every { saluteProvider.enabled } returns true
-        every { saluteProvider.hasRequiredKey } returns true
+        val polzaProvider = mockk<PolzaSpeechRecognitionProvider>()
+        every { polzaProvider.enabled } returns true
+        every { polzaProvider.hasRequiredKey } returns true
 
         val openAiProvider = mockk<OpenAISpeechRecognitionProvider>()
         every { openAiProvider.enabled } returns true
@@ -85,7 +113,7 @@ class ModelAwareSpeechRecognitionProviderTest {
 
         val provider = ModelAwareSpeechRecognitionProvider(
             settingsProvider = settingsProvider,
-            saluteSpeechProvider = saluteProvider,
+            polzaSpeechProvider = polzaProvider,
             openAiSpeechProvider = openAiProvider,
             aiTunnelSpeechProvider = aiTunnelProvider,
             macOsSpeechProvider = mockk(),
@@ -96,7 +124,7 @@ class ModelAwareSpeechRecognitionProviderTest {
         assertEquals(" from-ai-tunnel ", recognized)
         coVerify(exactly = 1) { aiTunnelProvider.recognize(any()) }
         coVerify(exactly = 0) { openAiProvider.recognize(any()) }
-        coVerify(exactly = 0) { saluteProvider.recognize(any()) }
+        coVerify(exactly = 0) { polzaProvider.recognize(any()) }
     }
 
     @Test
@@ -104,9 +132,9 @@ class ModelAwareSpeechRecognitionProviderTest {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.AiTunnelGpt4oTranscribe
 
-        val saluteProvider = mockk<SaluteSpeechRecognitionProvider>()
-        every { saluteProvider.enabled } returns true
-        every { saluteProvider.hasRequiredKey } returns false
+        val polzaProvider = mockk<PolzaSpeechRecognitionProvider>()
+        every { polzaProvider.enabled } returns true
+        every { polzaProvider.hasRequiredKey } returns false
 
         val openAiProvider = mockk<OpenAISpeechRecognitionProvider>()
         every { openAiProvider.enabled } returns true
@@ -119,7 +147,7 @@ class ModelAwareSpeechRecognitionProviderTest {
 
         val provider = ModelAwareSpeechRecognitionProvider(
             settingsProvider = settingsProvider,
-            saluteSpeechProvider = saluteProvider,
+            polzaSpeechProvider = polzaProvider,
             openAiSpeechProvider = openAiProvider,
             aiTunnelSpeechProvider = aiTunnelProvider,
             macOsSpeechProvider = mockk(),
@@ -137,9 +165,9 @@ class ModelAwareSpeechRecognitionProviderTest {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.LocalMacOsStt
 
-        val saluteProvider = mockk<SaluteSpeechRecognitionProvider>()
-        every { saluteProvider.enabled } returns true
-        every { saluteProvider.hasRequiredKey } returns true
+        val polzaProvider = mockk<PolzaSpeechRecognitionProvider>()
+        every { polzaProvider.enabled } returns true
+        every { polzaProvider.hasRequiredKey } returns true
 
         val openAiProvider = mockk<OpenAISpeechRecognitionProvider>()
         every { openAiProvider.enabled } returns true
@@ -156,7 +184,7 @@ class ModelAwareSpeechRecognitionProviderTest {
 
         val provider = ModelAwareSpeechRecognitionProvider(
             settingsProvider = settingsProvider,
-            saluteSpeechProvider = saluteProvider,
+            polzaSpeechProvider = polzaProvider,
             openAiSpeechProvider = openAiProvider,
             aiTunnelSpeechProvider = aiTunnelProvider,
             macOsSpeechProvider = macOsProvider,
@@ -169,6 +197,6 @@ class ModelAwareSpeechRecognitionProviderTest {
         coVerify(exactly = 1) { macOsProvider.recognize(any()) }
         coVerify(exactly = 0) { openAiProvider.recognize(any()) }
         coVerify(exactly = 0) { aiTunnelProvider.recognize(any()) }
-        coVerify(exactly = 0) { saluteProvider.recognize(any()) }
+        coVerify(exactly = 0) { polzaProvider.recognize(any()) }
     }
 }

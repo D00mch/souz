@@ -94,7 +94,7 @@ fun SetupScreen(
         onAiTunnelKeyInput = { key -> viewModel.send(SetupEvent.InputAiTunnelKey(key)) },
         onAnthropicKeyInput = { key -> viewModel.send(SetupEvent.InputAnthropicKey(key)) },
         onOpenAiKeyInput = { key -> viewModel.send(SetupEvent.InputOpenAiKey(key)) },
-        onSaluteSpeechKeyInput = { key -> viewModel.send(SetupEvent.InputSaluteSpeechKey(key)) },
+        onPolzaApiKeyInput = { key -> viewModel.send(SetupEvent.InputPolzaApiKey(key)) },
         onOpenProviderLink = { provider -> viewModel.send(SetupEvent.OpenProviderLink(provider)) },
         onStartCodexOAuth = { viewModel.send(SetupEvent.StartCodexOAuth) },
         onCancelCodexOAuth = { viewModel.send(SetupEvent.CancelCodexOAuth) },
@@ -114,7 +114,7 @@ fun SetupScreenContent(
     onAiTunnelKeyInput: (String) -> Unit,
     onAnthropicKeyInput: (String) -> Unit,
     onOpenAiKeyInput: (String) -> Unit,
-    onSaluteSpeechKeyInput: (String) -> Unit,
+    onPolzaApiKeyInput: (String) -> Unit,
     onOpenProviderLink: (ApiKeyProvider) -> Unit,
     onStartCodexOAuth: () -> Unit = {},
     onCancelCodexOAuth: () -> Unit = {},
@@ -125,7 +125,7 @@ fun SetupScreenContent(
 ) {
     LaunchedEffect(Unit) { onResizeRequest(SetupWindowSize) }
     val hasNoKeys = state.configuredKeysCount == 0
-    val supportsSaluteSpeech = ApiKeyField.SALUTE_SPEECH in state.availableApiKeyFields
+    val supportsPolzaSpeech = ApiKeyField.POLZA in state.availableApiKeyFields
     val supportsVoiceRecognition = state.supportsVoiceRecognitionApiKeys
 
     Box(
@@ -295,11 +295,11 @@ fun SetupScreenContent(
                         )
                     }
 
-                    if (supportsSaluteSpeech) {
+                    if (supportsPolzaSpeech) {
                         LabeledTextField(
-                            label = stringResource(Res.string.label_key_salutespeech),
-                            value = state.saluteSpeechKey,
-                            onValueChange = onSaluteSpeechKeyInput,
+                            label = stringResource(Res.string.label_key_polza),
+                            value = state.polzaApiKey,
+                            onValueChange = onPolzaApiKeyInput,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -601,7 +601,7 @@ private fun SetupScreenPreview() {
                 aiTunnelKey = "",
                 anthropicKey = "",
                 openaiKey = "",
-                saluteSpeechKey = "",
+                polzaApiKey = "",
                 configuredKeysCount = 0,
                 canProceed = false
             ),
@@ -611,7 +611,7 @@ private fun SetupScreenPreview() {
             onAiTunnelKeyInput = {},
             onAnthropicKeyInput = {},
             onOpenAiKeyInput = {},
-            onSaluteSpeechKeyInput = {},
+            onPolzaApiKeyInput = {},
             onOpenProviderLink = {},
             onChooseVoice = {},
             onDismissVoiceReminderDialog = {},

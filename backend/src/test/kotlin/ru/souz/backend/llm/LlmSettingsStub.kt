@@ -24,7 +24,7 @@ internal class LlmSettingsStub : SettingsProvider {
     override var codexRefreshToken: String? = null
     override var codexAccountId: String? = null
     override var codexExpiresAt: Long? = null
-    override var saluteSpeechKey: String? = null
+    override var polzaApiKey: String? = null
     override var supportEmail: String? = null
     override var defaultCalendar: String? = null
     override var regionProfile: String = "ru"
@@ -45,7 +45,7 @@ internal class LlmSettingsStub : SettingsProvider {
     override var temperature: Float = 0.7f
     override var forbiddenFolders: List<String> = emptyList()
     override var embeddingsModel: EmbeddingsModel = EmbeddingsModel.GigaEmbeddings
-    override var voiceRecognitionModel: VoiceRecognitionModel = VoiceRecognitionModel.SaluteSpeech
+    override var voiceRecognitionModel: VoiceRecognitionModel = VoiceRecognitionModel.PolzaGigaAm
     override var mcpServersJson: String? = null
     override var mcpServersFile: String? = null
 
