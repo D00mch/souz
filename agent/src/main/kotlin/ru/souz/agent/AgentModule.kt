@@ -25,6 +25,7 @@ import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
+import ru.souz.agent.session.FileGraphSessionRepository
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.agent.session.GraphSessionService
 import ru.souz.llms.json.JsonUtils
@@ -38,10 +39,10 @@ fun agentDiModule(
     graphSessionRepositoryTag: Any? = null,
     fallbackClassifierTag: Any? = null,
 ): DI.Module = DI.Module("agent") {
-    bindSingleton {
+    bindSingleton<GraphSessionRepository> {
         graphSessionRepositoryTag
             ?.let { tag -> instance<GraphSessionRepository>(tag = tag) }
-            ?: GraphSessionRepository()
+            ?: FileGraphSessionRepository()
     }
     bindSingleton {
         GraphSessionService(

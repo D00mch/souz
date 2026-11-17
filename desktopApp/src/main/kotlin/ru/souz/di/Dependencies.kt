@@ -37,6 +37,8 @@ import ru.souz.db.DesktopDataExtractor
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.db.VectorDB
+import ru.souz.db.SqliteGraphSessionRepository
+import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.llms.giga.GigaVoiceAPI
 import ru.souz.llms.http.GigaHttpClientResource
 import ru.souz.llms.http.ProviderHttpClients
@@ -177,14 +179,16 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<CoroutineScope> {
         CoroutineScope(SupervisorJob() + Dispatchers.Default)
     }
-    bindSingleton { DesktopStateCleanup(instance<SouzPaths>().stateRoot, instance()) }
+    bindSingleton { DesktopStateCleanup(instance<SouzPaths>().stateRoot, instance(), sessions = instance()) }
     bindSingleton<LocalCacheCleaner>(overrides = true) {
-        DesktopLocalCacheCleaner(instance(), SupportLogSender(paths = instance()).logDirectory())
+        DesktopLocalCacheCleaner(instance(), SupportLogSender(paths = instance()).logDirectory(), instance())
     }
     bindSingleton { Keys() }
 
     // DB
-    bindSingleton { VectorDB }
+    bindSingleton { SqliteGraphSessionRepository(instance<SouzPaths>().stateRoot.resolve("desktop.db")) }
+    bindSingleton<GraphSessionRepository>(tag = "desktop-sessions") { instance<SqliteGraphSessionRepository>() }
+    bindSingleton { VectorDB(instance<SouzPaths>().stateRoot.resolve("desktop.db")) }
     bindSingleton { LlmBuildProfile(instance(), instance()) }
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
     bindSingleton<MemoryOwnerProvider> { DesktopMemoryOwnerProvider() }
@@ -516,6 +520,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             apiClassifierTag = DiTags.TAG_API,
             localClassifierTag = DiTags.TAG_LOCAL,
             fallbackClassifierTag = FRIDA_FALLBACK_TAG,
+            graphSessionRepositoryTag = "desktop-sessions",
         )
     )
     bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance(), mailSendApproval = instance()) }

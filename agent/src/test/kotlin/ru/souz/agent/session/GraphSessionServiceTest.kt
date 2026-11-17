@@ -31,7 +31,7 @@ class GraphSessionServiceTest {
     @Test
     fun `memory augmentation event stores only safe summary`() = runTest {
         val stateRoot = Files.createTempDirectory("graph-session-memory-").also(createdPaths::add)
-        val repository = GraphSessionRepository(DefaultSouzPaths(stateRoot = stateRoot))
+        val repository = FileGraphSessionRepository(DefaultSouzPaths(stateRoot = stateRoot))
         val service = GraphSessionService(
             repository = repository,
             logObjectMapper = jacksonObjectMapper(),

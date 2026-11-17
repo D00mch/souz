@@ -5,7 +5,6 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
-import io.mockk.mockkObject
 import io.mockk.slot
 import io.mockk.runs
 import io.mockk.unmockkAll
@@ -43,10 +42,10 @@ class DesktopInfoRepositoryTest {
 
     @Test
     fun `rebuildIndexNow ignores same day guard and rebuilds immediately`() {
-        mockkObject(VectorDB)
-        every { VectorDB.initializeOnce() } just runs
-        every { VectorDB.clearAllData() } just runs
-        every { VectorDB.insert(any(), any()) } just runs
+        val db = mockk<VectorDB>()
+        every { db.initializeOnce() } just runs
+        every { db.clearAllData() } just runs
+        every { db.insert(any(), any()) } just runs
 
         val api = mockk<LLMChatAPI>()
         coEvery { api.embeddings(any()) } returns LLMResponse.Embeddings.Ok(
@@ -65,7 +64,7 @@ class DesktopInfoRepositoryTest {
         every { settingsProvider.hasKey(LlmProvider.GIGA) } returns true
         every { settingsProvider.gigaChatKey } returns "giga-key"
 
-        val repository = DesktopInfoRepository(api, VectorDB, extractor, settingsProvider)
+        val repository = DesktopInfoRepository(api, db, extractor, settingsProvider)
         ConfigStore.put(LAST_RUN_KEY, LocalDate.now().toString())
         ConfigStore.put(INDEX_MODEL_KEY, EmbeddingsModel.GigaEmbeddings.name)
 
@@ -79,9 +78,9 @@ class DesktopInfoRepositoryTest {
 
     @Test
     fun `storeDesktopDataDaily skips local embeddings until linked asset exists`() {
-        mockkObject(VectorDB)
-        every { VectorDB.initializeOnce() } just runs
-        every { VectorDB.clearAllData() } just runs
+        val db = mockk<VectorDB>()
+        every { db.initializeOnce() } just runs
+        every { db.clearAllData() } just runs
 
         val api = mockk<LLMChatAPI>(relaxed = true)
         val extractor = mockk<DesktopDataExtractor>(relaxed = true)
@@ -91,24 +90,24 @@ class DesktopInfoRepositoryTest {
         val localModelStore = mockk<LocalModelStore>()
         every { localModelStore.isPresent(LocalEmbeddingProfiles.default()) } returns false
 
-        val repository = DesktopInfoRepository(api, VectorDB, extractor, settingsProvider, localModelStore)
+        val repository = DesktopInfoRepository(api, db, extractor, settingsProvider, localModelStore)
 
         kotlinx.coroutines.runBlocking {
             repository.storeDesktopDataDaily()
             assertEquals(emptyList(), repository.search("query", 5))
         }
 
-        verify(exactly = 0) { VectorDB.clearAllData() }
+        verify(exactly = 0) { db.clearAllData() }
         coVerify(exactly = 0) { api.embeddings(any()) }
     }
 
     @Test
     fun `search skips stale index after embeddings model switch`() {
-        mockkObject(VectorDB)
-        every { VectorDB.initializeOnce() } just runs
-        every { VectorDB.clearAllData() } just runs
-        every { VectorDB.insert(any(), any()) } just runs
-        every { VectorDB.searchSimilar(any(), any()) } returns listOf(StorredData("stale", StorredType.GENERAL_FACT))
+        val db = mockk<VectorDB>()
+        every { db.initializeOnce() } just runs
+        every { db.clearAllData() } just runs
+        every { db.insert(any(), any()) } just runs
+        every { db.searchSimilar(any(), any()) } returns listOf(StorredData("stale", StorredType.GENERAL_FACT))
 
         val api = mockk<LLMChatAPI>()
         coEvery { api.embeddings(any()) } returns LLMResponse.Embeddings.Ok(
@@ -127,7 +126,7 @@ class DesktopInfoRepositoryTest {
         every { settingsProvider.gigaChatKey } returns "giga-key"
         every { settingsProvider.qwenChatKey } returns "qwen-key"
 
-        val repository = DesktopInfoRepository(api, VectorDB, extractor, settingsProvider)
+        val repository = DesktopInfoRepository(api, db, extractor, settingsProvider)
 
         kotlinx.coroutines.runBlocking {
             repository.rebuildIndexNow()
@@ -136,13 +135,13 @@ class DesktopInfoRepositoryTest {
         }
 
         coVerify(exactly = 1) { api.embeddings(any()) }
-        verify(exactly = 0) { VectorDB.searchSimilar(any(), any()) }
+        verify(exactly = 0) { db.searchSimilar(any(), any()) }
     }
 
     @Test
     fun `storeDesktopInfo marks indexed texts as document embeddings`() {
-        mockkObject(VectorDB)
-        every { VectorDB.insert(any(), any()) } just runs
+        val db = mockk<VectorDB>()
+        every { db.insert(any(), any()) } just runs
 
         val requestSlot = slot<LLMRequest.Embeddings>()
         val api = mockk<LLMChatAPI>()
@@ -154,7 +153,7 @@ class DesktopInfoRepositoryTest {
 
         val repository = DesktopInfoRepository(
             api = api,
-            db = VectorDB,
+            db = db,
             extractor = mockk(relaxed = true),
             settingsProvider = mockk(relaxed = true),
         )
@@ -176,7 +175,7 @@ class DesktopInfoRepositoryTest {
     }
 
     private companion object {
-        const val LAST_RUN_KEY = "rag_repo_last_run"
-        const val INDEX_MODEL_KEY = "rag_repo_index_model"
+        const val LAST_RUN_KEY = "sqlite_rag_repo_last_run"
+        const val INDEX_MODEL_KEY = "sqlite_rag_repo_index_model"
     }
 }

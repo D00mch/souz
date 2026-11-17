@@ -9,21 +9,28 @@ import ru.souz.paths.DefaultSouzPaths
 import ru.souz.paths.SouzPaths
 import kotlin.streams.asSequence
 
-/**
- * Stores and loads graph sessions
- * TODO: rewrite with SQLite
- */
-class GraphSessionRepository(
+/** Host-owned persistence for graph execution traces. */
+interface GraphSessionRepository {
+    fun save(session: GraphSession)
+    /** Fetches sessions, newest first. */
+    fun loadAll(): List<GraphSession>
+    fun loadById(sessionId: String): GraphSession?
+    fun delete(sessionId: String): Boolean
+    fun count(): Int
+}
+
+/** File adapter retained for hosts that do not supply desktop persistence. */
+class FileGraphSessionRepository(
     private val paths: SouzPaths = DefaultSouzPaths(),
-) {
-    private val l = LoggerFactory.getLogger(GraphSessionRepository::class.java)
+) : GraphSessionRepository {
+    private val l = LoggerFactory.getLogger(FileGraphSessionRepository::class.java)
     private val sessionsDir: Path by lazy {
         Files.createDirectories(paths.stateRoot)
         Files.createDirectories(paths.sessionsDir)
         paths.sessionsDir
     }
 
-    fun save(session: GraphSession) {
+    override fun save(session: GraphSession) {
         try {
             val file = sessionsDir.resolve("${session.id}.json").toFile()
             restJsonMapper.writerWithDefaultPrettyPrinter().writeValue(file, session)
@@ -34,7 +41,7 @@ class GraphSessionRepository(
     }
 
     /** Fetches sessions. New first. */
-    fun loadAll(): List<GraphSession> {
+    override fun loadAll(): List<GraphSession> {
         return try {
             Files.list(sessionsDir).use { stream ->
                 stream.asSequence()
@@ -51,7 +58,7 @@ class GraphSessionRepository(
         }
     }
 
-    fun loadById(sessionId: String): GraphSession? {
+    override fun loadById(sessionId: String): GraphSession? {
         return try {
             val file = sessionsDir.resolve("$sessionId.json").toFile()
             if (file.exists()) {
@@ -63,7 +70,7 @@ class GraphSessionRepository(
         }
     }
 
-    fun delete(sessionId: String): Boolean {
+    override fun delete(sessionId: String): Boolean {
         return try {
             Files.deleteIfExists(sessionsDir.resolve("$sessionId.json"))
         } catch (e: Exception) {
@@ -73,7 +80,7 @@ class GraphSessionRepository(
     }
 
     /** @return Stored sessions count */
-    fun count(): Int {
+    override fun count(): Int {
         return Files.list(sessionsDir).use { stream ->
             stream.filter { path -> Files.isRegularFile(path) && path.fileName.toString().endsWith(".json") }.count()
         }.toInt()

@@ -17,7 +17,7 @@ import kotlin.random.Random
 
 /**
  * Orchestrates extraction of desktop data, embedding via LLM and persistence
- * into a Lucene index for similarity search.
+ * into SQLite for similarity search.
  */
 class DesktopInfoRepository(
     private val api: LLMChatAPI,
@@ -30,8 +30,8 @@ class DesktopInfoRepository(
     private val refreshMutex = Mutex()
 
     companion object {
-        private const val LAST_RUN_KEY = "rag_repo_last_run"
-        private const val INDEX_MODEL_KEY = "rag_repo_index_model"
+        private const val LAST_RUN_KEY = "sqlite_rag_repo_last_run"
+        private const val INDEX_MODEL_KEY = "sqlite_rag_repo_index_model"
         private const val REMOTE_EMBEDDINGS_BATCH_SIZE = 500
         private const val LOCAL_EMBEDDINGS_BATCH_SIZE = 64
     }

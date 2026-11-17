@@ -24,7 +24,7 @@ class GraphSessionRepositoryTest {
     fun `saves sessions under sessions dir`() {
         val stateRoot = createTempDirectory("graph-session-save-")
         val paths = DefaultSouzPaths(stateRoot = stateRoot)
-        val repository = GraphSessionRepository(paths = paths)
+        val repository = FileGraphSessionRepository(paths = paths)
         val session = sampleSession(id = "saved-session")
 
         repository.save(session)

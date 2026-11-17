@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.io.TempDir
 import ru.souz.agent.session.GraphSession
-import ru.souz.agent.session.GraphSessionRepository
+import ru.souz.db.SqliteGraphSessionRepository
 import ru.souz.paths.DefaultSouzPaths
 
 class DesktopLocalCacheCleanerTest {
@@ -28,13 +28,13 @@ class DesktopLocalCacheCleanerTest {
 
     @Test
     fun `manual cleanup clears recent logs and graph history and preserves other data`() = runTest {
-        val repository = GraphSessionRepository(paths)
+        val repository = sessions()
         repository.save(session("before-cleanup"))
         val logs = listOf("logs/giga.log", "logs/telemetry.log").map(::file)
         val preserved = listOf(
             "memory.db", "models/model.gguf", "native/bridge.dylib", "vector-index/index",
             "skills/skill.json", "knowledge/entry.json", ".desktop-cleanup",
-            "logs/notes.txt", "logs/archive/nested.log", "sessions/notes.txt", "sessions/archive/nested.json",
+            "logs/notes.txt", "logs/archive/nested.log", "sessions/legacy.json", "sessions/notes.txt", "sessions/archive/nested.json",
         ).map(::file)
         val outside = Files.writeString(temporaryDirectory.resolve("outside.json"), "keep")
         val linkedLog = Files.createSymbolicLink(paths.logsDir.resolve("linked.log"), outside)
@@ -43,7 +43,7 @@ class DesktopLocalCacheCleanerTest {
         cleaner().clear()
 
         logs.forEach { assertEquals(0L, Files.size(it)) }
-        assertFalse(Files.exists(paths.sessionsDir.resolve("before-cleanup.json")))
+        assertEquals(0, repository.count())
         (preserved + listOf(outside)).forEach { assertEquals("keep", Files.readString(it), "Must preserve $it") }
         assertTrue(Files.isSymbolicLink(linkedLog))
         assertTrue(Files.isSymbolicLink(linkedSession))
@@ -79,7 +79,7 @@ class DesktopLocalCacheCleanerTest {
             val activeFile = Path.of(appender.file)
             assertEquals("before-cleanup\n", Files.readString(activeFile))
 
-            DesktopLocalCacheCleaner(paths, configuredLogs).clear()
+            DesktopLocalCacheCleaner(paths, configuredLogs, sessions()).clear()
 
             assertEquals(0L, Files.size(activeFile))
             assertEquals("keep", Files.readString(defaultLog))
@@ -93,7 +93,7 @@ class DesktopLocalCacheCleanerTest {
     @Test
     fun `missing caches are harmless and repeated cleanup is safe`() = runTest {
         cleaner().clear()
-        assertFalse(Files.exists(paths.stateRoot))
+        assertEquals(0, sessions().count())
         val log = file("logs/giga.log")
         cleaner().clear()
         cleaner().clear()
@@ -104,11 +104,13 @@ class DesktopLocalCacheCleanerTest {
     fun `directory failure is reported after attempting the other cache`() = runTest {
         val invalidLogs = file("logs")
         val sessionFile = file("sessions/graph.json")
+        sessions().save(session("clear-despite-log-failure"))
 
         val failure = assertFailsWith<IOException> { cleaner().clear() }
 
         assertEquals("Some local logs or graph sessions could not be cleared.", failure.message)
-        assertFalse(Files.exists(sessionFile))
+        assertTrue(Files.exists(sessionFile))
+        assertEquals(0, sessions().count())
         assertEquals("keep", Files.readString(invalidLogs))
     }
 
@@ -127,11 +129,13 @@ class DesktopLocalCacheCleanerTest {
         assertEquals("keep", Files.readString(outsideSession))
         val linkedRoot = Files.createSymbolicLink(temporaryDirectory.resolve("linked-state"), paths.stateRoot)
         val linkedPaths = DefaultSouzPaths(linkedRoot)
-        assertFailsWith<IllegalStateException> { DesktopLocalCacheCleaner(linkedPaths, outside).clear() }
+        assertFailsWith<IllegalStateException> { DesktopLocalCacheCleaner(linkedPaths, outside, sessions()).clear() }
         assertEquals("keep", Files.readString(outsideLog))
     }
 
-    private fun cleaner() = DesktopLocalCacheCleaner(paths, paths.logsDir)
+    private fun sessions() = SqliteGraphSessionRepository(paths.stateRoot.resolve("desktop.db"))
+
+    private fun cleaner() = DesktopLocalCacheCleaner(paths, paths.logsDir, sessions())
 
     private fun file(relativePath: String): Path = paths.stateRoot.resolve(relativePath).also {
         Files.createDirectories(it.parent)

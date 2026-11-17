@@ -66,7 +66,6 @@ kotlin {
                 implementation(libs.bundles.letsPlot)
                 implementation(libs.poi)
                 implementation(libs.poi.ooxml)
-                implementation(libs.lucene.core)
                 implementation(libs.logback)
                 implementation(libs.slfj)
                 implementation(libs.slf4j.jcl)
