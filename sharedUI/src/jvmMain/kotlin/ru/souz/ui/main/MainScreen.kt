@@ -1140,13 +1140,15 @@ fun ChatModeContent(
                             }
                         }
                     }
+
+                    // A separate end anchor also scrolls past an oversized active-actions block.
+                    item(key = "chat-bottom") {}
                 }
 
                 if (showScrollToBottom) {
                     SmallFloatingActionButton(
                         onClick = {
                             scrollScope.launch {
-                                // The trailing thinking item also reaches the end of an oversized reply.
                                 val lastIndex = listState.layoutInfo.totalItemsCount - 1
                                 if (lastIndex >= 0) listState.scrollToItem(lastIndex)
                             }

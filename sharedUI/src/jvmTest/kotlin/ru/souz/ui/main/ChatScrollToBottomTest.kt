@@ -74,6 +74,37 @@ class ChatScrollToBottomTest {
         assertAtBottom(label)
     }
 
+    @Test
+    fun `the button reaches the end of oversized active actions after they grow`() = runComposeUiTest {
+        val actions = (1..8).map {
+            "Synthetic action $it: " + "wrapped action detail ".repeat(8)
+        }
+        var state by mutableStateOf(MainState(
+            chatMessages = messages,
+            isProcessing = true,
+            agentActions = actions,
+        ))
+        val label = showChat { state }
+        onNode(hasScrollToIndexAction()).performScrollToIndex(0)
+        onNodeWithText(actions.last()).assertDoesNotExist()
+        onNodeWithContentDescription(label).assertIsDisplayed().performClick()
+        settleAnimations()
+        assertAtBottom(label)
+        onNodeWithText(actions.last()).assertIsDisplayed()
+
+        val latestAction = "Latest synthetic action after growth"
+        runOnIdle { state = state.copy(agentActions = actions + latestAction) }
+        settleAnimations()
+        onNodeWithContentDescription(label).assertIsDisplayed().performClick()
+        settleAnimations()
+        assertAtBottom(label)
+        onNodeWithText(latestAction).assertIsDisplayed()
+
+        runOnIdle { state = state.copy(isProcessing = false) }
+        settleAnimations()
+        assertAtBottom(label)
+    }
+
     private fun ComposeUiTest.showChat(state: () -> MainState): String {
         mainClock.autoAdvance = false
         lateinit var label: String
