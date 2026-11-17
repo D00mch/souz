@@ -1117,6 +1117,9 @@ fun SupportSettingsContent(
     clipboardManager: ClipboardManager,
     onShowSnack: (String) -> Unit,
     onOpenGraphSessions: () -> Unit,
+    onClearLocalCaches: () -> Unit,
+    onConfirmClearLocalCaches: () -> Unit,
+    onCancelClearLocalCaches: () -> Unit,
     onClose: () -> Unit
 ) {
     SettingsSectionScreen(
@@ -1189,7 +1192,31 @@ fun SupportSettingsContent(
             SettingsGroupDivider()
 
             LogsView(state, onSupportEmailInput, onSendLogs, clipboardManager, onShowSnack)
+
+            SettingsGroupDivider()
+            Text(stringResource(Res.string.clear_local_caches_description))
+            OutlinedButton(
+                onClick = onClearLocalCaches,
+                enabled = !state.isClearingLocalCaches,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(if (state.isClearingLocalCaches) Res.string.clearing_local_caches else Res.string.clear_local_caches))
+            }
+            state.clearLocalCachesMessage?.let { Text(it) }
         }
+    }
+    if (state.showClearLocalCachesConfirmation) {
+        AlertDialog(
+            onDismissRequest = onCancelClearLocalCaches,
+            title = { Text(stringResource(Res.string.clear_local_caches)) },
+            text = { Text(stringResource(Res.string.clear_local_caches_confirmation)) },
+            confirmButton = {
+                TextButton(onClick = onConfirmClearLocalCaches) { Text(stringResource(Res.string.clear_local_caches)) }
+            },
+            dismissButton = {
+                TextButton(onClick = onCancelClearLocalCaches) { Text(stringResource(Res.string.dialog_cancel)) }
+            },
+        )
     }
 }
 
@@ -2129,6 +2156,9 @@ private fun SupportSettingsContentPreview() {
             clipboardManager = LocalClipboardManager.current,
             onShowSnack = {},
             onOpenGraphSessions = {},
+            onClearLocalCaches = {},
+            onConfirmClearLocalCaches = {},
+            onCancelClearLocalCaches = {},
             onClose = {}
         )
     }

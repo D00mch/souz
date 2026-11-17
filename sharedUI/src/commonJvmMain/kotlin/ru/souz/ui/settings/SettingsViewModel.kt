@@ -32,6 +32,7 @@ import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.ui.host.CalendarListProvider
 import ru.souz.ui.host.ExternalLinkOpener
 import ru.souz.ui.host.LocalModelUiHost
+import ru.souz.ui.host.LocalCacheCleaner
 import ru.souz.ui.host.PrivacyPolicyOpener
 import ru.souz.ui.host.SettingsHostPreferences
 import ru.souz.ui.host.SupportLogService
@@ -58,6 +59,7 @@ class SettingsViewModel(
     private val telegramSettingsHost: TelegramSettingsHost by di.instance()
     private val calendarListProvider: CalendarListProvider by di.instance()
     private val supportLogService: SupportLogService by di.instance()
+    private val localCacheCleaner: LocalCacheCleaner by di.instance()
     private val privacyPolicyOpener: PrivacyPolicyOpener by di.instance()
     private val settingsHostPreferences: SettingsHostPreferences by di.instance()
     private val externalLinkOpener: ExternalLinkOpener by di.instance()
@@ -363,6 +365,11 @@ class SettingsViewModel(
                 setState { copy(systemPrompt = agentFacade.currentContext.value.systemPrompt) }
             }
             is SendLogsToSupport -> sendLogs()
+            ClearLocalCaches -> if (!currentState.isClearingLocalCaches) {
+                setState { copy(showClearLocalCachesConfirmation = true, clearLocalCachesMessage = null) }
+            }
+            CancelClearLocalCaches -> setState { copy(showClearLocalCachesConfirmation = false) }
+            ConfirmClearLocalCaches -> clearLocalCaches()
             OpenPrivacyPolicy -> openPrivacyPolicy()
             RefreshBalance -> fetchBalance()
             GoToMain -> {
@@ -989,6 +996,26 @@ class SettingsViewModel(
                 availableCalendars = calendars,
                 isLoadingCalendars = false
             )
+        }
+    }
+
+    private fun clearLocalCaches() {
+        if (!currentState.showClearLocalCachesConfirmation || currentState.isClearingLocalCaches) return
+        setState { copy(showClearLocalCachesConfirmation = false, isClearingLocalCaches = true) }
+        viewModelScope.launch {
+            try {
+                localCacheCleaner.clear()
+                val message = getString(Res.string.local_caches_cleared)
+                setState { copy(clearLocalCachesMessage = message, sendLogsMessage = null, sendLogsPath = null) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                l.warn("Failed to clear local caches", error)
+                val message = getString(Res.string.error_clear_local_caches)
+                setState { copy(clearLocalCachesMessage = message) }
+            } finally {
+                setState { copy(isClearingLocalCaches = false) }
+            }
         }
     }
 

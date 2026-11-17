@@ -639,4 +639,10 @@
     <string name="chat_action_value_default">по умолчанию</string>
     <string name="chat_action_value_today">сегодня</string>
 
+    <string name="clear_local_caches">Очистить локальный кэш</string>
+    <string name="clearing_local_caches">Очистка локального кэша…</string>
+    <string name="clear_local_caches_description">Очистка локальных логов и сохранённой истории графов. Настройки, модели, память и другие данные приложения сохраняются.</string>
+    <string name="clear_local_caches_confirmation">Очистить все локальные логи и навсегда удалить сохранённую историю графов? Это действие нельзя отменить. Новые действия снова создадут логи и историю графов.</string>
+    <string name="local_caches_cleared">Локальные логи и сохранённая история графов очищены.</string>
+    <string name="error_clear_local_caches">Не удалось очистить часть локального кэша. Попробуйте ещё раз.</string>
 </resources>

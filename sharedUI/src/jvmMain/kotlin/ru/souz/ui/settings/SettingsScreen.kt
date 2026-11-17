@@ -282,6 +282,9 @@ fun SettingsScreenMain(
                             clipboardManager = clipboardManager,
                             onShowSnack = onShowSnack,
                             onOpenGraphSessions = { viewModel.send(SettingsEvent.OpenGraphSessions) },
+                            onClearLocalCaches = { viewModel.send(SettingsEvent.ClearLocalCaches) },
+                            onConfirmClearLocalCaches = { viewModel.send(SettingsEvent.ConfirmClearLocalCaches) },
+                            onCancelClearLocalCaches = { viewModel.send(SettingsEvent.CancelClearLocalCaches) },
                             onClose = onClose
                         )
                     }
