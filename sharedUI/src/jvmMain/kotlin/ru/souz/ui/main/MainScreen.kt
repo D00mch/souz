@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -996,6 +997,8 @@ fun ChatModeContent(
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
+    val scrollScope = rememberCoroutineScope()
+    val showScrollToBottom by remember { derivedStateOf { listState.canScrollForward } }
     val focusRequester = remember { FocusRequester() }
     val searchEnabled = isSearchOpen && searchState.normalizedQuery.isNotEmpty()
     val speakingMessageId = messages.lastOrNull()
@@ -1090,52 +1093,71 @@ fun ChatModeContent(
                 }
             )
         } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(top = 0.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(vertical = 12.dp)
-            ) {
-                items(messages, key = { it.id }) { message ->
-                    ChatBubble(
-                        message = message,
-                        searchState = searchState,
-                        searchEnabled = searchEnabled,
-                        searchProjection = searchProjectionProvider(message.id),
-                        onOpenPath = onOpenPath,
-                        onToggleToolModifyReviewSelection = onToggleToolModifyReviewSelection,
-                        onResolveToolModifyReview = onResolveToolModifyReview,
-                    )
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(vertical = 12.dp)
+                ) {
+                    items(messages, key = { it.id }) { message ->
+                        ChatBubble(
+                            message = message,
+                            searchState = searchState,
+                            searchEnabled = searchEnabled,
+                            searchProjection = searchProjectionProvider(message.id),
+                            onOpenPath = onOpenPath,
+                            onToggleToolModifyReviewSelection = onToggleToolModifyReviewSelection,
+                            onResolveToolModifyReview = onResolveToolModifyReview,
+                        )
+                    }
+
+                    item(key = "thinking-indicator") {
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = isProcessing,
+                            enter = fadeIn(animationSpec = tween(durationMillis = 180)),
+                            exit = fadeOut(animationSpec = tween(durationMillis = 120)),
+                        ) {
+                            if (agentActions.isEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp, horizontal = 8.dp),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    ThinkingIndicator(text = stringThinking)
+                                }
+                            } else {
+                                AgentActionList(
+                                    actions = agentActions,
+                                    inProgress = true,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                        .padding(start = 17.dp, end = 70.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    // A separate end anchor also scrolls past an oversized active-actions block.
+                    item(key = "chat-bottom") {}
                 }
 
-                item(key = "thinking-indicator") {
-                    AnimatedVisibility(
-                        visible = isProcessing,
-                        enter = fadeIn(animationSpec = tween(durationMillis = 180)),
-                        exit = fadeOut(animationSpec = tween(durationMillis = 120)),
-                    ) {
-                        if (agentActions.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp, horizontal = 8.dp),
-                                contentAlignment = Alignment.CenterStart
-                            ) {
-                                ThinkingIndicator(text = stringThinking)
+                if (showScrollToBottom) {
+                    SmallFloatingActionButton(
+                        onClick = {
+                            scrollScope.launch {
+                                val lastIndex = listState.layoutInfo.totalItemsCount - 1
+                                if (lastIndex >= 0) listState.scrollToItem(lastIndex)
                             }
-                        } else {
-                            AgentActionList(
-                                actions = agentActions,
-                                inProgress = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .padding(start = 17.dp, end = 70.dp),
-                            )
-                        }
+                        },
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ) {
+                        Icon(Icons.Rounded.ArrowDownward, stringResource(Res.string.chat_scroll_to_bottom))
                     }
                 }
             }
