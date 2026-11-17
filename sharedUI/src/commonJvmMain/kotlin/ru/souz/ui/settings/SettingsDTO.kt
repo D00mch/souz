@@ -1,6 +1,7 @@
 package ru.souz.ui.settings
 
 import ru.souz.agent.AgentId
+import ru.souz.agent.session.GraphSession
 import ru.souz.db.DEFAULT_REQUEST_TIMEOUT_MILLIS
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.DEFAULT_MAX_TOKENS
@@ -127,12 +128,14 @@ data class SettingsState(
     
     // Graph Logs
     val currentScreen: SettingsSubScreen = SettingsSubScreen.MAIN,
-    val selectedSessionId: String? = null,
+    val graphSessions: List<GraphSession> = emptyList(),
+    val selectedSession: GraphSession? = null,
 
     val activeSection: SettingsSection = SettingsSection.MODELS,
 ): VMState
 
 sealed interface SettingsEvent : VMEvent {
+    object EscapePressed : SettingsEvent
     object GoToMain : SettingsEvent
     object OpenTools : SettingsEvent
     object RefreshFromProvider : SettingsEvent

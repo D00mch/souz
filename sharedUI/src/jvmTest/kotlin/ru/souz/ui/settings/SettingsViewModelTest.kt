@@ -11,6 +11,10 @@ import io.mockk.mockkStatic
 import io.mockk.runs
 import io.mockk.unmockkAll
 import io.mockk.verify
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -24,6 +28,9 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
+import ru.souz.agent.AgentId
+import ru.souz.agent.session.GraphSession
+import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -45,6 +52,7 @@ import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.service.telegram.TelegramAuthState
 import ru.souz.service.telegram.TelegramAuthStep
 import ru.souz.ui.ThemeMode
+import ru.souz.ui.common.LocalModelDownloadStateUi
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.host.CalendarListProvider
@@ -65,6 +73,7 @@ import ru.souz.ui.host.TelegramSettingsHost
 import ru.souz.ui.host.TelegramUiService
 import ru.souz.ui.host.UiSpeechPlayer
 import java.io.File
+import java.util.concurrent.Executors
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -479,6 +488,164 @@ class SettingsViewModelTest {
         assertTrue(viewModel.uiState.value.clearLocalCachesMessage != failureMessage)
     }
 
+    @Test
+    fun `graph navigation loads on settings dispatcher and refreshes sessions on reentry`() = runTest(dispatcher) {
+        val first = GraphSession("first", 1L, initialInput = "Synthetic first session", steps = emptyList())
+        val second = first.copy(id = "second", startTime = 2L)
+        val repository = mockk<GraphSessionRepository>()
+        val reads = mutableListOf<String>()
+        var sessions = listOf(first)
+        every { repository.loadAll() } answers {
+            assertEquals("settings-session-test", Thread.currentThread().name)
+            reads += "all"
+            sessions
+        }
+        every { repository.loadById("first") } answers {
+            assertEquals("settings-session-test", Thread.currentThread().name)
+            reads += "first"
+            first
+        }
+        every { repository.loadById("missing") } returns null
+
+        Executors.newSingleThreadExecutor { task -> Thread(task, "settings-session-test") }
+            .asCoroutineDispatcher().use { settingsIo ->
+                val viewModel = createViewModel(sessionRepository = repository, settingsIoDispatcher = settingsIo)
+                viewModel.handleEvent(SettingsEvent.OpenGraphSessions)
+                assertEquals(listOf(first), viewModel.uiState.value.graphSessions)
+                assertEquals(SettingsSubScreen.SESSIONS, viewModel.uiState.value.currentScreen)
+
+                viewModel.handleEvent(SettingsEvent.OpenGraphVisualization(first.id))
+                assertEquals(first, viewModel.uiState.value.selectedSession)
+                assertEquals(SettingsSubScreen.VISUALIZATION, viewModel.uiState.value.currentScreen)
+                sessions = listOf(second, first)
+                viewModel.handleEvent(SettingsEvent.EscapePressed)
+                assertEquals(SettingsSubScreen.SESSIONS, viewModel.uiState.value.currentScreen)
+                assertNull(viewModel.uiState.value.selectedSession)
+                assertEquals(sessions, viewModel.uiState.value.graphSessions)
+                assertEquals(listOf("all", "first", "all"), reads)
+
+                viewModel.handleEvent(SettingsEvent.OpenGraphVisualization("missing"))
+                assertEquals(SettingsSubScreen.VISUALIZATION, viewModel.uiState.value.currentScreen)
+                assertNull(viewModel.uiState.value.selectedSession)
+                viewModel.handleEvent(SettingsEvent.BackToSessions)
+                viewModel.handleEvent(SettingsEvent.EscapePressed)
+                assertEquals(SettingsSubScreen.MAIN, viewModel.uiState.value.currentScreen)
+                sessions = emptyList()
+                viewModel.handleEvent(SettingsEvent.OpenGraphSessions)
+                assertTrue(viewModel.uiState.value.graphSessions.isEmpty())
+                verify(exactly = 4) { repository.loadAll() }
+                verify(exactly = 1) { repository.loadById("first") }
+                verify(exactly = 1) { repository.loadById("missing") }
+            }
+    }
+
+    @Test
+    fun `escape closes main settings and flushes a pending setting before emitting close`() = runTest(dispatcher) {
+        val provider = mockk<SettingsProvider>(relaxed = true)
+        val viewModel = createViewModel(settingsProvider = provider)
+        val effects = mutableListOf<SettingsEffect>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.effects.collect { effect ->
+                verify(exactly = 1) { provider.supportEmail = "synthetic@example.invalid" }
+                effects += effect
+            }
+        }
+        runCurrent()
+        viewModel.handleEvent(SettingsEvent.InputSupportEmail("synthetic@example.invalid"))
+        viewModel.handleEvent(SettingsEvent.EscapePressed)
+
+        assertEquals(listOf<SettingsEffect>(SettingsEffect.CloseScreen), effects)
+        assertEquals("synthetic@example.invalid", viewModel.uiState.value.supportEmail)
+    }
+
+    @Test
+    fun `escape returns folders and telegram to settings without closing`() = runTest(dispatcher) {
+        val viewModel = createViewModel()
+        val effects = mutableListOf<SettingsEffect>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.effects.toList(effects) }
+        for (event in listOf(SettingsEvent.OpenFoldersManagement, SettingsEvent.OpenTelegramSettings)) {
+            viewModel.handleEvent(event)
+            viewModel.handleEvent(SettingsEvent.EscapePressed)
+            assertEquals(SettingsSubScreen.MAIN, viewModel.uiState.value.currentScreen)
+        }
+        assertTrue(effects.isEmpty())
+    }
+
+    @Test
+    fun `escape dismisses telegram bot deletion before leaving telegram`() = runTest(dispatcher) {
+        val telegramHost = mockk<TelegramSettingsHost>(relaxed = true)
+        every { telegramHost.authState } returns MutableStateFlow(ru.souz.ui.host.TelegramHostAuthState())
+        coEvery { telegramHost.fetchActiveBotUsernameFromBotFather() } returns "synthetic_bot"
+        val viewModel = createViewModel(telegramHost)
+        viewModel.handleEvent(SettingsEvent.OpenTelegramSettings)
+        viewModel.handleEvent(SettingsEvent.DisconnectTelegramBot)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.showBotDeleteConfirmation)
+
+        viewModel.handleEvent(SettingsEvent.EscapePressed)
+        assertFalse(viewModel.uiState.value.showBotDeleteConfirmation)
+        assertEquals(SettingsSubScreen.TELEGRAM, viewModel.uiState.value.currentScreen)
+        coVerify(exactly = 0) { telegramHost.deleteControlBot(any()) }
+        viewModel.handleEvent(SettingsEvent.EscapePressed)
+        assertEquals(SettingsSubScreen.MAIN, viewModel.uiState.value.currentScreen)
+    }
+
+    @Test
+    fun `escape dismisses agent switch without changing the active agent`() = runTest(dispatcher) {
+        val fixture = createLocalModelSettingsFixture()
+        val viewModel = fixture.viewModel
+        val target = AgentId.entries.first { it != viewModel.uiState.value.activeAgentId }
+        viewModel.handleEvent(SettingsEvent.SelectAgent(target))
+        assertTrue(viewModel.uiState.value.showAgentSwitchConfirmation)
+
+        viewModel.handleEvent(SettingsEvent.EscapePressed)
+        assertFalse(viewModel.uiState.value.showAgentSwitchConfirmation)
+        assertNull(viewModel.uiState.value.pendingAgentId)
+        assertEquals(SettingsSubScreen.MAIN, viewModel.uiState.value.currentScreen)
+        coVerify(exactly = 0) { fixture.agentFacade.setActiveAgent(any()) }
+    }
+
+    @Test
+    fun `escape cancels local model prompt and progress before dismissing agent switch`() = runTest(dispatcher) {
+        val localHost = mockk<LocalModelUiHost>(relaxed = true)
+        coEvery { localHost.downloadPromptFor(any()) } returns null
+        val fixture = createLocalModelSettingsFixture(localModelUiHost = localHost)
+        val viewModel = fixture.viewModel
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        val model = LLMModel.LocalQwen3_4B_Instruct_2507
+        val prompt = ru.souz.ui.common.LocalModelDownloadPromptUi(model, "synthetic", "Synthetic model", emptyList())
+        coEvery { localHost.downloadPromptFor(model) } returns prompt
+        coEvery { localHost.startDownload(any(), any(), any(), any(), any(), any(), any()) } coAnswers {
+            arg<suspend (LocalModelDownloadStateUi?) -> Unit>(4)(LocalModelDownloadStateUi(prompt))
+            null
+        }
+        coEvery { localHost.cancelDownload(any(), any(), any(), any()) } coAnswers {
+            arg<suspend () -> Unit>(2)()
+            null
+        }
+        val target = AgentId.entries.first { it != viewModel.uiState.value.activeAgentId }
+        for (withProgress in listOf(false, true)) {
+            viewModel.handleEvent(SettingsEvent.SelectAgent(target))
+            viewModel.handleEvent(SettingsEvent.SelectModel(model))
+            assertEquals(prompt, viewModel.uiState.value.localModelDownloadPrompt)
+            if (withProgress) {
+                viewModel.handleEvent(SettingsEvent.ConfirmLocalModelDownload)
+                assertNotNull(viewModel.uiState.value.localModelDownloadState)
+            }
+            viewModel.handleEvent(SettingsEvent.EscapePressed)
+            assertNull(viewModel.uiState.value.localModelDownloadPrompt)
+            assertNull(viewModel.uiState.value.localModelDownloadState)
+            assertTrue(viewModel.uiState.value.showAgentSwitchConfirmation)
+            assertEquals(SettingsSubScreen.MAIN, viewModel.uiState.value.currentScreen)
+            viewModel.handleEvent(SettingsEvent.EscapePressed)
+            assertFalse(viewModel.uiState.value.showAgentSwitchConfirmation)
+        }
+        coVerify(exactly = 1) { localHost.cancelDownload(any(), false, any(), any()) }
+        coVerify(exactly = 1) { localHost.cancelDownload(any(), true, any(), any()) }
+        coVerify(exactly = 0) { fixture.agentFacade.setActiveAgent(any()) }
+        verify(exactly = 0) { fixture.agentFacade.setModel(model) }
+    }
+
     private fun cacheCleanupViewModel(cleaner: LocalCacheCleaner) = SettingsViewModel(
         di = DI {
             bindSingleton<TelegramSettingsHost> { ru.souz.ui.host.NoopTelegramSettingsHost }
@@ -489,14 +656,19 @@ class SettingsViewModelTest {
     )
 
     private fun createViewModel(
-        telegramHost: TelegramSettingsHost,
+        telegramHost: TelegramSettingsHost = ru.souz.ui.host.NoopTelegramSettingsHost,
         preferences: SettingsHostPreferences = InMemorySettingsHostPreferences(),
+        sessionRepository: GraphSessionRepository = mockk(relaxed = true),
+        settingsProvider: SettingsProvider = mockk(relaxed = true),
+        settingsIoDispatcher: CoroutineDispatcher = dispatcher,
     ) = SettingsViewModel(
         di = DI {
             bindSingleton<TelegramSettingsHost> { telegramHost }
             bindSingleton<SettingsHostPreferences> { preferences }
+            bindSingleton<GraphSessionRepository> { sessionRepository }
+            bindSingleton<SettingsProvider> { settingsProvider }
         },
-        settingsDispatcher = dispatcher,
+        settingsDispatcher = settingsIoDispatcher,
     )
 
     private data class LocalModelSettingsFixture(
@@ -511,6 +683,7 @@ class SettingsViewModelTest {
         configureSettingsProvider: (SettingsProvider) -> Unit = {},
         configureLocalModelStore: (LocalModelStore) -> Unit = {},
         configureAgentFacade: (AgentFacade) -> Unit = {},
+        localModelUiHost: LocalModelUiHost? = null,
     ): LocalModelSettingsFixture {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_RU
@@ -570,7 +743,7 @@ class SettingsViewModelTest {
             bindSingleton<TelegramUiService> { telegramService }
             bindSingleton<TelegramControlBot> { telegramControlBot }
             bindSingleton<LocalModelUiHost> {
-                DesktopLocalModelUiHost(localModelStore, localLlamaRuntime, desktopInfoRepository)
+                localModelUiHost ?: DesktopLocalModelUiHost(localModelStore, localLlamaRuntime, desktopInfoRepository)
             }
             bindSingleton<TelegramSettingsHost> { DesktopTelegramSettingsHost(telegramService, telegramControlBot) }
             bindSingleton<SupportLogService> { NoopSupportLogService }
@@ -580,7 +753,7 @@ class SettingsViewModelTest {
             bindSingleton<CalendarListProvider> { { emptyList() } }
             bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
         }
-        return LocalModelSettingsFixture(agentFacade, SettingsViewModel(di))
+        return LocalModelSettingsFixture(agentFacade, SettingsViewModel(di, settingsDispatcher = dispatcher))
     }
 
     @Test

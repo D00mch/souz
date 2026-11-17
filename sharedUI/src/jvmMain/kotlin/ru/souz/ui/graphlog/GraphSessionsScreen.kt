@@ -25,7 +25,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ru.souz.agent.session.GraphSession
-import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.ui.glassColors
 import ru.souz.ui.souzColors
 import ru.souz.ui.common.RealLiquidGlassCard
@@ -38,11 +37,10 @@ import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun GraphSessionsScreen(
-    sessionRepository: GraphSessionRepository,
+    sessions: List<GraphSession>,
     onClose: () -> Unit,
     onSelectSession: (GraphSession) -> Unit,
 ) {
-    val sessions by remember { mutableStateOf(sessionRepository.loadAll()) }
     val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {

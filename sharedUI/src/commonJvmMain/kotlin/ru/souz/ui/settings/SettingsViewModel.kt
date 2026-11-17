@@ -15,6 +15,7 @@ import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
+import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.db.REGION_EN
 import ru.souz.db.REGION_RU
 import ru.souz.db.SettingsProvider
@@ -56,6 +57,7 @@ class SettingsViewModel(
     private val apiKeyAvailabilityUseCase: ApiKeyAvailabilityUseCase by di.instance()
     private val chatApi: LLMChatAPI by di.instance()
     private val agentFacade: AgentFacade by di.instance()
+    private val sessionRepository: GraphSessionRepository by di.instance()
     private val telegramSettingsHost: TelegramSettingsHost by di.instance()
     private val calendarListProvider: CalendarListProvider by di.instance()
     private val supportLogService: SupportLogService by di.instance()
@@ -123,6 +125,7 @@ class SettingsViewModel(
     override suspend fun handleEvent(event: SettingsEvent) {
         l.debug("handleEvent: {}", event)
         when(event) {
+            EscapePressed -> handleEscapePressed()
             is InputApiKey -> handleDeferredKeyInput(event.field, event.value)
             is InputOpenAiBaseUrl -> {
                 handleDeferredTextSettingInput(DeferredTextSetting.OPENAI_BASE_URL, event.value)
@@ -383,12 +386,17 @@ class SettingsViewModel(
             FetchCalendars -> fetchCalendars()
             
             // Graph Logs
-            OpenGraphSessions -> setState { copy(currentScreen = SettingsSubScreen.SESSIONS) }
-            is OpenGraphVisualization -> setState { 
-                copy(currentScreen = SettingsSubScreen.VISUALIZATION, selectedSessionId = event.sessionId) 
+            OpenGraphSessions, BackToSessions -> {
+                val sessions = withContext(settingsDispatcher) { sessionRepository.loadAll() }
+                setState {
+                    copy(currentScreen = SettingsSubScreen.SESSIONS, graphSessions = sessions, selectedSession = null)
+                }
+            }
+            is OpenGraphVisualization -> {
+                val session = withContext(settingsDispatcher) { sessionRepository.loadById(event.sessionId) }
+                setState { copy(currentScreen = SettingsSubScreen.VISUALIZATION, selectedSession = session) }
             }
             BackToSettings -> setState { copy(currentScreen = SettingsSubScreen.MAIN) }
-            BackToSessions -> setState { copy(currentScreen = SettingsSubScreen.SESSIONS, selectedSessionId = null) }
             OpenFoldersManagement -> setState { copy(currentScreen = SettingsSubScreen.FOLDERS) }
             OpenTelegramSettings -> setState { copy(currentScreen = SettingsSubScreen.TELEGRAM) }
             CreateControlBot -> createTelegramBot()
@@ -397,6 +405,25 @@ class SettingsViewModel(
             CancelDisconnectTelegramBot -> setState { copy(showBotDeleteConfirmation = false) }
             is SelectSettingsSection -> setState { copy(activeSection = event.section) }
         }
+    }
+
+    private suspend fun handleEscapePressed() {
+        val state = currentState
+        val event = when (state.currentScreen) {
+            SettingsSubScreen.MAIN -> when {
+                state.localModelDownloadState != null || state.localModelDownloadPrompt != null -> CancelLocalModelDownload
+                state.showAgentSwitchConfirmation -> CancelAgentSwitch
+                else -> GoToMain
+            }
+            SettingsSubScreen.TELEGRAM -> if (state.showBotDeleteConfirmation) {
+                CancelDisconnectTelegramBot
+            } else {
+                BackToSettings
+            }
+            SettingsSubScreen.VISUALIZATION -> BackToSessions
+            SettingsSubScreen.SESSIONS, SettingsSubScreen.FOLDERS -> BackToSettings
+        }
+        handleEvent(event)
     }
 
     private suspend fun createTelegramBot() {

@@ -12,7 +12,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -22,8 +21,6 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.kodein.di.compose.localDI
-import org.kodein.di.instance
-import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.ui.AppTheme
 import ru.souz.ui.souzColors
 import ru.souz.ui.graphlog.GraphSessionsScreen
@@ -47,7 +44,6 @@ fun SettingsScreen(
     val di = localDI()
     val viewModel = viewModel { SettingsViewModel(di) }
     val state = viewModel.uiState.collectAsState().value
-    val sessionRepository: GraphSessionRepository by di.instance()
 
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
@@ -89,29 +85,7 @@ fun SettingsScreen(
             .focusable()
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                    if (state.currentScreen == SettingsSubScreen.MAIN && state.localModelDownloadState != null) {
-                        viewModel.send(SettingsEvent.CancelLocalModelDownload)
-                        return@onPreviewKeyEvent true
-                    }
-                    if (state.currentScreen == SettingsSubScreen.MAIN && state.localModelDownloadPrompt != null) {
-                        viewModel.send(SettingsEvent.CancelLocalModelDownload)
-                        return@onPreviewKeyEvent true
-                    }
-                    if (state.currentScreen == SettingsSubScreen.MAIN && state.showAgentSwitchConfirmation) {
-                        viewModel.send(SettingsEvent.CancelAgentSwitch)
-                        return@onPreviewKeyEvent true
-                    }
-                    if (state.currentScreen == SettingsSubScreen.TELEGRAM && state.showBotDeleteConfirmation) {
-                        viewModel.send(SettingsEvent.CancelDisconnectTelegramBot)
-                        return@onPreviewKeyEvent true
-                    }
-                    when (state.currentScreen) {
-                        SettingsSubScreen.MAIN -> viewModel.send(SettingsEvent.GoToMain)
-                        SettingsSubScreen.VISUALIZATION -> viewModel.send(SettingsEvent.BackToSessions)
-                        SettingsSubScreen.SESSIONS,
-                        SettingsSubScreen.FOLDERS,
-                        SettingsSubScreen.TELEGRAM -> viewModel.send(SettingsEvent.BackToSettings)
-                    }
+                    viewModel.send(SettingsEvent.EscapePressed)
                     true
                 } else {
                     false
@@ -122,23 +96,19 @@ fun SettingsScreen(
             SettingsSubScreen.MAIN -> key(state.useEnglishInterface) {
                 SettingsScreenMain(
                     state = state,
-                    viewModel = viewModel,
-                    onClose = { viewModel.send(SettingsEvent.GoToMain) },
-                    onOpenTools = { viewModel.send(SettingsEvent.OpenTools) },
+                    onEvent = viewModel::send,
                     onShowSnack = onShowSnack
                 )
             }
             SettingsSubScreen.SESSIONS -> {
                 GraphSessionsScreen(
-                    sessionRepository = sessionRepository,
+                    sessions = state.graphSessions,
                     onClose = { viewModel.send(SettingsEvent.BackToSettings) },
                     onSelectSession = { session -> viewModel.send(SettingsEvent.OpenGraphVisualization(session.id)) }
                 )
             }
             SettingsSubScreen.VISUALIZATION -> {
-                val session = remember(state.selectedSessionId) {
-                    state.selectedSessionId?.let { sessionRepository.loadById(it) }
-                }
+                val session = state.selectedSession
                 if (session != null) {
                     GraphVisualizationScreen(
                         session = session,
@@ -176,13 +146,9 @@ fun SettingsScreen(
 @Composable
 fun SettingsScreenMain(
     state: SettingsState,
-    viewModel: SettingsViewModel,
-    onClose: () -> Unit,
-    onOpenTools: () -> Unit,
+    onEvent: (SettingsEvent) -> Unit,
     onShowSnack: (String) -> Unit
 ) {
-    val clipboardManager = LocalClipboardManager.current
-
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -198,7 +164,7 @@ fun SettingsScreenMain(
                 DraggableWindowArea {
                     SettingsSidebar(
                         activeSection = state.activeSection,
-                        onSectionSelected = { viewModel.send(SettingsEvent.SelectSettingsSection(it)) },
+                        onSectionSelected = { onEvent(SettingsEvent.SelectSettingsSection(it)) },
                         modifier = Modifier.fillMaxHeight()
                     )
                 }
@@ -218,90 +184,27 @@ fun SettingsScreenMain(
                         .clip(RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp))
                 ) {
                     when (state.activeSection) {
-                        SettingsSection.MODELS -> ModelsSettingsContent(
-                            state = state,
-                            onModelChange = { viewModel.send(SettingsEvent.SelectModel(it)) },
-                            onAmbientAnalysisModelChange = { viewModel.send(SettingsEvent.SelectAmbientAnalysisModel(it)) },
-                            onEmbeddingsModelChange = { viewModel.send(SettingsEvent.SelectEmbeddingsModel(it)) },
-                            onVoiceRecognitionModelChange = { viewModel.send(SettingsEvent.SelectVoiceRecognitionModel(it)) },
-                            onTemperatureInput = { viewModel.send(SettingsEvent.InputTemperature(it)) },
-                            onRequestTimeoutMillisChange = { viewModel.send(SettingsEvent.InputRequestTimeoutMillis(it)) },
-                            onContextSizeInput = { viewModel.send(SettingsEvent.InputContextSize(it)) },
-                            onSystemPromptChange = { viewModel.send(SettingsEvent.InputSystemPrompt(it)) },
-                            onSystemPromptReset = { viewModel.send(SettingsEvent.ResetSystemPrompt) },
-                            onRefreshBalance = { viewModel.send(SettingsEvent.RefreshBalance) },
-                            onClose = onClose
-                        )
-                        SettingsSection.GENERAL -> GeneralSettingsContent(
-                            state = state,
-                            onDefaultCalendarChange = { viewModel.send(SettingsEvent.SelectDefaultCalendar(it)) },
-                            onCalendarDropdownOpen = { viewModel.send(SettingsEvent.FetchCalendars) },
-                            onUseStreamingChange = { viewModel.send(SettingsEvent.InputUseStreaming(it)) },
-                            onNotificationSoundEnabledChange = { viewModel.send(SettingsEvent.InputNotificationSoundEnabled(it)) },
-                            onVoiceInputReviewEnabledChange = { viewModel.send(SettingsEvent.InputVoiceInputReviewEnabled(it)) },
-                            onUseEnglishVersionChange = { viewModel.send(SettingsEvent.InputUseEnglishVersion(it)) },
-                            onUseEnglishInterfaceChange = { viewModel.send(SettingsEvent.InputUseEnglishInterface(it)) },
-                            onThemeModeChange = { viewModel.send(SettingsEvent.SelectThemeMode(it)) },
-                            onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
-                            onVoiceSpeedInput = { viewModel.send(SettingsEvent.InputVoiceSpeed(it)) },
-                            onClose = onClose
-                        )
-                        SettingsSection.KEYS -> KeysSettingsContent(
-                            state = state,
-                            onApiKeyInput = { field, value -> viewModel.send(SettingsEvent.InputApiKey(field, value)) },
-                            onOpenAiBaseUrlInput = { viewModel.send(SettingsEvent.InputOpenAiBaseUrl(it)) },
-                            onOpenAiModelInput = { viewModel.send(SettingsEvent.InputOpenAiModel(it)) },
-                            onApiKeyVisibilityToggle = { viewModel.send(SettingsEvent.ToggleApiKeyVisibility(it)) },
-                            onOpenProviderLink = { viewModel.send(SettingsEvent.OpenProviderLink(it)) },
-                            onStartCodexOAuth = { viewModel.send(SettingsEvent.StartCodexOAuth) },
-                            onDisconnectCodex = { viewModel.send(SettingsEvent.DisconnectCodex) },
-                            onClose = onClose
-                        )
-                        SettingsSection.FUNCTIONS -> FunctionsSettingsContent(
-                            state = state,
-                            onUseFewShotExamplesChange = { viewModel.send(SettingsEvent.InputUseFewShotExamples(it)) },
-                            onAgentSelected = { viewModel.send(SettingsEvent.SelectAgent(it)) },
-                            onConfirmAgentSwitch = { viewModel.send(SettingsEvent.ConfirmAgentSwitch) },
-                            onCancelAgentSwitch = { viewModel.send(SettingsEvent.CancelAgentSwitch) },
-                            onMcpServersJsonInput = { viewModel.send(SettingsEvent.InputMcpServersJson(it)) },
-                            onOpenTools = onOpenTools,
-                            onOpenTelegramSettings = { viewModel.send(SettingsEvent.OpenTelegramSettings) },
-                            onClose = onClose
-                        )
-                        SettingsSection.SECURITY -> SecuritySettingsContent(
-                            state = state,
-                            onSafeModeChange = { viewModel.send(SettingsEvent.InputSafeModeEnabled(it)) },
-                            onOpenFoldersManagement = { viewModel.send(SettingsEvent.OpenFoldersManagement) },
-                            onClose = onClose
-                        )
-                        SettingsSection.SUPPORT -> SupportSettingsContent(
-                            state = state,
-                            onSupportEmailInput = { viewModel.send(SettingsEvent.InputSupportEmail(it)) },
-                            onSendLogs = { viewModel.send(SettingsEvent.SendLogsToSupport) },
-                            onOpenPrivacyPolicy = { viewModel.send(SettingsEvent.OpenPrivacyPolicy) },
-                            clipboardManager = clipboardManager,
-                            onShowSnack = onShowSnack,
-                            onOpenGraphSessions = { viewModel.send(SettingsEvent.OpenGraphSessions) },
-                            onClearLocalCaches = { viewModel.send(SettingsEvent.ClearLocalCaches) },
-                            onConfirmClearLocalCaches = { viewModel.send(SettingsEvent.ConfirmClearLocalCaches) },
-                            onCancelClearLocalCaches = { viewModel.send(SettingsEvent.CancelClearLocalCaches) },
-                            onClose = onClose
-                        )
+                        SettingsSection.MODELS -> ModelsSettingsContent(state, onEvent)
+                        SettingsSection.GENERAL -> GeneralSettingsContent(state, onEvent)
+                        SettingsSection.KEYS -> KeysSettingsContent(state, onEvent)
+                        SettingsSection.FUNCTIONS -> FunctionsSettingsContent(state, onEvent)
+                        SettingsSection.SECURITY -> SecuritySettingsContent(state, onEvent)
+                        SettingsSection.SUPPORT -> SupportSettingsContent(state, onEvent, onShowSnack = onShowSnack)
                     }
                 }
 
                 state.localModelDownloadPrompt?.let { prompt ->
                     ru.souz.ui.common.LocalModelDownloadPromptDialog(
                         prompt = prompt,
-                        onConfirm = { viewModel.send(SettingsEvent.ConfirmLocalModelDownload) },
-                        onDismiss = { viewModel.send(SettingsEvent.CancelLocalModelDownload) },
+                        onConfirm = { onEvent(SettingsEvent.ConfirmLocalModelDownload) },
+                        onDismiss = { onEvent(SettingsEvent.CancelLocalModelDownload) },
                     )
                 }
 
                 state.localModelDownloadState?.let { downloadState ->
                     ru.souz.ui.common.LocalModelDownloadProgressDialog(
                         state = downloadState,
-                        onCancel = { viewModel.send(SettingsEvent.CancelLocalModelDownload) },
+                        onCancel = { onEvent(SettingsEvent.CancelLocalModelDownload) },
                     )
                 }
             }
@@ -319,37 +222,11 @@ fun SettingsScreenPreview() {
             modifier = Modifier.fillMaxSize(),
             color = Color(0xFF0B0E11)
         ) {
-            Row(modifier = Modifier.fillMaxSize()) {
-                SettingsSidebar(
-                    activeSection = previewState.activeSection,
-                    onSectionSelected = {},
-                    modifier = Modifier.fillMaxHeight()
-                )
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .width(1.dp)
-                        .background(MaterialTheme.souzColors.settings.sidebarBorder)
-                )
-
-                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                    ModelsSettingsContent(
-                        state = previewState,
-                        onModelChange = {},
-                        onAmbientAnalysisModelChange = {},
-                        onEmbeddingsModelChange = {},
-                        onVoiceRecognitionModelChange = {},
-                        onTemperatureInput = {},
-                        onRequestTimeoutMillisChange = {},
-                        onContextSizeInput = {},
-                        onSystemPromptChange = {},
-                        onSystemPromptReset = {},
-                        onRefreshBalance = {},
-                        onClose = {}
-                    )
-                }
-            }
+            SettingsScreenMain(
+                state = previewState,
+                onEvent = {},
+                onShowSnack = {},
+            )
         }
     }
 }
