@@ -13,7 +13,7 @@ data class SetupState(
     val aiTunnelKey: String = "",
     val anthropicKey: String = "",
     val openaiKey: String = "",
-    val saluteSpeechKey: String = "",
+    val polzaApiKey: String = "",
     val codexConnected: Boolean = false,
     val codexOAuthState: CodexOAuthUiState = CodexOAuthUiState.Idle,
     val useEnglishVersion: Boolean = false,
@@ -35,7 +35,7 @@ sealed interface SetupEvent : VMEvent {
     data class InputAiTunnelKey(val key: String) : SetupEvent
     data class InputAnthropicKey(val key: String) : SetupEvent
     data class InputOpenAiKey(val key: String) : SetupEvent
-    data class InputSaluteSpeechKey(val key: String) : SetupEvent
+    data class InputPolzaApiKey(val key: String) : SetupEvent
     object StartCodexOAuth : SetupEvent
     object CancelCodexOAuth : SetupEvent
     data class OpenProviderLink(val provider: ApiKeyProvider) : SetupEvent

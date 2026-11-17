@@ -41,7 +41,7 @@ class SetupViewModel(
             aiTunnelKey = settingsProvider.aiTunnelKey.orEmpty(),
             anthropicKey = settingsProvider.anthropicKey.orEmpty(),
             openaiKey = settingsProvider.openaiKey.orEmpty(),
-            saluteSpeechKey = settingsProvider.saluteSpeechKey.orEmpty(),
+            polzaApiKey = settingsProvider.polzaApiKey.orEmpty(),
             codexConnected = !settingsProvider.codexAccessToken.isNullOrBlank(),
         ),
     )
@@ -53,14 +53,14 @@ class SetupViewModel(
             val aiTunnelKey = settingsProvider.aiTunnelKey.orEmpty()
             val anthropicKey = settingsProvider.anthropicKey.orEmpty()
             val openAiKey = settingsProvider.openaiKey.orEmpty()
-            val saluteSpeechKey = settingsProvider.saluteSpeechKey.orEmpty()
+            val polzaApiKey = settingsProvider.polzaApiKey.orEmpty()
             updateKeysState(
                 gigaChatKey = gigaChatKey,
                 qwenChatKey = qwenChatKey,
                 aiTunnelKey = aiTunnelKey,
                 anthropicKey = anthropicKey,
                 openAiKey = openAiKey,
-                saluteSpeechKey = saluteSpeechKey,
+                polzaApiKey = polzaApiKey,
             )
         }
     }
@@ -79,7 +79,7 @@ class SetupViewModel(
                         aiTunnelKey = currentState.aiTunnelKey,
                         anthropicKey = currentState.anthropicKey,
                         openAiKey = currentState.openaiKey,
-                        saluteSpeechKey = currentState.saluteSpeechKey,
+                        polzaApiKey = currentState.polzaApiKey,
                     )
                 }
             }
@@ -90,14 +90,14 @@ class SetupViewModel(
                 val aiTunnelKey = currentState.aiTunnelKey
                 val anthropicKey = currentState.anthropicKey
                 val openAiKey = currentState.openaiKey
-                val saluteSpeechKey = currentState.saluteSpeechKey
+                val polzaApiKey = currentState.polzaApiKey
                 updateKeysState(
                     gigaChatKey = event.key,
                     qwenChatKey = qwenChatKey,
                     aiTunnelKey = aiTunnelKey,
                     anthropicKey = anthropicKey,
                     openAiKey = openAiKey,
-                    saluteSpeechKey = saluteSpeechKey,
+                    polzaApiKey = polzaApiKey,
                 )
                 tryToChooseDefaultMode(
                     gigaChatKey = event.key,
@@ -114,14 +114,14 @@ class SetupViewModel(
                 val aiTunnelKey = currentState.aiTunnelKey
                 val anthropicKey = currentState.anthropicKey
                 val openAiKey = currentState.openaiKey
-                val saluteSpeechKey = currentState.saluteSpeechKey
+                val polzaApiKey = currentState.polzaApiKey
                 updateKeysState(
                     gigaChatKey = gigaChatKey,
                     qwenChatKey = event.key,
                     aiTunnelKey = aiTunnelKey,
                     anthropicKey = anthropicKey,
                     openAiKey = openAiKey,
-                    saluteSpeechKey = saluteSpeechKey,
+                    polzaApiKey = polzaApiKey,
                 )
                 tryToChooseDefaultMode(
                     gigaChatKey = gigaChatKey,
@@ -138,14 +138,14 @@ class SetupViewModel(
                 val qwenChatKey = currentState.qwenChatKey
                 val anthropicKey = currentState.anthropicKey
                 val openAiKey = currentState.openaiKey
-                val saluteSpeechKey = currentState.saluteSpeechKey
+                val polzaApiKey = currentState.polzaApiKey
                 updateKeysState(
                     gigaChatKey = gigaChatKey,
                     qwenChatKey = qwenChatKey,
                     aiTunnelKey = event.key,
                     anthropicKey = anthropicKey,
                     openAiKey = openAiKey,
-                    saluteSpeechKey = saluteSpeechKey,
+                    polzaApiKey = polzaApiKey,
                 )
                 tryToChooseDefaultMode(
                     gigaChatKey = gigaChatKey,
@@ -162,14 +162,14 @@ class SetupViewModel(
                 val qwenChatKey = currentState.qwenChatKey
                 val aiTunnelKey = currentState.aiTunnelKey
                 val openAiKey = currentState.openaiKey
-                val saluteSpeechKey = currentState.saluteSpeechKey
+                val polzaApiKey = currentState.polzaApiKey
                 updateKeysState(
                     gigaChatKey = gigaChatKey,
                     qwenChatKey = qwenChatKey,
                     aiTunnelKey = aiTunnelKey,
                     anthropicKey = event.key,
                     openAiKey = openAiKey,
-                    saluteSpeechKey = saluteSpeechKey,
+                    polzaApiKey = polzaApiKey,
                 )
                 tryToChooseDefaultMode(
                     gigaChatKey = gigaChatKey,
@@ -186,14 +186,14 @@ class SetupViewModel(
                 val qwenChatKey = currentState.qwenChatKey
                 val aiTunnelKey = currentState.aiTunnelKey
                 val anthropicKey = currentState.anthropicKey
-                val saluteSpeechKey = currentState.saluteSpeechKey
+                val polzaApiKey = currentState.polzaApiKey
                 updateKeysState(
                     gigaChatKey = gigaChatKey,
                     qwenChatKey = qwenChatKey,
                     aiTunnelKey = aiTunnelKey,
                     anthropicKey = anthropicKey,
                     openAiKey = event.key,
-                    saluteSpeechKey = saluteSpeechKey,
+                    polzaApiKey = polzaApiKey,
                 )
                 tryToChooseDefaultMode(
                     gigaChatKey = gigaChatKey,
@@ -204,15 +204,15 @@ class SetupViewModel(
                 )
             }
 
-            is SetupEvent.InputSaluteSpeechKey -> {
-                settingsProvider.saluteSpeechKey = event.key
+            is SetupEvent.InputPolzaApiKey -> {
+                settingsProvider.polzaApiKey = event.key
                 updateKeysState(
                     gigaChatKey = currentState.gigaChatKey,
                     qwenChatKey = currentState.qwenChatKey,
                     aiTunnelKey = currentState.aiTunnelKey,
                     anthropicKey = currentState.anthropicKey,
                     openAiKey = currentState.openaiKey,
-                    saluteSpeechKey = event.key,
+                    polzaApiKey = event.key,
                 )
             }
 
@@ -235,7 +235,7 @@ class SetupViewModel(
                                 aiTunnelKey = currentState.aiTunnelKey,
                                 anthropicKey = currentState.anthropicKey,
                                 openAiKey = currentState.openaiKey,
-                                saluteSpeechKey = currentState.saluteSpeechKey,
+                                polzaApiKey = currentState.polzaApiKey,
                             )
                             tryToChooseDefaultMode(
                                 gigaChatKey = currentState.gigaChatKey,
@@ -303,7 +303,7 @@ class SetupViewModel(
         aiTunnelKey: String,
         anthropicKey: String,
         openAiKey: String,
-        saluteSpeechKey: String,
+        polzaApiKey: String,
     ) {
         val codexConnected = !settingsProvider.codexAccessToken.isNullOrBlank()
         val availability = apiKeyAvailabilityUseCase.availability()
@@ -314,7 +314,7 @@ class SetupViewModel(
                 aiTunnelKey = aiTunnelKey,
                 anthropicKey = anthropicKey,
                 openaiKey = openAiKey,
-                saluteSpeechKey = saluteSpeechKey,
+                polzaApiKey = polzaApiKey,
                 codexConnected = codexConnected,
             ),
         )
@@ -325,7 +325,7 @@ class SetupViewModel(
                 aiTunnelKey = aiTunnelKey,
                 anthropicKey = anthropicKey,
                 openaiKey = openAiKey,
-                saluteSpeechKey = saluteSpeechKey,
+                polzaApiKey = polzaApiKey,
                 codexConnected = codexConnected,
                 availableApiKeyFields = availability.fields,
                 availableApiKeyProviders = availability.providers,

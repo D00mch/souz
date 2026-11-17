@@ -565,7 +565,7 @@ private fun SettingsState.toSharedKeysSettingsUiState(): SharedKeysSettingsUiSta
         ApiKeyField.AI_TUNNEL to stringResource(Res.string.label_key_aitunnel),
         ApiKeyField.ANTHROPIC to stringResource(Res.string.label_key_anthropic),
         ApiKeyField.OPENAI to stringResource(Res.string.label_key_openai),
-        ApiKeyField.SALUTE_SPEECH to stringResource(Res.string.label_key_salutespeech),
+        ApiKeyField.POLZA to stringResource(Res.string.label_key_polza),
     )
 
     return SharedKeysSettingsUiState(
@@ -1946,7 +1946,7 @@ private val PreviewSettingsState = SettingsState(
         ApiKeyField.AI_TUNNEL to ApiKeyFieldState.StoredHidden,
         ApiKeyField.ANTHROPIC to ApiKeyFieldState.StoredHidden,
         ApiKeyField.OPENAI to ApiKeyFieldState.StoredHidden,
-        ApiKeyField.SALUTE_SPEECH to ApiKeyFieldState.StoredHidden,
+        ApiKeyField.POLZA to ApiKeyFieldState.StoredHidden,
     ),
     availableApiKeyFields = ApiKeyField.entries.toSet(),
     mcpServersJson = """
@@ -1962,7 +1962,7 @@ private val PreviewSettingsState = SettingsState(
     gigaModel = LLMModel.Max,
     ambientAnalysisModel = LLMModel.LocalQwen3_4B_Instruct_2507,
     embeddingsModel = EmbeddingsModel.GigaEmbeddings,
-    voiceRecognitionModel = VoiceRecognitionModel.SaluteSpeech,
+    voiceRecognitionModel = VoiceRecognitionModel.PolzaGigaAm,
     availableLlmModels = LLMModel.entries.take(3),
     availableAmbientAnalysisModels = listOf(
         LLMModel.LocalQwen3_4B_Instruct_2507,

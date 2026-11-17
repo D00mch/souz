@@ -2,6 +2,8 @@ package ru.souz.db
 
 import io.mockk.mockk
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.VoiceRecognitionProvider
+import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.service.mcp.OAUTH_STORE_PREFIX
 import java.util.UUID
 import java.util.prefs.Preferences
@@ -60,6 +62,31 @@ class SecretPrefsCodecTest {
         assertNotEquals(value, stored)
         assertEquals(value, decoded)
     }
+
+    @Test
+    fun `Polza key is encrypted and available to desktop speech settings`() =
+        withStoredPreference(SettingsProviderImpl.POLZA_API_KEY) { key ->
+            val provider = SettingsProviderImpl(ConfigStore, mockk(relaxed = true))
+            provider.polzaApiKey = "pza_fixture_secret"
+
+            assertNotEquals("pza_fixture_secret", prefs.get(key, null))
+            assertEquals("pza_fixture_secret", provider.polzaApiKey)
+            assertTrue(provider.hasKey(VoiceRecognitionProvider.POLZA))
+            provider.polzaApiKey = null
+            assertFalse(ConfigStore.contains(key))
+        }
+
+    @Test
+    fun `saved Salute model migrates to GigaAM`() =
+        withStoredPreference("VOICE_RECOGNITION_MODEL") { key ->
+            val provider = SettingsProviderImpl(ConfigStore, mockk(relaxed = true))
+            for (legacy in listOf("SaluteSpeech", "salute-speech")) {
+                prefs.put(key, legacy)
+                assertEquals(VoiceRecognitionModel.PolzaGigaAm, provider.voiceRecognitionModel)
+            }
+            provider.voiceRecognitionModel = VoiceRecognitionModel.PolzaGigaAm
+            assertEquals("PolzaGigaAm", prefs.get(key, null))
+        }
 
     @Test
     fun `oauth store keys are treated as sensitive`() = withStoredPreference("${OAUTH_STORE_PREFIX}github") { key ->

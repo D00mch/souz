@@ -24,7 +24,7 @@ class LlmBuildProfile(
     val defaultModel: LLMModel
         get() = currentDefaults().values.first()
 
-    val supportsSaluteSpeechRecognition: Boolean
+    val supportsPolzaSpeechRecognition: Boolean
         get() = currentEdition() == BuildEdition.RU
 
     fun normalizeModel(model: LLMModel): LLMModel = if (isModelAvailable(model)) model else defaultModel

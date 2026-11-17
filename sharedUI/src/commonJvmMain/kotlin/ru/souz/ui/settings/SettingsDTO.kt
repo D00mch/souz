@@ -77,7 +77,7 @@ data class SettingsState(
     val gigaModel: LLMModel = LLMModel.Max,
     val ambientAnalysisModel: LLMModel = LLMModel.LocalQwen3_4B_Instruct_2507,
     val embeddingsModel: EmbeddingsModel = EmbeddingsModel.GigaEmbeddings,
-    val voiceRecognitionModel: VoiceRecognitionModel = VoiceRecognitionModel.SaluteSpeech,
+    val voiceRecognitionModel: VoiceRecognitionModel = VoiceRecognitionModel.PolzaGigaAm,
     val availableLlmModels: List<LLMModel> = emptyList(),
     val availableAmbientAnalysisModels: List<LLMModel> = emptyList(),
     val availableEmbeddingsModels: List<EmbeddingsModel> = emptyList(),

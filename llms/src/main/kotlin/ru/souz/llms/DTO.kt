@@ -1,6 +1,7 @@
 package ru.souz.llms
 
 import com.fasterxml.jackson.annotation.JsonIgnore
+import com.fasterxml.jackson.annotation.JsonAlias
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.core.JsonParser
@@ -143,7 +144,8 @@ enum class LlmProvider {
 }
 
 enum class VoiceRecognitionProvider {
-    SALUTE_SPEECH,
+    @JsonAlias("SALUTE_SPEECH")
+    POLZA,
     AI_TUNNEL,
     OPENAI,
     LOCAL_MACOS,
@@ -227,8 +229,10 @@ enum class VoiceRecognitionModel(
     val displayName: String,
     val alias: String,
     val provider: VoiceRecognitionProvider,
+    val legacyAliases: Set<String> = emptySet(),
 ) {
-    SaluteSpeech("Salute Speech", "salute-speech", VoiceRecognitionProvider.SALUTE_SPEECH),
+    @JsonAlias("SaluteSpeech", "salute-speech")
+    PolzaGigaAm("Polza: GigaAM-v3", "ai-sage/gigaam-v3", VoiceRecognitionProvider.POLZA, setOf("SaluteSpeech", "salute-speech")),
     AiTunnelGpt4oTranscribe("AI-Tunnel: gpt-4o-transcribe", "gpt-4o-transcribe", VoiceRecognitionProvider.AI_TUNNEL),
     AiTunnelGpt4oMiniTranscribe("AI-Tunnel: gpt-4o-mini-transcribe", "gpt-4o-mini-transcribe", VoiceRecognitionProvider.AI_TUNNEL),
     OpenAIGpt4oTranscribe("OpenAI: gpt-4o-transcribe", "gpt-4o-transcribe", VoiceRecognitionProvider.OPENAI),
@@ -236,6 +240,15 @@ enum class VoiceRecognitionModel(
     OpenAIGptTranscribe("OpenAI: gpt-transcribe", "gpt-transcribe", VoiceRecognitionProvider.OPENAI),
     OpenAIWhisper1("OpenAI: whisper-1", "whisper-1", VoiceRecognitionProvider.OPENAI),
     LocalMacOsStt("Local MacOS STT", "local-macos-stt", VoiceRecognitionProvider.LOCAL_MACOS),
+}
+
+fun findVoiceRecognitionModel(value: String): VoiceRecognitionModel? {
+    val normalized = value.trim()
+    return VoiceRecognitionModel.entries.firstOrNull { model ->
+        model.name.equals(normalized, ignoreCase = true) ||
+            model.alias.equals(normalized, ignoreCase = true) ||
+            model.legacyAliases.any { it.equals(normalized, ignoreCase = true) }
+    }
 }
 
 object LLMRequest {

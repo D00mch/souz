@@ -6,18 +6,18 @@ This document summarizes provider selection, audio packaging, and endpoint-speci
 
 - Voice transcription is routed by `ModelAwareSpeechRecognitionProvider`.
 - The selected `voiceRecognitionModel` picks the preferred provider:
-  - `SaluteSpeech` -> Salute Speech
+  - `PolzaGigaAm` -> GigaAM-v3 through Polza.ai
   - `AI-Tunnel:*` -> AiTunnel
   - `OpenAI:*` -> OpenAI
   - `Local MacOS STT` -> macOS `Speech` framework via the local Swift/JNI bridge
 - Provider gating:
-  - Salute Speech: RU profile only
+  - Polza GigaAM-v3: RU profile only
   - OpenAI transcription: EN profile only and requires an OpenAI Platform API key
   - AiTunnel transcription: RU profile/build only
 - Codex device-code OAuth is scoped to Codex/ChatGPT access and is not used for OpenAI transcription API requests.
 - `Local MacOS STT` is exposed only on macOS and does not require any API key.
 - If `Local MacOS STT` is selected, Souz uses only local macOS STT backends and never falls back to cloud STT.
-- If a cloud provider is selected and is unavailable, routing falls back across enabled providers in this order: OpenAI, AiTunnel, Salute Speech.
+- If a cloud provider is selected and is unavailable, routing falls back across enabled providers in this order: OpenAI, AiTunnel, Polza.
 - Among enabled providers, Souz prefers one with a configured key. If none has a key, the first enabled provider is still chosen and fails with that provider's missing-key error.
 - Settings expose cloud voice recognition models only when the matching API key is configured, while `Local MacOS STT` is shown on macOS without keys. Invalid saved selections are normalized.
 - By default, OpenAI, AiTunnel, and local macOS recognition use the current interface language: Russian -> `ru` / `ru-RU`, English -> `en` / `en-US`.
@@ -25,8 +25,7 @@ This document summarizes provider selection, audio packaging, and endpoint-speci
 ## Audio Packaging
 
 - Recorded audio is raw PCM: `16 kHz`, mono, `16-bit`.
-- Salute Speech receives that PCM directly with `Content-Type: audio/x-pcm;bit=16;rate=16000`.
-- OpenAI and AiTunnel wrap the same PCM bytes into a WAV file before upload:
+- Polza, OpenAI and AiTunnel wrap the same PCM bytes into a WAV file before upload:
   - filename: `capture.wav`
   - media type: `audio/wav`
 - `Local MacOS STT` reuses the same PCM capture and auto-selects the best local macOS backend:
@@ -36,9 +35,14 @@ This document summarizes provider selection, audio packaging, and endpoint-speci
 
 ## Endpoint Constraints
 
-- Salute Speech:
-  - `POST https://smartspeech.sber.ru/rest/v1/speech:recognize`
-  - raw PCM request body
+- Polza:
+  - `POST https://polza.ai/api/v1/audio/transcriptions`
+  - multipart upload with `model=ai-sage/gigaam-v3` and `file=capture.wav`
+  - reads `POLZA_API_KEY` from encrypted desktop settings, environment, or the same JVM property
+  - uses the host-owned standard HTTP transport and a direct Bearer key; no OAuth exchange, polling, or automatic retries
+  - each capture makes one request and returns the JSON `text`; provider failures surface to the caller
+  - saved `SaluteSpeech` / `salute-speech` model selections resolve to Polza; retired Salute credentials are ignored
+  - [API usage](https://polza.ai/collections/stt) and [model ID](https://polza.ai/models/ai-sage/gigaam-v3)
 - OpenAI:
   - `POST https://api.openai.com/v1/audio/transcriptions`
   - multipart upload with `model`, `file`, and a model-compatible language hint

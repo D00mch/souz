@@ -12,7 +12,7 @@ import ru.souz.db.SettingsProviderImpl.Companion.CODEX_REFRESH_TOKEN
 import ru.souz.db.SettingsProviderImpl.Companion.GIGA_CHAT_KEY
 import ru.souz.db.SettingsProviderImpl.Companion.OPENAI_KEY
 import ru.souz.db.SettingsProviderImpl.Companion.QWEN_CHAT_KEY
-import ru.souz.db.SettingsProviderImpl.Companion.SALUTE_SPEECH_KEY
+import ru.souz.db.SettingsProviderImpl.Companion.POLZA_API_KEY
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolsSettingsState
 import ru.souz.tool.ToolsSettingsStore
@@ -109,7 +109,7 @@ internal object SecretPrefsCodec {
         CODEX_REFRESH_TOKEN,
         CODEX_ACCOUNT_ID,
         CODEX_EXPIRES_AT,
-        SALUTE_SPEECH_KEY,
+        POLZA_API_KEY,
         TELEMETRY_PRIVATE_KEY,
     )
 

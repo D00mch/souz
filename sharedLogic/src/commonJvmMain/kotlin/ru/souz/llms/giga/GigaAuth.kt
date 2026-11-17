@@ -15,7 +15,7 @@ import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMResponse
 
-/** App-scoped Giga token cache shared by chat and speech clients. */
+/** App-scoped GigaChat token cache. */
 class GigaAuth(
     private val settingsProvider: SettingsProvider,
     private val client: HttpClient,

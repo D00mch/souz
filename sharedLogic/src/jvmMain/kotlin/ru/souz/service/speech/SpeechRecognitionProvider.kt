@@ -8,7 +8,7 @@ import kotlinx.coroutines.withContext
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
-import ru.souz.llms.giga.GigaVoiceAPI
+import ru.souz.llms.polza.PolzaVoiceAPI
 import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.tunnel.AiTunnelVoiceAPI
 import ru.souz.llms.openai.OpenAIVoiceAPI
@@ -23,7 +23,7 @@ private const val LOCAL_MACOS_PCM_BYTES_PER_SAMPLE = 2
 private const val LOCAL_MACOS_PCM_CHANNELS = 1
 private const val MAX_LOCAL_MACOS_STT_AUDIO_SECONDS = 45
 
-/** Provide locality specific Voice recognition, e.g. SaluteSpeech for Ru. */
+/** Provide locality specific Voice recognition, e.g. GigaAM for Russian. */
 interface SpeechRecognitionProvider {
     val enabled: Boolean
     val hasRequiredKey: Boolean
@@ -31,17 +31,17 @@ interface SpeechRecognitionProvider {
     suspend fun recognize(audio: ByteArray): String
 }
 
-class SaluteSpeechRecognitionProvider(
-    private val gigaVoiceAPI: GigaVoiceAPI,
+class PolzaSpeechRecognitionProvider(
+    private val polzaVoiceAPI: PolzaVoiceAPI,
     private val settingsProvider: SettingsProvider,
 ) : SpeechRecognitionProvider {
     override val enabled: Boolean
         get() = settingsProvider.regionProfile == REGION_RU
     override val hasRequiredKey: Boolean
-        get() = enabled && !settingsProvider.saluteSpeechKey.isNullOrBlank()
+        get() = enabled && !settingsProvider.polzaApiKey.isNullOrBlank()
 
     override suspend fun recognize(audio: ByteArray): String =
-        gigaVoiceAPI.recognize(audio).result.joinToString("\n").trim()
+        polzaVoiceAPI.recognize(audio)
 }
 
 class OpenAISpeechRecognitionProvider(
@@ -349,7 +349,7 @@ class MacOsSpeechRecognitionProvider(
 
 class ModelAwareSpeechRecognitionProvider(
     private val settingsProvider: SettingsProvider,
-    private val saluteSpeechProvider: SaluteSpeechRecognitionProvider,
+    private val polzaSpeechProvider: PolzaSpeechRecognitionProvider,
     private val openAiSpeechProvider: OpenAISpeechRecognitionProvider,
     private val aiTunnelSpeechProvider: AiTunnelSpeechRecognitionProvider,
     private val macOsSpeechProvider: MacOsSpeechRecognitionProvider,
@@ -374,7 +374,7 @@ class ModelAwareSpeechRecognitionProvider(
                     selectedProvider?.let(::add)
                     add(openAiSpeechProvider)
                     add(aiTunnelSpeechProvider)
-                    add(saluteSpeechProvider)
+                    add(polzaSpeechProvider)
                 }.distinct().filter { it.enabled }
                 preferred.firstOrNull { it.hasRequiredKey } ?: preferred.firstOrNull()
             }
@@ -382,7 +382,7 @@ class ModelAwareSpeechRecognitionProvider(
     }
 
     private fun providerFor(provider: VoiceRecognitionProvider): SpeechRecognitionProvider? = when (provider) {
-        VoiceRecognitionProvider.SALUTE_SPEECH -> saluteSpeechProvider
+        VoiceRecognitionProvider.POLZA -> polzaSpeechProvider
         VoiceRecognitionProvider.AI_TUNNEL -> aiTunnelSpeechProvider
         VoiceRecognitionProvider.OPENAI -> openAiSpeechProvider
         VoiceRecognitionProvider.LOCAL_MACOS -> macOsSpeechProvider

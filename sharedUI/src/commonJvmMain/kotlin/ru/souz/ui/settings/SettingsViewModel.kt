@@ -841,7 +841,7 @@ class SettingsViewModel(
                 ApiKeyField.AI_TUNNEL -> keysProvider.aiTunnelKey = storedValue
                 ApiKeyField.ANTHROPIC -> keysProvider.anthropicKey = storedValue
                 ApiKeyField.OPENAI -> keysProvider.openaiKey = storedValue
-                ApiKeyField.SALUTE_SPEECH -> keysProvider.saluteSpeechKey = storedValue
+                ApiKeyField.POLZA -> keysProvider.polzaApiKey = storedValue
                 ApiKeyField.CODEX -> error("Codex credentials are OAuth-controlled")
             }
         }
@@ -861,7 +861,7 @@ class SettingsViewModel(
             ApiKeyField.AI_TUNNEL -> keysProvider.aiTunnelKey
             ApiKeyField.ANTHROPIC -> keysProvider.anthropicKey
             ApiKeyField.OPENAI -> keysProvider.openaiKey
-            ApiKeyField.SALUTE_SPEECH -> keysProvider.saluteSpeechKey
+            ApiKeyField.POLZA -> keysProvider.polzaApiKey
             ApiKeyField.CODEX -> error("Codex credentials are OAuth-controlled")
         } ?: error("Configured API key could not be read")
     }
@@ -875,7 +875,7 @@ class SettingsViewModel(
         ApiKeyField.AI_TUNNEL -> keysProvider.hasKey(LlmProvider.AI_TUNNEL)
         ApiKeyField.ANTHROPIC -> keysProvider.hasKey(LlmProvider.ANTHROPIC)
         ApiKeyField.OPENAI -> keysProvider.hasKey(LlmProvider.OPENAI)
-        ApiKeyField.SALUTE_SPEECH -> keysProvider.hasKey(VoiceRecognitionProvider.SALUTE_SPEECH)
+        ApiKeyField.POLZA -> keysProvider.hasKey(VoiceRecognitionProvider.POLZA)
         ApiKeyField.CODEX -> keysProvider.hasKey(LlmProvider.CODEX)
     }
 
@@ -1329,7 +1329,7 @@ private fun ApiKeyFieldState.concealed(): ApiKeyFieldState = when (this) {
 }
 
 private val ApiKeyField.requiresRefreshAfterSave: Boolean
-    get() = this != ApiKeyField.SALUTE_SPEECH && this != ApiKeyField.CODEX
+    get() = this != ApiKeyField.CODEX
 
 private val ApiKeyField.requiresBalanceRefreshAfterSave: Boolean
     get() = this == ApiKeyField.GIGA_CHAT || this == ApiKeyField.QWEN_CHAT
