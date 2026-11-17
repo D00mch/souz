@@ -262,23 +262,13 @@ private fun SettingsSectionScreen(
 @Composable
 fun ModelsSettingsContent(
     state: SettingsState,
-    onModelChange: (LLMModel) -> Unit,
-    onAmbientAnalysisModelChange: (LLMModel) -> Unit,
-    onEmbeddingsModelChange: (EmbeddingsModel) -> Unit,
-    onVoiceRecognitionModelChange: (VoiceRecognitionModel) -> Unit,
-    onTemperatureInput: (String) -> Unit,
-    onRequestTimeoutMillisChange: (String) -> Unit,
-    onContextSizeInput: (String) -> Unit,
-    onSystemPromptChange: (String) -> Unit,
-    onSystemPromptReset: () -> Unit,
-    onRefreshBalance: () -> Unit,
-    onClose: () -> Unit
+    onEvent: (SettingsEvent) -> Unit,
 ) {
     val sharedState = state.toSharedModelsSettingsUiState()
     SettingsSectionScreen(
         title = stringResource(Res.string.settings_section_models),
         subtitle = stringResource(Res.string.settings_models_subtitle),
-        onClose = onClose
+        onClose = { onEvent(SettingsEvent.GoToMain) }
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
             SharedModelsSettingsContent(
@@ -286,17 +276,17 @@ fun ModelsSettingsContent(
                 onEvent = { event ->
                     when (event) {
                         is SharedSettingsEvent.SelectChatModel ->
-                            state.availableLlmModels.firstOrNull { it.alias == event.id }?.let(onModelChange)
+                            state.availableLlmModels.firstOrNull { it.alias == event.id }?.let { onEvent(SettingsEvent.SelectModel(it)) }
                         is SharedSettingsEvent.SelectEmbeddingsModel ->
-                            state.availableEmbeddingsModels.firstOrNull { it.alias == event.id }?.let(onEmbeddingsModelChange)
+                            state.availableEmbeddingsModels.firstOrNull { it.alias == event.id }?.let { onEvent(SettingsEvent.SelectEmbeddingsModel(it)) }
                         is SharedSettingsEvent.SelectVoiceModel ->
-                            state.availableVoiceRecognitionModels.firstOrNull { it.alias == event.id }?.let(onVoiceRecognitionModelChange)
-                        is SharedSettingsEvent.TemperatureChanged -> onTemperatureInput(event.value)
-                        is SharedSettingsEvent.TimeoutChanged -> onRequestTimeoutMillisChange(event.value)
-                        is SharedSettingsEvent.ContextSizeChanged -> onContextSizeInput(event.value)
-                        is SharedSettingsEvent.SystemPromptChanged -> onSystemPromptChange(event.value)
-                        SharedSettingsEvent.ResetSystemPrompt -> onSystemPromptReset()
-                        SharedSettingsEvent.RefreshBalance -> onRefreshBalance()
+                            state.availableVoiceRecognitionModels.firstOrNull { it.alias == event.id }?.let { onEvent(SettingsEvent.SelectVoiceRecognitionModel(it)) }
+                        is SharedSettingsEvent.TemperatureChanged -> onEvent(SettingsEvent.InputTemperature(event.value))
+                        is SharedSettingsEvent.TimeoutChanged -> onEvent(SettingsEvent.InputRequestTimeoutMillis(event.value))
+                        is SharedSettingsEvent.ContextSizeChanged -> onEvent(SettingsEvent.InputContextSize(event.value))
+                        is SharedSettingsEvent.SystemPromptChanged -> onEvent(SettingsEvent.InputSystemPrompt(event.value))
+                        SharedSettingsEvent.ResetSystemPrompt -> onEvent(SettingsEvent.ResetSystemPrompt)
+                        SharedSettingsEvent.RefreshBalance -> onEvent(SettingsEvent.RefreshBalance)
                         else -> Unit
                     }
                 },
@@ -308,7 +298,7 @@ fun ModelsSettingsContent(
                     label = Res.string.label_ambient_analysis_model,
                     selectedModel = state.ambientAnalysisModel,
                     availableModels = state.availableAmbientAnalysisModels,
-                    onModelSelected = onAmbientAnalysisModelChange,
+                    onModelSelected = { onEvent(SettingsEvent.SelectAmbientAnalysisModel(it)) },
                 )
             }
         }
@@ -318,22 +308,12 @@ fun ModelsSettingsContent(
 @Composable
 fun GeneralSettingsContent(
     state: SettingsState,
-    onDefaultCalendarChange: (String?) -> Unit,
-    onCalendarDropdownOpen: () -> Unit,
-    onUseStreamingChange: (Boolean) -> Unit,
-    onNotificationSoundEnabledChange: (Boolean) -> Unit,
-    onVoiceInputReviewEnabledChange: (Boolean) -> Unit,
-    onUseEnglishVersionChange: (Boolean) -> Unit,
-    onUseEnglishInterfaceChange: (Boolean) -> Unit,
-    onThemeModeChange: (ThemeMode) -> Unit,
-    onChooseVoice: () -> Unit,
-    onVoiceSpeedInput: (String) -> Unit,
-    onClose: () -> Unit
+    onEvent: (SettingsEvent) -> Unit,
 ) {
     SettingsSectionScreen(
         title = stringResource(Res.string.settings_section_general),
         subtitle = stringResource(Res.string.settings_general_subtitle),
-        onClose = onClose
+        onClose = { onEvent(SettingsEvent.GoToMain) }
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
             Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
@@ -349,7 +329,7 @@ fun GeneralSettingsContent(
                 SettingsHoverTooltip(text = stringResource(Res.string.setting_language_profile_desc)) {
                     LanguageToggle(
                         useEnglish = state.useEnglishVersion,
-                        onLanguageChange = onUseEnglishVersionChange,
+                        onLanguageChange = { onEvent(SettingsEvent.InputUseEnglishVersion(it)) },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -367,7 +347,7 @@ fun GeneralSettingsContent(
                 )
                 LanguageToggle(
                     useEnglish = state.useEnglishInterface,
-                    onLanguageChange = onUseEnglishInterfaceChange,
+                    onLanguageChange = { onEvent(SettingsEvent.InputUseEnglishInterface(it)) },
                     modifier = Modifier.fillMaxWidth(),
                     russianLabel = Res.string.interface_language_ru_label,
                     englishLabel = Res.string.interface_language_en_label,
@@ -391,7 +371,7 @@ fun GeneralSettingsContent(
                         SegmentedToggleOption(ThemeMode.LIGHT, Res.string.setting_theme_light),
                         SegmentedToggleOption(ThemeMode.DARK, Res.string.setting_theme_dark),
                     ),
-                    onSelected = onThemeModeChange,
+                    onSelected = { onEvent(SettingsEvent.SelectThemeMode(it)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -400,29 +380,29 @@ fun GeneralSettingsContent(
                 selectedCalendar = state.defaultCalendar,
                 availableCalendars = state.availableCalendars,
                 isLoading = state.isLoadingCalendars,
-                onDropdownOpen = onCalendarDropdownOpen,
-                onCalendarSelected = onDefaultCalendarChange
+                onDropdownOpen = { onEvent(SettingsEvent.FetchCalendars) },
+                onCalendarSelected = { onEvent(SettingsEvent.SelectDefaultCalendar(it)) }
             )
 
             SettingsSwitchCard(
                 title = stringResource(Res.string.setting_streaming_title),
                 description = stringResource(Res.string.setting_streaming_desc),
                 checked = state.useStreaming,
-                onCheckedChange = onUseStreamingChange,
+                onCheckedChange = { onEvent(SettingsEvent.InputUseStreaming(it)) },
                 modifier = Modifier.fillMaxWidth()
             )
             SettingsSwitchCard(
                 title = stringResource(Res.string.setting_notification_sound_title),
                 description = stringResource(Res.string.setting_notification_sound_desc),
                 checked = state.notificationSoundEnabled,
-                onCheckedChange = onNotificationSoundEnabledChange,
+                onCheckedChange = { onEvent(SettingsEvent.InputNotificationSoundEnabled(it)) },
                 modifier = Modifier.fillMaxWidth()
             )
             SettingsSwitchCard(
                 title = stringResource(Res.string.setting_voice_input_review_title),
                 description = stringResource(Res.string.setting_voice_input_review_desc),
                 checked = state.voiceInputReviewEnabled,
-                onCheckedChange = onVoiceInputReviewEnabledChange,
+                onCheckedChange = { onEvent(SettingsEvent.InputVoiceInputReviewEnabled(it)) },
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -431,7 +411,7 @@ fun GeneralSettingsContent(
                     LabeledTextField(
                         label = stringResource(Res.string.label_voice_speed),
                         value = state.voiceSpeedInput,
-                        onValueChange = onVoiceSpeedInput,
+                        onValueChange = { onEvent(SettingsEvent.InputVoiceSpeed(it)) },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -455,7 +435,7 @@ fun GeneralSettingsContent(
                     }
                 ) {
                     OutlinedButton(
-                        onClick = onChooseVoice,
+                        onClick = { onEvent(SettingsEvent.ChooseVoice) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(SettingsControlHeight),
@@ -486,21 +466,14 @@ fun GeneralSettingsContent(
 @Composable
 fun KeysSettingsContent(
     state: SettingsState,
-    onApiKeyInput: (ApiKeyField, String) -> Unit,
-    onOpenAiBaseUrlInput: (String) -> Unit,
-    onOpenAiModelInput: (String) -> Unit,
-    onApiKeyVisibilityToggle: (ApiKeyField) -> Unit,
-    onOpenProviderLink: (ApiKeyProvider) -> Unit,
-    onStartCodexOAuth: () -> Unit,
-    onDisconnectCodex: () -> Unit,
-    onClose: () -> Unit
+    onEvent: (SettingsEvent) -> Unit,
 ) {
     val clipboardManager = LocalClipboardManager.current
     val sharedState = state.toSharedKeysSettingsUiState()
     SettingsSectionScreen(
         title = stringResource(Res.string.settings_section_keys),
         subtitle = stringResource(Res.string.settings_keys_subtitle),
-        onClose = onClose
+        onClose = { onEvent(SettingsEvent.GoToMain) }
     ) {
         SharedKeysSettingsContent(
             state = sharedState,
@@ -509,13 +482,13 @@ fun KeysSettingsContent(
                     is SharedSettingsEvent.ApiKeyChanged ->
                         runCatching { ApiKeyField.valueOf(event.id) }.getOrNull()
                             ?.takeUnless { it == ApiKeyField.CODEX }
-                            ?.let { onApiKeyInput(it, event.value) }
+                            ?.let { onEvent(SettingsEvent.InputApiKey(it, event.value)) }
                     is SharedSettingsEvent.ApiKeyVisibilityToggled ->
-                        runCatching { ApiKeyField.valueOf(event.id) }.getOrNull()?.let(onApiKeyVisibilityToggle)
+                        runCatching { ApiKeyField.valueOf(event.id) }.getOrNull()?.let { onEvent(SettingsEvent.ToggleApiKeyVisibility(it)) }
                     is SharedSettingsEvent.OpenProviderLink ->
-                        runCatching { ApiKeyProvider.valueOf(event.id) }.getOrNull()?.let(onOpenProviderLink)
-                    is SharedSettingsEvent.StartAuth -> if (event.id == ApiKeyProvider.CODEX.name) onStartCodexOAuth()
-                    is SharedSettingsEvent.DisconnectAuth -> if (event.id == ApiKeyProvider.CODEX.name) onDisconnectCodex()
+                        runCatching { ApiKeyProvider.valueOf(event.id) }.getOrNull()?.let { onEvent(SettingsEvent.OpenProviderLink(it)) }
+                    is SharedSettingsEvent.StartAuth -> if (event.id == ApiKeyProvider.CODEX.name) onEvent(SettingsEvent.StartCodexOAuth)
+                    is SharedSettingsEvent.DisconnectAuth -> if (event.id == ApiKeyProvider.CODEX.name) onEvent(SettingsEvent.DisconnectCodex)
                     is SharedSettingsEvent.CopyAuthCode -> clipboardManager.setText(AnnotatedString(event.code))
                     else -> Unit
                 }
@@ -526,14 +499,14 @@ fun KeysSettingsContent(
             LabeledTextField(
                 label = stringResource(Res.string.label_openai_base_url),
                 value = state.openaiBaseUrl,
-                onValueChange = onOpenAiBaseUrlInput,
+                onValueChange = { onEvent(SettingsEvent.InputOpenAiBaseUrl(it)) },
                 placeholder = stringResource(Res.string.placeholder_openai_base_url),
                 modifier = Modifier.fillMaxWidth(),
             )
             LabeledTextField(
                 label = stringResource(Res.string.label_openai_model_override),
                 value = state.openaiModel,
-                onValueChange = onOpenAiModelInput,
+                onValueChange = { onEvent(SettingsEvent.InputOpenAiModel(it)) },
                 placeholder = stringResource(Res.string.placeholder_openai_model_override),
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -837,25 +810,18 @@ private fun CodexOAuthButton(
 @Composable
 fun FunctionsSettingsContent(
     state: SettingsState,
-    onUseFewShotExamplesChange: (Boolean) -> Unit,
-    onAgentSelected: (AgentId) -> Unit,
-    onConfirmAgentSwitch: () -> Unit,
-    onCancelAgentSwitch: () -> Unit,
-    onMcpServersJsonInput: (String) -> Unit,
-    onOpenTools: () -> Unit,
-    onOpenTelegramSettings: () -> Unit,
-    onClose: () -> Unit
+    onEvent: (SettingsEvent) -> Unit,
 ) {
     SettingsSectionScreen(
         title = stringResource(Res.string.settings_section_functions),
         subtitle = stringResource(Res.string.settings_functions_subtitle),
-        onClose = onClose
+        onClose = { onEvent(SettingsEvent.GoToMain) }
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
             AgentDropdown(
                 selectedAgent = state.activeAgentId,
                 availableAgents = state.availableAgents,
-                onAgentSelected = onAgentSelected,
+                onAgentSelected = { onEvent(SettingsEvent.SelectAgent(it)) },
             )
 
             SettingsRow(
@@ -864,13 +830,13 @@ fun FunctionsSettingsContent(
                 content = {
                     SettingsCheckbox(
                         checked = state.useFewShotExamples,
-                        onCheckedChange = onUseFewShotExamplesChange
+                        onCheckedChange = { onEvent(SettingsEvent.InputUseFewShotExamples(it)) }
                     )
                 }
             )
 
             Button(
-                onClick = onOpenTools,
+                onClick = { onEvent(SettingsEvent.OpenTools) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(SettingsControlHeight),
@@ -905,7 +871,7 @@ fun FunctionsSettingsContent(
                 LabeledTextField(
                     label = "",
                     value = state.mcpServersJson,
-                    onValueChange = onMcpServersJsonInput,
+                    onValueChange = { onEvent(SettingsEvent.InputMcpServersJson(it)) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(150.dp),
@@ -926,7 +892,7 @@ fun FunctionsSettingsContent(
                 }
 
                 Button(
-                    onClick = onOpenTelegramSettings,
+                    onClick = { onEvent(SettingsEvent.OpenTelegramSettings) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(64.dp),
@@ -1013,8 +979,8 @@ fun FunctionsSettingsContent(
             description = stringResource(Res.string.agent_switch_dialog_message),
             confirmText = stringResource(Res.string.agent_switch_dialog_confirm),
             cancelText = stringResource(Res.string.agent_switch_dialog_cancel),
-            onConfirm = onConfirmAgentSwitch,
-            onDismiss = onCancelAgentSwitch,
+            onConfirm = { onEvent(SettingsEvent.ConfirmAgentSwitch) },
+            onDismiss = { onEvent(SettingsEvent.CancelAgentSwitch) },
         )
     }
 }
@@ -1022,14 +988,12 @@ fun FunctionsSettingsContent(
 @Composable
 fun SecuritySettingsContent(
     state: SettingsState,
-    onSafeModeChange: (Boolean) -> Unit,
-    onOpenFoldersManagement: () -> Unit,
-    onClose: () -> Unit
+    onEvent: (SettingsEvent) -> Unit,
 ) {
     SettingsSectionScreen(
         title = stringResource(Res.string.settings_section_security),
         subtitle = stringResource(Res.string.settings_security_subtitle),
-        onClose = onClose
+        onClose = { onEvent(SettingsEvent.GoToMain) }
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
             SettingsRow(
@@ -1038,7 +1002,7 @@ fun SecuritySettingsContent(
                 content = {
                     SettingsCheckbox(
                         checked = state.safeModeEnabled,
-                        onCheckedChange = onSafeModeChange
+                        onCheckedChange = { onEvent(SettingsEvent.InputSafeModeEnabled(it)) }
                     )
                 }
             )
@@ -1056,7 +1020,7 @@ fun SecuritySettingsContent(
                 SettingsHoverTooltip(text = stringResource(Res.string.hint_forbidden_folders)) {
                     SettingsActionButton(
                         text = stringResource(Res.string.button_manage_forbidden_folders),
-                        onClick = onOpenFoldersManagement,
+                        onClick = { onEvent(SettingsEvent.OpenFoldersManagement) },
                     )
                 }
             }
@@ -1111,21 +1075,15 @@ fun TelegramSettingsScreen(
 @Composable
 fun SupportSettingsContent(
     state: SettingsState,
-    onSupportEmailInput: (String) -> Unit,
-    onSendLogs: () -> Unit,
-    onOpenPrivacyPolicy: () -> Unit,
-    clipboardManager: ClipboardManager,
+    onEvent: (SettingsEvent) -> Unit,
     onShowSnack: (String) -> Unit,
-    onOpenGraphSessions: () -> Unit,
-    onClearLocalCaches: () -> Unit,
-    onConfirmClearLocalCaches: () -> Unit,
-    onCancelClearLocalCaches: () -> Unit,
-    onClose: () -> Unit
 ) {
+    val clipboardManager = LocalClipboardManager.current
+
     SettingsSectionScreen(
         title = stringResource(Res.string.settings_section_support),
         subtitle = stringResource(Res.string.settings_support_subtitle),
-        onClose = onClose
+        onClose = { onEvent(SettingsEvent.GoToMain) }
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
             Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
@@ -1140,7 +1098,7 @@ fun SupportSettingsContent(
                 )
                 SettingsHoverTooltip(text = stringResource(Res.string.hint_privacy_policy)) {
                     OutlinedButton(
-                        onClick = onOpenPrivacyPolicy,
+                        onClick = { onEvent(SettingsEvent.OpenPrivacyPolicy) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(SettingsControlHeight),
@@ -1167,7 +1125,7 @@ fun SupportSettingsContent(
             SettingsGroupDivider()
 
             Button(
-                onClick = onOpenGraphSessions,
+                onClick = { onEvent(SettingsEvent.OpenGraphSessions) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(SettingsControlHeight),
@@ -1191,12 +1149,18 @@ fun SupportSettingsContent(
 
             SettingsGroupDivider()
 
-            LogsView(state, onSupportEmailInput, onSendLogs, clipboardManager, onShowSnack)
+            LogsView(
+                state = state,
+                onSupportEmailInput = { onEvent(SettingsEvent.InputSupportEmail(it)) },
+                onSendLogs = { onEvent(SettingsEvent.SendLogsToSupport) },
+                clipboardManager = clipboardManager,
+                onShowSnack = onShowSnack,
+            )
 
             SettingsGroupDivider()
             Text(stringResource(Res.string.clear_local_caches_description))
             OutlinedButton(
-                onClick = onClearLocalCaches,
+                onClick = { onEvent(SettingsEvent.ClearLocalCaches) },
                 enabled = !state.isClearingLocalCaches,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -1207,14 +1171,14 @@ fun SupportSettingsContent(
     }
     if (state.showClearLocalCachesConfirmation) {
         AlertDialog(
-            onDismissRequest = onCancelClearLocalCaches,
+            onDismissRequest = { onEvent(SettingsEvent.CancelClearLocalCaches) },
             title = { Text(stringResource(Res.string.clear_local_caches)) },
             text = { Text(stringResource(Res.string.clear_local_caches_confirmation)) },
             confirmButton = {
-                TextButton(onClick = onConfirmClearLocalCaches) { Text(stringResource(Res.string.clear_local_caches)) }
+                TextButton(onClick = { onEvent(SettingsEvent.ConfirmClearLocalCaches) }) { Text(stringResource(Res.string.clear_local_caches)) }
             },
             dismissButton = {
-                TextButton(onClick = onCancelClearLocalCaches) { Text(stringResource(Res.string.dialog_cancel)) }
+                TextButton(onClick = { onEvent(SettingsEvent.CancelClearLocalCaches) }) { Text(stringResource(Res.string.dialog_cancel)) }
             },
         )
     }
@@ -2044,17 +2008,7 @@ private fun ModelsSettingsContentPreview() {
     SettingsSectionPreviewContainer {
         ModelsSettingsContent(
             state = PreviewSettingsState,
-            onModelChange = {},
-            onAmbientAnalysisModelChange = {},
-            onEmbeddingsModelChange = {},
-            onVoiceRecognitionModelChange = {},
-            onTemperatureInput = {},
-            onRequestTimeoutMillisChange = {},
-            onContextSizeInput = {},
-            onSystemPromptChange = {},
-            onSystemPromptReset = {},
-            onRefreshBalance = {},
-            onClose = {}
+            onEvent = {},
         )
     }
 }
@@ -2065,17 +2019,7 @@ private fun GeneralSettingsContentPreview() {
     SettingsSectionPreviewContainer {
         GeneralSettingsContent(
             state = PreviewSettingsState,
-            onDefaultCalendarChange = {},
-            onCalendarDropdownOpen = {},
-            onUseStreamingChange = {},
-            onNotificationSoundEnabledChange = {},
-            onVoiceInputReviewEnabledChange = {},
-            onUseEnglishVersionChange = {},
-            onUseEnglishInterfaceChange = {},
-            onThemeModeChange = {},
-            onChooseVoice = {},
-            onVoiceSpeedInput = {},
-            onClose = {}
+            onEvent = {},
         )
     }
 }
@@ -2086,14 +2030,7 @@ private fun KeysSettingsContentPreview() {
     SettingsSectionPreviewContainer {
         KeysSettingsContent(
             state = PreviewSettingsState,
-            onApiKeyInput = { _, _ -> },
-            onOpenAiBaseUrlInput = {},
-            onOpenAiModelInput = {},
-            onApiKeyVisibilityToggle = {},
-            onOpenProviderLink = {},
-            onStartCodexOAuth = {},
-            onDisconnectCodex = {},
-            onClose = {}
+            onEvent = {},
         )
     }
 }
@@ -2104,14 +2041,7 @@ private fun FunctionsSettingsContentPreview() {
     SettingsSectionPreviewContainer {
         FunctionsSettingsContent(
             state = PreviewSettingsState,
-            onUseFewShotExamplesChange = {},
-            onAgentSelected = {},
-            onConfirmAgentSwitch = {},
-            onCancelAgentSwitch = {},
-            onMcpServersJsonInput = {},
-            onOpenTools = {},
-            onOpenTelegramSettings = {},
-            onClose = {}
+            onEvent = {},
         )
     }
 }
@@ -2122,9 +2052,7 @@ private fun SecuritySettingsContentPreview() {
     SettingsSectionPreviewContainer {
         SecuritySettingsContent(
             state = PreviewSettingsState,
-            onSafeModeChange = {},
-            onOpenFoldersManagement = {},
-            onClose = {}
+            onEvent = {},
         )
     }
 }
@@ -2150,16 +2078,8 @@ private fun SupportSettingsContentPreview() {
     SettingsSectionPreviewContainer {
         SupportSettingsContent(
             state = PreviewSettingsState,
-            onSupportEmailInput = {},
-            onSendLogs = {},
-            onOpenPrivacyPolicy = {},
-            clipboardManager = LocalClipboardManager.current,
+            onEvent = {},
             onShowSnack = {},
-            onOpenGraphSessions = {},
-            onClearLocalCaches = {},
-            onConfirmClearLocalCaches = {},
-            onCancelClearLocalCaches = {},
-            onClose = {}
         )
     }
 }
