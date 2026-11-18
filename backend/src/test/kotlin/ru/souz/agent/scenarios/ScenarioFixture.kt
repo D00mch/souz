@@ -12,6 +12,7 @@ import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -24,8 +25,8 @@ internal enum class EvaluationCase(val id: String) {
     SKILL_SWITCH("skill-switch"),
 }
 
-internal class ScenarioFixture(private val case: EvaluationCase, appointment: LocalDate) {
-    private val doctor = doctorTask(appointment, case)
+internal class ScenarioFixture(private val case: EvaluationCase, today: LocalDate, appointment: LocalDate) {
+    private val doctor = doctorTask(today, appointment, case)
     private val train = trainTask(appointment.plusDays(2))
     private val theatre = theatreTask(appointment.plusDays(3))
     private val tasks = when (case) {
@@ -167,7 +168,7 @@ private data class Doctor(val name: String, val surname: String, val price: Int,
     val link = "https://booking.example/doctor/$slug"
 }
 
-private fun doctorTask(appointment: LocalDate, case: EvaluationCase): ScenarioTask {
+private fun doctorTask(today: LocalDate, appointment: LocalDate, case: EvaluationCase): ScenarioTask {
     val choose = case == EvaluationCase.DOCTOR_CHOOSE
     val doctors = listOf(
         Doctor("Вера Ким", "Ким", 3900, 145, "vera-kim-494"),
@@ -179,6 +180,7 @@ private fun doctorTask(appointment: LocalDate, case: EvaluationCase): ScenarioTa
     val eligible = doctors.filter { it.price <= BUDGET }
     val selected = eligible.maxBy { it.reviews }
     val slot = appointment.format(DateTimeFormatter.ofPattern("dd.MM")) + " 18:00"
+    val daysUntilAppointment = ChronoUnit.DAYS.between(today, appointment)
     return ScenarioTask(
         skillId = "doctor-appointment",
         script = "scripts/doctor.sh",
@@ -196,19 +198,22 @@ private fun doctorTask(appointment: LocalDate, case: EvaluationCase): ScenarioTa
             add(if (choose) "Пришли в Телеграм ссылку на него." else "Пришли в Телеграм обе ссылки на варианты до 2500 рублей.")
         },
         search = { args ->
-            val priceCap = args.intOption("--max-price", Int.MAX_VALUE)
+            val priceCap = args.intOption("--max-price", 0)
             val limit = args.intOption("--limit", 3)?.coerceIn(1, 8)
+            val radius = args.intOption("--radius", 3)
+            val days = args.intOption("--days", 7)?.coerceIn(1, 21)
             if (!args["--city"].equals("Москва", ignoreCase = true) ||
                 !args["--speciality"].equals("терапевт", ignoreCase = true) ||
                 args["--near"]?.contains("новослободск", ignoreCase = true) != true ||
-                priceCap == null || limit == null ||
-                args.intOption("--radius", 3) == null || args.intOption("--days", 7) == null ||
+                priceCap == null || limit == null || radius == null || days == null ||
                 (args["--order"] ?: "rating") !in DOCTOR_ORDERS ||
                 "--online" in args || "--kids" in args
             ) {
                 null
+            } else if (days < daysUntilAppointment || radius < DOCTOR_CLINIC_DISTANCE_KM) {
+                "NO_RESULTS"
             } else {
-                val matches = doctors.filter { it.price <= priceCap }
+                val matches = doctors.filter { priceCap == 0 || it.price <= priceCap }
                 val ordered = if (args["--order"] == "price") matches.sortedBy { it.price } else matches
                 val found = ordered.take(limit)
                 if (found.isEmpty()) "NO_RESULTS" else buildList {
@@ -313,6 +318,7 @@ private fun Map<String, String>.intOption(name: String, default: Int): Int? {
 
 private const val TELEGRAM_ID = "telegram-fixture-1050"
 private const val BUDGET = 2500
+private const val DOCTOR_CLINIC_DISTANCE_KM = 1
 private val DOCTOR_ORDERS = setOf("rating", "price", "experience")
 private val SAINT_PETERSBURG_NAMES = setOf("санкт-петербург", "санкт петербург", "питер", "спб")
 private val TRAIN_TIME = Regex("""(?:[01]\d|2[0-3]):[0-5]\d""")

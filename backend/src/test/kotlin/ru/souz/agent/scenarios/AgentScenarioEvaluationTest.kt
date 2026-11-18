@@ -21,8 +21,8 @@ class AgentScenarioEvaluationTest {
             val skills = ScenarioSkillSet.load()
             val repeats = (System.getenv("SOUZ_SCENARIO_REPEATS") ?: "2").toInt()
             require(repeats > 0) { "SOUZ_SCENARIO_REPEATS must be positive." }
-            val appointment = LocalDate.now(ZoneId.of(SCENARIO_ZONE))
-                .with(TemporalAdjusters.next(DayOfWeek.WEDNESDAY))
+            val today = LocalDate.now(ZoneId.of(SCENARIO_ZONE))
+            val appointment = today.with(TemporalAdjusters.next(DayOfWeek.WEDNESDAY))
             val reportDir = Path.of(System.getenv("SOUZ_SCENARIO_REPORT_DIR") ?: "build/reports/agent-evaluation")
             val failures = mutableListOf<String>()
             ScenarioEvaluationReport(reportDir, model, skills, appointment, repeats).use { report ->
@@ -30,7 +30,7 @@ class AgentScenarioEvaluationTest {
                 println("Agent evaluation JSONL: ${report.path.toAbsolutePath()}")
                 repeat(repeats) { index ->
                     for (case in EvaluationCase.entries) {
-                        val fixture = ScenarioFixture(case, appointment)
+                        val fixture = ScenarioFixture(case, today, appointment)
                         val trace = ScenarioTrace(
                             model.modelId, model.reasoningEffort, wire, normalizeDate = false,
                             maxModelCalls = maxOf(24, fixture.turns.size * 8),

@@ -12,11 +12,12 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 
 class ScenarioFixtureTest {
+    private val today = LocalDate.of(2026, 11, 18)
     private val appointment = LocalDate.of(2026, 11, 25)
 
     @Test
     fun `theatre fixture requires a theatre search`() = runTest {
-        val fixture = ScenarioFixture(EvaluationCase.THEATRE, appointment)
+        val fixture = ScenarioFixture(EvaluationCase.THEATRE, today, appointment)
 
         val invalidQueries = listOf(
             listOf("find", "--type", "movie"),
@@ -41,7 +42,7 @@ class ScenarioFixtureTest {
 
     @Test
     fun `train fixture rejects positional arguments and malformed options`() = runTest {
-        val fixture = ScenarioFixture(EvaluationCase.TRAIN, appointment)
+        val fixture = ScenarioFixture(EvaluationCase.TRAIN, today, appointment)
         val request = trainRequest(emptyList())
         val invalidQueries = listOf(
             listOf("find") + request.args,
@@ -63,13 +64,8 @@ class ScenarioFixtureTest {
 
     @Test
     fun `doctor fixture rejects malformed search options`() = runTest {
-        val fixture = ScenarioFixture(EvaluationCase.DOCTOR_SEND, appointment)
-        val request = SandboxCommandRequest(
-            runtime = SandboxCommandRuntime.BASH,
-            scriptPath = "/skills/doctor-appointment/scripts/doctor.sh",
-            args = listOf("find", "--city", "Москва", "--near", "Новослободская", "--speciality", "терапевт", "--limit", "5"),
-            environment = mapOf("SOUZ_SKILL_ID" to "doctor-appointment"),
-        )
+        val fixture = ScenarioFixture(EvaluationCase.DOCTOR_SEND, today, appointment)
+        val request = doctorRequest()
         val invalidOptions = listOf(listOf("extra"), listOf("--max-price"), listOf("--max-price", "unknown"))
         for (options in invalidOptions) {
             val result = fixture.commands.execute(request.copy(args = request.args + options))
@@ -83,8 +79,25 @@ class ScenarioFixtureTest {
     }
 
     @Test
+    fun `doctor fixture requires the search to cover the appointment`() = runTest {
+        val fixture = ScenarioFixture(EvaluationCase.DOCTOR_SEND, today, appointment)
+        val request = doctorRequest()
+        val excluded = listOf(listOf("--days", "1"), listOf("--days", "6"), listOf("--radius", "0"))
+        for (options in excluded) {
+            val result = fixture.commands.execute(request.copy(args = request.args + options))
+            assertEquals(0, result.exitCode)
+            assertEquals("NO_RESULTS", result.stdout, options.joinToString(" "))
+        }
+
+        val result = fixture.commands.execute(request.copy(args = request.args + listOf("--days", "7", "--radius", "1")))
+        assertEquals(0, result.exitCode)
+        assertEquals(5, result.stdout.lineSequence().count { it.startsWith("DOCTOR\t") })
+        assertContains(result.stdout, "25.11 18:00")
+    }
+
+    @Test
     fun `train fixture applies limit and departure filters`() = runTest {
-        val fixture = ScenarioFixture(EvaluationCase.TRAIN, appointment)
+        val fixture = ScenarioFixture(EvaluationCase.TRAIN, today, appointment)
         val filters = listOf(
             emptyList<String>() to 2,
             listOf("--limit", "1") to 1,
@@ -103,7 +116,7 @@ class ScenarioFixtureTest {
 
     @Test
     fun `train scenario requires two initial matches even when the correct link is delivered`() = runTest {
-        val fixture = ScenarioFixture(EvaluationCase.TRAIN, appointment)
+        val fixture = ScenarioFixture(EvaluationCase.TRAIN, today, appointment)
         val result = fixture.commands.execute(trainRequest(listOf("--after", "12:00")))
         val link = result.stdout.lineSequence().single { it.startsWith("TRAIN\t") }.substringAfterLast('\t')
         assertEquals("https://rail.example/rybinsk/608a-1420", link)
@@ -118,7 +131,7 @@ class ScenarioFixtureTest {
 
     @Test
     fun `telegram delivery rejects a repeated link`() = runTest {
-        val fixture = ScenarioFixture(EvaluationCase.THEATRE, appointment)
+        val fixture = ScenarioFixture(EvaluationCase.THEATRE, today, appointment)
         val result = fixture.commands.execute(theatreRequest(listOf("find", "--type", "theatre")))
         assertEquals(0, result.exitCode)
         fixture.afterTurn(1, "Here are two shows.")
@@ -143,5 +156,12 @@ class ScenarioFixtureTest {
         scriptPath = "/skills/train-tickets/scripts/trains.sh",
         args = listOf("--from", "Санкт-Петербург", "--to", "Рыбинск", "--date", appointment.plusDays(2).toString()) + filters,
         environment = mapOf("SOUZ_SKILL_ID" to "train-tickets"),
+    )
+
+    private fun doctorRequest() = SandboxCommandRequest(
+        runtime = SandboxCommandRuntime.BASH,
+        scriptPath = "/skills/doctor-appointment/scripts/doctor.sh",
+        args = listOf("find", "--city", "Москва", "--near", "Новослободская", "--speciality", "терапевт", "--limit", "5"),
+        environment = mapOf("SOUZ_SKILL_ID" to "doctor-appointment"),
     )
 }
