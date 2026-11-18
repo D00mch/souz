@@ -7,6 +7,7 @@ junitJupiter = "6.0.2"
 kodeinDi = "7.26.1"
 kotlin = "2.4.10"
 kover = "0.9.9"
+mavenPublish = "0.37.0"
 kotlinx-coroutines = "1.11.0"
 ktor = "3.5.2"
 mcp = "0.16.0"
@@ -80,6 +81,7 @@ ktorClient = [
     "ktor-clientLogging"
 ]
 [plugins]
+mavenPublishBase = { id = "com.vanniktech.maven.publish.base", version.ref = "mavenPublish" }
 kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 ktor = { id = "io.ktor.plugin", version.ref = "ktor" }
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }

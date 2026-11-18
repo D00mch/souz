@@ -1,7 +1,17 @@
 plugins { kotlin("jvm") version "2.4.10" }
 
-repositories { mavenLocal(); mavenCentral() }
-dependencies { compileOnly("ru.souz:plugin-api:2.0.0") }
+repositories {
+    providers.environmentVariable("SOUZ_PLUGIN_MAVEN_URL").orNull?.let { repositoryUrl ->
+        exclusiveContent {
+            forRepository {
+                maven { url = uri(repositoryUrl) }
+            }
+            filter { includeModule("io.github.d00mch", "plugin-api") }
+        }
+    }
+    mavenCentral()
+}
+dependencies { compileOnly("io.github.d00mch:plugin-api:2.0.0") }
 kotlin { jvmToolchain(21) }
 
 tasks.jar {
