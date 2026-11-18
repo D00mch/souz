@@ -52,7 +52,7 @@ Elapsed time uses monotonic clocks. Scheduled dispatch delay compares the occurr
 
 Streaming usage adds only positive deltas above each attempt's high-water mark, retaining it through missing, repeated or decreasing snapshots. Missing usage adds no measured tokens. Anthropic cache-read tokens are added to its uncached/cache-creation input; OpenAI-compatible cached tokens are already part of prompt tokens. Cumulative execution usage is not added to these counters. Embedding APIs do not report usage through the shared response contract.
 
-Live-event losses cover command queue rejection, queue eviction, abandoned queues/receives, disconnects, failed sends and progress overtaken by durable replay. Each full command queue counts a `queue_full` loss even if another subscriber accepts the command. Durable replay signals and live-only bot observers are excluded. A scrape may contain zero outcome/wait/drop series before use; provider/tool series register on first use.
+Live-event losses cover command queue rejection, queue eviction, abandoned queues/receives, disconnects, failed sends and progress overtaken by durable replay. Each full command queue counts a `queue_full` loss even if another subscriber accepts the command. Durable replay signals are excluded. A scrape may contain zero outcome/wait/drop series before use; provider/tool series register on first use.
 
 ## Host meters
 

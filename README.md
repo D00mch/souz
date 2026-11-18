@@ -72,7 +72,7 @@ Backend startup requires `SOUZ_MASTER_KEY`. Protected routes require a shared `S
 
 Backend logs are one-line JSON on stdout. See [Logback configuration](backend/src/main/resources/logback.xml) for root and application log levels.
 
-For bot setup, see [Telegram bindings](backend/docs/telegram-bindings.md#setup) and [VK bindings](backend/docs/vk-bindings.md#setup).
+External Telegram and VK bot services connect through the [public WebSocket API](docs/public-souz-contract/README.md).
 
 ## Development and verification
 

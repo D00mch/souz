@@ -1,6 +1,5 @@
 package ru.souz.backend.e2e
 
-import io.ktor.client.request.put
 import io.ktor.websocket.Frame
 import java.util.UUID
 import kotlin.test.Test
@@ -13,10 +12,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
-import ru.souz.backend.telegram.TelegramChat
-import ru.souz.backend.telegram.TelegramMessage
-import ru.souz.backend.telegram.TelegramUpdate
-import ru.souz.backend.telegram.TelegramUser
 import ru.souz.llms.restJsonMapper
 
 class BackendUserClientToolsE2eTest {
@@ -120,20 +115,11 @@ class BackendUserClientToolsE2eTest {
         }
 
     @Test
-    fun `embedded Telegram discovers Orion and calls its tools without providing them itself`() {
-        val telegram = FakeTelegramBotApi()
-        backendE2eTest("e2e_bot_orion", telegramApi = telegram,
-            featureFlags = BackendFeatureFlags(wsEvents = true, telegramBot = true)) {
+    fun `a bot WebSocket channel discovers Orion and calls its tools without providing them itself`() {
+        backendE2eTest("e2e_bot_orion", featureFlags = BackendFeatureFlags(wsEvents = true)) {
             val owner = UUID.randomUUID().toString()
             val bot = createPublicChat(owner, "bot")
             val orion = createPublicChat(owner, "orion") // No creation declarations needed for discovery.
-            val link = client.put(BackendHttpRoutes.chatTelegramBot(bot)) {
-                trusted(owner); jsonBody("""{"token":"123456:orion-integration"}""")
-            }.jsonBody()["pendingLinkCommand"].asText()
-            fun update(id: Long, text: String) = TelegramUpdate(id, TelegramMessage(id, TelegramUser(701, firstName = "Owner"),
-                TelegramChat(701, "private"), text))
-            telegram.enqueue(update(1, link))
-            backend.pollTelegramOnce()
             val prompt = "Play Linkin Park on Aura"
             llm.requestSkillForPrompt(prompt, "orion.tools.list", mapOf("channelId" to orion),
                 "orion.call" to mapOf("channelId" to orion, "utterance" to prompt),
@@ -141,9 +127,10 @@ class BackendUserClientToolsE2eTest {
             withMultiChatSocket { socket ->
                 socket.send(Frame.Text("""{"kind":"chat.subscribe","chatId":"$orion","requestId":"watch"}"""))
                 assertEquals("accepted", readJson(socket)["status"].asText())
-                telegram.enqueue(update(2, prompt))
-                coroutineScope {
-                    val botTurn = async { backend.pollTelegramOnce() }
+                withPublicSocket(bot) { botSocket ->
+                    botSocket.send(Frame.Text(messageFrame(bot, owner, "bot-turn", text = prompt)))
+                    assertEquals("accepted", readJson(botSocket)["status"].asText())
+                    assertEquals("thread.status", readJson(botSocket)["type"].asText())
                     for ((name, result) in listOf(
                         "orion.tools.list" to """{"tools":${clientToolsJson("orion.call", "web.search", "prompt.personality.set")}}""",
                         "orion.call" to """{"reply":"Playing"}""",
@@ -158,10 +145,9 @@ class BackendUserClientToolsE2eTest {
                         socket.send(Frame.Text("""{"kind":"tool.result","chatId":"$orion","threadId":${call["threadId"]},"toolCallId":${call["payload"]["toolCallId"]},"status":"succeeded","result":$result}"""))
                         assertEquals("accepted", readJson(socket)["status"].asText())
                     }
-                    botTurn.await()
-                }
-                eventually("Telegram receives the caller's final response") {
-                    telegram.sentMessages.firstOrNull { it.chatId == 701L && it.text == "client tool completed" }
+                    val terminal = readJson(botSocket)
+                    assertEquals("thread.completed", terminal["type"].asText())
+                    assertEquals("client tool completed", terminal["payload"]["response"].asText())
                 }
                 val discovery = restJsonMapper.readTree(llm.requests.last().messages.first { it.name == "RunSkillCommand" }.content)
                 assertEquals(setOf("orion.call", "web.search"), discovery["tools"].map { it["name"].asText() }.toSet())

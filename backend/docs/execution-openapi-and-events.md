@@ -19,7 +19,6 @@ Finalize in a non-cancellable scope. Fence the commit against cancellation and l
 
 - Keep proxy `message.delta` live-only. Follow the [public delivery contract](../../docs/public-souz-contract/README.md#delivery-and-retries) and [attachment snapshot rules](attachments.md#websocket-transport) for public replay.
 - Keep waiting publication in the execution scope. Narration, a parent tool start, or a turn outcome can close pending delivery immediately. Publication and cancellation must be ordered without blocking on a stalled lookup. Preserve separate narration blocks, custom prompts, and the memory notice. [Progress contract](../../docs/public-souz-contract/README.md#intermediate-assistant-messages)
-- Subscribe bot observers before launch and send only that execution's live progress in order through the bounded queue and fenced reply path. Keep sends best-effort and observers ineligible for client commands. Cancel and join the sender and close its subscription before the final reply or on lease loss. [Observer lifecycle](../src/main/kotlin/ru/souz/backend/execution/service/AgentExecutionService.kt)
 - Sanitize tool audit previews once without mutating the source. Persist them regardless of event settings. [Event sink](../src/main/kotlin/ru/souz/backend/agent/runtime/BackendAgentRuntimeEventSink.kt)
 
 ### OpenAPI

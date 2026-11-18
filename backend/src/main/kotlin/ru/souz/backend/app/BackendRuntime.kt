@@ -7,8 +7,6 @@ import org.kodein.di.instanceOrNull
 import kotlinx.coroutines.runBlocking
 import ru.souz.backend.attachments.AttachmentCleanupWorker
 import ru.souz.backend.http.BackendHttpDependencies
-import ru.souz.backend.telegram.TelegramBotPollingService
-import ru.souz.backend.vk.VkBotPollingService
 import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
 import ru.souz.backend.scheduler.ScheduledTaskRunner
@@ -20,12 +18,6 @@ class BackendRuntime private constructor(
     private val di: DI,
 ) : AutoCloseable {
     internal val httpDependencies: BackendHttpDependencies by lazy { di.direct.instance() }
-    private val telegramBotPollingService: TelegramBotPollingService? by lazy {
-        if (httpDependencies.featureFlags.telegramBot) di.direct.instance() else null
-    }
-    private val vkBotPollingService: VkBotPollingService? by lazy {
-        if (httpDependencies.featureFlags.vkBot) di.direct.instance() else null
-    }
     private val resources: BackendRuntimeResources by lazy { di.direct.instance() }
     private val applicationScope: BackendApplicationScope by lazy { di.direct.instance() }
     private val clientThreadRecoveryService: ClientThreadRecoveryService by lazy { di.direct.instance() }
@@ -42,8 +34,6 @@ class BackendRuntime private constructor(
             runBlocking { clientThreadRecoveryService.recover() }
             clientThreadRecoveryService.start(applicationScope)
         }
-        telegramBotPollingService?.start()
-        vkBotPollingService?.start()
         di.direct.instanceOrNull<HistoryMemoryWorker>()?.start(applicationScope)
         di.direct.instanceOrNull<AttachmentCleanupWorker>()?.start(applicationScope)
     }

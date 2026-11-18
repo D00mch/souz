@@ -3,16 +3,11 @@ package ru.souz.backend.execution.service
 import io.ktor.http.HttpStatusCode
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import org.slf4j.LoggerFactory
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
@@ -25,7 +20,6 @@ import ru.souz.backend.chat.service.SendMessageResult
 import ru.souz.backend.hooks.HookConfig
 import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.events.model.AgentEventType
-import ru.souz.backend.events.model.AssistantMessagePayload
 import ru.souz.backend.events.model.ChoiceAnsweredPayload
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
@@ -60,7 +54,6 @@ class AgentExecutionService internal constructor(
     private val hookConfig: HookConfig,
     private val waitingPhrases: WaitingPhrases,
 ) {
-    private val logger = LoggerFactory.getLogger(AgentExecutionService::class.java)
     private val hookSlots = Semaphore(hookConfig.concurrentExecutions)
 
     suspend fun executeChatTurn(
@@ -230,48 +223,6 @@ class AgentExecutionService internal constructor(
             assistantMessage = null,
             execution = runningExecution,
         )
-    }
-
-    suspend fun executeChatTurnAndAwaitCompletion(
-        userId: String,
-        chatId: UUID,
-        content: String,
-        clientMessageId: String? = null,
-        requestOverrides: UserSettingsOverrides = UserSettingsOverrides(),
-        onProgress: suspend (String) -> Unit,
-        attachments: List<FileContent> = emptyList(),
-    ): SendMessageResult = coroutineScope {
-        // Subscribe before execution can publish its first block; no replay or device commands.
-        val subscription = eventService.observeLive(userId, chatId)
-        var sender: Job? = null
-        try {
-            val started = executeChatTurn(userId, chatId, content, clientMessageId, requestOverrides, attachments = attachments)
-            sender = launch {
-                for (event in subscription.events) {
-                    if (event.executionId != started.execution.id) continue
-                    val progress = event.payload as? AssistantMessagePayload ?: continue
-                    try {
-                        onProgress(progress.content)
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        logger.warn("Progress delivery failed for execution {}", started.execution.id)
-                    }
-                }
-            }
-            launcher.join(started.execution.id)
-            val finished = executionRepository.getByChat(userId, chatId, started.execution.id) ?: started.execution
-            started.copy(
-                assistantMessage = finished.assistantMessageId?.let { messageRepository.getById(userId, chatId, it) },
-                execution = finished,
-            )
-        } finally {
-            // Stop even a blocked send before the caller delivers the final reply.
-            withContext(NonCancellable) {
-                sender?.cancelAndJoin()
-                subscription.close()
-            }
-        }
     }
 
     private suspend fun launchExecution(

@@ -31,7 +31,6 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
-import org.kodein.di.instanceOrNull
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
@@ -66,12 +65,9 @@ import ru.souz.backend.storage.postgres.PostgresChatRepository
 import ru.souz.backend.storage.postgres.PostgresConversationKnowledgeStore
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
 import ru.souz.backend.storage.postgres.PostgresOptionRepository
-import ru.souz.backend.storage.postgres.PostgresTelegramBotBindingRepository
-import ru.souz.backend.storage.postgres.PostgresVkBotBindingRepository
 import ru.souz.backend.storage.postgres.PostgresUserRepository
 import ru.souz.backend.storage.postgres.PostgresUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
-import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.user.repository.UserRepository
 import ru.souz.memory.CompletedTurnEvidence
 import ru.souz.memory.CompletedTurnEvidenceKind
@@ -261,8 +257,6 @@ class BackendDiModuleTest {
             assertIs<PostgresAgentEventRepository>(di.direct.instance<AgentEventRepository>())
             assertIs<PostgresUserSettingsRepository>(di.direct.instance<UserSettingsRepository>())
             assertIs<PostgresUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
-            assertIs<PostgresTelegramBotBindingRepository>(di.direct.instance<TelegramBotBindingRepository>())
-            assertIs<PostgresVkBotBindingRepository>(di.direct.instance<PostgresVkBotBindingRepository>())
             assertIs<PostgresJobService>(di.direct.instance<JobService>())
             assertSame(di.direct.instance<JobService>(), di.direct.instance<PostgresJobService>())
             assertNotNull(di.direct.instance<BackendMetrics>().registry.find("souz.jobs.oldest.due").gauge())
@@ -286,8 +280,6 @@ class BackendDiModuleTest {
             assertNotNull(httpDependencies.executionService)
             assertNotNull(httpDependencies.optionService)
             assertNotNull(httpDependencies.eventService)
-            assertNull(httpDependencies.telegramBotBindingService)
-            assertNull(httpDependencies.vkBotBindingService)
         } finally {
             di.direct.instance<BackendRuntimeResources>().close()
             runBlocking { withTimeout(5_000) { clients.jev.engine.coroutineContext.job.join() } }
