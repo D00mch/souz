@@ -91,7 +91,11 @@ internal class ScenarioFixture(private val case: EvaluationCase, appointment: Lo
         var first = 0
         for (task in tasks) {
             val last = first + task.turns.lastIndex
-            assertTrue(evidence[first].searches.any { task.initialQuery(it.args) },
+            val (rowType, rowCount) = task.initialRows
+            assertTrue(evidence[first].searches.any { search ->
+                task.initialQuery(search.args) &&
+                    search.output.lineSequence().count { it.startsWith("$rowType\t") } == rowCount
+            },
                 "${task.skillId} did not return the expected initial search results.")
             if (case == EvaluationCase.DOCTOR_SEND) verifyDoctorBudgetSearch()
             task.choice?.let { (index, name) ->
@@ -130,6 +134,7 @@ private data class ScenarioTask(
     val turns: List<String>,
     val search: (List<String>) -> String?,
     val expectedLinks: Set<String>,
+    val initialRows: Pair<String, Int>,
     val initialQuery: (List<String>) -> Boolean = { true },
     val choice: Pair<Int, String>? = null,
 )
@@ -185,6 +190,7 @@ private fun doctorTask(appointment: LocalDate, case: EvaluationCase): ScenarioTa
             }
         },
         expectedLinks = if (choose) setOf(selected.link) else eligible.mapTo(mutableSetOf()) { it.link },
+        initialRows = "DOCTOR" to doctors.size,
         initialQuery = { it.option("--max-price") == null && (it.option("--limit")?.toIntOrNull() ?: 3) >= doctors.size },
         choice = if (choose) 2 to selected.surname else null,
     )
@@ -194,6 +200,10 @@ private fun trainTask(date: LocalDate): ScenarioTask {
     val slot = date.format(DateTimeFormatter.ofPattern("dd.MM"))
     val early = "https://rail.example/rybinsk/606a-0810"
     val late = "https://rail.example/rybinsk/608a-1420"
+    val trains = listOf(
+        "08:10" to "TRAIN\t$slot 08:10\t$slot 16:35\t8 ч 25 мин\t606А\t-\tЛадожский — Рыбинск\tкупе\t$early",
+        "14:20" to "TRAIN\t$slot 14:20\t$slot 22:50\t8 ч 30 мин\t608А\t-\tЛадожский — Рыбинск\tкупе\t$late",
+    )
     return ScenarioTask(
         skillId = "train-tickets",
         script = "scripts/trains.sh",
@@ -203,26 +213,40 @@ private fun trainTask(date: LocalDate): ScenarioTask {
         ),
         search = { args ->
             val from = args.option("--from").orEmpty().lowercase()
+            val limit = args.searchLimit()
+            val after = if ("--after" in args) args.option("--after") else "00:00"
+            val before = if ("--before" in args) args.option("--before") else "23:59"
             if (from !in SAINT_PETERSBURG_NAMES ||
                 !args.option("--to").equals("Рыбинск", ignoreCase = true) ||
-                args.option("--date") != date.toString()
+                args.option("--date") != date.toString() ||
+                limit == null || after == null || before == null ||
+                !TRAIN_TIME.matches(after) || !TRAIN_TIME.matches(before) ||
+                args.any { it.startsWith("--") && it !in TRAIN_OPTIONS }
             ) {
                 null
+            } else if ("--overnight" in args || "--name" in args ||
+                ("--class" in args && !args.option("--class").equals("купе", ignoreCase = true))
+            ) {
+                "NO_MATCH"
             } else {
-                listOf(
-                    "ROUTE\tСанкт-Петербург\tРыбинск",
-                    "TRAIN\t$slot 08:10\t$slot 16:35\t8 ч 25 мин\t606А\t-\tЛадожский — Рыбинск\tкупе\t$early",
-                    "TRAIN\t$slot 14:20\t$slot 22:50\t8 ч 30 мин\t608А\t-\tЛадожский — Рыбинск\tкупе\t$late",
-                ).joinToString("\n")
+                val matches = trains.filter { (departure, _) -> departure in after..before }.take(limit)
+                if (matches.isEmpty()) "NO_MATCH" else
+                    (listOf("ROUTE\tСанкт-Петербург\tРыбинск\t$date\t${matches.size}") + matches.map { it.second })
+                        .joinToString("\n")
             }
         },
         expectedLinks = setOf(late),
+        initialRows = "TRAIN" to trains.size,
     )
 }
 
 private fun theatreTask(date: LocalDate): ScenarioTask {
     val early = "https://theatre.example/event/severnyi-veter"
     val late = "https://theatre.example/event/ogni-na-kryshe"
+    val events = listOf(
+        "EVENT\t104\ttheatre\tСеверный ветер\tдрама\t16+\t8.0\t90 мин\tСценическая драма\t$date 17:00\t$early",
+        "EVENT\t209\ttheatre\tОгни на крыше\tкомедия\t12+\t8.1\t110 мин\tКамерная комедия\t$date 19:30\t$late",
+    )
     return ScenarioTask(
         skillId = "afisha-where-to-go-cinema-theatre-concerts-tickets",
         script = "scripts/afisha.sh",
@@ -231,28 +255,34 @@ private fun theatreTask(date: LocalDate): ScenarioTask {
             "Пришли в Телеграм ссылку на спектакль, который начинается в 19:30.",
         ),
         search = { args ->
+            val limit = args.searchLimit()
             if (args.firstOrNull() != "find" ||
                 args.option("--type") != "theatre" ||
                 !args.option("--city").equals("Москва", ignoreCase = true) ||
-                args.option("--date") != date.toString()
+                args.option("--date") != date.toString() ||
+                limit == null || args.any { it.startsWith("--") && it !in THEATRE_OPTIONS }
             ) {
                 null
             } else {
-                listOf(
-                    "SEARCH\tМосква\tспектакли\tнайдено 2",
-                    "EVENT\t104\ttheatre\tСеверный ветер\tдрама\t16+\t8.0\t90 мин\tСценическая драма\t$date 17:00\t$early",
-                    "EVENT\t209\ttheatre\tОгни на крыше\tкомедия\t12+\t8.1\t110 мин\tКамерная комедия\t$date 19:30\t$late",
-                ).joinToString("\n")
+                val matches = events.take(limit)
+                (listOf("SEARCH\tМосква\tспектакли\tнайдено ${matches.size}") + matches).joinToString("\n")
             }
         },
         expectedLinks = setOf(late),
+        initialRows = "EVENT" to events.size,
     )
 }
 
 private fun List<String>.option(name: String): String? =
     lastIndexOf(name).takeIf { it >= 0 }?.let { getOrNull(it + 1) }
 
+private fun List<String>.searchLimit(): Int? =
+    if ("--limit" in this) option("--limit")?.toIntOrNull()?.takeIf { it > 0 } else 5
+
 private const val TELEGRAM_ID = "telegram-fixture-1050"
 private const val BUDGET = 2500
 private val SAINT_PETERSBURG_NAMES = setOf("санкт-петербург", "санкт петербург", "питер", "спб")
+private val TRAIN_TIME = Regex("""(?:[01]\d|2[0-3]):[0-5]\d""")
+private val TRAIN_OPTIONS = setOf("--from", "--to", "--date", "--after", "--before", "--overnight", "--class", "--name", "--sort", "--limit")
+private val THEATRE_OPTIONS = setOf("--city", "--type", "--date", "--limit", "--with-dates")
 private val URL = Regex("""https?://[^\s<>()\[\]"']+""")
