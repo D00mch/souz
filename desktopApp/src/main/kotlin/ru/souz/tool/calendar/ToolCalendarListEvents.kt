@@ -1,5 +1,7 @@
 package ru.souz.tool.calendar
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import ru.souz.llms.ToolInvocationMeta
 
 import ru.souz.tool.FewShotExample
@@ -74,7 +76,8 @@ class ToolCalendarListEvents(private val bash: ToolRunBashCommand = ToolRunBashC
         return outputBuilder.toString()
     }
 
-    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String =
+        runInterruptible(Dispatchers.IO) { invoke(input, meta) }
 }
 
 fun main() {
