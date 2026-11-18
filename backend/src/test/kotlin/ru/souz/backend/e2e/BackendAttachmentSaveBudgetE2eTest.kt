@@ -125,10 +125,10 @@ class BackendAttachmentSaveBudgetE2eTest {
         }
 
     @Test
-    fun `saves waiting behind their owner leave a database connection for other owners`() =
+    fun `saves waiting behind their owner leave database and transfer capacity for other owners`() =
         backendE2eTest(
             "attachment_budget_pool",
-            attachments = AttachmentMinio.config(),
+            attachments = AttachmentMinio.config(maxConcurrentUploads = 2),
             configureApp = { it.copy(postgres = it.postgres.copy(maxPoolSize = 2)) },
         ) {
             val owner = UUID.randomUUID().toString()
@@ -297,7 +297,7 @@ class BackendAttachmentSaveBudgetE2eTest {
     }
 
     private suspend fun AttachmentStorage.saveFile(owner: String, execution: UUID, name: String, content: String) =
-        saveWorkspaceOutput(owner, execution, name, content.byteInputStream())
+        saveWorkspaceOutput(owner, execution, name) { content.byteInputStream() }
 
     private suspend fun race(attempts: List<suspend () -> StoredAttachment>): List<String?> = coroutineScope {
         val ready = CompletableDeferred<Unit>()

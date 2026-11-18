@@ -28,35 +28,46 @@ class AttachmentStorage(
     private val ownerSaveAdmissions = ConcurrentHashMap<String, OwnerSaveAdmission>()
 
     suspend fun save(userId: String, sourceKey: String, name: String, input: InputStream): StoredAttachment =
-        save(userId, name, input, executionId = null) { sourceKey }
+        save(userId, name, input) { sourceKey }
 
     /** Reads and hashes [input] once under the transfer limit; [sourceKey] receives the content SHA-256. */
     suspend fun save(userId: String, name: String, input: InputStream, sourceKey: (String) -> String): StoredAttachment =
-        save(userId, name, input, executionId = null, sourceKey)
+        save(userId, name, { input }, executionId = null, sourceKey)
 
-    internal suspend fun saveWorkspaceOutput(userId: String, executionId: UUID, name: String, input: InputStream): StoredAttachment =
-        save(userId, name, input, executionId) { contentHash -> "$executionId:output:$contentHash:${name.sha256Hex()}" }
-
-    private suspend fun save(
-        userId: String, name: String, input: InputStream, executionId: UUID?, sourceKey: (String) -> String,
-    ): StoredAttachment = transfers.withPermit {
-        val bytes = runInterruptible(Dispatchers.IO) { input.use { it.readAttachmentBytes(config.maxFileBytes) } }
-        val sha256 = bytes.sha256Hex()
-        val key = sourceKey(sha256)
-        require(userId.isNotBlank() && key.isNotBlank() && key.length <= 512)
-        val safeName = attachmentName(name)
-        val mimeType = attachmentMime(bytes, safeName)
-        val reserve: suspend () -> StoredAttachment = {
-            repository.reserve(userId, key, safeName, mimeType, bytes.size.toLong(), sha256, clock.instant(), executionId)
-        }
-        val file = if (executionId == null) reserve() else withOwnerSaveAdmission(userId, reserve)
-        if (file.state == "ready") return@withPermit available(file)
-        // Failed/canceled uploads stay pending until their cleanup deadline; PUT is never resumed.
-        objects.put(file, bytes)
-        available(repository.complete(file, clock.instant()))
+    internal suspend fun saveWorkspaceOutput(
+        userId: String, executionId: UUID, name: String, openInput: () -> InputStream,
+    ): StoredAttachment = save(userId, name, openInput, executionId) { contentHash ->
+        "$executionId:output:$contentHash:${name.sha256Hex()}"
     }
 
-    // Queue on this replica before borrowing a database connection. PostgreSQL still coordinates replicas.
+    private suspend fun save(
+        userId: String, name: String, openInput: () -> InputStream, executionId: UUID?, sourceKey: (String) -> String,
+    ): StoredAttachment {
+        var transferAcquired = false
+        suspend fun readAndReserve(): Pair<StoredAttachment, ByteArray> {
+            transfers.acquire()
+            transferAcquired = true
+            val bytes = runInterruptible(Dispatchers.IO) { openInput().use { it.readAttachmentBytes(config.maxFileBytes) } }
+            val sha256 = bytes.sha256Hex()
+            val key = sourceKey(sha256)
+            require(userId.isNotBlank() && key.isNotBlank() && key.length <= 512)
+            val safeName = attachmentName(name)
+            val file = repository.reserve(userId, key, safeName, attachmentMime(bytes, safeName),
+                bytes.size.toLong(), sha256, clock.instant(), executionId)
+            return file to bytes
+        }
+        try {
+            val (file, bytes) = if (executionId == null) readAndReserve() else withOwnerSaveAdmission(userId) { readAndReserve() }
+            if (file.state == "ready") return available(file)
+            // Failed/canceled uploads stay pending until their cleanup deadline; PUT is never resumed.
+            objects.put(file, bytes)
+            return available(repository.complete(file, clock.instant()))
+        } finally {
+            if (transferAcquired) transfers.release()
+        }
+    }
+
+    // Queue before acquiring a shared transfer permit or a database connection.
     private suspend fun <T> withOwnerSaveAdmission(userId: String, block: suspend () -> T): T {
         val admission = checkNotNull(ownerSaveAdmissions.compute(userId) { _, current ->
             (current ?: OwnerSaveAdmission()).also { it.callers++ }

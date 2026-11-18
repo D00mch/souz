@@ -2,8 +2,6 @@ package ru.souz.backend.attachments
 
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runInterruptible
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import ru.souz.llms.FileContent
@@ -38,9 +36,7 @@ class BackendAttachmentAccess internal constructor(
         val resolved = fs.resolvePath(path)
         if (!fs.isPathSafe(resolved) || resolved.isSymbolicLink) throw AttachmentException("attachment_path_forbidden")
         if (!resolved.exists || !resolved.isRegularFile) throw AttachmentException("attachment_path_not_found")
-        val file = runInterruptible(Dispatchers.IO) { fs.openInputStream(resolved) }.use { input ->
-            storage.saveWorkspaceOutput(meta.userId, executionId, resolved.name, input)
-        }
+        val file = storage.saveWorkspaceOutput(meta.userId, executionId, resolved.name) { fs.openInputStream(resolved) }
         file.toContent(presentation)
     }
 
