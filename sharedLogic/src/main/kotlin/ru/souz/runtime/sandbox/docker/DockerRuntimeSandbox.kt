@@ -1,5 +1,6 @@
 package ru.souz.runtime.sandbox.docker
 
+import ru.souz.runtime.sandbox.PreparedAttachmentMount
 import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxCommandExecutor
 import ru.souz.runtime.sandbox.SandboxFileSystem
@@ -16,11 +17,12 @@ class DockerRuntimeSandbox(
     private val autoStart: Boolean = true,
     private val removeContainerOnClose: Boolean = false,
     blockedContainerPaths: List<String> = emptyList(),
+    preparedAttachments: PreparedAttachmentMount? = null,
 ) : RuntimeSandbox, AutoCloseable {
     override val mode: SandboxMode = SandboxMode.DOCKER
     private val dockerCli: DockerCli = DockerCli()
 
-    internal val layout: DockerSandboxLayout = DockerSandboxLayout(hostRoot)
+    internal val layout: DockerSandboxLayout = DockerSandboxLayout(hostRoot, preparedAttachments = preparedAttachments)
     private val containerHandle = DockerContainerHandle(
         dockerCli = dockerCli,
         layout = layout,
@@ -63,6 +65,7 @@ class DockerRuntimeSandbox(
     companion object {
         const val DEFAULT_IMAGE_NAME: String = "souz-runtime-sandbox:latest"
 
-        fun defaultContainerName(scope: SandboxScope): String = DockerSandboxIds.defaultContainerName(scope)
+        fun defaultContainerName(scope: SandboxScope, withPreparedAttachments: Boolean = false): String =
+            DockerSandboxIds.defaultContainerName(scope, withPreparedAttachments)
     }
 }

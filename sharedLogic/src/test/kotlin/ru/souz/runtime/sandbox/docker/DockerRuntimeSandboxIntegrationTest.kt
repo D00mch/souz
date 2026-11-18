@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.assertThrows
 import org.slf4j.LoggerFactory
 import ru.souz.agent.skills.SkillId
+import ru.souz.runtime.sandbox.PreparedAttachmentMount
 import ru.souz.runtime.sandbox.SandboxCommandRequest
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxScope
@@ -239,6 +240,24 @@ class DockerRuntimeSandboxIntegrationTest {
         assertTrue(Files.isDirectory(sandboxA.hostRoot.resolve("home")))
     }
 
+    @Test
+    fun `prepared attachments can be read and copied through a read-only Docker mount`() = runTest {
+        val source = createTempDirectory("docker-runtime-attachments-")
+        Files.writeString(source.resolve("input.txt"), "original")
+        val sandbox = createSandbox(preparedAttachments = PreparedAttachmentMount(source))
+        sandbox.start()
+        val result = sandbox.commandExecutor.execute(SandboxCommandRequest(
+            runtime = SandboxCommandRuntime.BASH,
+            script = """
+                set -e
+                if printf modified > /souz-attachments/input.txt; then exit 1; fi
+                cp /souz-attachments/input.txt /souz/workspace/copy.txt
+            """.trimIndent(),
+        ))
+        assertEquals(0, result.exitCode)
+        assertEquals("original", sandbox.hostRoot.resolve("workspace/copy.txt").readText())
+    }
+
     private fun createSandbox(
         containerName: String = DockerSandboxIds.defaultContainerName(
             SandboxScope(
@@ -248,6 +267,7 @@ class DockerRuntimeSandboxIntegrationTest {
         ),
         hostRoot: Path = createTempDirectory("docker-runtime-sandbox-"),
         removeContainerOnClose: Boolean = true,
+        preparedAttachments: PreparedAttachmentMount? = null,
     ): DockerRuntimeSandbox {
         ensureDockerImage()
         containerNames += containerName
@@ -260,6 +280,7 @@ class DockerRuntimeSandboxIntegrationTest {
             imageName = TEST_IMAGE_NAME,
             containerName = containerName,
             removeContainerOnClose = removeContainerOnClose,
+            preparedAttachments = preparedAttachments,
         )
         sandboxes += sandbox
         return sandbox

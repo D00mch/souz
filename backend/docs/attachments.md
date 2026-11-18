@@ -8,6 +8,16 @@ With S3 configured, the enabled-tool catalogue exposes preparation, attachment, 
 
 Message `files` describe available artifacts. Only trusted tool results change reply selection, in call order. Reject an over-limit selection change as a whole and keep saved artifacts available. Subagents return references without selecting the parent's reply. Propagate cancellation and keep raw exception messages and transport secrets out of tool errors and logs. [Selection rules and limits](../../agent/src/main/kotlin/ru/souz/agent/nodes/ReplyFileSelection.kt) · [Composite commands](../../docs/composite-skill-commands.md)
 
+## Prepared working copies
+
+`PrepareAttachment(fileId)` exposes an owner-scoped read-only copy at `/souz-attachments/<fileId>/<name>`. Copy it into the workspace to edit or retain it. Existing workspace files under `/souz/workspace/attachments/` are ordinary user data. Preparing the same available file again renews the copy's 24-hour lifetime.
+
+The backend checks expired copies every minute. Queued, running, or cancelling executions owned by a live backend protect the owner's copies. Executions waiting for a choice keep their protection across backend restarts until they resume or are cancelled. Copies survive Docker restarts on the same host volume. Later turns can use paths while they exist or prepare a new copy while the original is available in S3. S3 has its own retention policy.
+
+Each owner can have up to 128 managed copies and 512 MiB of prepared bytes on the volume. Expired copies still count when cleanup is deferred. When the limit is reached, preparation returns `attachment_workspace_capacity_exceeded`. Capacity rejections and cleanup failures produce safe warnings. Debug logs include tracked files, reserved bytes and removals.
+
+The Docker host volume must support atomic file operations, hard links and process file locks. Attachment-enabled Docker runtimes use a separate container name and retain the existing workspace bind mount. The previous container can be retired after its processes are no longer needed. [Workspace lifecycle](../src/main/kotlin/ru/souz/backend/attachments/PreparedAttachmentWorkspace.kt)
+
 ## WebSocket transport
 
 Resolve the receipt before importing uploads so accepted retries survive expiry and storage outages. Revalidate ownership and availability under row locks before committing input. Follow-up validation precedes message, device-context, and receipt writes. Publish input to the runtime only after the message commits. [Submit handling](../src/main/kotlin/ru/souz/backend/client/PublicClientService.kt) · [Commit validation](../src/main/kotlin/ru/souz/backend/storage/postgres/MessageAttachmentValidation.kt)

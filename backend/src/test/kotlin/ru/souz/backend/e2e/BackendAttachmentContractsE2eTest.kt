@@ -5,12 +5,18 @@ import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.runtime.AgentRuntimeEvent
@@ -20,8 +26,10 @@ import ru.souz.backend.agent.runtime.BackendConversationTurnOutcome
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.attachments.AttachmentException
+import ru.souz.backend.attachments.AttachmentClock
 import ru.souz.backend.attachments.AttachmentMinio
 import ru.souz.backend.attachments.AttachmentStorageConfig
 import ru.souz.backend.attachments.ToolAttachFileToReply
@@ -42,14 +50,17 @@ import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.RuntimeSandboxModeResolver
 import ru.souz.runtime.sandbox.docker.DockerRuntimeSandbox
+import ru.souz.tool.BadInputException
 
 class BackendAttachmentContractsE2eTest {
     @Test
     fun `input files prepare attach and survive persisted sessions without automatic reply reuse`() {
         val root = Files.createTempDirectory(Path.of("build"), "attachment-contracts-").toAbsolutePath()
+        val clock = AttachmentClock(Instant.now())
         var phase = 0
         val childDone = CompletableDeferred<Unit>()
         var fileId = ""
+        var preparedPath = ""
         lateinit var readSandboxFile: (String) -> String
         lateinit var delegate: BackendConversationTurnRunner
         val waitingRunner = object : BackendConversationTurnRunner {
@@ -80,9 +91,9 @@ class BackendAttachmentContractsE2eTest {
                 1 -> toolCallReply(request, "PrepareAttachment", mapOf("fileId" to fileId))
                 2 -> {
                     val prepared = restJsonMapper.readTree(request.messages.last().content)
-                    val path = prepared["path"].asText()
-                    assertEquals("# Original", readSandboxFile(path))
-                    toolCallReply(request, "AttachFileToReply", mapOf("path" to path))
+                    preparedPath = prepared["path"].asText()
+                    assertEquals("# Original", readSandboxFile(preparedPath))
+                    toolCallReply(request, "AttachFileToReply", mapOf("path" to preparedPath))
                 }
                 3 -> reply(request, "Child document ready").also { childDone.complete(Unit) }
                 4 -> {
@@ -100,7 +111,7 @@ class BackendAttachmentContractsE2eTest {
         try {
             backendE2eTest("attachment_contracts", attachments = storageConfig(), llm = llm,
                 featureFlags = BackendFeatureFlags(wsEvents = true, options = true), turnRunnerOverride = waitingRunner,
-                sandboxFactory = dockerSandboxes(root),
+                sandboxFactory = dockerSandboxes(root), clock = clock,
             ) {
                 delegate = BackendConversationRuntimeTurnRunner(backend.conversationRuntimeFactory)
                 val user = UUID.randomUUID().toString()
@@ -128,6 +139,7 @@ class BackendAttachmentContractsE2eTest {
                 val retained = stored.toContent()
                 assertEquals(listOf(selected, retained), state.replyAttachments)
                 assertContentEquals("# Original".toByteArray(), backend.attachmentStorage.read(user, UUID.fromString(selected.fileId)))
+                clock.now = clock.now.plusSeconds(86_400)
                 val corrected = backend.attachmentStorage.save(user, "corrected", "corrected.md", "# Corrected".byteInputStream()).toContent()
                 val optionId = client.get(BackendHttpRoutes.chatEvents(chat)) { trusted(user) }.jsonBody()["items"]
                     .single { it["type"].asText() == "option.requested" }["payload"]["optionId"].asText()
@@ -136,13 +148,19 @@ class BackendAttachmentContractsE2eTest {
                 withPeerBackend(E2eLlmApi { request ->
                     assertTrue(request.messages.any { message -> message.files.any { it.fileId == fileId } })
                     when (resumedPhase++) {
-                        0 -> toolCallReply(request, "RunSkillCommand", mapOf("skillId" to "DetachFileFromReply",
-                            "arguments" to mapOf("fileId" to selected.fileId)))
+                        0 -> {
+                            assertEquals(0, backend.cleanupPreparedAttachments())
+                            assertEquals("# Original", readSandboxFile(preparedPath))
+                            toolCallReply(request, "RunSkillCommand", mapOf("skillId" to "DetachFileFromReply",
+                                "arguments" to mapOf("fileId" to selected.fileId)))
+                        }
                         1 -> toolCallReply(request, "RunSkillCommand", mapOf("skillId" to "AttachFileToReply",
                             "arguments" to mapOf("fileId" to corrected.fileId)))
                         else -> reply(request, "Continued")
                     }
                 }) { peer ->
+                    assertEquals(0, peer.backend.cleanupPreparedAttachments())
+                    assertEquals("# Original", readSandboxFile(preparedPath))
                     val answer = peer.client.post(BackendHttpRoutes.optionAnswer(optionId)) {
                         peer.run { trusted(user); jsonBody("""{"selectedOptionIds":["replace"]}""") }
                     }
@@ -168,12 +186,18 @@ class BackendAttachmentContractsE2eTest {
                     peer.backend.awaitExecution(UUID.fromString(peer.run { next.jsonBody()["execution"]["id"].asText() }))
                     val later = peer.client.get(BackendHttpRoutes.chatMessages(chat)) { peer.run { trusted(user) } }
                     assertTrue(peer.run { later.jsonBody()["items"].last()["attachments"].isEmpty })
+                    assertEquals(1, peer.backend.cleanupPreparedAttachments())
+                    assertFalse(fs.resolvePath(preparedPath).exists)
                 }
 
                 val meta = ToolInvocationMeta(user, chat, UUID.randomUUID().toString())
                 val prepared = backend.attachmentAccess.prepare(meta, fileId)
-                fs.writeText(fs.resolvePath(prepared.path), "edited working copy")
-                assertEquals(prepared.path, backend.attachmentAccess.prepare(meta, fileId).path)
+                val readOnly = fs.resolvePath(prepared.path)
+                assertFailsWith<BadInputException> { fs.writeText(readOnly, "edited working copy") }
+                assertFailsWith<BadInputException> { fs.delete(readOnly) }
+                assertFailsWith<BadInputException> { fs.moveToTrash(readOnly) }
+                assertNull(fs.localPathOrNull(readOnly))
+                assertEquals(prepared, backend.attachmentAccess.prepare(meta, fileId))
                 assertEquals("# Original", readSandboxFile(prepared.path))
                 assertFailsWith<AttachmentException> { backend.attachmentAccess.prepare(meta.copy(userId = "foreign"), fileId) }
                 for ((path, error) in listOf("/etc/hosts" to "attachment_path_forbidden", "missing.md" to "attachment_path_not_found")) {
@@ -249,8 +273,8 @@ class BackendAttachmentContractsE2eTest {
         }
         try {
             backendE2eTest("attachment_limits", attachments = storageConfig(), llm = llm, sandboxFactory = { settings ->
-                DefaultRuntimeSandboxFactory(settings, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = root.resolve("sandboxes"),
-                    dockerSandboxCreator = { _, _, _, _ -> error("Stored-file replies must not create a Docker runtime") })
+                DefaultRuntimeSandboxFactory(settings, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = root.resolve("sandboxes"), preparedAttachmentsEnabled = true,
+                    dockerSandboxCreator = { _, _, _, _, _ -> error("Stored-file replies must not create a Docker runtime") })
             }) {
                 val user = UUID.randomUUID().toString()
                 val chat = UUID.fromString(createPublicChat(user))
@@ -273,7 +297,7 @@ class BackendAttachmentContractsE2eTest {
                 val answer = client.get(BackendHttpRoutes.chatMessages(chat.toString())) { trusted(user) }.jsonBody()["items"].last()
                 assertEquals("Here are your charts", answer["content"].asText())
                 assertEquals(files.subList(1, MAX_MESSAGE_FILES).map { it.fileId }, answer["attachments"].map { it["fileId"].asText() })
-                assertTrue(Files.notExists(root.resolve("sandboxes")))
+                assertTrue(Files.notExists(root.resolve("sandboxes/.managed-attachments/files")))
             }
         } finally {
             root.toFile().deleteRecursively()
@@ -314,9 +338,163 @@ class BackendAttachmentContractsE2eTest {
         }
     }
 
+    @Test
+    fun `cleanup removes expired managed copies while preserving ordinary workspace files`() {
+        val root = Files.createTempDirectory(Path.of("build"), "prepared-attachment-cleanup-").toAbsolutePath()
+        val clock = AttachmentClock(Instant.now())
+        try {
+            backendE2eTest("prepared_attachment_cleanup", attachments = storageConfig(), clock = clock,
+                sandboxFactory = dockerSandboxes(root),
+            ) {
+                val user = UUID.randomUUID().toString()
+                val other = UUID.randomUUID().toString()
+                val meta = ToolInvocationMeta(user)
+                val fs = backend.sandboxFileSystem(user)
+                val otherFs = backend.sandboxFileSystem(other)
+                suspend fun store(name: String, owner: String = user): String =
+                    backend.attachmentStorage.save(owner, name, "$name.txt", "original".byteInputStream()).id.toString()
+                val eligibleId = store("eligible")
+                val eligible = coroutineScope {
+                    val first = async { backend.attachmentAccess.prepare(meta, eligibleId) }
+                    val second = async { backend.attachmentAccess.prepare(meta, eligibleId) }
+                    first.await().also { assertEquals(it, second.await()) }
+                }
+                val refreshedId = store("refreshed")
+                val refreshed = backend.attachmentAccess.prepare(meta, refreshedId)
+                val retained = fs.resolvePath("${fs.runtimePaths.workspaceRootPath}/kept.txt")
+                fs.writeBytes(retained, fs.readBytes(fs.resolvePath(eligible.path)))
+                fs.writeText(retained, "edited working copy")
+                val legacyPath = "${fs.runtimePaths.workspaceRootPath}/attachments/$eligibleId/eligible.txt"
+                fs.writeText(fs.resolvePath(legacyPath), "user file")
+
+                assertFalse(otherFs.resolvePath(eligible.path).exists)
+                assertEquals("attachment_not_found", assertFailsWith<AttachmentException> {
+                    backend.attachmentAccess.prepare(meta.copy(userId = other), eligibleId)
+                }.code)
+                val otherId = store("other", other)
+                val otherCopy = backend.attachmentAccess.prepare(meta.copy(userId = other), otherId)
+
+                clock.now = clock.now.plusSeconds(86_399)
+                assertEquals(0, backend.cleanupPreparedAttachments())
+                assertEquals(refreshed, backend.attachmentAccess.prepare(meta, refreshedId))
+                assertEquals(otherCopy, backend.attachmentAccess.prepare(meta.copy(userId = other), otherId))
+
+                clock.now = clock.now.plusSeconds(1)
+                assertEquals(1, backend.cleanupPreparedAttachments())
+                assertFalse(fs.resolvePath(eligible.path).exists)
+                assertEquals("original", fs.readText(fs.resolvePath(refreshed.path)))
+                assertEquals("edited working copy", fs.readText(fs.resolvePath(retained.path)))
+                assertEquals("user file", fs.readText(fs.resolvePath(legacyPath)))
+                assertEquals("original", otherFs.readText(otherFs.resolvePath(otherCopy.path)))
+                assertEquals(0, backend.cleanupPreparedAttachments())
+            }
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `expired copies still count toward capacity while an execution uses the workspace`() {
+        val root = Files.createTempDirectory(Path.of("build"), "prepared-attachment-capacity-").toAbsolutePath()
+        val clock = AttachmentClock(Instant.now())
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val llm = E2eLlmApi { request ->
+            started.complete(Unit)
+            finish.await()
+            reply(request, "Done")
+        }
+        try {
+            backendE2eTest("prepared_attachment_capacity", attachments = storageConfig(), clock = clock, llm = llm,
+                sandboxFactory = dockerSandboxes(root),
+            ) {
+                val user = UUID.randomUUID().toString()
+                val chat = UUID.fromString(createPublicChat(user))
+                val meta = ToolInvocationMeta(user)
+                val files = (0..128).map { index ->
+                    backend.attachmentStorage.save(user, "file-$index", "data.txt", "$index".byteInputStream()).id.toString()
+                }
+                val copies = files.take(128).map { backend.attachmentAccess.prepare(meta, it) }
+                val execution = backend.dependencies.executionService.executeChatTurn(user, chat, "wait")
+                try {
+                    withTimeout(10_000) { started.await() }
+                    clock.now = clock.now.plusSeconds(86_400)
+                    assertEquals(0, backend.cleanupPreparedAttachments())
+                    val tool = ToolPrepareAttachment(backend.attachmentAccess)
+                    val rejected = tool.invoke(LLMResponse.FunctionCall(tool.fn.name, mapOf("fileId" to files.last())), meta)
+                    val error = restJsonMapper.readTree(rejected.content)
+                    assertEquals("attachment_workspace_capacity_exceeded", error["error"].asText())
+                    assertEquals(copies.first(), backend.attachmentAccess.prepare(meta, files.first()))
+                } finally {
+                    finish.complete(Unit)
+                }
+                backend.awaitExecution(execution.execution.id)
+                assertEquals(127, backend.cleanupPreparedAttachments())
+                val replacement = backend.attachmentAccess.prepare(meta, files.last())
+                val fs = backend.sandboxFileSystem(user)
+                assertEquals(replacement, backend.attachmentAccess.prepare(meta, files.last()))
+                assertEquals("128", fs.readText(fs.resolvePath(replacement.path)))
+            }
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `an interrupted publication can be retried and an abandoned execution does not pin it`() {
+        val root = Files.createTempDirectory(Path.of("build"), "prepared-attachment-recovery-").toAbsolutePath()
+        val clock = AttachmentClock(Instant.now())
+        try {
+            backendE2eTest("prepared_attachment_recovery", attachments = storageConfig(), clock = clock,
+                sandboxFactory = dockerSandboxes(root),
+            ) {
+                val user = UUID.randomUUID().toString()
+                val meta = ToolInvocationMeta(user)
+                val id = backend.attachmentStorage.save(user, "retry", "file.txt", "original".byteInputStream()).id
+                val prepared = backend.attachmentAccess.prepare(meta, id.toString())
+                val storage = root.resolve(".managed-attachments")
+                val published = Files.list(storage.resolve("files")).use { it.findFirst().orElseThrow() }
+                    .resolve("$id/file.txt")
+                Files.delete(published)
+                val manifest = storage.resolve("records/${user.sha256Hex()}.json")
+                val staging = manifest.resolveSibling("${manifest.fileName}.pending")
+                Files.writeString(staging, "orig")
+                assertEquals(prepared, backend.attachmentAccess.prepare(meta, id.toString()))
+                assertEquals("original", Files.readString(published))
+                assertFalse(Files.exists(staging))
+
+                Files.delete(manifest)
+                assertEquals(prepared, backend.attachmentAccess.prepare(meta, id.toString()))
+
+                val chat = UUID.fromString(createPublicChat(user))
+                val execution = backend.dependencies.executionService.executeChatTurn(user, chat, "finish").execution
+                backend.awaitExecution(execution.id)
+                val abandoned = UUID.randomUUID()
+                Files.createFile(storage.resolve("runtimes/$abandoned.lock"))
+                sql { connection ->
+                    connection.prepareStatement(
+                        "update agent_executions set status = 'running', attachment_runtime_id = ? where id = ?",
+                    ).use {
+                        it.setObject(1, abandoned)
+                        it.setObject(2, execution.id)
+                        assertEquals(1, it.executeUpdate())
+                    }
+                }
+                clock.now = clock.now.plusSeconds(86_400)
+                assertEquals(1, backend.cleanupPreparedAttachments())
+                assertFalse(Files.exists(published))
+            }
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
     private fun dockerSandboxes(root: Path): (SettingsProvider) -> RuntimeSandboxFactory = { settings ->
-        DefaultRuntimeSandboxFactory(settings, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = root,
-            dockerSandboxCreator = { scope, hostRoot, image, name -> DockerRuntimeSandbox(scope, hostRoot, image, name, autoStart = false) })
+        DefaultRuntimeSandboxFactory(settings, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = root, preparedAttachmentsEnabled = true,
+            dockerSandboxCreator = { scope, hostRoot, image, name, attachments ->
+                    DockerRuntimeSandbox(scope, hostRoot, image, name, autoStart = false, preparedAttachments = attachments)
+            },
+        )
     }
 
     private fun storageConfig(): AttachmentStorageConfig {

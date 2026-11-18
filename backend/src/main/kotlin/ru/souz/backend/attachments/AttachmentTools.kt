@@ -25,7 +25,7 @@ internal class ToolPrepareAttachment(private val access: BackendAttachmentAccess
 
     override val fn = LLMRequest.Function(
         name = NAME,
-        description = "Resolve a received fileId to a working copy in your sandbox for reading or processing.",
+        description = "Resolve a received fileId to a read-only copy in your sandbox. Copy it into the workspace to edit it or keep it across turns.",
         parameters = LLMRequest.Parameters("object", mapOf("fileId" to FILE_ID_PROPERTY), required = listOf("fileId")),
     )
 
@@ -127,5 +127,12 @@ private suspend fun attachmentToolResult(name: String, block: suspend () -> LLMR
 } catch (cancelled: CancellationException) {
     throw cancelled
 } catch (error: AttachmentException) {
-    toolMessage(name, mapOf("error" to error.code))
+    val result = when (error.code) {
+        "attachment_workspace_capacity_exceeded" -> mapOf(
+            "error" to error.code,
+            "hint" to "Use an existing copy or retry after unused copies expire.",
+        )
+        else -> mapOf("error" to error.code)
+    }
+    toolMessage(name, result)
 }

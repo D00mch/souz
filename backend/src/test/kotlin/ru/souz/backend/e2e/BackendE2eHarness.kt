@@ -7,6 +7,7 @@ import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.attachments.AttachmentStorage
 import ru.souz.backend.attachments.AttachmentStorageConfig
 import ru.souz.backend.attachments.BackendAttachmentAccess
+import ru.souz.backend.attachments.PreparedAttachmentWorkspace
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.execution.service.AgentExecutionLauncher
 import ru.souz.backend.hooks.HookConfig
@@ -515,6 +516,7 @@ internal class BackendE2eBackend(
 
     val attachmentStorage: AttachmentStorage get() = di.direct.instance()
     val attachmentAccess: BackendAttachmentAccess get() = di.direct.instance()
+    suspend fun cleanupPreparedAttachments(): Int = di.direct.instance<PreparedAttachmentWorkspace>().cleanup()
     val pluginRuntime: BackendPluginRuntime get() = di.direct.instance()
     val pluginRepository: PostgresPluginRepository get() = di.direct.instance()
     val pluginArtifacts: S3PluginArtifacts get() = di.direct.instance()

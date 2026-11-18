@@ -6,6 +6,7 @@ import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import kotlinx.coroutines.runBlocking
 import ru.souz.backend.attachments.AttachmentCleanupWorker
+import ru.souz.backend.attachments.PreparedAttachmentWorkspace
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.vk.VkBotPollingService
@@ -46,6 +47,7 @@ class BackendRuntime private constructor(
         vkBotPollingService?.start()
         di.direct.instanceOrNull<HistoryMemoryWorker>()?.start(applicationScope)
         di.direct.instanceOrNull<AttachmentCleanupWorker>()?.start(applicationScope)
+        di.direct.instanceOrNull<PreparedAttachmentWorkspace>()?.start(applicationScope)
     }
 
     override fun close() {

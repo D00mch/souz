@@ -367,7 +367,10 @@ class BackendHooksE2eTest {
         writeHook(base = otherRoot, id = "other", hookOwner = other)
         backendE2eTest("e2e_hook_owners", hookConfig = HookConfig(setOf(owner, other)), sandboxFactory = { settings ->
             DefaultRuntimeSandboxFactory(settings, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = workspace,
-                dockerSandboxCreator = { scope, root, image, name -> DockerRuntimeSandbox(scope, root, image, name, autoStart = false) })
+                dockerSandboxCreator = { scope, root, image, name, attachments ->
+                    DockerRuntimeSandbox(scope, root, image, name, autoStart = false, preparedAttachments = attachments)
+                },
+            )
         }) {
             setupOwner()
             setupOwner(other)
