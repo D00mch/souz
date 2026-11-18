@@ -53,7 +53,7 @@ class BackendPluginExecutionE2eTest {
                 configureApp = { it.copy(pluginArtifacts = artifacts, pluginAdminToken = ADMIN_TOKEN) },
                 sandboxFactory = { settings -> DefaultRuntimeSandboxFactory(
                     settings, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = workspace,
-                    dockerSandboxCreator = { _, _, _, _ ->
+                    dockerSandboxCreator = { _, _, _, _, _ ->
                         runtimeStarts.incrementAndGet()
                         error("Plugin-only turns must not create a Docker runtime")
                     },

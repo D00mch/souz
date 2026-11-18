@@ -6,6 +6,7 @@ import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import kotlinx.coroutines.runBlocking
 import ru.souz.backend.attachments.AttachmentCleanupWorker
+import ru.souz.backend.attachments.PreparedAttachmentWorkspace
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
@@ -36,6 +37,7 @@ class BackendRuntime private constructor(
         }
         di.direct.instanceOrNull<HistoryMemoryWorker>()?.start(applicationScope)
         di.direct.instanceOrNull<AttachmentCleanupWorker>()?.start(applicationScope)
+        di.direct.instanceOrNull<PreparedAttachmentWorkspace>()?.start(applicationScope)
     }
 
     override fun close() {

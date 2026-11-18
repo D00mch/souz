@@ -38,8 +38,11 @@ fun runtimeToolsDiModule(
     scopeResolver: ToolInvocationSandboxScopeResolver = ToolInvocationSandboxScopeResolver {
         SandboxScope(userId = it.userId.trim(), conversationId = it.conversationId)
     },
+    preparedAttachmentsEnabled: Boolean = false,
 ): DI.Module = DI.Module("runtimeTools") {
-    bindSingleton<RuntimeSandboxFactory> { DefaultRuntimeSandboxFactory(settingsProvider = instance()) }
+    bindSingleton<RuntimeSandboxFactory> {
+        DefaultRuntimeSandboxFactory(settingsProvider = instance(), preparedAttachmentsEnabled = preparedAttachmentsEnabled)
+    }
     bindSingleton<ToolInvocationRuntimeSandboxResolver> {
         FactoryBackedToolInvocationRuntimeSandboxResolver(instance(), scopeResolver)
     }
