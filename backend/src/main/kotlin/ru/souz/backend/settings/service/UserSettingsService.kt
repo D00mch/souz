@@ -2,8 +2,9 @@ package ru.souz.backend.settings.service
 
 import java.time.Instant
 import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.http.BackendV1SettingsDto
 import ru.souz.backend.http.invalidV1Request
-import ru.souz.backend.settings.model.EffectiveUserSettings
+import ru.souz.backend.http.toDto
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.llms.findLLMModel
@@ -15,13 +16,13 @@ class UserSettingsService(
 ) {
     val namedModelNames: Set<String> get() = effectiveSettingsResolver.namedModelNames
 
-    suspend fun get(userId: String): EffectiveUserSettings =
-        effectiveSettingsResolver.resolve(userId)
+    suspend fun get(userId: String): BackendV1SettingsDto =
+        effectiveSettingsResolver.resolve(userId).toDto(userSettingsRepository.personality(userId))
 
     suspend fun patch(
         userId: String,
         overrides: UserSettingsOverrides,
-    ): EffectiveUserSettings {
+    ): BackendV1SettingsDto {
         if (overrides.defaultModel?.let(::findLLMModel)?.provider == LlmProvider.GIGA) {
             throw invalidV1Request(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
         }
@@ -53,6 +54,6 @@ class UserSettingsService(
                 updatedAt = now,
             )
         )
-        return effectiveSettingsResolver.resolve(userId)
+        return get(userId)
     }
 }

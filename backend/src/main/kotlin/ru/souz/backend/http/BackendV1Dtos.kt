@@ -31,9 +31,10 @@ import ru.souz.backend.execution.model.AgentExecutionUsage
 import ru.souz.backend.keys.model.UserProviderKeyView
 import ru.souz.backend.execution.service.CancelExecutionResult
 import ru.souz.backend.settings.model.EffectiveUserSettings
+import ru.souz.backend.settings.model.PersonalityParameters
+import ru.souz.backend.settings.model.PersonalitySnapshot
 import ru.souz.llms.FileContent
 import ru.souz.llms.restJsonMapper
-import ru.souz.backend.settings.model.PersonalityParameters
 
 internal data class BackendV1SettingsResponse(
     val settings: BackendV1SettingsDto,
@@ -246,7 +247,7 @@ internal data class PublicClientEventDto(
     val createdAt: String,
 )
 
-internal fun EffectiveUserSettings.toDto(): BackendV1SettingsDto =
+internal fun EffectiveUserSettings.toDto(personality: PersonalitySnapshot): BackendV1SettingsDto =
     BackendV1SettingsDto(
         defaultModel = defaultModel,
         temperature = temperature,

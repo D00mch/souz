@@ -546,6 +546,7 @@ fun backendDiModule(
             effectiveSettingsResolver = instance(),
             featureFlags = instance(),
             userProviderKeyRepository = instance(),
+            userSettingsRepository = instance(),
         )
     }
     bindSingleton {

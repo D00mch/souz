@@ -6,6 +6,7 @@ import ru.souz.backend.http.toDto
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.llm.hasCompleteCodexOAuthCredentials
 import ru.souz.backend.security.RequestIdentity
+import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
@@ -17,6 +18,7 @@ class BackendBootstrapService(
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
     private val featureFlags: BackendFeatureFlags,
     private val userProviderKeyRepository: UserProviderKeyRepository,
+    private val userSettingsRepository: UserSettingsRepository,
 ) {
     suspend fun response(identity: RequestIdentity): BootstrapResponse {
         val advertisedToolNames = effectiveSettingsResolver.advertisedToolNames
@@ -60,7 +62,7 @@ class BackendBootstrapService(
                     BootstrapToolCapability(name = toolName, enabled = true)
                 },
             ),
-            settings = effectiveSettings.toDto(),
+            settings = effectiveSettings.toDto(userSettingsRepository.personality(identity.userId)),
         )
     }
 
