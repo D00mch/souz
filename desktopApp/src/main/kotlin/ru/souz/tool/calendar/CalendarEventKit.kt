@@ -71,7 +71,7 @@ internal object CalendarEventKit {
             for (var j = 0; j < events.count; j++) {
                 var event = events.objectAtIndex(j);
                 result.push({title: ObjC.unwrap(event.title) || '',
-                    start: Number(event.startDate.timeIntervalSince1970), allDay: Boolean(Number(event.allDay))});
+                    start: Number(event.startDate.timeIntervalSince1970), allDay: Boolean(Number(event.isAllDay))});
             }
             return JSON.stringify(result);
         }

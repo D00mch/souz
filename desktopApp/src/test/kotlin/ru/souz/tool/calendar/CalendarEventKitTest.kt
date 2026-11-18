@@ -22,6 +22,9 @@ class CalendarEventKitTest {
         assertEquals(2, events.size())
         assertEquals("Recurring occurrence", events[0]["title"].asText())
         assertEquals(1_800_000_000, events[0]["start"].asLong())
+        assertEquals(false, events[0]["allDay"].asBoolean())
+        assertEquals("All day", events[1]["title"].asText())
+        assertEquals(1_799_971_200, events[1]["start"].asLong())
         assertEquals(true, events[1]["allDay"].asBoolean())
     }
 
@@ -52,19 +55,29 @@ class CalendarEventKitTest {
 
     private val args = listOf("Fixture", "1799971200", "1800057600")
 
-    // Run production JXA with a synthetic EventKit store. Foundation and OSA are real;
-    // no event store is instantiated, permissions requested, or personal data accessed.
+    // Run production JXA with a synthetic query store and real, unsaved EKEvents.
+    // The native store only constructs events: no queries, saves, or permission requests.
     private fun fixture(status: Int, modern: Boolean = true, granted: Boolean = true, empty: Boolean = false): String {
         val production = CalendarEventKit.script
             .replace("var EventStore = $.EKEventStore;", "var EventStore = fixtureEventStore;")
             .replace("var selected = $.NSMutableArray.array;", "var selected = fixtureSelection;")
             .replace("function run(argv)", "function listFixture(argv)")
         val events = if (empty) "[]" else """[
-            {title: ${'$'}('Recurring occurrence'), startDate: ${'$'}.NSDate.dateWithTimeIntervalSince1970(1800000000), allDay: false},
-            {title: ${'$'}('All day'), startDate: ${'$'}.NSDate.dateWithTimeIntervalSince1970(1799971200), allDay: true}
+            nativeEvent('Recurring occurrence', 1800000000, false),
+            nativeEvent('All day', 1799971200, true)
         ]"""
         return """
             ObjC.import('Foundation');
+            ObjC.import('EventKit');
+            var nativeStore = ${'$'}.EKEventStore.alloc.init;
+            function nativeEvent(title, start, allDay) {
+                var event = ${'$'}.EKEvent.eventWithEventStore(nativeStore);
+                event.title = title;
+                event.timeZone = ${'$'}.NSTimeZone.timeZoneForSecondsFromGMT(0);
+                event.startDate = ${'$'}.NSDate.dateWithTimeIntervalSince1970(start);
+                event.allDay = allDay;
+                return event;
+            }
             var status = $status, requests = 0, resets = 0, queries = 0;
             var fixtureCalendar = {title: ${'$'}('Fixture')};
             // OSA bridges NSUInteger values as strings, including an empty NSMutableArray's count.
