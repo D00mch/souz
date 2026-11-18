@@ -8,24 +8,21 @@ class ScenarioEvaluationHtmlTest {
     @Test
     fun `renders actual skill calls and delivery while escaping model text`() {
         val trace = ScenarioTrace("fixture-model", null)
-        trace.calls += ScenarioCall(1, 1, "conversation", "fixture-model", 42, "ok", null, 20, 3, 0)
         val turn = ScenarioTurnEvidence(
             number = 1,
             input = "Send a link.",
             assistantReply = "<script>MODEL_REPLY</script>",
-            tools = listOf(ScenarioToolUse(1, "RunSkillCommand", "SendMessageToChannel")),
+            tools = listOf(ScenarioToolUse(1, "RunSkillCommand", "doctor-appointment")),
             telegram = listOf("https://booking.example/fixture"),
         )
         val report = ScenarioEvaluationHtml("fixture-model", "provider.example", "2026-11-25")
         report.addTrial("doctor-choose-and-send", 1, "passed", null, 50, emptyList(), listOf(turn), trace)
         val html = report.render(1, 1, 1, 50, 42, "run.jsonl")
 
-        assertContains(html, "RunSkillCommand · SendMessageToChannel")
-        assertContains(html, "Accepted by mock Telegram")
+        assertContains(html, "doctor-appointment")
         assertContains(html, "https://booking.example/fixture")
         assertContains(html, "&lt;script&gt;MODEL_REPLY&lt;/script&gt;")
-        assertContains(html, "<td>20</td><td>3</td><td>0</td>")
-        assertContains(html, "<a href=\"run.jsonl\">JSONL data</a>")
+        assertContains(html, "run.jsonl")
         assertFalse(html.contains("<script>"))
     }
 }

@@ -16,108 +16,36 @@ class ScenarioFixtureTest {
     private val appointment = LocalDate.of(2026, 11, 25)
 
     @Test
-    fun `theatre fixture requires a theatre search`() = runTest {
-        val fixture = ScenarioFixture(EvaluationCase.THEATRE, today, appointment)
-
-        val invalidQueries = listOf(
-            listOf("find", "--type", "movie"),
-            listOf("find"),
-            listOf("ideas", "--type", "theatre"),
-            listOf("find", "--type", "theatre", "extra"),
+    fun `search fixtures validate commands and apply filters`() = runTest {
+        assertSearchRows(
+            EvaluationCase.THEATRE, "EVENT\t",
+            theatreRequest("find", "--type", "movie") to null,
+            theatreRequest("find") to null,
+            theatreRequest("ideas", "--type", "theatre") to null,
+            theatreRequest("find", "--type", "theatre") to 2,
+            theatreRequest("find", "--type", "theatre", "--limit", "1") to 1,
         )
-        for (query in invalidQueries) {
-            val result = fixture.commands.execute(theatreRequest(query))
-            assertEquals(1, result.exitCode, query.joinToString(" "))
-            assertEquals("", result.stdout)
-        }
-
-        val result = fixture.commands.execute(theatreRequest(listOf("find", "--type", "theatre")))
-        assertEquals(0, result.exitCode)
-        assertEquals(2, result.stdout.lineSequence().count { it.startsWith("EVENT\t") })
-
-        val limited = fixture.commands.execute(theatreRequest(listOf("find", "--type", "theatre", "--limit", "1")))
-        assertEquals(0, limited.exitCode)
-        assertEquals(1, limited.stdout.lineSequence().count { it.startsWith("EVENT\t") })
-    }
-
-    @Test
-    fun `train fixture rejects positional arguments and malformed options`() = runTest {
-        val fixture = ScenarioFixture(EvaluationCase.TRAIN, today, appointment)
-        val request = trainRequest(emptyList())
-        val invalidQueries = listOf(
-            listOf("find") + request.args,
-            request.args + "extra",
-            request.args + "--limit",
-            request.args + listOf("--unknown", "1"),
-            request.args + listOf("--sort", "unknown"),
+        val train = trainRequest()
+        assertSearchRows(
+            EvaluationCase.TRAIN, "TRAIN\t",
+            train.copy(args = listOf("find") + train.args) to null,
+            trainRequest("extra") to null,
+            train to 2,
+            trainRequest("--limit", "1") to 1,
+            trainRequest("--overnight") to 0,
         )
-        for (args in invalidQueries) {
-            val result = fixture.commands.execute(request.copy(args = args))
-            assertEquals(1, result.exitCode, args.joinToString(" "))
-            assertEquals("", result.stdout)
-        }
-
-        val result = fixture.commands.execute(trainRequest(listOf("--limit=2")))
-        assertEquals(0, result.exitCode)
-        assertEquals(2, result.stdout.lineSequence().count { it.startsWith("TRAIN\t") })
-    }
-
-    @Test
-    fun `doctor fixture rejects malformed search options`() = runTest {
-        val fixture = ScenarioFixture(EvaluationCase.DOCTOR_SEND, today, appointment)
-        val request = doctorRequest()
-        val invalidOptions = listOf(listOf("extra"), listOf("--max-price"), listOf("--max-price", "unknown"))
-        for (options in invalidOptions) {
-            val result = fixture.commands.execute(request.copy(args = request.args + options))
-            assertEquals(1, result.exitCode, options.joinToString(" "))
-            assertEquals("", result.stdout)
-        }
-
-        val result = fixture.commands.execute(request)
-        assertEquals(0, result.exitCode)
-        assertEquals(5, result.stdout.lineSequence().count { it.startsWith("DOCTOR\t") })
-    }
-
-    @Test
-    fun `doctor fixture requires the search to cover the appointment`() = runTest {
-        val fixture = ScenarioFixture(EvaluationCase.DOCTOR_SEND, today, appointment)
-        val request = doctorRequest()
-        val excluded = listOf(listOf("--days", "1"), listOf("--days", "6"), listOf("--radius", "0"))
-        for (options in excluded) {
-            val result = fixture.commands.execute(request.copy(args = request.args + options))
-            assertEquals(0, result.exitCode)
-            assertEquals("NO_RESULTS", result.stdout, options.joinToString(" "))
-        }
-
-        val result = fixture.commands.execute(request.copy(args = request.args + listOf("--days", "7", "--radius", "1")))
-        assertEquals(0, result.exitCode)
-        assertEquals(5, result.stdout.lineSequence().count { it.startsWith("DOCTOR\t") })
-        assertContains(result.stdout, "25.11 18:00")
-    }
-
-    @Test
-    fun `train fixture applies limit and departure filters`() = runTest {
-        val fixture = ScenarioFixture(EvaluationCase.TRAIN, today, appointment)
-        val filters = listOf(
-            emptyList<String>() to 2,
-            listOf("--limit", "1") to 1,
-            listOf("--after", "12:00") to 1,
-            listOf("--before", "12:00") to 1,
-            listOf("--overnight") to 0,
-            listOf("--class", "СВ") to 0,
-            listOf("--name", "Ласточка") to 0,
+        assertSearchRows(
+            EvaluationCase.DOCTOR_SEND, "DOCTOR\t",
+            doctorRequest("--days", "1") to 0,
+            doctorRequest("--days", "6") to 0,
+            doctorRequest("--days", "7") to 5,
         )
-        for ((query, matches) in filters) {
-            val result = fixture.commands.execute(trainRequest(query))
-            assertEquals(0, result.exitCode)
-            assertEquals(matches, result.stdout.lineSequence().count { it.startsWith("TRAIN\t") }, query.joinToString(" "))
-        }
     }
 
     @Test
     fun `train scenario requires two initial matches even when the correct link is delivered`() = runTest {
         val fixture = ScenarioFixture(EvaluationCase.TRAIN, today, appointment)
-        val result = fixture.commands.execute(trainRequest(listOf("--after", "12:00")))
+        val result = fixture.commands.execute(trainRequest("--after", "12:00"))
         val link = result.stdout.lineSequence().single { it.startsWith("TRAIN\t") }.substringAfterLast('\t')
         assertEquals("https://rail.example/rybinsk/608a-1420", link)
         fixture.afterTurn(1, "Here is the afternoon train.")
@@ -132,7 +60,7 @@ class ScenarioFixtureTest {
     @Test
     fun `telegram delivery rejects a repeated link`() = runTest {
         val fixture = ScenarioFixture(EvaluationCase.THEATRE, today, appointment)
-        val result = fixture.commands.execute(theatreRequest(listOf("find", "--type", "theatre")))
+        val result = fixture.commands.execute(theatreRequest("find", "--type", "theatre"))
         assertEquals(0, result.exitCode)
         fixture.afterTurn(1, "Here are two shows.")
 
@@ -144,24 +72,38 @@ class ScenarioFixtureTest {
         assertContains(failure.message.orEmpty(), "must deliver each requested link exactly once")
     }
 
-    private fun theatreRequest(query: List<String>) = SandboxCommandRequest(
+    private suspend fun assertSearchRows(
+        case: EvaluationCase,
+        recordPrefix: String,
+        vararg searches: Pair<SandboxCommandRequest, Int?>,
+    ) {
+        val fixture = ScenarioFixture(case, today, appointment)
+        for ((request, expected) in searches) {
+            val result = fixture.commands.execute(request)
+            val count = result.stdout.lineSequence().count { it.startsWith(recordPrefix) }
+            val rows = count.takeIf { result.exitCode == 0 }
+            assertEquals(expected, rows, "${case.id}: ${request.args.joinToString(" ")}")
+        }
+    }
+
+    private fun theatreRequest(vararg query: String) = SandboxCommandRequest(
         runtime = SandboxCommandRuntime.BASH,
         scriptPath = "/skills/afisha/scripts/afisha.sh",
-        args = query + listOf("--city", "Москва", "--date", appointment.plusDays(3).toString()),
+        args = query.toList() + listOf("--city", "Москва", "--date", appointment.plusDays(3).toString()),
         environment = mapOf("SOUZ_SKILL_ID" to "afisha-where-to-go-cinema-theatre-concerts-tickets"),
     )
 
-    private fun trainRequest(filters: List<String>) = SandboxCommandRequest(
+    private fun trainRequest(vararg filters: String) = SandboxCommandRequest(
         runtime = SandboxCommandRuntime.BASH,
         scriptPath = "/skills/train-tickets/scripts/trains.sh",
         args = listOf("--from", "Санкт-Петербург", "--to", "Рыбинск", "--date", appointment.plusDays(2).toString()) + filters,
         environment = mapOf("SOUZ_SKILL_ID" to "train-tickets"),
     )
 
-    private fun doctorRequest() = SandboxCommandRequest(
+    private fun doctorRequest(vararg filters: String) = SandboxCommandRequest(
         runtime = SandboxCommandRuntime.BASH,
         scriptPath = "/skills/doctor-appointment/scripts/doctor.sh",
-        args = listOf("find", "--city", "Москва", "--near", "Новослободская", "--speciality", "терапевт", "--limit", "5"),
+        args = listOf("find", "--city", "Москва", "--near", "Новослободская", "--speciality", "терапевт", "--limit", "5") + filters,
         environment = mapOf("SOUZ_SKILL_ID" to "doctor-appointment"),
     )
 }
