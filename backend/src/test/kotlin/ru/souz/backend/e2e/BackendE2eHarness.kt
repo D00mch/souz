@@ -98,7 +98,6 @@ import ru.souz.memory.ConversationMemoryRuntime
 import kotlin.time.Duration.Companion.milliseconds
 
 internal const val E2E_PROXY_TOKEN = "proxy-secret"
-internal const val E2E_TELEGRAM_TOKEN_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 internal const val E2E_POLICY_PROMPT = "Follow the E2E operator policy."
 internal val E2E_MODEL: LLMModel = LLMModel.QwenMax
 
