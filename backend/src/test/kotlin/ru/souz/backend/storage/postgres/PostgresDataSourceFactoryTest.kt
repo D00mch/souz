@@ -12,6 +12,7 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlinx.coroutines.runBlocking
 import org.flywaydb.core.Flyway
@@ -20,6 +21,58 @@ import ru.souz.jobs.CreateJobRequest
 import ru.souz.jobs.impl.PostgresJobService
 
 class PostgresDataSourceFactoryTest {
+    @Test
+    fun `bot removal migration drops populated bindings and preserves chats and messages across restart`() = runBlocking {
+        val config = postgresAppConfig(newPostgresSchema("bot_removal_upgrade")).postgres
+        val container = SharedPostgresContainer.instance
+        Flyway.configure()
+            .dataSource(container.jdbcUrl, container.username, container.password)
+            .locations("classpath:db/migration")
+            .defaultSchema(config.schema)
+            .schemas(config.schema)
+            .target("26")
+            .load().migrate()
+        val owner = "bot-migration-owner"
+        val chats = listOf(UUID.randomUUID(), UUID.randomUUID())
+        container.createConnection("").use { connection ->
+            connection.schema = config.schema
+            connection.createStatement().use { statement ->
+                statement.executeUpdate("insert into users(id) values ('$owner')")
+                for (chat in chats) {
+                    statement.executeUpdate("""insert into chats(id, user_id, client_type, request_id, payload_hash)
+                        values ('$chat', '$owner', 'backend', '$chat', 'hash')""")
+                    statement.executeUpdate("""insert into messages(id, user_id, chat_id, seq, role, content)
+                        values ('${UUID.randomUUID()}', '$owner', '$chat', 1, 'user', 'Keep this history')""")
+                }
+                statement.executeUpdate("""insert into telegram_bot_bindings(
+                    id, user_id, chat_id, bot_token_encrypted, bot_token_hash, created_at, updated_at)
+                    values ('${UUID.randomUUID()}', '$owner', '${chats[0]}', 'encrypted', 'hash', now(), now())""")
+                statement.executeUpdate("""insert into vk_bot_bindings(
+                    id, user_id, chat_id, group_token_encrypted, group_token_hash, vk_group_id, created_at, updated_at)
+                    values ('${UUID.randomUUID()}', '$owner', '${chats[1]}', 'encrypted', 'hash', 123, now(), now())""")
+            }
+        }
+        repeat(2) {
+            PostgresDataSourceFactory.create(config).use { dataSource ->
+                dataSource.read { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.executeQuery("select to_regclass('telegram_bot_bindings'), to_regclass('vk_bot_bindings')").use {
+                            it.next()
+                            assertNull(it.getString(1))
+                            assertNull(it.getString(2))
+                        }
+                        statement.executeQuery("select c.id, m.content from chats c join messages m on m.chat_id = c.id").use {
+                            val retained = buildMap {
+                                while (it.next()) put(it.getObject(1, UUID::class.java), it.getString(2))
+                            }
+                            assertEquals(chats.associateWith { "Keep this history" }, retained)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     @Test
     fun `attachment address migration preserves populated legacy storage across restart`() = runBlocking {
         val config = postgresAppConfig(newPostgresSchema("attachment_upgrade")).postgres

@@ -7,8 +7,6 @@ data class BackendFeatureFlags(
     val streamingMessages: Boolean = false,
     val toolEvents: Boolean = false,
     val options: Boolean = false,
-    val telegramBot: Boolean = false,
-    val vkBot: Boolean = false,
     val wsAutomaticMemoryRecall: Boolean = false,
 ) {
     companion object {
@@ -32,16 +30,6 @@ data class BackendFeatureFlags(
                 options = source.booleanValue(
                     envKey = "SOUZ_FEATURE_OPTIONS",
                     propertyKey = "souz.backend.feature.options",
-                    default = false,
-                ),
-                telegramBot = source.booleanValue(
-                    envKey = "ENABLE_BACKEND_TG_FEATURE",
-                    propertyKey = "souz.backend.feature.telegramBot",
-                    default = false,
-                ),
-                vkBot = source.booleanValue(
-                    envKey = "ENABLE_BACKEND_VK_FEATURE",
-                    propertyKey = "souz.backend.feature.vkBot",
                     default = false,
                 ),
                 wsAutomaticMemoryRecall = source.booleanValue(

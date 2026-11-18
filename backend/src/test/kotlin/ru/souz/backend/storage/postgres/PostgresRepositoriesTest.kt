@@ -693,26 +693,6 @@ class PostgresRepositoriesTest {
     }
 
     @Test
-    fun `chat repository getByIds returns only the requested existing chats`() = runTest {
-        val schema = newPostgresSchema("postgres_chat_get_by_ids")
-        val userId = "opaque/user:getByIds@example.com"
-        val first = chat(userId = userId, updatedAt = Instant.parse("2026-05-01T09:00:00Z"))
-        val second = chat(userId = userId, updatedAt = Instant.parse("2026-05-01T09:01:00Z"))
-
-        postgresRepositories(schema).use { repositories ->
-            repositories.userRepository.ensureUser(userId)
-            repositories.chatRepository.create(first)
-            repositories.chatRepository.create(second)
-
-            assertEquals(emptyList(), repositories.chatRepository.getByIds(emptyList()))
-
-            val result = repositories.chatRepository.getByIds(listOf(first.id, second.id, UUID.randomUUID()))
-
-            assertEquals(setOf(first, second), result.toSet())
-        }
-    }
-
-    @Test
     fun `chat repository getOrCreate returns one chat to concurrent creators`() = runTest {
         val schema = newPostgresSchema("postgres_chat_get_or_create_race")
         val userId = "opaque/user:race@example.com"

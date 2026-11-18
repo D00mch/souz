@@ -6,7 +6,7 @@
 
 Run [thread recovery](../src/main/kotlin/ru/souz/backend/client/ClientThreadRecoveryService.kt) before accepting connections and periodically thereafter. Fail expired public leases and persist any missing terminal `thread.failed` events.
 
-Ordinary trusted-proxy HTTP executions, Telegram/VK-triggered executions and [scheduled-task occurrences](scheduled-tasks.md) have process-local runtimes without renewable execution leases. [Job claims](../../job-impl/docs/job-ownership.md), [hook receipts](hooks.md), and [JVM plugin leases and pins](jvm-plugins.md) protect only the jobs, receipts, and invocations they own.
+Ordinary trusted-proxy HTTP executions and [scheduled-task occurrences](scheduled-tasks.md) have process-local runtimes without renewable execution leases. [Job claims](../../job-impl/docs/job-ownership.md), [hook receipts](hooks.md), and [JVM plugin leases and pins](jvm-plugins.md) protect only the jobs, receipts, and invocations they own.
 
 Enable server-managed Codex OAuth on one process only. A terminal refresh rejection suppresses deployment credentials until the configured refresh token changes. Replace the access token, refresh token, account ID, and expiry together before restarting.
 
@@ -22,4 +22,4 @@ If a process-local ordinary execution is stranded in `queued`, `running`, or `ca
 
 ## Verification
 
-Run `./gradlew :backend:test` with Docker. Use the [public WebSocket tests](../src/test/kotlin/ru/souz/backend/e2e/BackendPublicWebSocketE2eTest.kt) and [finalization tests](../src/test/kotlin/ru/souz/backend/e2e/BackendExecutionFinalizationE2eTest.kt) for owner routing, expired leases, cancellation races and option resume. Changes to ordinary recovery must cover HTTP and bot-triggered crashes. Verify concurrent refresh before deploying server-managed Codex across replicas.
+Run `./gradlew :backend:test` with Docker. Use the [public WebSocket tests](../src/test/kotlin/ru/souz/backend/e2e/BackendPublicWebSocketE2eTest.kt) and [finalization tests](../src/test/kotlin/ru/souz/backend/e2e/BackendExecutionFinalizationE2eTest.kt) for owner routing, expired leases, cancellation races and option resume. Changes to ordinary recovery must cover HTTP-triggered crashes. Verify concurrent refresh before deploying server-managed Codex across replicas.

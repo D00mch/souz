@@ -37,7 +37,7 @@ class ToolSendMessageToChannel(
         FewShotExample(
             request = "Перешли краткую сводку в телеграм",
             params = mapOf(
-                "channelType" to "telegram",
+                "channelType" to "public_client",
                 "channelId" to "<id из $LIST_ACTIVE_CHANNELS_TOOL_NAME>",
                 "text" to "Краткая сводка: ...",
             ),
@@ -79,6 +79,6 @@ class ToolSendMessageToChannel(
 }
 
 private const val CHANNEL_TYPE_DESCRIPTION =
-    "Channel type from $LIST_ACTIVE_CHANNELS_TOOL_NAME, e.g. telegram."
+    "Channel type from $LIST_ACTIVE_CHANNELS_TOOL_NAME, e.g. public_client."
 private const val CHANNEL_ID_DESCRIPTION =
     "Channel id from $LIST_ACTIVE_CHANNELS_TOOL_NAME."

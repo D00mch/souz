@@ -2,6 +2,8 @@
 
 Use the [public contract](../../docs/public-souz-contract/README.md) for schemas, errors, limits, and examples.
 
+External Telegram and VK bot services own platform tokens, account linking, polling, and delivery. Souz exposes their existing public WebSocket chats as `public_client` destinations for text and attachments. Before applying Flyway V27 to a database with embedded bot bindings, transfer those bindings to the external service while preserving chat IDs, and change pending reminders' `replyChannelType` from `telegram` or `vk` to `public_client` while preserving `replyChannelId`. V27 drops only the binding tables; it preserves chats, history, and scheduled tasks and does not rewrite reminder destinations.
+
 ## Invariant
 
 Public Client-Souz routes rely on a trusted network and upstream identity validation. Validate and provision the trusted UUID at chat creation. A multi-chat socket can serve multiple owners. Resolve each frame against its chat and matching client type. The submit device user must match the chat owner. Scope thread reads, subscriptions, catalogues, and tool result correlation to the resolved owner.

@@ -144,10 +144,6 @@ data class BackendAppConfig(
     val server: BackendServerConfig,
     val postgres: BackendPostgresConfig,
     val masterKey: String? = null,
-    val telegramTokenEncryptionKey: String? = null,
-    val telegramPollingMaxConcurrency: Int = 4,
-    val vkTokenEncryptionKey: String? = null,
-    val vkPollingMaxConcurrency: Int = 4,
     val skillOAuthTokenEncryptionKey: String? = null,
     val skillOAuthProviderCredentials: Map<String, SkillOAuthProviderCredentials> = emptyMap(),
     val hindsightApiUrl: String? = null,
@@ -178,22 +174,6 @@ data class BackendAppConfig(
         }
         if (masterKey.isNullOrBlank()) {
             throw BackendConfigurationException("SOUZ_MASTER_KEY / souz.masterKey must not be blank.")
-        }
-        if (featureFlags.telegramBot && telegramTokenEncryptionKey.isNullOrBlank()) {
-            throw BackendConfigurationException(
-                "TELEGRAM_TOKEN_ENCRYPTION_KEY / souz.telegram.tokenEncryptionKey must not be blank."
-            )
-        }
-        if (telegramPollingMaxConcurrency <= 0) {
-            throw BackendConfigurationException("Telegram polling max concurrency must be positive.")
-        }
-        if (featureFlags.vkBot && vkTokenEncryptionKey.isNullOrBlank()) {
-            throw BackendConfigurationException(
-                "VK_TOKEN_ENCRYPTION_KEY / souz.vk.tokenEncryptionKey must not be blank."
-            )
-        }
-        if (vkPollingMaxConcurrency <= 0) {
-            throw BackendConfigurationException("VK polling max concurrency must be positive.")
         }
         if (hindsightApiToken != null && hindsightApiUrl == null) {
             throw BackendConfigurationException(
@@ -258,24 +238,6 @@ data class BackendAppConfig(
                     envKey = "SOUZ_MASTER_KEY",
                     propertyKey = "souz.masterKey",
                 )?.trim()?.takeIf { it.isNotEmpty() },
-                telegramTokenEncryptionKey = source.value(
-                    envKey = "TELEGRAM_TOKEN_ENCRYPTION_KEY",
-                    propertyKey = "souz.telegram.tokenEncryptionKey",
-                )?.trim()?.takeIf { it.isNotEmpty() },
-                telegramPollingMaxConcurrency = source.intValue(
-                    envKey = "SOUZ_TELEGRAM_POLLING_MAX_CONCURRENCY",
-                    propertyKey = "souz.telegram.pollingMaxConcurrency",
-                    default = 4,
-                ),
-                vkTokenEncryptionKey = source.value(
-                    envKey = "VK_TOKEN_ENCRYPTION_KEY",
-                    propertyKey = "souz.vk.tokenEncryptionKey",
-                )?.trim()?.takeIf { it.isNotEmpty() },
-                vkPollingMaxConcurrency = source.intValue(
-                    envKey = "SOUZ_VK_POLLING_MAX_CONCURRENCY",
-                    propertyKey = "souz.vk.pollingMaxConcurrency",
-                    default = 4,
-                ),
                 skillOAuthTokenEncryptionKey = source.value(
                     envKey = "SKILL_OAUTH_TOKEN_ENCRYPTION_KEY",
                     propertyKey = "souz.skillOAuth.tokenEncryptionKey",
