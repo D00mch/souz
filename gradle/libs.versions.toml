@@ -1,6 +1,5 @@
 [versions]
 awsSdk = "2.31.54"
-commonmark = "0.30.0"
 commonsCsv = "1.10.0"
 cronUtils = "9.2.1"
 jackson = "2.21.3"
@@ -33,7 +32,6 @@ okhttp = { module = "com.squareup.okhttp3:okhttp", version = "5.3.2" }
 jfreechart = { module = "org.jfree:jfreechart", version = "1.5.6" }
 aws-s3 = { module = "software.amazon.awssdk:s3", version.ref = "awsSdk" }
 aws-urlConnectionClient = { module = "software.amazon.awssdk:url-connection-client", version.ref = "awsSdk" }
-commonmark = { module = "org.commonmark:commonmark", version.ref = "commonmark" }
 commons-csv = { module = "org.apache.commons:commons-csv", version.ref = "commonsCsv" }
 cron-utils = { module = "com.cronutils:cron-utils", version.ref = "cronUtils" }
 jackson = { module = "com.fasterxml.jackson.module:jackson-module-kotlin", version.ref = "jackson" }

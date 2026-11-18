@@ -19,21 +19,6 @@ internal fun Route.v1Routes(deps: BackendHttpDependencies) {
     settingsRoutes(deps)
     providerKeyRoutes(deps)
     chatRoutes(deps)
-    if (deps.featureFlags.telegramBot) {
-        telegramRoutes(
-            deps,
-            requireNotNull(deps.telegramBotBindingService) {
-                "Telegram feature is enabled without a Telegram bot binding service."
-            },
-        )
-    }
-    if (deps.featureFlags.vkBot) {
-        vkRoutes(
-            requireNotNull(deps.vkBotBindingService) {
-                "VK feature is enabled without a VK bot binding service."
-            },
-        )
-    }
     messageRoutes(deps)
     eventRoutes(deps)
     choiceRoutes(deps)

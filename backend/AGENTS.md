@@ -31,8 +31,6 @@
 - [Job ownership and recovery](../job-impl/docs/job-ownership.md) — explicitly started workers, PostgreSQL claims, and at-least-once handlers.
 - [Scheduled tasks](docs/scheduled-tasks.md) — hidden occurrence chats, delivery semantics, non-blocking handler, budgets, and failure handling.
 - [Conversation Knowledge](docs/conversation-knowledge.md) — durable tool/subagent results, ownership, deletion, and read-only deployment verification.
-- [Telegram bindings](docs/telegram-bindings.md) — token custody, private-account linking, polling leases, and checkpoint safety.
-- [VK bindings](docs/vk-bindings.md) — private-account linking, encrypted tokens, Long Poll cursors, and lease fencing.
 - [Testing](docs/testing.md) — production-wired E2E coverage, Docker requirement, and allowed test doubles.
 - [Model scenario tests](docs/agent-scenario-tests.md) — opt-in model evaluation against the full production catalog with mocked execution and scenario fixtures.
 - [Container builds](docs/container-builds.md) — JVM temporary files and Kaniko snapshots.

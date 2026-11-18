@@ -34,7 +34,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.routes.v1Routes
 import ru.souz.backend.http.routes.hookRoutes
 import ru.souz.backend.http.routes.pluginRoutes
@@ -198,7 +197,7 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
             call.respondBackend(logger) {
                 RootResponse(
                     service = "souz-backend",
-                    endpoints = rootEndpoints(dependencies.featureFlags),
+                    endpoints = rootEndpoints,
                 )
             }
         }.describePublic(
@@ -265,42 +264,31 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
     }
 }
 
-private fun rootEndpoints(featureFlags: BackendFeatureFlags): List<String> =
-    buildList {
-        add("GET ${BackendHttpRoutes.HEALTH}")
-        add("GET ${BackendHttpRoutes.READY}")
-        add("GET ${BackendHttpRoutes.METRICS}")
-        add("GET ${BackendHttpRoutes.DOCS}")
-        add("GET ${BackendHttpRoutes.BOOTSTRAP}")
-        add("GET ${BackendHttpRoutes.ONBOARDING_STATE}")
-        add("POST ${BackendHttpRoutes.ONBOARDING_COMPLETE}")
-        add("GET ${BackendHttpRoutes.SETTINGS}")
-        add("PATCH ${BackendHttpRoutes.SETTINGS}")
-        add("GET ${BackendHttpRoutes.PROVIDER_KEYS}")
-        add("PUT ${BackendHttpRoutes.PROVIDER_KEY_PATTERN}")
-        add("DELETE ${BackendHttpRoutes.PROVIDER_KEY_PATTERN}")
-        add("GET ${BackendHttpRoutes.CHATS}")
-        add("POST ${BackendHttpRoutes.CHATS}")
-        add("PATCH ${BackendHttpRoutes.CHAT_TITLE_PATTERN}")
-        add("POST ${BackendHttpRoutes.CHAT_ARCHIVE_PATTERN}")
-        add("POST ${BackendHttpRoutes.CHAT_UNARCHIVE_PATTERN}")
-        add("GET ${BackendHttpRoutes.CHAT_MESSAGES_PATTERN}")
-        add("GET ${BackendHttpRoutes.CHAT_EVENTS_PATTERN}")
-        add("GET ${BackendHttpRoutes.CHAT_THREAD_PATTERN}")
-        add("POST ${BackendHttpRoutes.CHAT_MESSAGES_PATTERN}")
-        if (featureFlags.telegramBot) {
-            add("GET ${BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN}")
-            add("PUT ${BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN}")
-            add("DELETE ${BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN}")
-        }
-        if (featureFlags.vkBot) {
-            add("GET ${BackendHttpRoutes.CHAT_VK_BOT_PATTERN}")
-            add("PUT ${BackendHttpRoutes.CHAT_VK_BOT_PATTERN}")
-            add("DELETE ${BackendHttpRoutes.CHAT_VK_BOT_PATTERN}")
-        }
-        add("POST ${BackendHttpRoutes.CHAT_CANCEL_ACTIVE_PATTERN}")
-        add("POST ${BackendHttpRoutes.CHAT_EXECUTION_CANCEL_PATTERN}")
-        add("POST ${BackendHttpRoutes.OPTION_ANSWER_PATTERN}")
-        add("WS ${BackendHttpRoutes.CHAT_WS_PATTERN}")
-        add("WS ${BackendHttpRoutes.WS}")
-    }
+private val rootEndpoints = listOf(
+    "GET ${BackendHttpRoutes.HEALTH}",
+    "GET ${BackendHttpRoutes.READY}",
+    "GET ${BackendHttpRoutes.METRICS}",
+    "GET ${BackendHttpRoutes.DOCS}",
+    "GET ${BackendHttpRoutes.BOOTSTRAP}",
+    "GET ${BackendHttpRoutes.ONBOARDING_STATE}",
+    "POST ${BackendHttpRoutes.ONBOARDING_COMPLETE}",
+    "GET ${BackendHttpRoutes.SETTINGS}",
+    "PATCH ${BackendHttpRoutes.SETTINGS}",
+    "GET ${BackendHttpRoutes.PROVIDER_KEYS}",
+    "PUT ${BackendHttpRoutes.PROVIDER_KEY_PATTERN}",
+    "DELETE ${BackendHttpRoutes.PROVIDER_KEY_PATTERN}",
+    "GET ${BackendHttpRoutes.CHATS}",
+    "POST ${BackendHttpRoutes.CHATS}",
+    "PATCH ${BackendHttpRoutes.CHAT_TITLE_PATTERN}",
+    "POST ${BackendHttpRoutes.CHAT_ARCHIVE_PATTERN}",
+    "POST ${BackendHttpRoutes.CHAT_UNARCHIVE_PATTERN}",
+    "GET ${BackendHttpRoutes.CHAT_MESSAGES_PATTERN}",
+    "GET ${BackendHttpRoutes.CHAT_EVENTS_PATTERN}",
+    "GET ${BackendHttpRoutes.CHAT_THREAD_PATTERN}",
+    "POST ${BackendHttpRoutes.CHAT_MESSAGES_PATTERN}",
+    "POST ${BackendHttpRoutes.CHAT_CANCEL_ACTIVE_PATTERN}",
+    "POST ${BackendHttpRoutes.CHAT_EXECUTION_CANCEL_PATTERN}",
+    "POST ${BackendHttpRoutes.OPTION_ANSWER_PATTERN}",
+    "WS ${BackendHttpRoutes.CHAT_WS_PATTERN}",
+    "WS ${BackendHttpRoutes.WS}",
+)

@@ -37,11 +37,9 @@ import ru.souz.backend.keys.model.UserProviderKey
 import ru.souz.backend.settings.model.ToolPermission
 import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
-import ru.souz.backend.telegram.TelegramBotBinding
 import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.user.model.UserRecord
-import ru.souz.backend.vk.VkBotBinding
 import ru.souz.llms.FileContent
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
@@ -52,8 +50,6 @@ internal const val ACTIVE_EXECUTION_CONSTRAINT: String = "agent_executions_one_a
 internal const val CHAT_REQUEST_CONSTRAINT: String = "chats_user_id_request_id_key"
 internal const val CLIENT_REQUEST_CONSTRAINT: String = "client_requests_pkey"
 internal const val PRIMARY_KEY_CONSTRAINT: String = "agent_conversation_state_pkey"
-internal const val TELEGRAM_BOT_BINDINGS_TOKEN_HASH_CONSTRAINT: String = "telegram_bot_bindings_bot_token_hash_key"
-internal const val VK_BOT_BINDINGS_TOKEN_HASH_CONSTRAINT: String = "vk_bot_bindings_group_token_hash_key"
 internal val postgresStorageMapper = jacksonObjectMapper().findAndRegisterModules()
 
 internal suspend fun <T> DataSource.read(networkTimeoutMillis: Int? = null, block: (Connection) -> T): T =
@@ -227,58 +223,6 @@ internal fun ResultSet.toChat(): Chat =
         yourName = getString("your_name"),
         title = getString("title"),
         archived = getBoolean("archived"),
-        createdAt = instant("created_at"),
-        updatedAt = instant("updated_at"),
-    )
-
-internal fun ResultSet.toTelegramBotBinding(): TelegramBotBinding =
-    TelegramBotBinding(
-        id = getObject("id", UUID::class.java),
-        userId = getString("user_id"),
-        chatId = getObject("chat_id", UUID::class.java),
-        botTokenEncrypted = getString("bot_token_encrypted"),
-        botTokenHash = getString("bot_token_hash"),
-        linkSecretHash = getString("link_secret_hash"),
-        botUsername = getString("bot_username"),
-        botFirstName = getString("bot_first_name"),
-        lastUpdateId = getLong("last_update_id"),
-        enabled = getBoolean("enabled"),
-        telegramUserId = getObject("telegram_user_id", java.lang.Long::class.java)?.toLong(),
-        telegramChatId = getObject("telegram_chat_id", java.lang.Long::class.java)?.toLong(),
-        telegramUsername = getString("telegram_username"),
-        telegramFirstName = getString("telegram_first_name"),
-        telegramLastName = getString("telegram_last_name"),
-        linkedAt = getObject("linked_at", OffsetDateTime::class.java)?.toInstant(),
-        pollerOwner = getString("poller_owner"),
-        pollerLeaseUntil = getObject("poller_lease_until", OffsetDateTime::class.java)?.toInstant(),
-        lastError = getString("last_error"),
-        lastErrorAt = getObject("last_error_at", OffsetDateTime::class.java)?.toInstant(),
-        createdAt = instant("created_at"),
-        updatedAt = instant("updated_at"),
-    )
-
-internal fun ResultSet.toVkBotBinding(): VkBotBinding =
-    VkBotBinding(
-        id = getObject("id", UUID::class.java),
-        userId = getString("user_id"),
-        chatId = getObject("chat_id", UUID::class.java),
-        groupTokenEncrypted = getString("group_token_encrypted"),
-        groupTokenHash = getString("group_token_hash"),
-        linkSecretHash = getString("link_secret_hash"),
-        vkGroupId = getLong("vk_group_id"),
-        vkGroupName = getString("vk_group_name"),
-        lastTs = getString("last_ts"),
-        enabled = getBoolean("enabled"),
-        vkUserId = getObject("vk_user_id", java.lang.Long::class.java)?.toLong(),
-        vkPeerId = getObject("vk_peer_id", java.lang.Long::class.java)?.toLong(),
-        vkFirstName = getString("vk_first_name"),
-        vkLastName = getString("vk_last_name"),
-        linkedMessageId = getObject("linked_message_id", java.lang.Long::class.java)?.toLong(),
-        linkedAt = getObject("linked_at", OffsetDateTime::class.java)?.toInstant(),
-        pollerOwner = getString("poller_owner"),
-        pollerLeaseUntil = getObject("poller_lease_until", OffsetDateTime::class.java)?.toInstant(),
-        lastError = getString("last_error"),
-        lastErrorAt = getObject("last_error_at", OffsetDateTime::class.java)?.toInstant(),
         createdAt = instant("created_at"),
         updatedAt = instant("updated_at"),
     )

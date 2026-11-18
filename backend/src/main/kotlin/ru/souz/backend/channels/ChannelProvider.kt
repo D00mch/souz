@@ -1,6 +1,6 @@
 package ru.souz.backend.channels
 
-/** A user-facing communication channel a message can be forwarded to (Telegram, a public-client chat, ...). */
+/** A user-facing communication channel a message can be forwarded to. */
 data class ChannelDescriptor(
     val channelType: String,
     val channelId: String,
