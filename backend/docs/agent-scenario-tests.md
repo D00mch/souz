@@ -2,7 +2,7 @@
 
 Each scenario runs the production Skills graph with the full [production catalogue](../src/test/kotlin/ru/souz/agent/scenarios/ScenarioProductionCatalog.kt) and real Skill discovery. Use fresh state and mock tool side effects, subagent execution, memory mutations and sandbox processes. Unconfigured side effects fail. The selected model handles both Skill selection and conversation and is the only external service contacted. [Scenario wiring](../src/test/kotlin/ru/souz/agent/scenarios/AgentScenarioTestSupport.kt)
 
-Keep prompts consistent across models. `SOUZ_BACKEND_SYSTEM_PROMPT` (or `souz.backend.systemPrompt`) overrides the production system prompt. `SOUZ_BACKEND_POLICY_PROMPT` (or `souz.backend.policyPrompt`) supplies optional policy. See the [trace](../src/test/kotlin/ru/souz/agent/scenarios/ScenarioTrace.kt) for the fixed model-facing date, call budget, and recorded metrics.
+Keep prompts consistent across models. `SOUZ_BACKEND_SYSTEM_PROMPT` (or `souz.backend.systemPrompt`) overrides the production system prompt. `SOUZ_BACKEND_POLICY_PROMPT` (or `souz.backend.policyPrompt`) supplies optional policy. See the [trace](../src/test/kotlin/ru/souz/agent/scenarios/ScenarioTrace.kt) for the call budget and recorded metrics.
 
 ## Run a selected model
 
@@ -23,6 +23,34 @@ For an existing Codex login, set `SOUZ_AGENT_INTEGRATION_TEST_PROVIDER=codex`, s
 Reasoning effort is optional. Use a value supported by the selected provider or omit it for the provider default. Keep the configured provider parameters and report the original scenario result without retries.
 
 Without `SOUZ_AGENT_INTEGRATION_TESTS_ON=true`, live tests skip before reading credentials or creating an HTTP client.
+
+## Evaluate agent tasks across turns
+
+Run [AgentScenarioEvaluationTest](../src/test/kotlin/ru/souz/agent/scenarios/AgentScenarioEvaluationTest.kt) against an OpenAI-compatible endpoint. The test loads the same [bundled Skill archive](../src/test/resources/skills/scenario-set.zip) for every run. The archive contains `skills/<id>/SKILL.md` and supporting files.
+
+```bash
+export SOUZ_AGENT_INTEGRATION_TESTS_ON=true
+export SOUZ_SCENARIO_REPORT_DIR=/absolute/path/to/evaluation-runs
+export SOUZ_SCENARIO_REVISION="$(git rev-parse HEAD)"
+export OPENAI_BASE_URL=https://polza.ai/api/v1
+export OPENAI_MODEL=qwen/qwen3.8-27b
+# Set OPENAI_API_KEY through the invoking environment.
+./gradlew :backend:test --rerun --tests 'ru.souz.agent.scenarios.AgentScenarioEvaluationTest'
+```
+
+Set `OPENAI_MODEL=deepseek/deepseek-v4.1-flash-1017` to run the same suite with DeepSeek. `SOUZ_SCENARIO_REPEATS` defaults to 2. Each trial begins with a fresh conversation, using the Skills from the archive and the unmodified runtime date in Moscow. Mocked searches and Telegram delivery exercise three tasks:
+
+- Search for five doctors and then narrow the result to a price limit. In the case that requests both eligible links, the user asks to rerun the search and the test verifies that the skill uses the price limit and returns exactly two eligible doctors. The other case selects the eligible doctor with the most reviews. Both cases request delivery to Telegram.
+- Search for direct trains and send the link for the departure after noon.
+- Find two shows and send the link for the one that starts at 19:30.
+
+A separate trial performs all three tasks in the same conversation. The outcome verifies that the mock Telegram inbox receives exactly the expected links on the requested turns.
+
+Each turn checks that the next conversational request preserves earlier user messages, assistant replies, and tool exchanges in order. It excludes the system message and regenerated host context from that history assertion. The cache comparison uses the complete message payloads from the adjacent conversational calls and records the first differing role, tool definition equality, and cached input tokens on both calls. Cache values and prefix changes are diagnostic and do not affect the task verdict.
+
+Open `backend/build/reports/agent-evaluation/<run-id>.html` after the test. The suite generates the page directly and prints the full path in the Gradle test's **Standard output**. If `SOUZ_SCENARIO_REPORT_DIR` is set, open the report in that directory instead. Expand a trial to see its seeded history, each user turn and model reply, Skill IDs requested through `GetSkillByName` and `RunSkillCommand`, and messages accepted by the Telegram mock. Each turn shows model calls, latency, token counts, and any history or cache comparison with the preceding turn. Failed trials are included.
+
+Each HTML report links to the corresponding JSONL with the run configuration and evidence. Cached input is included in input tokens. An unavailable value appears as a dash in HTML and an explicit zero remains zero. Use a report directory outside the build tree to retain runs across clean builds. Keep the same scenario version and archive hash when comparing revisions.
 
 ## Add a scenario
 

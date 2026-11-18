@@ -10,8 +10,11 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.plus
 import ru.souz.llms.restJsonMapper
+import ru.souz.tool.skills.ToolGetSkillByName
+import ru.souz.tool.skills.ToolInvokeSkill
 import kotlin.test.assertTrue
 import kotlin.time.Duration
+import kotlin.time.TimeSource
 
 data class ScenarioResult(
     val execution: AgentExecutionResult,
@@ -38,54 +41,135 @@ data class ScenarioMetrics(
 internal class ScenarioTrace(
     private val modelId: String,
     private val reasoningEffort: String?,
+    private val wire: ScenarioWireCapture? = null,
+    private val normalizeDate: Boolean = true,
+    private val maxModelCalls: Int = 24,
 ) : AgentRuntimeEventSink {
     val requests = mutableListOf<LLMRequest.Chat>()
     val events = mutableListOf<AgentRuntimeEvent>()
+    val calls = mutableListOf<ScenarioCall>()
+    val prefixes = mutableListOf<ScenarioPrefix>()
+    private val toolUses = mutableListOf<ScenarioToolUse>()
     private var usage = LLMResponse.Usage(0, 0, 0, 0)
     private var lastResponse: LLMResponse.Chat? = null
     private val providerFailures = mutableListOf<String>()
+    private var turn = 0
+    private var currentConversationRequest: Pair<ScenarioWireRequest, ScenarioCall>? = null
+    private var previousConversationRequest: Pair<ScenarioWireRequest, ScenarioCall>? = null
+    private var currentAnswer: String? = null
+    private var previousAnswer: String? = null
+    val startedTurns: Int get() = turn
+
+    fun toolsOnTurn(number: Int): List<ScenarioToolUse> = toolUses.filter { it.turn == number }
+
+    fun startTurn() {
+        previousConversationRequest = currentConversationRequest
+        currentConversationRequest = null
+        previousAnswer = currentAnswer
+        currentAnswer = null
+        lastResponse = null
+        turn++
+    }
 
     fun instrument(api: LLMChatAPI): LLMChatAPI = object : LLMChatAPI by api {
         override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-            check(requests.size < MAX_MODEL_CALLS) { "Scenario exceeded $MAX_MODEL_CALLS model calls without completing." }
-            // The host clock has no injection port. Normalize only its context timestamp at the test boundary.
+            check(requests.size < maxModelCalls) { "Scenario exceeded $maxModelCalls model calls without completing." }
             val request = body.copy(
                 reasoningEffort = reasoningEffort,
-                messages = body.messages.map { it.withScenarioDate() },
+                messages = if (normalizeDate) body.messages.map { it.withScenarioDate() } else body.messages,
             )
             requests += request
-            val response = try {
-                api.message(request)
+            wire?.reset()
+            val started = TimeSource.Monotonic.markNow()
+            var response: LLMResponse.Chat? = null
+            try {
+                return api.message(request).also {
+                    response = it
+                    lastResponse = it
+                    when (it) {
+                        is LLMResponse.Chat.Ok -> usage += it.usage
+                        is LLMResponse.Chat.Error -> providerFailures += "Call ${requests.size}: status ${it.status}"
+                    }
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                providerFailures += "Call ${requests.size}: $failure"
+                providerFailures += "Call ${requests.size}: ${failure.javaClass.simpleName}"
                 throw failure
+            } finally {
+                recordCall(request, response, started.elapsedNow())
             }
-            return response.also {
-                lastResponse = response
-                when (response) {
-                    is LLMResponse.Chat.Ok -> usage += response.usage
-                    is LLMResponse.Chat.Error -> providerFailures += "Call ${requests.size}: $response"
+        }
+    }
+
+    private fun recordCall(request: LLMRequest.Chat, response: LLMResponse.Chat?, duration: Duration) {
+        val kind = if (request.functions.isEmpty()) "auxiliary" else "conversation"
+        val ok = response as? LLMResponse.Chat.Ok
+        val reported = wire?.usage
+        val call = ScenarioCall(
+            number = requests.size,
+            turn = turn,
+            kind = kind,
+            responseModel = ok?.model,
+            durationMs = duration.inWholeMilliseconds,
+            status = if (ok != null) "ok" else "error",
+            providerStatus = (response as? LLMResponse.Chat.Error)?.status,
+            inputTokens = reported?.input,
+            outputTokens = reported?.output,
+            cachedInputTokens = reported?.cached,
+        )
+        calls += call
+        if (kind == "conversation") {
+            wire?.request?.let { sent ->
+                if (currentConversationRequest == null) {
+                    previousConversationRequest?.let { (previous, lastCall) ->
+                        prefixes += previous.compareTo(sent, turn).copy(
+                            previousCall = lastCall.number,
+                            currentCall = call.number,
+                            previousCachedInputTokens = lastCall.cachedInputTokens,
+                            currentCachedInputTokens = call.cachedInputTokens,
+                            history = previousAnswer?.let { previous.checkHistory(sent, it) },
+                        )
+                    }
                 }
+                currentConversationRequest = sent to call
             }
         }
     }
 
     override suspend fun emit(event: AgentRuntimeEvent) {
         events += event
+        if (event is AgentRuntimeEvent.ToolCallStarted) {
+            val skillId = when (event.name) {
+                ToolGetSkillByName.NAME, ToolInvokeSkill.NAME -> event.arguments["skillId"] as? String
+                else -> null
+            }
+            toolUses += ScenarioToolUse(turn, event.name, skillId)
+        }
     }
 
     fun assertCompleted(result: AgentExecutionResult) {
         assertTrue(providerFailures.isEmpty(), "Scenario provider failures: $providerFailures")
         val response = lastResponse
-        assertTrue(response is LLMResponse.Chat.Ok, "No successful final model response: $response")
+        assertTrue(response is LLMResponse.Chat.Ok, "No successful final model response.")
         assertTrue(response.choices.isNotEmpty() && response.choices.all {
             it.message.functionCall == null && it.finishReason == LLMResponse.FinishReason.stop
         }, "Scenario ended without a completed assistant response: ${response.choices}")
         assertTrue(result.output.isNotBlank(), "Scenario returned no final answer.")
         assertTrue(response.choices.any { it.message.content.trim() == result.output.trim() },
             "Output must come from the final model response.")
+        currentAnswer = result.output
+    }
+
+    fun assertHistoryPreserved(turns: Int) {
+        assertTrue(prefixes.map { it.turn } == (2..turns).toList(),
+            "Record the first conversational request at every turn boundary.")
+        for (prefix in prefixes) {
+            val history = requireNotNull(prefix.history)
+            assertTrue(history.matched == history.expected,
+                "Turn ${prefix.turn} preserved ${history.matched} of ${history.expected} earlier messages " +
+                    "(first missing role: ${history.firstMissingRole}).")
+        }
     }
 
     fun metrics(duration: Duration): ScenarioMetrics = ScenarioMetrics(
@@ -94,7 +178,8 @@ internal class ScenarioTrace(
     )
 }
 
-private const val MAX_MODEL_CALLS = 24
+internal data class ScenarioToolUse(val turn: Int, val name: String, val skillId: String?)
+
 private val HOST_DATE_LINE = Regex("(?m)^- \\[General fact]: Текущие дата и время: .*${'$'}")
 internal const val SCENARIO_DATE_LINE = "- [General fact]: Текущие дата и время: понедельник, 2026-06-01 10:00:00"
 

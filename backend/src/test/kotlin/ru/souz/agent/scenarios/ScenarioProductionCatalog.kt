@@ -45,6 +45,7 @@ internal fun scenarioBackendDi(
     resolver: ToolInvocationRuntimeSandboxResolver,
     registry: SkillRegistryRepository,
     knowledge: ConversationKnowledgeStore,
+    channels: ChannelProviderRegistry? = null,
 ): DI {
     val config = BackendAppConfig(BackendFeatureFlags(), server = mockk(), postgres = mockk())
     return DI {
@@ -57,7 +58,7 @@ internal fun scenarioBackendDi(
         bindSingleton<SkillOAuthGateway> { mockk() }
         bindSingleton<JobService>(overrides = true) { mockk() }
         bindSingleton<AgentExecutionRepository>(overrides = true) { mockk() }
-        bindSingleton<ChannelProviderRegistry>(overrides = true) { mockk() }
+        bindSingleton<ChannelProviderRegistry>(overrides = true) { channels ?: mockk() }
     }
 }
 
