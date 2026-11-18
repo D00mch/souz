@@ -39,11 +39,12 @@ internal object AttachmentMinio {
         return file
     }
 
-    fun config(): AttachmentStorageConfig {
+    fun config(saveBudget: AttachmentSaveBudget = AttachmentSaveBudget()): AttachmentStorageConfig {
         val id = UUID.randomUUID().toString()
         return AttachmentStorageConfig(
             endpoint = "http://${server.host}:${server.firstMappedPort}", bucket = "attachments-$id",
             accessKey = "user-$id", secretKey = "attachment-user-secret",
+            saveBudget = saveBudget,
         ).also(::provision)
     }
 

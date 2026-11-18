@@ -19,7 +19,16 @@ class AttachmentStorageConfigTest {
             assertEquals(20_000_000, config.maxFileBytes)
             assertEquals(true, config.pathStyleAccess)
             assertEquals(16, config.maxConcurrentUploads)
+            assertEquals(AttachmentSaveBudget(), config.saveBudget)
             assertFalse(config.toString().contains("test-secret"))
+            val configured = settings + mapOf(
+                "MAX_EXECUTION_SAVES" to "9",
+                "MAX_EXECUTION_SAVE_BYTES" to "3000000",
+                "MAX_OWNER_SAVES_PER_24H" to "19",
+                "MAX_OWNER_SAVE_BYTES_PER_24H" to "3000000000",
+            )
+            assertEquals(AttachmentSaveBudget(9, 3_000_000, 19, 3_000_000_000),
+                assertNotNull(AttachmentStorageConfig.load(source(configured, properties))).saveBudget)
         }
     }
 
@@ -36,6 +45,10 @@ class AttachmentStorageConfigTest {
             "MAX_CONCURRENT_UPLOADS" to "0",
             "MAX_CONCURRENT_UPLOADS" to "1001",
             "MAX_CONCURRENT_UPLOADS" to "invalid",
+            "MAX_EXECUTION_SAVES" to "0",
+            "MAX_EXECUTION_SAVE_BYTES" to "-1",
+            "MAX_OWNER_SAVES_PER_24H" to "invalid",
+            "MAX_OWNER_SAVE_BYTES_PER_24H" to "9223372036854775808",
             "S3_PATH_STYLE" to "invalid",
             "S3_BUCKET" to "INVALID",
             "S3_BUCKET" to "",
