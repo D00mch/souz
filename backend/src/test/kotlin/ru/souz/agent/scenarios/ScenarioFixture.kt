@@ -231,19 +231,18 @@ private fun theatreTask(date: LocalDate): ScenarioTask {
             "Пришли в Телеграм ссылку на спектакль, который начинается в 19:30.",
         ),
         search = { args ->
-            if (!args.option("--city").equals("Москва", ignoreCase = true) || args.option("--date") != date.toString()) {
+            if (args.firstOrNull() != "find" ||
+                args.option("--type") != "theatre" ||
+                !args.option("--city").equals("Москва", ignoreCase = true) ||
+                args.option("--date") != date.toString()
+            ) {
                 null
-            } else when (args.firstOrNull()) {
-                "find" -> listOf(
+            } else {
+                listOf(
                     "SEARCH\tМосква\tспектакли\tнайдено 2",
                     "EVENT\t104\ttheatre\tСеверный ветер\tдрама\t16+\t8.0\t90 мин\tСценическая драма\t$date 17:00\t$early",
                     "EVENT\t209\ttheatre\tОгни на крыше\tкомедия\t12+\t8.1\t110 мин\tКамерная комедия\t$date 19:30\t$late",
                 ).joinToString("\n")
-                "ideas" -> listOf(
-                    "IDEA\t104\ttheatre\tСеверный ветер\t16+\tдрама\t$date 17:00\tМалая сцена\t1 км\tот 1400 ₽\tСценическая драма\t$early",
-                    "IDEA\t209\ttheatre\tОгни на крыше\t12+\tкомедия\t$date 19:30\tТеатр на площади\t2 км\tот 1500 ₽\tКамерная комедия\t$late",
-                ).joinToString("\n")
-                else -> null
             }
         },
         expectedLinks = setOf(late),
