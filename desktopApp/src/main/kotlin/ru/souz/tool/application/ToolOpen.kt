@@ -66,12 +66,27 @@ class ToolOpen(
         val fixedPath = filesToolUtil.applyDefaultEnvs(target)
         val f = File(fixedPath)
 
-        // Bundle identifiers are not filesystem paths. Launch Services also owns
-        // .app bundles; Desktop.open treats them as ordinary documents on macOS.
+        // Dotted folder names can resemble bundle identifiers. Only bypass folder
+        // lookup when Launch Services recognizes an installed application.
         if (!target.contains('/') && target.contains('.') && !f.exists()) {
-            bash.sh("open -b \"\$1\"", target)
-            return "Done"
+            val registered = bash.javaScript(
+                """
+                    ObjC.import('AppKit');
+                    function run(argv) {
+                        var url = $.NSWorkspace.sharedWorkspace.URLForApplicationWithBundleIdentifier(argv[0]);
+                        return !url.isNil();
+                    }
+                """.trimIndent(),
+                args = listOf(target),
+                timeoutMillis = 10_000,
+            ) == "true"
+            if (registered) {
+                bash.sh("open -b \"\$1\"", target)
+                return "Done"
+            }
+            return ToolOpenFolder(bash, filesToolUtil).invoke(ToolOpenFolder.Input(target), meta)
         }
+        // Launch Services owns .app bundles; Desktop.open treats them as documents.
         if (f.isDirectory && f.name.endsWith(".app")) {
             bash.sh("open \"\$1\"", f.path)
             return "Done"
