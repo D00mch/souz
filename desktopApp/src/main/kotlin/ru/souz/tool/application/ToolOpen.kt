@@ -56,14 +56,42 @@ class ToolOpen(
 
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val desktop = Desktop.getDesktop().takeIf { Desktop.isDesktopSupported() }
-        val fixedPath = filesToolUtil.applyDefaultEnvs(input.target)
+        val target = input.target
             .replace("\n","")
             .replace("\\r","")
             .replace("\\\n","")
             .replace("\\\\n","")
             .replace("{","")
             .replace("}","")
+        val fixedPath = filesToolUtil.applyDefaultEnvs(target)
+        val f = File(fixedPath)
+
+        // Dotted folder names can resemble bundle identifiers. Only bypass folder
+        // lookup when Launch Services recognizes an installed application.
+        if (!target.contains('/') && target.contains('.') && !f.exists()) {
+            val registered = bash.javaScript(
+                """
+                    ObjC.import('AppKit');
+                    function run(argv) {
+                        var url = $.NSWorkspace.sharedWorkspace.URLForApplicationWithBundleIdentifier(argv[0]);
+                        return !url.isNil();
+                    }
+                """.trimIndent(),
+                args = listOf(target),
+                timeoutMillis = 10_000,
+            ) == "true"
+            if (registered) {
+                bash.sh("open -b \"\$1\"", target)
+                return "Done"
+            }
+            return ToolOpenFolder(bash, filesToolUtil).invoke(ToolOpenFolder.Input(target), meta)
+        }
+        // Launch Services owns .app bundles; Desktop.open treats them as documents.
+        if (f.isDirectory && f.name.endsWith(".app")) {
+            bash.sh("open \"\$1\"", f.path)
+            return "Done"
+        }
+        val desktop = if (Desktop.isDesktopSupported()) Desktop.getDesktop() else null
 
         if (fixedPath.startsWith("http://") || fixedPath.startsWith("https://")) {
             if (desktop != null && desktop.isSupported(Desktop.Action.BROWSE)) {
@@ -72,7 +100,6 @@ class ToolOpen(
             }
         }
 
-        val f = File(fixedPath)
         if (f.exists()) {
             if (desktop != null && desktop.isSupported(Desktop.Action.OPEN)) {
                 desktop.open(f) // opens file with default app OR opens folder in file manager

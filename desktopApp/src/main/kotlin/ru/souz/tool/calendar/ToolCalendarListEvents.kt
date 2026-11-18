@@ -1,5 +1,7 @@
 package ru.souz.tool.calendar
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import ru.souz.llms.ToolInvocationMeta
 
 import ru.souz.tool.FewShotExample
@@ -7,10 +9,10 @@ import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
-import ru.souz.tool.calendar.CalendarAppleScriptCommands.listEventsCommand
+import ru.souz.tool.ToolRunBashCommand
 import java.time.format.DateTimeFormatter
 
-class ToolCalendarListEvents : ToolSetup<ToolCalendarListEvents.Input> {
+class ToolCalendarListEvents(private val bash: ToolRunBashCommand = ToolRunBashCommand) : ToolSetup<ToolCalendarListEvents.Input> {
 
     data class Input(
         @InputParamDescription("Name of the calendar (e.g. 'Home', 'Work'). Leave empty to try finding default.")
@@ -51,7 +53,7 @@ class ToolCalendarListEvents : ToolSetup<ToolCalendarListEvents.Input> {
 
         val targetDateStr = input.date.ifBlank { null }
 
-        val events = listEventsCommand(calName, targetDateStr)
+        val events = CalendarEventKit.listEvents(calName, targetDateStr, bash)
 
         if (events.isEmpty()) {
             return "No events found for this date in calendar '$calName'."
@@ -74,7 +76,8 @@ class ToolCalendarListEvents : ToolSetup<ToolCalendarListEvents.Input> {
         return outputBuilder.toString()
     }
 
-    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String =
+        runInterruptible(Dispatchers.IO) { invoke(input, meta) }
 }
 
 fun main() {

@@ -51,17 +51,22 @@ class ToolDeleteNote(
 
         bash.apple(
             """
-                tell application "Notes"
-                    set noteName to "${input.noteName}"
-                    set notesToDelete to (every note whose name is noteName)
+                on run argv
+                    tell application "Notes"
+                        launch
+                        set noteName to item 1 of argv
+                        set notesToDelete to (every note whose name is noteName)
 
-                    if (count of notesToDelete) > 0 then
-                        delete (item 1 of notesToDelete)
-                    else
-                        error "Note with name ${input.noteName} was not found"
-                    end if
-                end tell
-            """.trimIndent()
+                        if (count of notesToDelete) > 0 then
+                            delete (item 1 of notesToDelete)
+                        else
+                            error "Note with name " & noteName & " was not found"
+                        end if
+                    end tell
+                end run
+            """.trimIndent(),
+            args = listOf(input.noteName),
+            timeoutMillis = 30_000,
         )
 
         return "Done"
