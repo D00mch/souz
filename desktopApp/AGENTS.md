@@ -16,6 +16,7 @@ Before changing this module, read the relevant pain-point topics below.
 
 - [Telegram runtime and tool safety](docs/telegram-runtime-and-tool-safety.md) — authorization readiness, cache semantics, selection UX, attachments, and SafeMode.
 - [Clipboard transactions](docs/clipboard-transactions.md) — shared ownership and cancellation of native copy/paste tools.
+- [Calendar and Notes](docs/calendar-and-notes.md) — background automation, EventKit access, launch triggers, and packaged smoke checks.
 - [Process shutdown](docs/process-shutdown.md) — cancel-and-join ordering, shared completion, and resource failure aggregation.
 - [Audio recording](docs/audio-recording.md) — native capture, session publication, and lifecycle locking.
 - [State retention](docs/state-retention.md) — desktop cleanup cadence, file ages, and deletion boundaries.

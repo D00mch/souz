@@ -48,19 +48,25 @@ EOF
         return output.trim()
     }
 
-    fun apple(script: String, args: List<String>, timeoutMillis: Long): String {
+    fun apple(script: String, args: List<String>, timeoutMillis: Long): String =
+        osa(script, args, timeoutMillis, "AppleScript")
+
+    fun javaScript(script: String, args: List<String>, timeoutMillis: Long): String =
+        osa(script, args, timeoutMillis, "JavaScript")
+
+    private fun osa(script: String, args: List<String>, timeoutMillis: Long, language: String): String {
         require(timeoutMillis > 0)
         // A file keeps output draining without a pipe read blocking the process deadline.
         val outputFile = Files.createTempFile("souz-applescript-", ".txt").toFile()
         try {
-            val process = ProcessBuilder(listOf("/usr/bin/osascript", "-e", script, "--") + args)
+            val process = ProcessBuilder(listOf("/usr/bin/osascript", "-l", language, "-e", script, "--") + args)
                 .redirectErrorStream(true)
                 .redirectOutput(outputFile)
                 .start()
             try {
                 process.outputStream.close()
                 if (!process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)) {
-                    throw ShellException("AppleScript timed out after $timeoutMillis ms", -1)
+                    throw ShellException("$language timed out after $timeoutMillis ms", -1)
                 }
                 val output = outputFile.readText().trim()
                 if (process.exitValue() != 0) throw ShellException(output, process.exitValue())

@@ -32,6 +32,7 @@ class ToolListNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolListNo
         val result = bash.apple(
             """
                 tell application "Notes"
+                    launch
                     set noteNames to {}
                     repeat with n in every note
                         copy name of n to end of noteNames
@@ -43,7 +44,9 @@ class ToolListNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolListNo
                         return noteNames as string
                     end if
                 end tell
-            """.trimIndent()
+            """.trimIndent(),
+            args = emptyList(),
+            timeoutMillis = 30_000,
         )
 
         return result.ifBlank { "No notes found" }

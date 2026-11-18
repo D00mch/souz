@@ -21,7 +21,7 @@ class ToolCreateNote(
         val noteText: String
     )
     override val name: String = "CreateNote"
-    override val description: String = "Opens Notes and create new note with text"
+    override val description: String = "Creates a note with text without opening a Notes window"
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Создай заметку, чтобы купить молоко в субботу",
@@ -45,18 +45,17 @@ class ToolCreateNote(
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         if (input.noteText.isBlank()) throw BadInputException("Note text cannot be empty")
-        bash.invoke(
-            ToolRunBashCommand.Input(
-                """
-                osascript <<EOF
+        bash.apple(
+            """
+                on run argv
                     tell application "Notes"
-                     activate
-                     make new note at account 1 with properties {body:"${input.noteText}"}
+                        launch
+                        make new note at account 1 with properties {body:(item 1 of argv)}
                     end tell
-                EOF
-            """.trimIndent()
-            ),
-            meta,
+                end run
+            """.trimIndent(),
+            args = listOf(input.noteText),
+            timeoutMillis = 30_000,
         )
         return "Done"
     }

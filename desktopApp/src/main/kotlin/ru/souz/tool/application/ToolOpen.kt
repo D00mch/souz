@@ -56,14 +56,27 @@ class ToolOpen(
 
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val desktop = Desktop.getDesktop().takeIf { Desktop.isDesktopSupported() }
-        val fixedPath = filesToolUtil.applyDefaultEnvs(input.target)
+        val target = input.target
             .replace("\n","")
             .replace("\\r","")
             .replace("\\\n","")
             .replace("\\\\n","")
             .replace("{","")
             .replace("}","")
+        val fixedPath = filesToolUtil.applyDefaultEnvs(target)
+        val f = File(fixedPath)
+
+        // Bundle identifiers are not filesystem paths. Launch Services also owns
+        // .app bundles; Desktop.open treats them as ordinary documents on macOS.
+        if (!target.contains('/') && target.contains('.') && !f.exists()) {
+            bash.sh("open -b \"\$1\"", target)
+            return "Done"
+        }
+        if (f.isDirectory && f.name.endsWith(".app")) {
+            bash.sh("open \"\$1\"", f.path)
+            return "Done"
+        }
+        val desktop = if (Desktop.isDesktopSupported()) Desktop.getDesktop() else null
 
         if (fixedPath.startsWith("http://") || fixedPath.startsWith("https://")) {
             if (desktop != null && desktop.isSupported(Desktop.Action.BROWSE)) {
@@ -72,7 +85,6 @@ class ToolOpen(
             }
         }
 
-        val f = File(fixedPath)
         if (f.exists()) {
             if (desktop != null && desktop.isSupported(Desktop.Action.OPEN)) {
                 desktop.open(f) // opens file with default app OR opens folder in file manager

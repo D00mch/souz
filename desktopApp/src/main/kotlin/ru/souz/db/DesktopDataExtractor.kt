@@ -121,6 +121,7 @@ class DesktopDataExtractor(
 
         val script = """
 set AppleScript's text item delimiters to linefeed
+tell application "Notes" to launch
 tell application "Notes" to set xs to name of notes
 return xs as text
             """.trimIndent()

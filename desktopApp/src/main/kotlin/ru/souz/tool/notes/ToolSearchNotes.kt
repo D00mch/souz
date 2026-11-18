@@ -37,21 +37,26 @@ class ToolSearchNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolSear
 
         val result = bash.apple(
             """
-                tell application "Notes"
-                    set searchText to "${input.query}"
-                    set matchedNotes to (every note whose name contains searchText or body contains searchText)
+                on run argv
+                    tell application "Notes"
+                        launch
+                        set searchText to item 1 of argv
+                        set matchedNotes to (every note whose name contains searchText or body contains searchText)
 
-                    if (count of matchedNotes) = 0 then
-                        return ""
-                    else
-                        set noteNames to {}
-                        repeat with n in matchedNotes
-                            copy name of n to end of noteNames
-                        end repeat
-                        return noteNames as string
-                    end if
-                end tell
-            """.trimIndent()
+                        if (count of matchedNotes) = 0 then
+                            return ""
+                        else
+                            set noteNames to {}
+                            repeat with n in matchedNotes
+                                copy name of n to end of noteNames
+                            end repeat
+                            return noteNames as string
+                        end if
+                    end tell
+                end run
+            """.trimIndent(),
+            args = listOf(input.query),
+            timeoutMillis = 30_000,
         )
 
         return result.ifBlank { "No matches" }
