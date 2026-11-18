@@ -18,16 +18,14 @@ import ru.souz.backend.http.jsonResponse
 import ru.souz.backend.http.receiveOrV1BadRequest
 import ru.souz.backend.http.requireJsonContentV1
 import ru.souz.backend.http.requireUserIdFromTrustedProxy
+import ru.souz.backend.http.toDto
 import ru.souz.backend.http.toUserSettingsOverrides
 import ru.souz.backend.http.v1ErrorResponses
 
 internal fun Route.settingsRoutes(deps: BackendHttpDependencies) {
     get(BackendHttpRoutes.SETTINGS) {
-        call.respond(
-            BackendV1SettingsResponse(
-                settings = deps.userSettingsService.get(call.requireUserIdFromTrustedProxy()),
-            )
-        )
+        val settings = deps.userSettingsService.get(call.requireUserIdFromTrustedProxy())
+        call.respond(BackendV1SettingsResponse(settings.toDto()))
     }.describeV1(
         operationId = "getUserSettings",
         tag = BackendOpenApiTags.SETTINGS,
@@ -43,14 +41,11 @@ internal fun Route.settingsRoutes(deps: BackendHttpDependencies) {
     patch(BackendHttpRoutes.SETTINGS) {
         call.requireJsonContentV1()
         val request = call.receiveOrV1BadRequest<BackendV1SettingsPatchRequest>()
-        call.respond(
-            BackendV1SettingsResponse(
-                settings = deps.userSettingsService.patch(
-                    userId = call.requireUserIdFromTrustedProxy(),
-                    overrides = request.toUserSettingsOverrides(deps.userSettingsService.namedModelNames),
-                ),
-            )
+        val settings = deps.userSettingsService.patch(
+            userId = call.requireUserIdFromTrustedProxy(),
+            overrides = request.toUserSettingsOverrides(deps.userSettingsService.namedModelNames),
         )
+        call.respond(BackendV1SettingsResponse(settings.toDto()))
     }.describeV1(
         operationId = "patchUserSettings",
         tag = BackendOpenApiTags.SETTINGS,

@@ -30,9 +30,8 @@ import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionUsage
 import ru.souz.backend.keys.model.UserProviderKeyView
 import ru.souz.backend.execution.service.CancelExecutionResult
-import ru.souz.backend.settings.model.EffectiveUserSettings
 import ru.souz.backend.settings.model.PersonalityParameters
-import ru.souz.backend.settings.model.PersonalitySnapshot
+import ru.souz.backend.settings.service.ResolvedUserSettings
 import ru.souz.llms.FileContent
 import ru.souz.llms.restJsonMapper
 
@@ -247,7 +246,7 @@ internal data class PublicClientEventDto(
     val createdAt: String,
 )
 
-internal fun EffectiveUserSettings.toDto(personality: PersonalitySnapshot): BackendV1SettingsDto =
+internal fun ResolvedUserSettings.toDto(): BackendV1SettingsDto = with(effective) {
     BackendV1SettingsDto(
         defaultModel = defaultModel,
         temperature = temperature,
@@ -267,6 +266,7 @@ internal fun EffectiveUserSettings.toDto(personality: PersonalitySnapshot): Back
         useFewShotExamples = useFewShotExamples,
         mcp = mcp.mapValues { (_, server) -> BackendV1McpServerDto(server.enabled, server.description, server.url) },
     )
+}
 
 internal fun UserProviderKeyView.toDto(): BackendV1ProviderKeyDto =
     BackendV1ProviderKeyDto(

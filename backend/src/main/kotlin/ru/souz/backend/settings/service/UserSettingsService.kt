@@ -2,27 +2,35 @@ package ru.souz.backend.settings.service
 
 import java.time.Instant
 import ru.souz.backend.common.BackendLlmSupport
-import ru.souz.backend.http.BackendV1SettingsDto
 import ru.souz.backend.http.invalidV1Request
-import ru.souz.backend.http.toDto
+import ru.souz.backend.settings.model.EffectiveUserSettings
+import ru.souz.backend.settings.model.PersonalitySnapshot
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.llms.findLLMModel
 import ru.souz.llms.LlmProvider
+
+data class ResolvedUserSettings(val effective: EffectiveUserSettings, val personality: PersonalitySnapshot)
 
 class UserSettingsService(
     private val userSettingsRepository: UserSettingsRepository,
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
 ) {
     val namedModelNames: Set<String> get() = effectiveSettingsResolver.namedModelNames
+    val advertisedToolNames: Set<String> get() = effectiveSettingsResolver.advertisedToolNames
 
-    suspend fun get(userId: String): BackendV1SettingsDto =
-        effectiveSettingsResolver.resolve(userId).toDto(userSettingsRepository.personality(userId))
-
-    suspend fun patch(
+    suspend fun get(
         userId: String,
-        overrides: UserSettingsOverrides,
-    ): BackendV1SettingsDto {
+        userManagedProviders: Set<LlmProvider>? = null,
+        availableToolNames: Set<String> = advertisedToolNames,
+    ): ResolvedUserSettings = ResolvedUserSettings(
+        effectiveSettingsResolver.resolve(
+            userId, userManagedProviders = userManagedProviders, availableToolNames = availableToolNames,
+        ),
+        userSettingsRepository.personality(userId),
+    )
+
+    suspend fun patch(userId: String, overrides: UserSettingsOverrides): ResolvedUserSettings {
         if (overrides.defaultModel?.let(::findLLMModel)?.provider == LlmProvider.GIGA) {
             throw invalidV1Request(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
         }

@@ -6,8 +6,7 @@ import ru.souz.backend.http.toDto
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.llm.hasCompleteCodexOAuthCredentials
 import ru.souz.backend.security.RequestIdentity
-import ru.souz.backend.settings.repository.UserSettingsRepository
-import ru.souz.backend.settings.service.EffectiveSettingsResolver
+import ru.souz.backend.settings.service.UserSettingsService
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
@@ -15,23 +14,18 @@ import ru.souz.llms.LlmProvider
 
 class BackendBootstrapService(
     private val settingsProvider: SettingsProvider,
-    private val effectiveSettingsResolver: EffectiveSettingsResolver,
+    private val userSettingsService: UserSettingsService,
     private val featureFlags: BackendFeatureFlags,
     private val userProviderKeyRepository: UserProviderKeyRepository,
-    private val userSettingsRepository: UserSettingsRepository,
 ) {
     suspend fun response(identity: RequestIdentity): BootstrapResponse {
-        val advertisedToolNames = effectiveSettingsResolver.advertisedToolNames
+        val advertisedToolNames = userSettingsService.advertisedToolNames
         val buildProfile = LlmBuildProfile(settingsProvider)
         val userManagedProviders = userProviderKeyRepository.list(identity.userId)
             .mapNotNullTo(linkedSetOf()) { key ->
                 key.provider.takeIf { it in BackendLlmSupport.userManagedKeyProviders }
             }
-        val effectiveSettings = effectiveSettingsResolver.resolve(
-            userId = identity.userId,
-            userManagedProviders = userManagedProviders,
-            availableToolNames = advertisedToolNames,
-        )
+        val settings = userSettingsService.get(identity.userId, userManagedProviders, advertisedToolNames)
         val capabilityProviders = buildSet {
             addAll(buildProfile.availableProviders.filter { it in BackendLlmSupport.chatProviders })
             addAll(userManagedProviders)
@@ -55,14 +49,14 @@ class BackendBootstrapService(
                         }
                         model.provider in capabilityProviders
                     }
-                    .map { modelCapability(it, userManagedProviders) } + effectiveSettingsResolver.namedModelNames.map {
+                    .map { modelCapability(it, userManagedProviders) } + userSettingsService.namedModelNames.map {
                         BootstrapModelCapability(provider = "openai", model = it, serverManagedKey = true, userManagedKey = false)
                     },
                 tools = advertisedToolNames.map { toolName ->
                     BootstrapToolCapability(name = toolName, enabled = true)
                 },
             ),
-            settings = effectiveSettings.toDto(userSettingsRepository.personality(identity.userId)),
+            settings = settings.toDto(),
         )
     }
 
