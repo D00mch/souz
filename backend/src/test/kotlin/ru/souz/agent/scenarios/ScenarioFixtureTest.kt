@@ -18,7 +18,13 @@ class ScenarioFixtureTest {
     fun `theatre fixture requires a theatre search`() = runTest {
         val fixture = ScenarioFixture(EvaluationCase.THEATRE, appointment)
 
-        for (query in listOf(listOf("find", "--type", "movie"), listOf("find"), listOf("ideas", "--type", "theatre"))) {
+        val invalidQueries = listOf(
+            listOf("find", "--type", "movie"),
+            listOf("find"),
+            listOf("ideas", "--type", "theatre"),
+            listOf("find", "--type", "theatre", "extra"),
+        )
+        for (query in invalidQueries) {
             val result = fixture.commands.execute(theatreRequest(query))
             assertEquals(1, result.exitCode, query.joinToString(" "))
             assertEquals("", result.stdout)
@@ -31,6 +37,49 @@ class ScenarioFixtureTest {
         val limited = fixture.commands.execute(theatreRequest(listOf("find", "--type", "theatre", "--limit", "1")))
         assertEquals(0, limited.exitCode)
         assertEquals(1, limited.stdout.lineSequence().count { it.startsWith("EVENT\t") })
+    }
+
+    @Test
+    fun `train fixture rejects positional arguments and malformed options`() = runTest {
+        val fixture = ScenarioFixture(EvaluationCase.TRAIN, appointment)
+        val request = trainRequest(emptyList())
+        val invalidQueries = listOf(
+            listOf("find") + request.args,
+            request.args + "extra",
+            request.args + "--limit",
+            request.args + listOf("--unknown", "1"),
+            request.args + listOf("--sort", "unknown"),
+        )
+        for (args in invalidQueries) {
+            val result = fixture.commands.execute(request.copy(args = args))
+            assertEquals(1, result.exitCode, args.joinToString(" "))
+            assertEquals("", result.stdout)
+        }
+
+        val result = fixture.commands.execute(trainRequest(listOf("--limit=2")))
+        assertEquals(0, result.exitCode)
+        assertEquals(2, result.stdout.lineSequence().count { it.startsWith("TRAIN\t") })
+    }
+
+    @Test
+    fun `doctor fixture rejects malformed search options`() = runTest {
+        val fixture = ScenarioFixture(EvaluationCase.DOCTOR_SEND, appointment)
+        val request = SandboxCommandRequest(
+            runtime = SandboxCommandRuntime.BASH,
+            scriptPath = "/skills/doctor-appointment/scripts/doctor.sh",
+            args = listOf("find", "--city", "Москва", "--near", "Новослободская", "--speciality", "терапевт", "--limit", "5"),
+            environment = mapOf("SOUZ_SKILL_ID" to "doctor-appointment"),
+        )
+        val invalidOptions = listOf(listOf("extra"), listOf("--max-price"), listOf("--max-price", "unknown"))
+        for (options in invalidOptions) {
+            val result = fixture.commands.execute(request.copy(args = request.args + options))
+            assertEquals(1, result.exitCode, options.joinToString(" "))
+            assertEquals("", result.stdout)
+        }
+
+        val result = fixture.commands.execute(request)
+        assertEquals(0, result.exitCode)
+        assertEquals(5, result.stdout.lineSequence().count { it.startsWith("DOCTOR\t") })
     }
 
     @Test

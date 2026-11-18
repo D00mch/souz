@@ -41,7 +41,7 @@ internal class ScenarioFixture(private val case: EvaluationCase, appointment: Lo
         LLMRequest.Message(LLMMessageRole.assistant, "Помочь подобрать врача?"),
     ) else emptyList()
 
-    private data class SearchResult(val args: List<String>, val output: String)
+    private data class SearchResult(val options: Map<String, String>, val output: String)
 
     private data class Turn(
         var answer: String = "",
@@ -59,9 +59,10 @@ internal class ScenarioFixture(private val case: EvaluationCase, appointment: Lo
                 request.runtime == SandboxCommandRuntime.BASH &&
                 request.scriptPath?.replace('\\', '/')?.endsWith("/${task.script}") == true &&
                 request.script == null
-            val data = if (matchesScript) task.search(request.args) else null
-            if (data == null) return SandboxCommandResult(1, "", "No result for this fixture query.")
-            evidence[turn].searches += SearchResult(request.args, data)
+            val options = if (matchesScript) task.parseQuery(request.args) else null
+            val data = options?.let(task.search)
+            if (options == null || data == null) return SandboxCommandResult(1, "", "No result for this fixture query.")
+            evidence[turn].searches += SearchResult(options, data)
             return SandboxCommandResult(0, data, "")
         }
     }
@@ -93,7 +94,7 @@ internal class ScenarioFixture(private val case: EvaluationCase, appointment: Lo
             val last = first + task.turns.lastIndex
             val (rowType, rowCount) = task.initialRows
             assertTrue(evidence[first].searches.any { search ->
-                task.initialQuery(search.args) &&
+                task.initialQuery(search.options) &&
                     search.output.lineSequence().count { it.startsWith("$rowType\t") } == rowCount
             },
                 "${task.skillId} did not return the expected initial search results.")
@@ -116,7 +117,7 @@ internal class ScenarioFixture(private val case: EvaluationCase, appointment: Lo
 
     private fun verifyDoctorBudgetSearch() {
         val search = assertNotNull(
-            evidence[1].searches.lastOrNull { it.args.option("--max-price")?.toIntOrNull() == BUDGET },
+            evidence[1].searches.lastOrNull { it.options["--max-price"]?.toIntOrNull() == BUDGET },
             "${doctor.skillId} must rerun the search with a price limit of $BUDGET on the budget turn.",
         )
         val links = search.output.lineSequence()
@@ -131,13 +132,36 @@ internal class ScenarioFixture(private val case: EvaluationCase, appointment: Lo
 private data class ScenarioTask(
     val skillId: String,
     val script: String,
+    val command: String? = null,
+    val optionsWithValues: Set<String>,
+    val switches: Set<String> = emptySet(),
     val turns: List<String>,
-    val search: (List<String>) -> String?,
+    val search: (Map<String, String>) -> String?,
     val expectedLinks: Set<String>,
     val initialRows: Pair<String, Int>,
-    val initialQuery: (List<String>) -> Boolean = { true },
+    val initialQuery: (Map<String, String>) -> Boolean = { true },
     val choice: Pair<Int, String>? = null,
-)
+) {
+    fun parseQuery(args: List<String>): Map<String, String>? {
+        if (command != null && args.firstOrNull() != command) return null
+        val parsed = mutableMapOf<String, String>()
+        var index = if (command == null) 0 else 1
+        while (index < args.size) {
+            val token = args[index++]
+            val option = token.substringBefore('=')
+            when {
+                token in switches -> parsed[option] = ""
+                option in optionsWithValues -> {
+                    val value = if (token == option) args.getOrNull(index++) else token.substringAfter('=')
+                    if (value.isNullOrBlank() || value.startsWith("--")) return null
+                    parsed[option] = value
+                }
+                else -> return null
+            }
+        }
+        return parsed
+    }
+}
 
 private data class Doctor(val name: String, val surname: String, val price: Int, val reviews: Int, val slug: String) {
     val link = "https://booking.example/doctor/$slug"
@@ -158,6 +182,9 @@ private fun doctorTask(appointment: LocalDate, case: EvaluationCase): ScenarioTa
     return ScenarioTask(
         skillId = "doctor-appointment",
         script = "scripts/doctor.sh",
+        command = "find",
+        optionsWithValues = setOf("--city", "--speciality", "--near", "--radius", "--order", "--max-price", "--days", "--limit"),
+        switches = setOf("--kids", "--only-free", "--online"),
         turns = buildList {
             add("Найди пять терапевтов в Москве рядом с Новослободской в ближайшую среду после сегодняшнего дня в 18:00. Пока только список.")
             add(if (case == EvaluationCase.DOCTOR_SEND) {
@@ -169,17 +196,21 @@ private fun doctorTask(appointment: LocalDate, case: EvaluationCase): ScenarioTa
             add(if (choose) "Пришли в Телеграм ссылку на него." else "Пришли в Телеграм обе ссылки на варианты до 2500 рублей.")
         },
         search = { args ->
-            if (args.firstOrNull() != "find" ||
-                !args.option("--city").equals("Москва", ignoreCase = true) ||
-                !args.option("--speciality").equals("терапевт", ignoreCase = true) ||
-                args.option("--near")?.contains("новослободск", ignoreCase = true) != true ||
+            val priceCap = args.intOption("--max-price", Int.MAX_VALUE)
+            val limit = args.intOption("--limit", 3)?.coerceIn(1, 8)
+            if (!args["--city"].equals("Москва", ignoreCase = true) ||
+                !args["--speciality"].equals("терапевт", ignoreCase = true) ||
+                args["--near"]?.contains("новослободск", ignoreCase = true) != true ||
+                priceCap == null || limit == null ||
+                args.intOption("--radius", 3) == null || args.intOption("--days", 7) == null ||
+                (args["--order"] ?: "rating") !in DOCTOR_ORDERS ||
                 "--online" in args || "--kids" in args
             ) {
                 null
             } else {
-                val priceCap = args.option("--max-price")?.toIntOrNull() ?: Int.MAX_VALUE
-                val limit = args.option("--limit")?.toIntOrNull()?.coerceAtLeast(0) ?: 3
-                val found = doctors.filter { it.price <= priceCap }.take(limit)
+                val matches = doctors.filter { it.price <= priceCap }
+                val ordered = if (args["--order"] == "price") matches.sortedBy { it.price } else matches
+                val found = ordered.take(limit)
                 if (found.isEmpty()) "NO_RESULTS" else buildList {
                     add("SEARCH\tтерапевт\tМосква\tНовослободская\tнайдено: ${found.size}")
                     found.forEach { doctor ->
@@ -191,7 +222,7 @@ private fun doctorTask(appointment: LocalDate, case: EvaluationCase): ScenarioTa
         },
         expectedLinks = if (choose) setOf(selected.link) else eligible.mapTo(mutableSetOf()) { it.link },
         initialRows = "DOCTOR" to doctors.size,
-        initialQuery = { it.option("--max-price") == null && (it.option("--limit")?.toIntOrNull() ?: 3) >= doctors.size },
+        initialQuery = { "--max-price" !in it },
         choice = if (choose) 2 to selected.surname else null,
     )
 }
@@ -207,25 +238,26 @@ private fun trainTask(date: LocalDate): ScenarioTask {
     return ScenarioTask(
         skillId = "train-tickets",
         script = "scripts/trains.sh",
+        optionsWithValues = setOf("--from", "--to", "--date", "--after", "--before", "--class", "--name", "--sort", "--limit"),
+        switches = setOf("--overnight"),
         turns = listOf(
             "Покажи два прямых поезда из Санкт-Петербурга в Рыбинск на $date. Пока только расписание.",
             "Пришли в Телеграм ссылку на тот, который отправляется после полудня.",
         ),
         search = { args ->
-            val from = args.option("--from").orEmpty().lowercase()
-            val limit = args.searchLimit()
-            val after = if ("--after" in args) args.option("--after") else "00:00"
-            val before = if ("--before" in args) args.option("--before") else "23:59"
+            val from = args["--from"].orEmpty().lowercase()
+            val limit = args.intOption("--limit", 5)?.coerceIn(1, 15)
+            val after = args["--after"] ?: "00:00"
+            val before = args["--before"] ?: "23:59"
             if (from !in SAINT_PETERSBURG_NAMES ||
-                !args.option("--to").equals("Рыбинск", ignoreCase = true) ||
-                args.option("--date") != date.toString() ||
-                limit == null || after == null || before == null ||
+                !args["--to"].equals("Рыбинск", ignoreCase = true) ||
+                args["--date"] != date.toString() || limit == null ||
                 !TRAIN_TIME.matches(after) || !TRAIN_TIME.matches(before) ||
-                args.any { it.startsWith("--") && it !in TRAIN_OPTIONS }
+                (args["--sort"] ?: "departure") !in TRAIN_SORTS
             ) {
                 null
             } else if ("--overnight" in args || "--name" in args ||
-                ("--class" in args && !args.option("--class").equals("купе", ignoreCase = true))
+                ("--class" in args && !args["--class"].equals("купе", ignoreCase = true))
             ) {
                 "NO_MATCH"
             } else {
@@ -250,17 +282,18 @@ private fun theatreTask(date: LocalDate): ScenarioTask {
     return ScenarioTask(
         skillId = "afisha-where-to-go-cinema-theatre-concerts-tickets",
         script = "scripts/afisha.sh",
+        command = "find",
+        optionsWithValues = setOf("--city", "--type", "--date", "--limit"),
+        switches = setOf("--with-dates"),
         turns = listOf(
             "Подбери два спектакля в Москве на $date. Пока только варианты со временем начала.",
             "Пришли в Телеграм ссылку на спектакль, который начинается в 19:30.",
         ),
         search = { args ->
-            val limit = args.searchLimit()
-            if (args.firstOrNull() != "find" ||
-                args.option("--type") != "theatre" ||
-                !args.option("--city").equals("Москва", ignoreCase = true) ||
-                args.option("--date") != date.toString() ||
-                limit == null || args.any { it.startsWith("--") && it !in THEATRE_OPTIONS }
+            val limit = args.intOption("--limit", 5)
+            if (args["--type"] != "theatre" ||
+                !args["--city"].equals("Москва", ignoreCase = true) ||
+                args["--date"] != date.toString() || limit == null || limit < 1
             ) {
                 null
             } else {
@@ -273,16 +306,15 @@ private fun theatreTask(date: LocalDate): ScenarioTask {
     )
 }
 
-private fun List<String>.option(name: String): String? =
-    lastIndexOf(name).takeIf { it >= 0 }?.let { getOrNull(it + 1) }
-
-private fun List<String>.searchLimit(): Int? =
-    if ("--limit" in this) option("--limit")?.toIntOrNull()?.takeIf { it > 0 } else 5
+private fun Map<String, String>.intOption(name: String, default: Int): Int? {
+    val value = this[name] ?: return default
+    return value.toIntOrNull()
+}
 
 private const val TELEGRAM_ID = "telegram-fixture-1050"
 private const val BUDGET = 2500
+private val DOCTOR_ORDERS = setOf("rating", "price", "experience")
 private val SAINT_PETERSBURG_NAMES = setOf("санкт-петербург", "санкт петербург", "питер", "спб")
 private val TRAIN_TIME = Regex("""(?:[01]\d|2[0-3]):[0-5]\d""")
-private val TRAIN_OPTIONS = setOf("--from", "--to", "--date", "--after", "--before", "--overnight", "--class", "--name", "--sort", "--limit")
-private val THEATRE_OPTIONS = setOf("--city", "--type", "--date", "--limit", "--with-dates")
+private val TRAIN_SORTS = setOf("departure", "duration")
 private val URL = Regex("""https?://[^\s<>()\[\]"']+""")
