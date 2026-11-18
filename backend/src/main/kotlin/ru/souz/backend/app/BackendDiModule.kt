@@ -543,7 +543,7 @@ fun backendDiModule(
     bindSingleton {
         BackendBootstrapService(
             settingsProvider = instance(),
-            effectiveSettingsResolver = instance(),
+            userSettingsService = instance(),
             featureFlags = instance(),
             userProviderKeyRepository = instance(),
         )

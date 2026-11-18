@@ -1,6 +1,5 @@
 package ru.souz.backend.settings.service
 
-import ru.souz.backend.settings.model.PersonalitySnapshot
 import io.mockk.coEvery
 import io.mockk.mockk
 import java.util.Locale
@@ -92,7 +91,6 @@ class EffectiveSettingsResolverTest {
             }
         }
         val settingsRepository = mockk<UserSettingsRepository>()
-        coEvery { settingsRepository.personality(any()) } returns PersonalitySnapshot()
         coEvery { settingsRepository.get(USER) } returns
             if (case.newUser) null else UserSettings(USER, defaultModel = case.model)
         coEvery { settingsRepository.save(any()) } answers { firstArg<UserSettings>().also { saved = it.defaultModel } }
