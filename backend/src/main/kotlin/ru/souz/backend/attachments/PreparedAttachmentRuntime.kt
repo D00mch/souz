@@ -39,8 +39,7 @@ internal class PreparedAttachmentRuntime(sandboxFactory: RuntimeSandboxFactory) 
     fun isAlive(id: UUID): Boolean {
         val path = marker(id)
         // Opening and closing a second channel can release this JVM's locks on some systems.
-        if (path in liveInJvm) return true
-        return try {
+        return path in liveInJvm || try {
             FileChannel.open(path, WRITE).use { channel ->
                 val probe = channel.tryLock() ?: return true
                 probe.use { Files.deleteIfExists(path) }
@@ -67,6 +66,6 @@ internal class PreparedAttachmentRuntime(sandboxFactory: RuntimeSandboxFactory) 
     private fun marker(id: UUID): Path = checkNotNull(directory).resolve("$id.lock")
 
     private companion object {
-        val liveInJvm = ConcurrentHashMap.newKeySet<Path>()
+        val liveInJvm: MutableSet<Path> = ConcurrentHashMap.newKeySet()
     }
 }

@@ -17,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.storage.postgres.hasActiveAttachmentOwnerExecution
@@ -208,6 +209,6 @@ internal class PreparedAttachmentWorkspace(
         const val RECORD_DIRECTORY = "records"
         const val MAX_FILES = 128
         const val MAX_BYTES = 512L * 1024 * 1024
-        val logger = LoggerFactory.getLogger(PreparedAttachmentWorkspace::class.java)
+        val logger: Logger = LoggerFactory.getLogger(PreparedAttachmentWorkspace::class.java)
     }
 }
