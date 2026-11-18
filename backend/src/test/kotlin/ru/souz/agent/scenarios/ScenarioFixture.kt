@@ -104,8 +104,8 @@ internal class ScenarioFixture(private val case: EvaluationCase, appointment: Lo
                 "${task.skillId} must deliver exactly one Telegram message on the final turn.")
             val links = URL.findAll(evidence[last].deliveries.single())
                 .map { it.value.trimEnd('.', ',', ';', '!', '?') }.toList()
-            assertTrue(links.toSet() == task.expectedLinks,
-                "${task.skillId} must deliver only links for the user's requested result.")
+            assertEquals(task.expectedLinks.sorted(), links.sorted(),
+                "${task.skillId} must deliver each requested link exactly once.")
             first = last + 1
         }
     }
