@@ -157,6 +157,23 @@ class PluginSdkReleaseTest(unittest.TestCase):
             with self.subTest(action=action):
                 self.assertRegex(action, r"^[\w./-]+@[0-9a-f]{40}$")
 
+    def test_release_jdk_is_authenticated_before_gradle_and_secrets(self):
+        publish = WORKFLOW.split("\n  publish:\n", 1)[1]
+        before_jdk, after_jdk = publish.split("      - name: Set up JDK\n", 1)
+        jdk, after_jdk = after_jdk.split("      - name:", 1)
+        # v6.3.0 enforces explicit signature verification with the bundled Adoptium key.
+        # Force a download so an unverified runner tool-cache entry cannot bypass it.
+        self.assertIn("uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880", jdk)
+        for setting in ["distribution: temurin", "java-version: 21", "force-download: true",
+                        "verify-signature: true"]:
+            self.assertRegex(jdk, rf"(?m)^          {re.escape(setting)}$")
+        self.assertNotIn("jdk-file:", jdk)
+        self.assertNotIn("verify-signature-public-key:", jdk)
+        self.assertNotIn("./gradlew", before_jdk)
+        self.assertNotIn("${{ secrets.", before_jdk)
+        self.assertIn("./gradlew", after_jdk)
+        self.assertIn("${{ secrets.MAVEN_SIGNING_KEY }}", after_jdk)
+
     def test_release_dependencies_require_reviewed_hashes(self):
         commands = [line.strip() for line in WORKFLOW.splitlines() if "./gradlew " in line]
         self.assertEqual(len(commands), 2)
@@ -216,6 +233,12 @@ class GradleDependencyVerificationTest(unittest.TestCase):
         metadata = ET.parse(VERIFICATION_METADATA)
         for platform in ["linux-x64", "linux-arm64", "macos-x64", "macos-arm64",
                          "windows-x64", "windows-arm64"]:
+            desktop = f"desktop-jvm-{platform}"
+            component = metadata.find("v:components/v:component[@group='org.jetbrains.compose.desktop']"
+                                      f"[@name='{desktop}'][@version='1.9.3']", VERIFICATION_NS)
+            self.assertIsNotNone(component, platform)
+            self.assertIsNotNone(component.find(f"v:artifact[@name='{desktop}-1.9.3.pom']/v:sha256",
+                                                VERIFICATION_NS))
             name = f"skiko-awt-runtime-{platform}"
             component = metadata.find(f"v:components/v:component[@group='org.jetbrains.skiko']"
                                       f"[@name='{name}'][@version='0.9.22.2']", VERIFICATION_NS)
@@ -229,6 +252,23 @@ class GradleDependencyVerificationTest(unittest.TestCase):
                            "linux_arm64_gnu_ssl3", "linux_amd64_gnu_ssl3"]:
             self.assertIsNotNone(component.find(
                 f"v:artifact[@name='tdlight-natives-4.0.558-{classifier}.jar']/v:sha256", VERIFICATION_NS))
+
+    def test_ci_build_metadata_is_pinned(self):
+        metadata = ET.parse(VERIFICATION_METADATA)
+        # Parent/BOM metadata is resolved even when its dependencies lose version selection.
+        for group, name, version, extensions in [
+            ("com.fasterxml.jackson", "jackson-base", "2.21.3", ["pom"]),
+            ("org.junit", "junit-bom", "5.14.1", ["pom", "module"]),
+            ("org.junit", "junit-bom", "5.9.1", ["pom", "module"]),
+        ]:
+            component = metadata.find(f"v:components/v:component[@group='{group}']"
+                                      f"[@name='{name}'][@version='{version}']", VERIFICATION_NS)
+            self.assertIsNotNone(component, (group, name, version))
+            for extension in extensions:
+                checksum = component.find(f"v:artifact[@name='{name}-{version}.{extension}']/v:sha256",
+                                          VERIFICATION_NS)
+                self.assertIsNotNone(checksum)
+                self.assertRegex(checksum.get("value"), r"^[0-9a-f]{64}$")
 
     def resolve_plugin(self, version="0.37.0"):
         repository = self.root / "repository/com/vanniktech/gradle-maven-publish-plugin" / version

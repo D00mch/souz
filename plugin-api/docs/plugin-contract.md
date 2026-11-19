@@ -70,7 +70,8 @@ Push a tag matching the SDK version, such as `plugin-api-v2.0.0`, at a reviewed 
 rejects missing approval protection, moved tags, and commits outside `kmp` history before the
 publishing job starts. A release reviewer must check the tagged commit and CI before approving
 the environment deployment. Both jobs check out the triggering commit by SHA. The publishing
-job uses pinned actions and disables Gradle cache restoration before verifying a staged
+job uses pinned actions, downloads a fresh Temurin JDK with mandatory signature verification,
+and disables Gradle cache restoration before verifying a staged
 publication, signing and releasing the SDK, waiting for Maven Central availability, and building
 the standalone Hello project against the public repository. Downloading released SDK versions
 does not require the publishing token or signing key. Keep
