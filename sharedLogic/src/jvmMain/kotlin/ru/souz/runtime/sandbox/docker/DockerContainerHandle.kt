@@ -1,5 +1,9 @@
 package ru.souz.runtime.sandbox.docker
 
+import java.nio.file.Path
+import ru.souz.llms.restJsonMapper
+import ru.souz.runtime.sandbox.PreparedAttachmentMount
+
 internal class DockerContainerHandle(
     private val dockerCli: DockerCli,
     private val layout: DockerSandboxLayout,
@@ -83,6 +87,10 @@ internal class DockerContainerHandle(
                 add(containerName)
                 add("--mount")
                 add("type=bind,src=${layout.hostRoot},dst=${layout.containerRoot}")
+                layout.hostPreparedAttachments?.let { source ->
+                    add("--mount")
+                    add("type=bind,src=$source,dst=${PreparedAttachmentMount.SANDBOX_PATH},readonly")
+                }
                 add("--workdir")
                 add(layout.runtimePaths.homePath)
                 add("--env")
@@ -108,7 +116,7 @@ internal class DockerContainerHandle(
                 "container",
                 "inspect",
                 "--format",
-                "{{.State.Running}}\t{{range .Mounts}}{{if eq .Destination \"/souz\"}}{{.Source}}{{end}}{{end}}",
+                "{{json .Mounts}}|{{.State.Running}}",
                 containerName,
             ),
         )
@@ -116,13 +124,16 @@ internal class DockerContainerHandle(
             return null
         }
         val output = inspection.stdout.trimEnd()
-        val running = output.substringBefore('\t').trim().equals("true", ignoreCase = true)
-        val mountedHostRoot = output.substringAfter('\t', missingDelimiterValue = "").trim()
-            .takeIf(String::isNotEmpty)
-            ?.let { normalizeHostPath(java.nio.file.Path.of(it)) }
+        val mounts = restJsonMapper.readTree(output.substringBeforeLast('|'))
+        fun mount(destination: String) =
+            mounts.firstOrNull { it.path("Type").asText() == "bind" && it.path("Destination").asText() == destination }
+        fun mountSource(destination: String): Path? =
+            mount(destination)?.path("Source")?.asText()?.takeIf(String::isNotEmpty)?.let { normalizeHostPath(Path.of(it)) }
         return DockerContainerState(
-            running = running,
-            mountedHostRoot = mountedHostRoot,
+            running = output.substringAfterLast('|') == "true",
+            mountedHostRoot = mountSource(layout.containerRoot),
+            mountedAttachments = mountSource(PreparedAttachmentMount.SANDBOX_PATH),
+            attachmentsReadOnly = mount(PreparedAttachmentMount.SANDBOX_PATH)?.path("RW")?.asText() == "false",
         )
     }
 
@@ -134,6 +145,11 @@ internal class DockerContainerHandle(
         check(mountedHostRoot == layout.hostRoot) {
             "Docker sandbox container '$containerName' already exists with a different host root: expected ${layout.hostRoot}, actual $mountedHostRoot"
         }
+        layout.hostPreparedAttachments?.let { expected ->
+            check(existingContainer.mountedAttachments == expected && existingContainer.attachmentsReadOnly) {
+                "Docker sandbox container '$containerName' does not have the expected read-only attachment mount."
+            }
+        }
     }
 
     private companion object {
@@ -143,5 +159,7 @@ internal class DockerContainerHandle(
 
 internal data class DockerContainerState(
     val running: Boolean,
-    val mountedHostRoot: java.nio.file.Path?,
+    val mountedHostRoot: Path?,
+    val mountedAttachments: Path?,
+    val attachmentsReadOnly: Boolean,
 )

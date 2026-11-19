@@ -21,25 +21,15 @@ data class PreparedAttachment(val attachment: FileContent, val path: String)
  * Moves owner-scoped stored files between S3 and the invoking user's sandbox.
  * Workspace transfers require Docker isolation; stored-file selection uses owner-scoped storage directly.
  */
-class BackendAttachmentAccess(
+class BackendAttachmentAccess internal constructor(
     private val storage: AttachmentStorage,
     private val sandboxResolver: ToolInvocationRuntimeSandboxResolver,
+    private val preparedWorkspace: PreparedAttachmentWorkspace,
 ) {
     suspend fun prepare(meta: ToolInvocationMeta, fileId: String): PreparedAttachment = safely("prepare") {
-        val fs = isolatedFileSystem(meta)
-        val (file, bytes) = storage.load(meta.userId, attachmentId(fileId))
-        // Rebuild from immutable S3 bytes even if a previous working copy has been edited.
-        val root = fs.runtimePaths.workspaceRootPath ?: throw AttachmentException("attachment_workspace_unavailable")
-        val path = runInterruptible(Dispatchers.IO) {
-            val directory = fs.resolvePath("$root/attachments/${file.id}")
-            if (!fs.isPathSafe(directory) || directory.isSymbolicLink) throw AttachmentException("attachment_path_forbidden")
-            fs.createDirectory(directory)
-            val target = fs.resolvePath("${directory.path}/${file.name}")
-            if (!fs.isPathSafe(target) || target.isSymbolicLink) throw AttachmentException("attachment_path_forbidden")
-            fs.writeBytes(target, bytes)
-            target.path
-        }
-        PreparedAttachment(file.toContent(), path)
+        isolatedFileSystem(meta)
+        val file = storage.get(meta.userId, attachmentId(fileId))
+        preparedWorkspace.prepare(file) { storage.read(file) }
     }
 
     /** Saves a completed sandbox file; the same bytes and name within one execution reuse the stored object. */

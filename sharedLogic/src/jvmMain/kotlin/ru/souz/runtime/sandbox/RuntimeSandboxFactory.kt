@@ -2,7 +2,9 @@ package ru.souz.runtime.sandbox
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
+import java.security.MessageDigest
 import java.util.Base64
+import java.util.HexFormat
 import ru.souz.db.SettingsProvider
 import ru.souz.paths.DefaultSouzPaths
 import ru.souz.runtime.sandbox.docker.DockerRuntimeSandbox
@@ -40,13 +42,15 @@ class DefaultRuntimeSandboxFactory(
     private val localWorkspaceRoot: Path? = runCatching { Path.of(System.getProperty("user.dir")) }.getOrNull(),
     private val dockerHostRoot: Path = defaultDockerHostRoot(localStateRoot),
     private val dockerImageName: String = DockerRuntimeSandbox.DEFAULT_IMAGE_NAME,
-    private val dockerSandboxCreator: (SandboxScope, Path, String, String) -> DockerRuntimeSandbox =
-        { scope, hostRoot, imageName, containerName ->
+    private val preparedAttachmentsEnabled: Boolean = false,
+    private val dockerSandboxCreator: (SandboxScope, Path, String, String, PreparedAttachmentMount?) -> DockerRuntimeSandbox =
+        { scope, hostRoot, imageName, containerName, attachments ->
             DockerRuntimeSandbox(
                 scope = scope,
                 hostRoot = hostRoot,
                 imageName = imageName,
                 containerName = containerName,
+                preparedAttachments = attachments,
             )
         },
 ) : RuntimeSandboxFactory {
@@ -55,11 +59,13 @@ class DefaultRuntimeSandboxFactory(
 
         SandboxMode.DOCKER -> {
             val hostRoot = dockerHostRoot.resolve(scope.storageKey())
+            val attachments = attachmentMount(scope)
             dockerSandboxCreator(
                 scope,
                 hostRoot,
                 dockerImageName,
-                DockerRuntimeSandbox.defaultContainerName(scope),
+                DockerRuntimeSandbox.defaultContainerName(scope, withPreparedAttachments = attachments != null),
+                attachments,
             )
         }
     }
@@ -67,7 +73,23 @@ class DefaultRuntimeSandboxFactory(
     /** Reads existing storage without creating user directories or contacting Docker. */
     override fun fileSystem(scope: SandboxScope): SandboxFileSystem = when (modeResolver.resolve()) {
         SandboxMode.LOCAL -> localSandbox(scope).fileSystem
-        SandboxMode.DOCKER -> DockerSandboxFileSystem(DockerSandboxLayout(dockerHostRoot.resolve(scope.storageKey())))
+        SandboxMode.DOCKER -> DockerSandboxFileSystem(
+            DockerSandboxLayout(dockerHostRoot.resolve(scope.storageKey()), preparedAttachments = attachmentMount(scope)),
+        )
+    }
+
+    override fun preparedAttachmentsRoot(): Path? =
+        attachmentRoot.takeIf { preparedAttachmentsEnabled && modeResolver.resolve() == SandboxMode.DOCKER }
+
+    override fun preparedAttachments(scope: SandboxScope): PreparedAttachmentMount? =
+        if (modeResolver.resolve() == SandboxMode.DOCKER) attachmentMount(scope) else null
+
+    private val attachmentRoot = dockerHostRoot.toAbsolutePath().normalize().resolve(".managed-attachments")
+
+    private fun attachmentMount(scope: SandboxScope): PreparedAttachmentMount? {
+        if (!preparedAttachmentsEnabled) return null
+        val digest = MessageDigest.getInstance("SHA-256").digest(scope.storageKey().toByteArray(StandardCharsets.UTF_8))
+        return PreparedAttachmentMount(attachmentRoot.resolve("files").resolve(HexFormat.of().formatHex(digest)))
     }
 
     private fun localSandbox(scope: SandboxScope) = LocalRuntimeSandbox(

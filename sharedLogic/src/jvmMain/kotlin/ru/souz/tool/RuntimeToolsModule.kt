@@ -20,8 +20,11 @@ import ru.souz.tool.web.internal.WebResearchClient
 fun runtimeToolsDiModule(
     includeWebImageSearch: Boolean = true,
     scopeResolver: ToolInvocationSandboxScopeResolver = defaultToolInvocationSandboxScopeResolver(),
+    preparedAttachmentsEnabled: Boolean = false,
 ): DI.Module = DI.Module("runtimeTools") {
-    bindSingleton<RuntimeSandboxFactory> { DefaultRuntimeSandboxFactory(settingsProvider = instance()) }
+    bindSingleton<RuntimeSandboxFactory> {
+        DefaultRuntimeSandboxFactory(settingsProvider = instance(), preparedAttachmentsEnabled = preparedAttachmentsEnabled)
+    }
     import(
         portableRuntimeToolsDiModule(
             scopeResolver = scopeResolver,

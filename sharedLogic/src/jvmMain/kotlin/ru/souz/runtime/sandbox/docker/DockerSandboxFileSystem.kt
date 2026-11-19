@@ -52,10 +52,8 @@ internal class DockerSandboxFileSystem(
 
     override fun isPathSafe(path: SandboxPathInfo): Boolean {
         val hostPath = layout.containerPathToHostPath(path.path) ?: return false
-        val effectiveHostPath = resolveEffectiveHostPath(hostPath) ?: return false
-        if (!effectiveHostPath.startsWith(layout.hostRoot)) {
-            return false
-        }
+        val root = layout.hostRootFor(path.path) ?: return false
+        val effectiveHostPath = resolveEffectiveHostPath(hostPath, root) ?: return false
         return blockedPaths
             .mapNotNull(layout::containerPathToHostPath)
             .none(effectiveHostPath::startsWith)
@@ -77,7 +75,7 @@ internal class DockerSandboxFileSystem(
 
     override fun localPathOrNull(path: SandboxPathInfo): Path? {
         requireSafePath(path)
-        return requireHostPath(path)
+        return if (layout.isPreparedAttachmentPath(path.path)) null else requireHostPath(path)
     }
 
     override fun writeBytes(path: SandboxPathInfo, content: ByteArray) {
@@ -110,7 +108,7 @@ internal class DockerSandboxFileSystem(
     }
 
     override fun delete(path: SandboxPathInfo, recursively: Boolean) {
-        requireSafePath(path)
+        requireWritableSource(path)
         if (!path.exists) {
             return
         }
@@ -164,7 +162,7 @@ internal class DockerSandboxFileSystem(
         createParents: Boolean,
         logger: Logger?,
     ) {
-        requireSafePath(source)
+        requireWritableSource(source)
         if (!source.exists) {
             throw BadInputException("Invalid path: ${source.rawPath}")
         }
@@ -181,7 +179,7 @@ internal class DockerSandboxFileSystem(
     }
 
     override fun moveToTrash(path: SandboxPathInfo, logger: Logger?): SandboxPathInfo {
-        requireSafePath(path)
+        requireWritableSource(path)
         if (!path.exists) {
             throw BadInputException("Invalid path: ${path.rawPath}")
         }
@@ -210,6 +208,11 @@ internal class DockerSandboxFileSystem(
         }
     }
 
+    private fun requireWritableSource(path: SandboxPathInfo) {
+        requireSafePath(path)
+        if (layout.isPreparedAttachmentPath(path.path)) throw ForbiddenFolder(path.rawPath)
+    }
+
     private fun requireVisibleDescendant(path: SandboxPathInfo) {
         if (path.isSymbolicLink) {
             return
@@ -225,7 +228,7 @@ internal class DockerSandboxFileSystem(
 
     private fun resolveWritableHostPath(path: SandboxPathInfo): Path {
         val hostPath = requireHostPath(path)
-        val effective = resolveEffectiveHostPath(hostPath) ?: throw BadInputException("Invalid path: ${path.rawPath}")
+        val effective = resolveEffectiveHostPath(hostPath, layout.hostRoot) ?: throw BadInputException("Invalid path: ${path.rawPath}")
         if (!effective.startsWith(layout.hostRoot) ||
             blockedPaths.mapNotNull(layout::containerPathToHostPath).any(effective::startsWith)
         ) {
@@ -243,7 +246,7 @@ internal class DockerSandboxFileSystem(
             return null
         }
         val normalized = expandAndNormalize(cleaned)
-        return normalized.takeIf(::isUnderContainerRoot)
+        return normalized.takeIf { layout.hostRootFor(it) != null }
     }
 
     /**
@@ -286,12 +289,12 @@ internal class DockerSandboxFileSystem(
             Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
         }.getOrNull()
 
-    private fun resolveEffectiveHostPath(candidate: Path): Path? {
+    private fun resolveEffectiveHostPath(candidate: Path, root: Path): Path? {
         val normalized = candidate.toAbsolutePath().normalize()
-        if (!normalized.startsWith(layout.hostRoot)) {
+        if (!normalized.startsWith(root)) {
             return null
         }
-        if (containsSymlinkBetween(layout.hostRoot, normalized)) {
+        if (containsSymlinkBetween(root, normalized)) {
             return null
         }
         val existingAncestor = generateSequence(normalized) { it.parent }
@@ -310,7 +313,7 @@ internal class DockerSandboxFileSystem(
             return null
         }
         val effective = resolvedAncestor.resolve(relativeSuffix).normalize()
-        return effective.takeIf { it.startsWith(layout.hostRoot) }
+        return effective.takeIf { it.startsWith(root) }
     }
 
     private fun containsSymlinkBetween(root: Path, target: Path): Boolean {

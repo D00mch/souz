@@ -25,8 +25,9 @@ class PostgresClientRequestRepository(
     private val captureHistoryMemory: Boolean = false,
     clock: Clock = Clock.systemUTC(),
     private val metrics: BackendMetrics? = null,
+    attachmentRuntimeId: UUID? = null,
 ) : ClientRequestRepository {
-    private val executionWriter = PostgresAgentExecutionRepository(dataSource)
+    private val executionWriter = PostgresAgentExecutionRepository(dataSource, attachmentRuntimeId = attachmentRuntimeId)
     private val messageWriter = PostgresMessageRepository(dataSource)
     private val historyMemory = PostgresHistoryMemoryRepository(dataSource, clock)
 

@@ -14,6 +14,8 @@ import org.kodein.di.instanceOrNull
 import ru.souz.backend.attachments.AttachmentCleanupWorker
 import ru.souz.backend.attachments.AttachmentStorage
 import ru.souz.backend.attachments.BackendAttachmentAccess
+import ru.souz.backend.attachments.PreparedAttachmentRuntime
+import ru.souz.backend.attachments.PreparedAttachmentWorkspace
 import ru.souz.backend.attachments.attachmentToolCatalog
 import ru.souz.backend.attachments.S3AttachmentObjects
 import ru.souz.backend.client.LiveClientToolDispatcher
@@ -160,6 +162,7 @@ fun backendDiModule(
         runtimeToolsDiModule(
             includeWebImageSearch = false,
             scopeResolver = BackendSandboxScopeResolver,
+            preparedAttachmentsEnabled = appConfig.attachments != null,
         )
     )
     import(runtimeProviderHttpDiModule())
@@ -187,12 +190,14 @@ fun backendDiModule(
         }
     }
     bindSingleton<Clock> { Clock.systemUTC() }
+    bindSingleton { PreparedAttachmentRuntime(instance()) }
     appConfig.attachments?.let { config ->
         bindSingleton { S3AttachmentObjects(config) }
         bindSingleton { PostgresAttachmentRepository(instance<HikariDataSource>()) }
         bindSingleton { AttachmentStorage(config, instance(), instance(), instance()) }
         bindSingleton { AttachmentCleanupWorker(instance()) }
-        bindSingleton { BackendAttachmentAccess(instance(), instance()) }
+        bindSingleton { PreparedAttachmentWorkspace(instance<HikariDataSource>(), instance(), instance(), instance()) }
+        bindSingleton { BackendAttachmentAccess(instance(), instance(), instance()) }
         bindSingleton { ImageGeneration(instance(), instance()) }
         bindSingleton { ClientImages(instance()) }
     }
@@ -231,11 +236,19 @@ fun backendDiModule(
     bindSingleton<ChatRepository> { PostgresChatRepository(instance()) }
     bindSingleton<ConversationKnowledgeStore> { PostgresConversationKnowledgeStore(instance<HikariDataSource>()) }
     bindSingleton<ClientRequestRepository> {
-        PostgresClientRequestRepository(instance(), appConfig.hindsightApiUrl != null, instance(), instance())
+        PostgresClientRequestRepository(
+            dataSource = instance(),
+            captureHistoryMemory = appConfig.hindsightApiUrl != null,
+            clock = instance(),
+            metrics = instance(),
+            attachmentRuntimeId = instance<PreparedAttachmentRuntime>().id,
+        )
     }
     bindSingleton<MessageRepository> { PostgresMessageRepository(instance()) }
     bindSingleton<AgentStateRepository> { PostgresAgentStateRepository(instance()) }
-    bindSingleton<AgentExecutionRepository> { PostgresAgentExecutionRepository(instance(), instance()) }
+    bindSingleton<AgentExecutionRepository> {
+        PostgresAgentExecutionRepository(instance(), instance(), instance<PreparedAttachmentRuntime>().id)
+    }
     bindSingleton<OptionRepository> { PostgresOptionRepository(instance()) }
     bindSingleton<AgentEventRepository> { PostgresAgentEventRepository(instance()) }
     bindSingleton<ToolCallRepository> { PostgresToolCallRepository(instance()) }
@@ -246,7 +259,10 @@ fun backendDiModule(
         // HttpClient (a selector-manager thread pool each); without closing them here they leak
         // past backend shutdown.
         BackendRuntimeResources(
-            cancelAndJoinApplicationWork = { instance<BackendApplicationScope>().cancelAndJoin() },
+            cancelAndJoinApplicationWork = {
+                instance<BackendApplicationScope>().cancelAndJoin()
+                instance<PreparedAttachmentRuntime>().close()
+            },
             closeProviderClients = {
                 instance<ProviderHttpClients>().close()
                 instanceOrNull<ClientImages>()?.close()
