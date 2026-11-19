@@ -291,6 +291,7 @@ private fun theatreTask(date: LocalDate): ScenarioTask {
     val lateTitle = "Огни на крыше"
     val earlyStart = "17:00"
     val lateStart = "19:30"
+    val requestedDay = date.toString()
     val events = listOf(
         "EVENT\t104\ttheatre\t$earlyTitle\tдрама\t16+\t8.0\t90 мин\tСценическая драма\t$date $earlyStart\t$early",
         "EVENT\t209\ttheatre\t$lateTitle\tкомедия\t12+\t8.1\t110 мин\tКамерная комедия\t$date $lateStart\t$late",
@@ -299,7 +300,7 @@ private fun theatreTask(date: LocalDate): ScenarioTask {
         skillId = "afisha-where-to-go-cinema-theatre-concerts-tickets",
         script = "scripts/afisha.sh",
         command = "find",
-        optionsWithValues = setOf("--city", "--type", "--date", "--limit"),
+        optionsWithValues = setOf("--city", "--type", "--date", "--from", "--to", "--days", "--limit"),
         switches = setOf("--with-dates"),
         turns = listOf(
             "Подбери два спектакля в Москве на $date. Пока только варианты со временем начала.",
@@ -307,9 +308,13 @@ private fun theatreTask(date: LocalDate): ScenarioTask {
         ),
         search = { args ->
             val limit = args.intOption("--limit", 5)
+            val days = args.intOption("--days", 14)
+            val singleDayRange = args["--from"] == requestedDay &&
+                (args["--to"]?.let { it == requestedDay } ?: (days == 1))
+            val singleDay = args["--date"]?.let { it == requestedDay } ?: singleDayRange
             if (args["--type"] != "theatre" ||
                 !args["--city"].equals("Москва", ignoreCase = true) ||
-                args["--date"] != date.toString() || limit == null || limit < 1
+                !singleDay || days == null || limit == null || limit < 1
             ) {
                 null
             } else {

@@ -16,12 +16,16 @@ class ScenarioFixtureTest {
 
     @Test
     fun `search fixtures validate commands and apply filters`() = runTest {
+        val showDay = appointment.plusDays(3).toString()
         assertSearchRows(
             EvaluationCase.THEATRE, "EVENT\t",
             theatreRequest("find", "--type", "movie") to null,
             theatreRequest("find") to null,
             theatreRequest("ideas", "--type", "theatre") to null,
             theatreRequest("find", "--type", "theatre") to 2,
+            theatreRequest("find", "--type", "theatre", dateArgs = listOf("--from", showDay, "--to", showDay)) to 2,
+            theatreRequest("find", "--type", "theatre", dateArgs = listOf("--from", showDay, "--days", "1")) to 2,
+            theatreRequest("find", "--type", "theatre", dateArgs = listOf("--from", showDay, "--days", "2")) to null,
             theatreRequest("find", "--type", "theatre", "--limit", "1") to 1,
         )
         val train = trainRequest()
@@ -94,10 +98,13 @@ class ScenarioFixtureTest {
         }
     }
 
-    private fun theatreRequest(vararg query: String) = SandboxCommandRequest(
+    private fun theatreRequest(
+        vararg query: String,
+        dateArgs: List<String> = listOf("--date", appointment.plusDays(3).toString()),
+    ) = SandboxCommandRequest(
         runtime = SandboxCommandRuntime.BASH,
         scriptPath = "/skills/afisha/scripts/afisha.sh",
-        args = query.toList() + listOf("--city", "Москва", "--date", appointment.plusDays(3).toString()),
+        args = query.toList() + listOf("--city", "Москва") + dateArgs,
         environment = mapOf("SOUZ_SKILL_ID" to "afisha-where-to-go-cinema-theatre-concerts-tickets"),
     )
 
