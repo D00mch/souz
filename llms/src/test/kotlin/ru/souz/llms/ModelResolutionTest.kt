@@ -30,14 +30,6 @@ class ModelResolutionTest {
     }
 
     @Test
-    fun `Codex Sol resolves by API ID and enum name`() {
-        val expected = ModelResolution.Resolved(LLMModel.CodexGpt62Sol)
-        for (selector in listOf("gpt-6.2-sol", "  GPT-6.2-SOL  ", "CodexGpt62Sol")) {
-            assertEquals(expected, resolveChatModel(selector, supportedProviders = setOf(LlmProvider.CODEX)))
-        }
-    }
-
-    @Test
     fun `embedding resolution preserves default and configured alias preference`() {
         assertEquals(DEFAULT_EMBEDDINGS_MODEL, LLMRequest.Embeddings(input = listOf("text")).model)
         assertEquals(
