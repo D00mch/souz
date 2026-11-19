@@ -11,6 +11,7 @@ Keep signatures limited to SDK-owned values, JDK/Kotlin types, and suspending me
 ## Verification
 
 ```bash
+python3 -m unittest discover -s scripts -p 'test_plugin_sdk_release.py'
 ./gradlew :plugin-api:check :plugin-api:publishSdkPublicationToVerificationRepository :backend:test
 bash scripts/verify-plugin-sdk.sh
 ```

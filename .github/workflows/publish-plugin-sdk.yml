@@ -13,22 +13,70 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Require release approval protection
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if ! gh api "repos/$GITHUB_REPOSITORY/environments/plugin-sdk-release" \
+            --jq 'any(.protection_rules[]?; .type == "required_reviewers" and .prevent_self_review == true and (.reviewers | length > 0))' \
+            | grep -qx true; then
+            echo 'Configure plugin-sdk-release with required reviewers and prevent self-review before releasing.' >&2
+            exit 1
+          fi
+
+      - name: Checkout release history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify release provenance
+        shell: bash
+        run: |
+          [[ "$GITHUB_REF" =~ ^refs/tags/plugin-api-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          release_commit="$(git rev-parse --verify "$GITHUB_REF^{commit}")"
+          if [[ "$release_commit" != "$GITHUB_SHA" ]] || [[ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
+            echo 'The release tag and checkout must match the triggering commit.' >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$release_commit" refs/remotes/origin/kmp; then
+            echo 'The release commit must belong to the approved kmp branch history.' >&2
+            exit 1
+          fi
+
   publish:
+    needs: verify-source
+    environment: plugin-sdk-release
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
       - name: Checkout release
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - name: Set up JDK
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: zulu
           java-version: 21
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          cache-disabled: true
 
       - name: Check SDK and stage publication
         run: ./gradlew :plugin-api:check :plugin-api:publishSdkPublicationToVerificationRepository --console=plain

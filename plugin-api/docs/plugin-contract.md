@@ -51,7 +51,11 @@ Before the first release, the `D00mch` account owner must:
    `io.github.d00mch` namespace. A separate DNS domain is not required.
 2. Generate a [Central Portal user token](https://central.sonatype.org/publish/generate-portal-token/).
 3. Create a [signing key and publish its public key](https://central.sonatype.org/publish/requirements/gpg/).
-4. Configure these GitHub Actions repository secrets, without committing credentials or keys:
+4. Create the GitHub Actions environment `plugin-sdk-release` with trusted release reviewers,
+   enable **Prevent self-review**, and disable administrator bypass. Allow only tags matching
+   `plugin-api-v*` under **Selected branches and tags**. Store the following secrets only in
+   that environment; remove any repository or organization copies available to this repository
+   so other workflows cannot bypass release approval. Do not commit credentials or keys.
 
 | Secret | Value |
 | --- | --- |
@@ -60,11 +64,23 @@ Before the first release, the `D00mch` account owner must:
 | `MAVEN_SIGNING_KEY` | ASCII-armored private signing key |
 | `MAVEN_SIGNING_PASSWORD` | Signing key passphrase, if set |
 
-Push a tag matching the SDK version, such as `plugin-api-v2.0.0`, to run the
-[release workflow](../../.github/workflows/publish-plugin-sdk.yml). It verifies a staged
-publication, signs and releases the SDK, waits for Maven Central availability, and builds
+Push a tag matching the SDK version, such as `plugin-api-v2.0.0`, at a reviewed commit in
+`origin/kmp` with passing CI to run the
+[release workflow](../../.github/workflows/publish-plugin-sdk.yml). Its separate preflight job
+rejects missing approval protection, moved tags, and commits outside `kmp` history before the
+publishing job starts. A release reviewer must check the tagged commit and CI before approving
+the environment deployment. Both jobs check out the triggering commit by SHA. The publishing
+job uses pinned actions and disables Gradle cache restoration before verifying a staged
+publication, signing and releasing the SDK, waiting for Maven Central availability, and building
 the standalone Hello project against the public repository. Downloading released SDK versions
-does not require the publishing token or signing key.
+does not require the publishing token or signing key. Keep
+[#1046](https://github.com/D00mch/souz/issues/1046) open until the first public release and
+standalone verification succeed.
+
+The [Dependabot configuration](../../.github/dependabot.yml) requests weekly action-update PRs
+targeting `kmp`. GitHub reads this configuration from the repository's default branch, so the
+maintainer must also install it there to activate updates. Review upstream release changes and
+retain full commit SHA pins when merging those PRs.
 
 The [standalone verifier](../../scripts/verify-plugin-sdk.sh) copies only the example and
 Gradle wrapper outside the checkout and uses fresh Gradle and Maven local directories.

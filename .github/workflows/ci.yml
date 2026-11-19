@@ -275,6 +275,9 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
 
+      - name: Test SDK release guards
+        run: python3 -m unittest discover -s scripts -p 'test_plugin_sdk_release.py'
+
       - name: Publish SDK to verification repository
         run: ./gradlew :plugin-api:check :plugin-api:publishSdkPublicationToVerificationRepository --console=plain
 
