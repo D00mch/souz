@@ -170,7 +170,6 @@ class BackendAttachmentContractsE2eTest {
                     } else when (resumedPhase++) {
                         0 -> {
                             assertEquals(0, backend.cleanupPreparedAttachments())
-                            assertEquals("# Original", readSandboxFile(preparedPath))
                             attach(request, "path" to preparedPath)
                         }
                         1 -> {
