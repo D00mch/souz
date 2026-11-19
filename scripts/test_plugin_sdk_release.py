@@ -360,6 +360,46 @@ class GradleDependencyVerificationTest(unittest.TestCase):
             archive.writestr("Tampered.kt", "// Unreviewed source\n")
         self.assert_rejected()
 
+    def test_gradle_distribution_sources_resolve_and_reject_tampering(self):
+        artifact = self.root / "repository/gradle-9.4.1-src.zip"
+        artifact.parent.mkdir()
+        with zipfile.ZipFile(artifact, "w") as archive:
+            archive.writestr("gradle-9.4.1/Fixture.java", "// Synthetic IDE source attachment\n")
+        metadata = ET.parse(self.metadata)
+        checksum = metadata.find("v:components/v:component[@group='gradle']"
+                                 "[@name='gradle'][@version='9.4.1']/v:artifact"
+                                 "[@name='gradle-9.4.1-src.zip']/v:sha256", VERIFICATION_NS)
+        self.assertIsNotNone(checksum, "IDE import requires a reviewed Gradle sources hash")
+        self.assertRegex(checksum.get("value"), r"^[0-9a-f]{64}$")
+        checksum.set("value", hashlib.sha256(artifact.read_bytes()).hexdigest())
+        ET.register_namespace("", VERIFICATION_NS["v"])
+        metadata.write(self.metadata, encoding="UTF-8", xml_declaration=True)
+        (self.root / "build.gradle").write_text(textwrap.dedent("""\
+            repositories {
+                ivy {
+                    name = 'Gradle distributions'
+                    url = uri('repository')
+                    patternLayout { artifact '[artifact]-[revision]-[classifier].[ext]' }
+                    metadataSources { artifact() }
+                }
+            }
+            configurations { ideSources }
+            dependencies { ideSources 'gradle:gradle:9.4.1:src@zip' }
+            tasks.register('verifyFixture') {
+                doLast {
+                    assert configurations.ideSources.singleFile.name == 'gradle-9.4.1-src.zip'
+                    file('build-configured').text = 'Sources verified'
+                }
+            }
+            """))
+        result = self.run_gradle()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(self.marker.exists())
+        self.marker.unlink()
+        with zipfile.ZipFile(artifact, "a") as archive:
+            archive.writestr("gradle-9.4.1/Tampered.java", "// Unreviewed source\n")
+        self.assert_rejected()
+
     def resolve_plugin(self, version="0.37.0"):
         repository = self.root / "repository/com/vanniktech/gradle-maven-publish-plugin" / version
         repository.mkdir(parents=True)
