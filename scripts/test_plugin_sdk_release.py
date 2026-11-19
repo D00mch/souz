@@ -319,8 +319,6 @@ class GradleDependencyVerificationTest(unittest.TestCase):
         self.assertRegex(checksum.get("value"), r"^[0-9a-f]{64}$")
 
     def test_ide_build_plugin_sources_resolve_and_reject_tampering(self):
-        metadata = ET.parse(self.metadata)
-        artifacts = []
         # IDE import resolves plugin and transitive sources as well as embedded Kotlin.
         root_coordinates = [
             ("org.jetbrains.kotlin", "kotlin-stdlib", "2.3.0"),
@@ -356,8 +354,53 @@ class GradleDependencyVerificationTest(unittest.TestCase):
             ("org.jetbrains.kotlin", "kotlin-util-klib-metadata", "2.3.0"),
             ("org.gradle.kotlin", "gradle-kotlin-dsl-plugins", "6.5.2"),
         ]
-        coordinates = root_coordinates + included_coordinates
-        for group, name, version in coordinates:
+        self.verify_source_attachments({
+            "rootBuildSources": root_coordinates,
+            "includedBuildSources": included_coordinates,
+        })
+
+    def test_ide_application_sources_resolve_and_reject_tampering(self):
+        # Application imports also need common and JVM sources, beyond buildscript sources.
+        self.verify_source_attachments({
+            "applicationSources": [
+                ("org.jetbrains", "annotations", "23.0.0"),
+                ("org.jetbrains.kotlin", "kotlin-stdlib", "2.4.10"),
+                ("org.jetbrains.kotlinx", "kotlinx-coroutines-core", "1.11.0"),
+                ("org.jetbrains.kotlinx", "kotlinx-coroutines-core-jvm", "1.11.0"),
+                ("org.jetbrains.kotlinx", "kotlinx-serialization-core", "1.11.0"),
+                ("org.jetbrains.kotlinx", "kotlinx-serialization-core-jvm", "1.11.0"),
+                ("io.ktor", "ktor-client-core", "3.5.2"),
+                ("io.ktor", "ktor-client-core-jvm", "3.5.2"),
+                ("org.jetbrains.compose.ui", "ui", "1.9.3"),
+                ("org.jetbrains.compose.ui", "ui-desktop", "1.9.3"),
+                ("org.jetbrains.skiko", "skiko-awt", "0.9.22.2"),
+                ("androidx.lifecycle", "lifecycle-runtime", "2.9.4"),
+                ("androidx.lifecycle", "lifecycle-runtime-desktop", "2.9.4"),
+                ("com.fasterxml.jackson.module", "jackson-module-kotlin", "2.21.3"),
+            ],
+            # Keep independently selected versions separate, just as module imports do.
+            "transitiveSources": [
+                ("org.jetbrains.kotlin", "kotlin-stdlib", "2.4.21"),
+                ("org.jetbrains.kotlinx", "kotlinx-serialization-core", "1.7.3"),
+                ("org.jetbrains.kotlinx", "kotlinx-serialization-core-jvm", "1.7.3"),
+                ("com.fasterxml.jackson.module", "jackson-module-kotlin", "2.22.1"),
+                ("org.apache.tika", "tika-core", "3.2.3"),
+                ("org.jetbrains.compose.ui", "ui-test-desktop", "1.9.3"),
+            ],
+            "backendSources": [
+                ("com.zaxxer", "HikariCP", "5.1.0"),
+                ("org.flywaydb", "flyway-core", "10.20.1"),
+                ("software.amazon.awssdk", "s3", "2.31.54"),
+                ("org.testcontainers", "testcontainers", "1.21.4"),
+                ("net.java.dev.jna", "jna-platform", "5.14.0"),
+                ("it.tdlight", "tdlight-java", "3.4.4+td.1.8.52"),
+            ],
+        })
+
+    def verify_source_attachments(self, configurations):
+        metadata = ET.parse(self.metadata)
+        artifacts = []
+        for group, name, version in [entry for entries in configurations.values() for entry in entries]:
             repository = self.root / "repository" / group.replace(".", "/") / name / version
             repository.mkdir(parents=True)
             artifact = repository / f"{name}-{version}-sources.jar"
@@ -374,19 +417,20 @@ class GradleDependencyVerificationTest(unittest.TestCase):
         metadata.write(self.metadata, encoding="UTF-8", xml_declaration=True)
         dependencies = "\n".join(
             f"    {configuration} '{group}:{name}:{version}:sources@jar'"
-            for configuration, entries in [("rootBuildSources", root_coordinates),
-                                            ("includedBuildSources", included_coordinates)]
+            for configuration, entries in configurations.items()
             for group, name, version in entries)
         expected = json.dumps(sorted(artifact.name for artifact in artifacts))
+        declarations = "; ".join(configurations)
+        sources = " + ".join(f"configurations.{name}.files" for name in configurations)
         (self.root / "build.gradle").write_text(textwrap.dedent("""\
             repositories {
                 maven { url = uri('repository'); metadataSources { artifact() } }
             }
-            configurations { rootBuildSources; includedBuildSources }
-            """) + "dependencies {\n" + dependencies + "\n}\n" + textwrap.dedent(f"""\
+            """) + f"configurations {{ {declarations} }}\n"
+            + "dependencies {\n" + dependencies + "\n}\n" + textwrap.dedent(f"""\
             tasks.register('verifyFixture') {{
                 doLast {{
-                    def sources = configurations.rootBuildSources.files + configurations.includedBuildSources.files
+                    def sources = {sources}
                     assert sources*.name.sort() == {expected}
                     file('build-configured').text = 'Sources verified'
                 }}
