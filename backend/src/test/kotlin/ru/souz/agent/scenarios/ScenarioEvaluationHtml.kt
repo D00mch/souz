@@ -40,6 +40,11 @@ internal class ScenarioEvaluationHtml(
         }
         if (seed.isNotEmpty()) {
             append("<h3>Seeded history</h3>")
+            trace.seededHistory?.let {
+                append("<p>")
+                appendText("${it.matched}/${it.expected} seeded messages reached the first conversational request.")
+                append("</p>")
+            }
             for (message in seed) appendMessage(message.role.name, message.content)
         }
         for (turn in turns) {

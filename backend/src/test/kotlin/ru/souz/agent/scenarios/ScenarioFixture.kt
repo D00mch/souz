@@ -95,6 +95,7 @@ internal class ScenarioFixture(case: EvaluationCase, today: LocalDate, appointme
                     search.output.lineSequence().count { it.startsWith("$rowType\t") } == rowCount
             },
                 "${task.skillId} did not return the expected initial search results.")
+            verifyPresentedOptions(first, task.skillId, task.initialAnswerOptions, assertions)
             if (task === doctor) verifyDoctorBudgetSearch(assertions)
             assertions.check((first until last).none { evidence[it].deliveries.isNotEmpty() },
                 "${task.skillId} delivered a message before the user requested a link.")
@@ -110,6 +111,21 @@ internal class ScenarioFixture(case: EvaluationCase, today: LocalDate, appointme
         }
     }
 
+    private fun verifyPresentedOptions(
+        turnIndex: Int,
+        skillId: String,
+        expected: List<String>,
+        assertions: ScenarioAssertions,
+        excluded: List<String> = emptyList(),
+    ) {
+        val answer = evidence[turnIndex].answer.orEmpty().replace(ANSWER_WHITESPACE, " ")
+        val missing = expected.filterNot { answer.mentionsOption(it) }
+        val unexpected = excluded.filter { answer.mentionsOption(it) }
+        assertions.check(missing.isEmpty() && unexpected.isEmpty(),
+            "$skillId answer on turn ${turnIndex + 1} did not present the expected options " +
+                "(missing: $missing, unexpected: $unexpected).")
+    }
+
     private fun verifyDoctorBudgetSearch(assertions: ScenarioAssertions) {
         val search = evidence[1].searches.lastOrNull { it.options["--max-price"]?.toIntOrNull() == BUDGET }
         assertions.check(search != null,
@@ -120,6 +136,8 @@ internal class ScenarioFixture(case: EvaluationCase, today: LocalDate, appointme
             .toList()
         assertions.check(links.size == 2, "${doctor.skillId} must return exactly two doctors on the budget turn.")
         assertions.check(links.toSet() == doctor.expectedLinks, "${doctor.skillId} must return only the eligible doctors.")
+        val eligible = doctor.budgetAnswerOptions
+        verifyPresentedOptions(1, doctor.skillId, eligible, assertions, doctor.initialAnswerOptions - eligible.toSet())
     }
 }
 
@@ -133,6 +151,8 @@ private data class ScenarioTask(
     val search: (Map<String, String>) -> String?,
     val expectedLinks: Set<String>,
     val initialRows: Pair<String, Int>,
+    val initialAnswerOptions: List<String>,
+    val budgetAnswerOptions: List<String> = emptyList(),
     val initialQuery: (Map<String, String>) -> Boolean = { true },
 ) {
     fun parseQuery(args: List<String>): Map<String, String>? {
@@ -212,6 +232,8 @@ private fun doctorTask(today: LocalDate, appointment: LocalDate): ScenarioTask {
         },
         expectedLinks = eligible.mapTo(mutableSetOf()) { it.link },
         initialRows = "DOCTOR" to doctors.size,
+        initialAnswerOptions = doctors.map { it.name },
+        budgetAnswerOptions = eligible.map { it.name },
         initialQuery = { "--max-price" !in it },
     )
 }
@@ -258,15 +280,20 @@ private fun trainTask(date: LocalDate): ScenarioTask {
         },
         expectedLinks = setOf(late),
         initialRows = "TRAIN" to trains.size,
+        initialAnswerOptions = trains.map { it.first },
     )
 }
 
 private fun theatreTask(date: LocalDate): ScenarioTask {
     val early = "https://theatre.example/event/severnyi-veter"
     val late = "https://theatre.example/event/ogni-na-kryshe"
+    val earlyTitle = "Северный ветер"
+    val lateTitle = "Огни на крыше"
+    val earlyStart = "17:00"
+    val lateStart = "19:30"
     val events = listOf(
-        "EVENT\t104\ttheatre\tСеверный ветер\tдрама\t16+\t8.0\t90 мин\tСценическая драма\t$date 17:00\t$early",
-        "EVENT\t209\ttheatre\tОгни на крыше\tкомедия\t12+\t8.1\t110 мин\tКамерная комедия\t$date 19:30\t$late",
+        "EVENT\t104\ttheatre\t$earlyTitle\tдрама\t16+\t8.0\t90 мин\tСценическая драма\t$date $earlyStart\t$early",
+        "EVENT\t209\ttheatre\t$lateTitle\tкомедия\t12+\t8.1\t110 мин\tКамерная комедия\t$date $lateStart\t$late",
     )
     return ScenarioTask(
         skillId = "afisha-where-to-go-cinema-theatre-concerts-tickets",
@@ -276,7 +303,7 @@ private fun theatreTask(date: LocalDate): ScenarioTask {
         switches = setOf("--with-dates"),
         turns = listOf(
             "Подбери два спектакля в Москве на $date. Пока только варианты со временем начала.",
-            "Пришли в Телеграм ссылку на спектакль, который начинается в 19:30.",
+            "Пришли в Телеграм ссылку на спектакль, который начинается в $lateStart.",
         ),
         search = { args ->
             val limit = args.intOption("--limit", 5)
@@ -292,6 +319,7 @@ private fun theatreTask(date: LocalDate): ScenarioTask {
         },
         expectedLinks = setOf(late),
         initialRows = "EVENT" to events.size,
+        initialAnswerOptions = listOf(earlyTitle, lateTitle, earlyStart, lateStart),
     )
 }
 
@@ -300,11 +328,18 @@ private fun Map<String, String>.intOption(name: String, default: Int): Int? {
     return value.toIntOrNull()
 }
 
+private fun String.mentionsOption(option: String): Boolean {
+    if (!TRAIN_TIME.matches(option)) return contains(option, ignoreCase = true)
+    val time = if (option.startsWith('0')) "0?${option.drop(1)}" else option
+    return Regex("(?<!\\d)$time(?!\\d)").containsMatchIn(this)
+}
+
 private const val TELEGRAM_ID = "telegram-fixture-1050"
 private const val BUDGET = 2500
 private const val DOCTOR_CLINIC_DISTANCE_KM = 1
 private val DOCTOR_ORDERS = setOf("rating", "price", "experience")
 private val SAINT_PETERSBURG_NAMES = setOf("санкт-петербург", "санкт петербург", "питер", "спб")
 private val TRAIN_TIME = Regex("""(?:[01]\d|2[0-3]):[0-5]\d""")
+private val ANSWER_WHITESPACE = Regex("""[\s\p{Z}]+""")
 private val TRAIN_SORTS = setOf("departure", "duration")
 private val URL = Regex("""https?://[^\s<>()\[\]"']+""")

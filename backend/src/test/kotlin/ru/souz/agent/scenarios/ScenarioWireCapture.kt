@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.plugins.api.createClientPlugin
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
+import ru.souz.llms.LLMRequest
 import ru.souz.llms.restJsonMapper
 
 /** Observes the OpenAI-compatible adapter's payload and usage without recording their contents. */
@@ -68,11 +69,23 @@ internal data class ScenarioWireRequest(val messages: List<JsonNode>, val tools:
     }
 
     fun checkHistory(next: ScenarioWireRequest, finalAnswer: String?): ScenarioHistory {
-        val expected = messages.filter(JsonNode::isConversationHistory).map(JsonNode::historyIdentity).toMutableList()
+        val expected = conversationHistory().toMutableList()
         if (finalAnswer != null) {
             expected.add(restJsonMapper.createObjectNode().put("role", "assistant").put("content", finalAnswer.trim()))
         }
-        val observed = next.messages.filter(JsonNode::isConversationHistory).map(JsonNode::historyIdentity)
+        return matchHistory(expected, next.conversationHistory())
+    }
+
+    fun checkSeededHistory(seed: List<LLMRequest.Message>): ScenarioHistory {
+        val expected = seed.map {
+            restJsonMapper.createObjectNode().put("role", it.role.name).put("content", it.content).historyIdentity()
+        }
+        return matchHistory(expected, conversationHistory())
+    }
+
+    private fun conversationHistory() = messages.filter(JsonNode::isConversationHistory).map(JsonNode::historyIdentity)
+
+    private fun matchHistory(expected: List<JsonNode>, observed: List<JsonNode>): ScenarioHistory {
         var matched = 0
         for (message in observed) {
             if (matched < expected.size && expected[matched] == message) matched++

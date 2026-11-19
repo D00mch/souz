@@ -47,7 +47,7 @@ class ScenarioFixtureTest {
         val result = fixture.commands.execute(trainRequest("--after", "12:00"))
         val link = result.stdout.lineSequence().single { it.startsWith("TRAIN\t") }.substringAfterLast('\t')
         assertEquals("https://rail.example/rybinsk/608a-1420", link)
-        fixture.afterTurn(1, "Here is the afternoon train.")
+        fixture.afterTurn(1, "The departures are at 8:10 and 14:20.")
 
         val channel = fixture.channels.listAll("test-user").single()
         assertIs<ChannelSendResult.Delivered>(fixture.channels.send("test-user", "telegram", channel.channelId, link))
@@ -55,17 +55,17 @@ class ScenarioFixtureTest {
         val assertions = ScenarioAssertions()
         fixture.verify(assertions)
         val score = assertions.result()
-        assertEquals(3, score.passed)
-        assertEquals(4, score.total)
+        assertEquals(4, score.passed)
+        assertEquals(5, score.total)
         assertContains(score.failures.single(), "did not return the expected initial search results")
     }
 
     @Test
-    fun `telegram delivery rejects a repeated link`() = runTest {
+    fun `an incomplete search reply and a repeated link fail independently`() = runTest {
         val fixture = ScenarioFixture(EvaluationCase.THEATRE, today, appointment)
         val result = fixture.commands.execute(theatreRequest("find", "--type", "theatre"))
         assertEquals(0, result.exitCode)
-        fixture.afterTurn(1, "Here are two shows.")
+        fixture.afterTurn(1, "Огни на крыше начинаются в 19:30.")
 
         val channel = fixture.channels.listAll("test-user").single()
         val link = "https://theatre.example/event/ogni-na-kryshe"
@@ -75,8 +75,9 @@ class ScenarioFixtureTest {
         fixture.verify(assertions)
         val score = assertions.result()
         assertEquals(3, score.passed)
-        assertEquals(4, score.total)
-        assertContains(score.failures.single(), "must deliver each requested link exactly once")
+        assertEquals(5, score.total)
+        assertContains(score.failures[0], "did not present the expected options")
+        assertContains(score.failures[1], "must deliver each requested link exactly once")
     }
 
     private suspend fun assertSearchRows(

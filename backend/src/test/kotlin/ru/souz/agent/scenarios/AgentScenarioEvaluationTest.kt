@@ -34,6 +34,7 @@ class AgentScenarioEvaluationTest {
                     val assertions = ScenarioAssertions()
                     val trace = ScenarioTrace(
                         model.modelId, model.reasoningEffort, wire, normalizeDate = false,
+                        initialHistory = fixture.initialHistory,
                         assertions = assertions,
                     )
                     val started = TimeSource.Monotonic.markNow()

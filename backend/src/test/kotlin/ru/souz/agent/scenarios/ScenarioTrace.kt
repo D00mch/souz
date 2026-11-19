@@ -43,12 +43,15 @@ internal class ScenarioTrace(
     private val wire: ScenarioWireCapture? = null,
     private val normalizeDate: Boolean = true,
     private val maxModelCalls: Int = 24,
+    private val initialHistory: List<LLMRequest.Message> = emptyList(),
     private val assertions: ScenarioAssertions? = null,
 ) : AgentRuntimeEventSink {
     val requests = mutableListOf<LLMRequest.Chat>()
     val events = mutableListOf<AgentRuntimeEvent>()
     val calls = mutableListOf<ScenarioCall>()
     val prefixes = mutableListOf<ScenarioPrefix>()
+    var seededHistory: ScenarioHistory? = null
+        private set
     private val toolUses = mutableListOf<ScenarioToolUse>()
     private var usage = LLMResponse.Usage(0, 0, 0, 0)
     private var lastResponse: LLMResponse.Chat? = null
@@ -127,6 +130,7 @@ internal class ScenarioTrace(
         if (kind == "conversation") {
             wire?.request?.let { sent ->
                 if (currentConversationRequest == null) {
+                    if (turn == 1 && initialHistory.isNotEmpty()) seededHistory = sent.checkSeededHistory(initialHistory)
                     previousConversationRequest?.let { (previous, lastCall) ->
                         prefixes += previous.compareTo(sent, turn).copy(
                             previousCall = lastCall.number,
@@ -173,6 +177,13 @@ internal class ScenarioTrace(
     }
 
     fun assertHistoryPreserved(turns: Int) {
+        if (initialHistory.isNotEmpty()) {
+            val history = seededHistory
+            assertCheck(history != null && history.matched == history.expected,
+                if (history == null) "The first conversational request was not captured."
+                else "The first conversational request preserved ${history.matched} of ${history.expected} seeded messages " +
+                    "(first missing role: ${history.firstMissingRole}).")
+        }
         val byTurn = prefixes.associateBy { it.turn }
         for (number in 2..turns) {
             val history = byTurn[number]?.history

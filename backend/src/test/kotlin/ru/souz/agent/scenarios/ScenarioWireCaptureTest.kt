@@ -34,6 +34,12 @@ class ScenarioWireCaptureTest {
 
         assertEquals(ScenarioHistory(3, 3, null), previous.checkHistory(next, "I found a result."))
         assertEquals(ScenarioHistory(2, 2, null), previous.checkHistory(next, finalAnswer = null))
+        val seed = listOf(
+            LLMRequest.Message(LLMMessageRole.user, "Find the matching doctor"),
+            LLMRequest.Message(LLMMessageRole.assistant, "I found a result."),
+        )
+        assertEquals(ScenarioHistory(2, 2, null), next.checkSeededHistory(seed))
+        assertEquals(ScenarioHistory(2, 1, "assistant"), previous.checkSeededHistory(seed))
         assertEquals(
             ScenarioHistory(3, 1, "tool"),
             previous.checkHistory(next.copy(messages = next.messages - listOf(tool)), "I found a result."),
