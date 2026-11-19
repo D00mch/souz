@@ -1,16 +1,19 @@
-"""Exercise the release workflow's shell guards with synthetic Git/API fixtures."""
+"""Exercise SDK release guards with synthetic Git, API and distribution fixtures."""
 
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import textwrap
 import unittest
+import zipfile
 
 
-WORKFLOW = (Path(__file__).resolve().parents[1] / ".github/workflows/publish-plugin-sdk.yml").read_text()
+REPO_ROOT = Path(__file__).resolve().parents[1]
+WORKFLOW = (REPO_ROOT / ".github/workflows/publish-plugin-sdk.yml").read_text()
 
 
 def workflow_script(step_name):
@@ -148,6 +151,45 @@ class PluginSdkReleaseTest(unittest.TestCase):
         for action in actions:
             with self.subTest(action=action):
                 self.assertRegex(action, r"^[\w./-]+@[0-9a-f]{40}$")
+
+
+class GradleDistributionTest(unittest.TestCase):
+    # https://services.gradle.org/distributions/gradle-9.4.1-bin.zip.sha256
+    CHECKSUM = "2ab2958f2a1e51120c326cad6f385153bb11ee93b3c216c5fccebfdfbb7ec6cb"
+
+    def test_release_distribution_has_published_checksum(self):
+        properties = (REPO_ROOT / "gradle/wrapper/gradle-wrapper.properties").read_text()
+        self.assertIn("distributionUrl=https\\://services.gradle.org/distributions/gradle-9.4.1-bin.zip\n",
+                      properties)
+        self.assertRegex(properties, rf"(?m)^distributionSha256Sum={self.CHECKSUM}$")
+
+    def test_wrapper_rejects_substituted_distribution_before_extraction(self):
+        with tempfile.TemporaryDirectory(prefix="souz-sdk-wrapper-test-") as scratch:
+            root = Path(scratch)
+            wrapper = root / "gradle/wrapper"
+            wrapper.mkdir(parents=True)
+            shutil.copy2(REPO_ROOT / "gradlew", root / "gradlew")
+            shutil.copy2(REPO_ROOT / "gradle/wrapper/gradle-wrapper.jar", wrapper)
+            distribution = root / "gradle-substituted.zip"
+            with zipfile.ZipFile(distribution, "w") as archive:
+                archive.writestr("gradle-substituted/README", "Synthetic untrusted distribution")
+            properties = (REPO_ROOT / "gradle/wrapper/gradle-wrapper.properties").read_text()
+            properties = re.sub(r"(?m)^distributionUrl=.*$",
+                                "distributionUrl=" + distribution.as_uri(), properties)
+            (wrapper / "gradle-wrapper.properties").write_text(properties)
+            env = dict(os.environ)
+            for option in ("JAVA_OPTS", "GRADLE_OPTS", "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS",
+                           "_JAVA_OPTIONS"):
+                env.pop(option, None)
+            gradle_home = root / "gradle-home"
+            result = subprocess.run(["bash", str(root / "gradlew"), "-g", str(gradle_home),
+                                     f"-Duser.home={root}", "--version"], cwd=root, env=env,
+                                    text=True, capture_output=True, timeout=30)
+            output = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, output)
+            self.assertIn("Verification of Gradle distribution failed!", output)
+            self.assertIn(self.CHECKSUM, output)
+            self.assertFalse(list(gradle_home.rglob("README")), "Untrusted ZIP must not be extracted")
 
 
 if __name__ == "__main__":
