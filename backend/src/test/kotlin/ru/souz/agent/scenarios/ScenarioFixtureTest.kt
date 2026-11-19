@@ -8,7 +8,6 @@ import java.time.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 
 class ScenarioFixtureTest {
@@ -53,8 +52,12 @@ class ScenarioFixtureTest {
         val channel = fixture.channels.listAll("test-user").single()
         assertIs<ChannelSendResult.Delivered>(fixture.channels.send("test-user", "telegram", channel.channelId, link))
 
-        val failure = assertFailsWith<AssertionError> { fixture.verify() }
-        assertContains(failure.message.orEmpty(), "did not return the expected initial search results")
+        val assertions = ScenarioAssertions()
+        fixture.verify(assertions)
+        val score = assertions.result()
+        assertEquals(3, score.passed)
+        assertEquals(4, score.total)
+        assertContains(score.failures.single(), "did not return the expected initial search results")
     }
 
     @Test
@@ -68,8 +71,12 @@ class ScenarioFixtureTest {
         val link = "https://theatre.example/event/ogni-na-kryshe"
         assertIs<ChannelSendResult.Delivered>(fixture.channels.send("test-user", "telegram", channel.channelId, "$link\n$link"))
 
-        val failure = assertFailsWith<AssertionError> { fixture.verify() }
-        assertContains(failure.message.orEmpty(), "must deliver each requested link exactly once")
+        val assertions = ScenarioAssertions()
+        fixture.verify(assertions)
+        val score = assertions.result()
+        assertEquals(3, score.passed)
+        assertEquals(4, score.total)
+        assertContains(score.failures.single(), "must deliver each requested link exactly once")
     }
 
     private suspend fun assertSearchRows(

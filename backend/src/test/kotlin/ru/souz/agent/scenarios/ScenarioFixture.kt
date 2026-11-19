@@ -13,24 +13,20 @@ import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 
 internal enum class EvaluationCase(val id: String) {
     DOCTOR_SEND("doctor-send-link"),
-    DOCTOR_CHOOSE("doctor-choose-and-send"),
     TRAIN("rybinsk-train"),
     THEATRE("afisha-theatre"),
     SKILL_SWITCH("skill-switch"),
 }
 
-internal class ScenarioFixture(private val case: EvaluationCase, today: LocalDate, appointment: LocalDate) {
-    private val doctor = doctorTask(today, appointment, case)
+internal class ScenarioFixture(case: EvaluationCase, today: LocalDate, appointment: LocalDate) {
+    private val doctor = doctorTask(today, appointment)
     private val train = trainTask(appointment.plusDays(2))
     private val theatre = theatreTask(appointment.plusDays(3))
     private val tasks = when (case) {
-        EvaluationCase.DOCTOR_SEND, EvaluationCase.DOCTOR_CHOOSE -> listOf(doctor)
+        EvaluationCase.DOCTOR_SEND -> listOf(doctor)
         EvaluationCase.TRAIN -> listOf(train)
         EvaluationCase.THEATRE -> listOf(theatre)
         EvaluationCase.SKILL_SWITCH -> listOf(doctor, train, theatre)
@@ -45,7 +41,7 @@ internal class ScenarioFixture(private val case: EvaluationCase, today: LocalDat
     private data class SearchResult(val options: Map<String, String>, val output: String)
 
     private data class Turn(
-        var answer: String = "",
+        var answer: String? = null,
         val searches: MutableList<SearchResult> = mutableListOf(),
         val deliveries: MutableList<String> = mutableListOf(),
     )
@@ -80,53 +76,50 @@ internal class ScenarioFixture(private val case: EvaluationCase, today: LocalDat
         }
     }))
 
-    fun afterTurn(completed: Int, answer: String) {
+    fun afterTurn(completed: Int, answer: String?) {
         evidence[completed - 1].answer = answer
         turn = completed
     }
 
-    fun answerOnTurn(number: Int): String? = evidence[number - 1].answer.takeIf(String::isNotEmpty)
+    fun answerOnTurn(number: Int): String? = evidence[number - 1].answer
 
     fun deliveriesOnTurn(number: Int): List<String> = evidence[number - 1].deliveries.toList()
 
-    fun verify() {
+    fun verify(assertions: ScenarioAssertions) {
         var first = 0
         for (task in tasks) {
             val last = first + task.turns.lastIndex
             val (rowType, rowCount) = task.initialRows
-            assertTrue(evidence[first].searches.any { search ->
+            assertions.check(evidence[first].searches.any { search ->
                 task.initialQuery(search.options) &&
                     search.output.lineSequence().count { it.startsWith("$rowType\t") } == rowCount
             },
                 "${task.skillId} did not return the expected initial search results.")
-            if (case == EvaluationCase.DOCTOR_SEND) verifyDoctorBudgetSearch()
-            task.choice?.let { (index, name) ->
-                assertTrue(evidence[first + index].answer.contains(name, ignoreCase = true),
-                    "${task.skillId} did not name the requested choice.")
-            }
-            assertTrue((first until last).none { evidence[it].deliveries.isNotEmpty() },
+            if (task === doctor) verifyDoctorBudgetSearch(assertions)
+            assertions.check((first until last).none { evidence[it].deliveries.isNotEmpty() },
                 "${task.skillId} delivered a message before the user requested a link.")
-            assertEquals(1, evidence[last].deliveries.size,
+            val deliveries = evidence[last].deliveries
+            assertions.check(deliveries.size == 1,
                 "${task.skillId} must deliver exactly one Telegram message on the final turn.")
-            val links = URL.findAll(evidence[last].deliveries.single())
-                .map { it.value.trimEnd('.', ',', ';', '!', '?') }.toList()
-            assertEquals(task.expectedLinks.sorted(), links.sorted(),
+            val links = deliveries.flatMap { delivery ->
+                URL.findAll(delivery).map { it.value.trimEnd('.', ',', ';', '!', '?') }.toList()
+            }
+            assertions.check(links.sorted() == task.expectedLinks.sorted(),
                 "${task.skillId} must deliver each requested link exactly once.")
             first = last + 1
         }
     }
 
-    private fun verifyDoctorBudgetSearch() {
-        val search = assertNotNull(
-            evidence[1].searches.lastOrNull { it.options["--max-price"]?.toIntOrNull() == BUDGET },
-            "${doctor.skillId} must rerun the search with a price limit of $BUDGET on the budget turn.",
-        )
-        val links = search.output.lineSequence()
+    private fun verifyDoctorBudgetSearch(assertions: ScenarioAssertions) {
+        val search = evidence[1].searches.lastOrNull { it.options["--max-price"]?.toIntOrNull() == BUDGET }
+        assertions.check(search != null,
+            "${doctor.skillId} must rerun the search with a price limit of $BUDGET on the budget turn.")
+        val links = search?.output.orEmpty().lineSequence()
             .filter { it.startsWith("DOCTOR\t") }
             .map { it.substringAfterLast('\t') }
             .toList()
-        assertEquals(2, links.size, "${doctor.skillId} must return exactly two doctors on the budget turn.")
-        assertEquals(doctor.expectedLinks, links.toSet(), "${doctor.skillId} must return only the eligible doctors.")
+        assertions.check(links.size == 2, "${doctor.skillId} must return exactly two doctors on the budget turn.")
+        assertions.check(links.toSet() == doctor.expectedLinks, "${doctor.skillId} must return only the eligible doctors.")
     }
 }
 
@@ -141,7 +134,6 @@ private data class ScenarioTask(
     val expectedLinks: Set<String>,
     val initialRows: Pair<String, Int>,
     val initialQuery: (Map<String, String>) -> Boolean = { true },
-    val choice: Pair<Int, String>? = null,
 ) {
     fun parseQuery(args: List<String>): Map<String, String>? {
         if (command != null && args.firstOrNull() != command) return null
@@ -164,21 +156,19 @@ private data class ScenarioTask(
     }
 }
 
-private data class Doctor(val name: String, val surname: String, val price: Int, val reviews: Int, val slug: String) {
+private data class Doctor(val name: String, val price: Int, val reviews: Int, val slug: String) {
     val link = "https://booking.example/doctor/$slug"
 }
 
-private fun doctorTask(today: LocalDate, appointment: LocalDate, case: EvaluationCase): ScenarioTask {
-    val choose = case == EvaluationCase.DOCTOR_CHOOSE
+private fun doctorTask(today: LocalDate, appointment: LocalDate): ScenarioTask {
     val doctors = listOf(
-        Doctor("Вера Ким", "Ким", 3900, 145, "vera-kim-494"),
-        Doctor("Анна Петрова", "Петрова", 2200, 18, "anna-petrova-317"),
-        Doctor("Сергей Волков", "Волков", 3100, 104, "sergei-volkov-526"),
-        Doctor("Иван Соколов", "Соколов", 2400, 73, "ivan-sokolov-668"),
-        Doctor("Олег Лебедев", "Лебедев", 2700, 89, "oleg-lebedev-802"),
+        Doctor("Вера Ким", 3900, 145, "vera-kim-494"),
+        Doctor("Анна Петрова", 2200, 18, "anna-petrova-317"),
+        Doctor("Сергей Волков", 3100, 104, "sergei-volkov-526"),
+        Doctor("Иван Соколов", 2400, 73, "ivan-sokolov-668"),
+        Doctor("Олег Лебедев", 2700, 89, "oleg-lebedev-802"),
     )
     val eligible = doctors.filter { it.price <= BUDGET }
-    val selected = eligible.maxBy { it.reviews }
     val slot = appointment.format(DateTimeFormatter.ofPattern("dd.MM")) + " 18:00"
     val daysUntilAppointment = ChronoUnit.DAYS.between(today, appointment)
     return ScenarioTask(
@@ -187,16 +177,11 @@ private fun doctorTask(today: LocalDate, appointment: LocalDate, case: Evaluatio
         command = "find",
         optionsWithValues = setOf("--city", "--speciality", "--near", "--radius", "--order", "--max-price", "--days", "--limit"),
         switches = setOf("--kids", "--only-free", "--online"),
-        turns = buildList {
-            add("Найди пять терапевтов в Москве рядом с Новослободской в ближайшую среду после сегодняшнего дня в 18:00. Пока только список.")
-            add(if (case == EvaluationCase.DOCTOR_SEND) {
-                "Обнови поиск с ограничением по цене. Покажи только тех, у кого приём стоит не больше $BUDGET рублей."
-            } else {
-                "Оставь только тех, у кого приём стоит не больше $BUDGET рублей."
-            })
-            if (choose) add("У кого из оставшихся больше отзывов? Выбери этого врача и скажи почему.")
-            add(if (choose) "Пришли в Телеграм ссылку на него." else "Пришли в Телеграм обе ссылки на варианты до 2500 рублей.")
-        },
+        turns = listOf(
+            "Найди пять терапевтов в Москве рядом с Новослободской в ближайшую среду после сегодняшнего дня в 18:00. Пока только список.",
+            "Обнови поиск с ограничением по цене. Покажи только тех, у кого приём стоит не больше $BUDGET рублей.",
+            "Пришли в Телеграм обе ссылки на варианты до $BUDGET рублей.",
+        ),
         search = { args ->
             val priceCap = args.intOption("--max-price", 0)
             val limit = args.intOption("--limit", 3)?.coerceIn(1, 8)
@@ -225,10 +210,9 @@ private fun doctorTask(today: LocalDate, appointment: LocalDate, case: Evaluatio
                 }.joinToString("\n")
             }
         },
-        expectedLinks = if (choose) setOf(selected.link) else eligible.mapTo(mutableSetOf()) { it.link },
+        expectedLinks = eligible.mapTo(mutableSetOf()) { it.link },
         initialRows = "DOCTOR" to doctors.size,
         initialQuery = { "--max-price" !in it },
-        choice = if (choose) 2 to selected.surname else null,
     )
 }
 

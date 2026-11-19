@@ -16,9 +16,13 @@ class ScenarioEvaluationHtmlTest {
             telegram = listOf("https://booking.example/fixture"),
         )
         val report = ScenarioEvaluationHtml("fixture-model", "provider.example", "2026-11-25")
-        report.addTrial("doctor-choose-and-send", 1, "passed", null, 50, emptyList(), listOf(turn), trace)
-        val html = report.render(1, 1, 1, 50, 42, "run.jsonl")
+        val score = ScenarioAssertionResult(2, 4, listOf("First check failed", "Second check failed <detail>"))
+        report.addTrial("skill-switch", 1, "failed", null, 50, emptyList(), listOf(turn), trace, score)
+        val html = report.render(0, 1, 2, 4, 1, 50, 42, "run.jsonl")
 
+        assertContains(html, "2/4 assertions passed")
+        assertContains(html, "First check failed")
+        assertContains(html, "Second check failed &lt;detail&gt;")
         assertContains(html, "doctor-appointment")
         assertContains(html, "https://booking.example/fixture")
         assertContains(html, "&lt;script&gt;MODEL_REPLY&lt;/script&gt;")

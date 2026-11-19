@@ -23,6 +23,8 @@ internal class ScenarioEvaluationReport(
     private val writer: BufferedWriter = Files.newBufferedWriter(path, CREATE_NEW)
     private var trials = 0
     private var solved = 0
+    private var assertionsPassed = 0
+    private var assertionsTotal = 0
     private var modelCalls = 0
     private var totalModelMs = 0L
     private var durationMs: Long? = null
@@ -36,7 +38,7 @@ internal class ScenarioEvaluationReport(
             "provider" to model.provider.name,
             "providerHost" to model.providerHost,
             "reasoningEffort" to model.reasoningEffort,
-            "scenarioVersion" to "agent-scenarios-v9",
+            "scenarioVersion" to "agent-scenarios-v11",
             "skillsSha256" to skills.sha256,
             "skillsCount" to skills.bundles.size,
             "appointmentDate" to appointment.toString(),
@@ -52,9 +54,12 @@ internal class ScenarioEvaluationReport(
         durationMs: Long,
         trace: ScenarioTrace,
         fixture: ScenarioFixture,
+        score: ScenarioAssertionResult,
     ) {
         trials++
         if (status == "passed") solved++
+        assertionsPassed += score.passed
+        assertionsTotal += score.total
         modelCalls += trace.calls.size
         totalModelMs += trace.calls.sumOf { it.durationMs }
         val turns = (1..trace.startedTurns).map { turn ->
@@ -72,11 +77,12 @@ internal class ScenarioEvaluationReport(
             "status" to status,
             "detail" to detail,
             "durationMs" to durationMs,
+            "assertions" to score,
             "calls" to trace.calls,
             "prefixes" to trace.prefixes,
             "turns" to turns,
         ))
-        html.addTrial(scenario, repeat, status, detail, durationMs, fixture.initialHistory, turns, trace)
+        html.addTrial(scenario, repeat, status, detail, durationMs, fixture.initialHistory, turns, trace, score)
     }
 
     fun finish(durationMs: Long) {
@@ -84,6 +90,8 @@ internal class ScenarioEvaluationReport(
         write("summary", mapOf(
             "scenarios" to trials,
             "solved" to solved,
+            "assertionsPassed" to assertionsPassed,
+            "assertionsTotal" to assertionsTotal,
             "modelCalls" to modelCalls,
             "durationMs" to durationMs,
             "meanModelCallMs" to if (modelCalls == 0) null else totalModelMs.toDouble() / modelCalls,
@@ -99,7 +107,8 @@ internal class ScenarioEvaluationReport(
     override fun close() {
         writer.close()
         val meanMs = if (modelCalls == 0) null else totalModelMs / modelCalls
-        Files.writeString(htmlPath, html.render(solved, trials, modelCalls, durationMs, meanMs, path.fileName.toString()), CREATE_NEW)
+        val page = html.render(solved, trials, assertionsPassed, assertionsTotal, modelCalls, durationMs, meanMs, path.fileName.toString())
+        Files.writeString(htmlPath, page, CREATE_NEW)
     }
 }
 

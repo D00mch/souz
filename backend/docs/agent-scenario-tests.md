@@ -38,15 +38,17 @@ export OPENAI_MODEL=qwen/qwen3.8-27b
 ./gradlew :backend:test --rerun --tests 'ru.souz.agent.scenarios.AgentScenarioEvaluationTest'
 ```
 
-Set `OPENAI_MODEL=deepseek/deepseek-v4.1-flash-1017` to run the same suite with DeepSeek. `SOUZ_SCENARIO_REPEATS` defaults to 2. Each trial begins with a fresh conversation, using the Skills from the archive and the unmodified runtime date in Moscow. Mocked searches and Telegram delivery exercise three tasks:
+Set `OPENAI_MODEL` to `deepseek/deepseek-v4.1-flash-1017` or `z-ai/glm-4.7` to compare those models with Qwen. All three use the same OpenAI-compatible adapter and read cache hits from `usage.prompt_tokens_details.cached_tokens`. `SOUZ_SCENARIO_REPEATS` defaults to 1. Each trial runs `skill-switch` in a fresh conversation, using the Skills from the archive and the unmodified runtime date in Moscow. Mocked searches and Telegram delivery exercise three tasks:
 
-- Search for five doctors and then narrow the result to a price limit. In the case that requests both eligible links, the user asks to rerun the search and the test verifies that the skill uses the price limit and returns exactly two eligible doctors. The other case selects the eligible doctor with the most reviews. Both cases request delivery to Telegram.
+- Search for five doctors, then rerun the search with a price limit. Verify that the Skill uses the limit, returns exactly two eligible doctors, and sends both links to Telegram when requested.
 - Search for direct trains and send the link for the departure after noon.
 - Find two shows and send the link for the one that starts at 19:30.
 
-A separate trial performs all three tasks in the same conversation. The outcome verifies that the mock Telegram inbox receives exactly the expected links on the requested turns.
+The three tasks share one conversation and run in the listed order in every trial. The outcome verifies that the mock Telegram inbox receives exactly the expected links on the requested turns.
 
-Each turn checks that the next conversational request preserves earlier user messages, assistant replies, and tool exchanges in order. It excludes the system message and regenerated host context from that history assertion. The cache comparison uses the complete message payloads from the adjacent conversational calls and records the first differing role, tool definition equality, and cached input tokens on both calls. Cache values and prefix changes are diagnostic and do not affect the task verdict.
+Each turn checks that the next conversational request preserves earlier user messages, assistant replies, and tool exchanges in order. It excludes the system message and regenerated host context from that history assertion. The cache comparison counts fully matching messages from the start of adjacent conversational requests and records the first differing role, tool definition equality, and cached input tokens on both calls. When the first difference is a system message, it also records the length of the shared start of its text in characters, without storing the prompt. The server reports cache hits in tokens and can reuse prefixes from earlier requests. Cache values and prefix changes are diagnostic and do not affect the task verdict.
+
+An evaluation attempts every scripted turn and checks every expected outcome. After a recoverable execution error, it uses the latest returned conversation state or keeps the user message with the previously available history. Each turn has its own timeout. External cancellation still stops the run. The reports show passed and total assertions and list each failure. A trial with any failed assertion still fails in JUnit.
 
 Open `backend/build/reports/agent-evaluation/<run-id>.html` after the test. The suite generates the page directly and prints the full path in the Gradle test's **Standard output**. If `SOUZ_SCENARIO_REPORT_DIR` is set, open the report in that directory instead. Expand a trial to see its seeded history, each user turn and model reply, Skill IDs requested through `GetSkillByName` and `RunSkillCommand`, and messages accepted by the Telegram mock. Each turn shows model calls, latency, token counts, and any history or cache comparison with the preceding turn. Failed trials are included.
 

@@ -1,6 +1,5 @@
 package ru.souz.agent.scenarios
 
-import kotlinx.coroutines.CancellationException
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
@@ -44,6 +43,7 @@ internal class ScenarioTrace(
     private val wire: ScenarioWireCapture? = null,
     private val normalizeDate: Boolean = true,
     private val maxModelCalls: Int = 24,
+    private val assertions: ScenarioAssertions? = null,
 ) : AgentRuntimeEventSink {
     val requests = mutableListOf<LLMRequest.Chat>()
     val events = mutableListOf<AgentRuntimeEvent>()
@@ -52,8 +52,12 @@ internal class ScenarioTrace(
     private val toolUses = mutableListOf<ScenarioToolUse>()
     private var usage = LLMResponse.Usage(0, 0, 0, 0)
     private var lastResponse: LLMResponse.Chat? = null
-    private val providerFailures = mutableListOf<String>()
+    private var turnError: String? = null
+    var hasTurnErrors = false
+        private set
+    val continuesAfterFailure: Boolean get() = assertions != null
     private var turn = 0
+    private var callsAtTurnStart = 0
     private var currentConversationRequest: Pair<ScenarioWireRequest, ScenarioCall>? = null
     private var previousConversationRequest: Pair<ScenarioWireRequest, ScenarioCall>? = null
     private var currentAnswer: String? = null
@@ -68,12 +72,21 @@ internal class ScenarioTrace(
         previousAnswer = currentAnswer
         currentAnswer = null
         lastResponse = null
+        turnError = null
+        callsAtTurnStart = requests.size
         turn++
+    }
+
+    fun recordTurnError(detail: String) {
+        turnError = detail
+        hasTurnErrors = true
     }
 
     fun instrument(api: LLMChatAPI): LLMChatAPI = object : LLMChatAPI by api {
         override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-            check(requests.size < maxModelCalls) { "Scenario exceeded $maxModelCalls model calls without completing." }
+            check(requests.size - callsAtTurnStart < maxModelCalls) {
+                "Turn $turn exceeded $maxModelCalls model calls without completing."
+            }
             val request = body.copy(
                 reasoningEffort = reasoningEffort,
                 messages = if (normalizeDate) body.messages.map { it.withScenarioDate() } else body.messages,
@@ -86,16 +99,8 @@ internal class ScenarioTrace(
                 return api.message(request).also {
                     response = it
                     lastResponse = it
-                    when (it) {
-                        is LLMResponse.Chat.Ok -> usage += it.usage
-                        is LLMResponse.Chat.Error -> providerFailures += "Call ${requests.size}: status ${it.status}"
-                    }
+                    if (it is LLMResponse.Chat.Ok) usage += it.usage
                 }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                providerFailures += "Call ${requests.size}: ${failure.javaClass.simpleName}"
-                throw failure
             } finally {
                 recordCall(request, response, started.elapsedNow())
             }
@@ -128,7 +133,7 @@ internal class ScenarioTrace(
                             currentCall = call.number,
                             previousCachedInputTokens = lastCall.cachedInputTokens,
                             currentCachedInputTokens = call.cachedInputTokens,
-                            history = previousAnswer?.let { previous.checkHistory(sent, it) },
+                            history = previous.checkHistory(sent, previousAnswer),
                         )
                     }
                 }
@@ -148,28 +153,38 @@ internal class ScenarioTrace(
         }
     }
 
-    fun assertCompleted(result: AgentExecutionResult) {
-        assertTrue(providerFailures.isEmpty(), "Scenario provider failures: $providerFailures")
-        val response = lastResponse
-        assertTrue(response is LLMResponse.Chat.Ok, "No successful final model response.")
-        assertTrue(response.choices.isNotEmpty() && response.choices.all {
+    fun assertCompleted(result: AgentExecutionResult?): String? {
+        val response = lastResponse as? LLMResponse.Chat.Ok
+        val choices = response?.choices.orEmpty()
+        val output = result?.output
+        val completed = choices.isNotEmpty() && choices.all {
             it.message.functionCall == null && it.finishReason == LLMResponse.FinishReason.stop
-        }, "Scenario ended without a completed assistant response: ${response.choices}")
-        assertTrue(result.output.isNotBlank(), "Scenario returned no final answer.")
-        assertTrue(response.choices.any { it.message.content.trim() == result.output.trim() },
-            "Output must come from the final model response.")
-        currentAnswer = result.output
+        }
+        val outputMatches = !output.isNullOrBlank() && choices.any { it.message.content.trim() == output.trim() }
+        val providerFailures = calls.subList(callsAtTurnStart, calls.size).filter { it.status == "error" }
+            .map { "call ${it.number} (${it.providerStatus ?: "no response"})" }
+        assertCheck(providerFailures.isEmpty(), "Turn $turn provider failures: $providerFailures")
+        assertCheck(result != null && response != null, "Turn $turn: ${turnError ?: "No successful final model response."}")
+        assertCheck(completed, "Turn $turn ended without a completed assistant response.")
+        assertCheck(!output.isNullOrBlank(), "Turn $turn returned no final answer.")
+        assertCheck(outputMatches, "Turn $turn output must come from the final model response.")
+        currentAnswer = output.takeIf { completed && outputMatches }
+        return currentAnswer
     }
 
     fun assertHistoryPreserved(turns: Int) {
-        assertTrue(prefixes.map { it.turn } == (2..turns).toList(),
-            "Record the first conversational request at every turn boundary.")
-        for (prefix in prefixes) {
-            val history = requireNotNull(prefix.history)
-            assertTrue(history.matched == history.expected,
-                "Turn ${prefix.turn} preserved ${history.matched} of ${history.expected} earlier messages " +
+        val byTurn = prefixes.associateBy { it.turn }
+        for (number in 2..turns) {
+            val history = byTurn[number]?.history
+            assertCheck(history != null && history.matched == history.expected,
+                if (history == null) "Turn $number has no recorded history comparison."
+                else "Turn $number preserved ${history.matched} of ${history.expected} earlier messages " +
                     "(first missing role: ${history.firstMissingRole}).")
         }
+    }
+
+    private fun assertCheck(passed: Boolean, failure: String) {
+        if (assertions == null) assertTrue(passed, failure) else assertions.check(passed, failure)
     }
 
     fun metrics(duration: Duration): ScenarioMetrics = ScenarioMetrics(

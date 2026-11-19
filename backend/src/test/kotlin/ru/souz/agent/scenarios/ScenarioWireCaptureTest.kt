@@ -33,6 +33,7 @@ class ScenarioWireCaptureTest {
         ), tools = null)
 
         assertEquals(ScenarioHistory(3, 3, null), previous.checkHistory(next, "I found a result."))
+        assertEquals(ScenarioHistory(2, 2, null), previous.checkHistory(next, finalAnswer = null))
         assertEquals(
             ScenarioHistory(3, 1, "tool"),
             previous.checkHistory(next.copy(messages = next.messages - listOf(tool)), "I found a result."),
@@ -61,7 +62,7 @@ class ScenarioWireCaptureTest {
             )
             val request = LLMRequest.Chat(
                 model = "fixture", provider = LlmProvider.OPENAI, messages = listOf(
-                    LLMRequest.Message(LLMMessageRole.system, "Original"),
+                    LLMRequest.Message(LLMMessageRole.system, "Shared original"),
                     LLMRequest.Message(LLMMessageRole.user, "Question"),
                 ),
                 functions = listOf(LLMRequest.Function("fixture")),
@@ -73,12 +74,12 @@ class ScenarioWireCaptureTest {
             wire.reset()
             assertIs<LLMResponse.Chat.Ok>(
                 api.message(request.copy(messages = request.messages.mapIndexed { i, message ->
-                    if (i == 0) message.copy(content = "Rebuilt") else message
+                    if (i == 0) message.copy(content = "Shared new") else message
                 })),
             )
             assertNull(wire.usage?.cached)
             assertEquals(
-                ScenarioPrefix(2, 2, 2, 0, "system", "system", true),
+                ScenarioPrefix(2, 2, 2, 0, "system", "system", true, commonSystemPrefixChars = 7),
                 original.compareTo(requireNotNull(wire.request), turn = 2),
             )
         }

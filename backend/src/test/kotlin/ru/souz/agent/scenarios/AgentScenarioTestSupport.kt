@@ -5,14 +5,19 @@ import io.mockk.every
 import io.mockk.mockk
 import java.nio.file.Files
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.kodein.di.direct
 import org.kodein.di.instance
 import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
+import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentId
 import ru.souz.agent.runtime.DEFAULT_SUBAGENT_TASK_TIMEOUT
 import ru.souz.agent.skills.SkillId
@@ -35,6 +40,7 @@ import ru.souz.backend.memory.hindsight.ToolForgetAllMemory
 import ru.souz.backend.memory.hindsight.ToolForgetMemoryFact
 import ru.souz.db.SettingsProvider
 import ru.souz.knowledge.SandboxConversationKnowledgeStore
+import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
@@ -62,15 +68,17 @@ import ru.souz.tool.subagent.SubagentToolFactory
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.TimeSource
 
+private val SCENARIO_TIMEOUT = 4.minutes
+
 /** One selected model, fresh production agent wiring for every scenario. */
 suspend fun ScenarioLiveModel.runScenario(
     userPrompt: String,
     skillResources: Map<String, String> = emptyMap(),
     mockedTools: List<LLMToolSetup> = emptyList(),
-): ScenarioResult = runConversation(
+): ScenarioResult = requireNotNull(runConversation(
     turns = listOf(userPrompt), skillResources = skillResources, mockedTools = mockedTools,
     trace = ScenarioTrace(modelId, reasoningEffort),
-)
+))
 
 internal suspend fun ScenarioLiveModel.runConversation(
     turns: List<String>,
@@ -81,15 +89,16 @@ internal suspend fun ScenarioLiveModel.runConversation(
     skillBundles: List<SkillBundle>? = null,
     commands: SandboxCommandExecutor? = null,
     channels: ChannelProviderRegistry? = null,
-    afterTurn: (Int, String) -> Unit = { _, _ -> },
-): ScenarioResult = withContext(Dispatchers.Default) {
+    afterTurn: (Int, String?) -> Unit = { _, _ -> },
+): ScenarioResult? = withContext(Dispatchers.Default) {
     require(turns.isNotEmpty())
     val started = TimeSource.Monotonic.markNow()
     val home = Files.createTempDirectory("souz-model-scenario-")
     val meta = ToolInvocationMeta("scenario-user", UUID.randomUUID().toString())
     var completed = false
     try {
-        val execution = withTimeout(4.minutes) {
+        val timeout = if (trace.continuesAfterFailure) SCENARIO_TIMEOUT * (turns.size + 1) else SCENARIO_TIMEOUT
+        val execution = withTimeout(timeout) {
             val baseSettings = scenarioSettings(modelId, provider)
             val settings = BackendConversationSettingsProvider(
                 delegate = baseSettings,
@@ -191,20 +200,42 @@ internal suspend fun ScenarioLiveModel.runConversation(
                 captureScope = this,
             ).create()
             var history = initialHistory
-            turns.mapIndexed { turn, prompt ->
+            var lastExecution: AgentExecutionResult? = null
+            for ((index, prompt) in turns.withIndex()) {
                 trace.startTurn()
-                val context = kernel.contextFactory.create(
-                    AgentId.SKILLS_GRAPH, history, settings.gigaModel, settings.contextSize, settings.temperature, meta,
-                )
-                kernel.executor.execute(AgentId.SKILLS_GRAPH, context, prompt, trace).also { result ->
-                    trace.assertCompleted(result)
-                    history = result.context.history
-                    afterTurn(turn + 1, result.output)
+                suspend fun executeTurn(): AgentExecutionResult {
+                    val context = kernel.contextFactory.create(
+                        AgentId.SKILLS_GRAPH, history, settings.gigaModel, settings.contextSize, settings.temperature, meta,
+                    )
+                    return kernel.executor.execute(AgentId.SKILLS_GRAPH, context, prompt, trace)
                 }
-            }.last()
+                val result = if (trace.continuesAfterFailure) {
+                    try {
+                        withTimeoutOrNull(SCENARIO_TIMEOUT) { executeTurn() }.also {
+                            if (it == null) trace.recordTurnError("Execution timed out.")
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Throwable) {
+                        currentCoroutineContext().ensureActive()
+                        if (failure !is Exception && failure !is AssertionError) throw failure
+                        trace.recordTurnError("Execution failed with ${failure.javaClass.simpleName}.")
+                        null
+                    }
+                } else {
+                    executeTurn()
+                }
+                val answer = trace.assertCompleted(result)
+                history = result?.context?.history ?: (history + LLMRequest.Message(LLMMessageRole.user, prompt))
+                afterTurn(index + 1, answer)
+                lastExecution = result
+            }
+            lastExecution
         }
         completed = true
-        ScenarioResult(execution, trace.requests.toList(), trace.events.toList(), trace.metrics(started.elapsedNow()))
+        execution?.let {
+            ScenarioResult(it, trace.requests.toList(), trace.events.toList(), trace.metrics(started.elapsedNow()))
+        }
     } finally {
         if (skillBundles == null) {
             println("Scenario execution=${if (completed) "completed" else "failed"}; ${trace.metrics(started.elapsedNow())}")

@@ -51,6 +51,8 @@ internal data class ScenarioWireRequest(val messages: List<JsonNode>, val tools:
         val common = messages.zip(next.messages).takeWhile { (before, after) -> before == after }.size
         val firstPrevious = messages.getOrNull(common)
         val firstNext = next.messages.getOrNull(common)
+        val previousSystem = firstPrevious?.systemContent()
+        val currentSystem = firstNext?.systemContent()
         return ScenarioPrefix(
             turn = turn,
             previousMessages = messages.size,
@@ -59,13 +61,17 @@ internal data class ScenarioWireRequest(val messages: List<JsonNode>, val tools:
             firstChangedPreviousRole = firstPrevious?.path("role")?.asText(),
             firstChangedCurrentRole = firstNext?.path("role")?.asText(),
             toolDefinitionsUnchanged = tools == next.tools,
+            commonSystemPrefixChars = if (previousSystem != null && currentSystem != null) {
+                previousSystem.commonPrefixWith(currentSystem).length
+            } else null,
         )
     }
 
-    fun checkHistory(next: ScenarioWireRequest, finalAnswer: String): ScenarioHistory {
-        val finalMessage = restJsonMapper.createObjectNode().put("role", "assistant").put("content", finalAnswer.trim())
-        val expected = messages.filter(JsonNode::isConversationHistory).map(JsonNode::historyIdentity) +
-            listOf(finalMessage)
+    fun checkHistory(next: ScenarioWireRequest, finalAnswer: String?): ScenarioHistory {
+        val expected = messages.filter(JsonNode::isConversationHistory).map(JsonNode::historyIdentity).toMutableList()
+        if (finalAnswer != null) {
+            expected.add(restJsonMapper.createObjectNode().put("role", "assistant").put("content", finalAnswer.trim()))
+        }
         val observed = next.messages.filter(JsonNode::isConversationHistory).map(JsonNode::historyIdentity)
         var matched = 0
         for (message in observed) {
@@ -78,6 +84,9 @@ internal data class ScenarioWireRequest(val messages: List<JsonNode>, val tools:
         )
     }
 }
+
+private fun JsonNode.systemContent(): String? =
+    if (path("role").asText() == "system") path("content").textValue() else null
 
 private fun JsonNode.isConversationHistory(): Boolean = when (path("role").asText()) {
     "user" -> !path("content").asText().startsWith("<context>\nBackground information.")
@@ -118,4 +127,5 @@ internal data class ScenarioPrefix(
     val previousCachedInputTokens: Int? = null,
     val currentCachedInputTokens: Int? = null,
     val history: ScenarioHistory? = null,
+    val commonSystemPrefixChars: Int? = null,
 )

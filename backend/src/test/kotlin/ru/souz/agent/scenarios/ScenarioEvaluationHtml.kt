@@ -19,14 +19,24 @@ internal class ScenarioEvaluationHtml(
         seed: List<LLMRequest.Message>,
         turns: List<ScenarioTurnEvidence>,
         trace: ScenarioTrace,
+        score: ScenarioAssertionResult,
     ) = with(trials) {
         append("<details><summary>")
-        appendText("$scenario · repeat $repeat · $status · $durationMs ms")
+        appendText("$scenario · repeat $repeat · $status · ${score.passed}/${score.total} assertions passed · $durationMs ms")
         append("</summary>")
-        if (detail != null) {
+        if (detail != null && detail !in score.failures) {
             append("<p class=\"failure\">")
             appendText(detail)
             append("</p>")
+        }
+        if (score.failures.isNotEmpty()) {
+            append("<h3>Failed assertions</h3><ul class=\"failure\">")
+            for (failure in score.failures) {
+                append("<li>")
+                appendText(failure)
+                append("</li>")
+            }
+            append("</ul>")
         }
         if (seed.isNotEmpty()) {
             append("<h3>Seeded history</h3>")
@@ -51,6 +61,7 @@ internal class ScenarioEvaluationHtml(
                 boundary.history?.let { appendText("History: ${it.matched}/${it.expected} messages · ") }
                 appendText("Matching prefix: ${boundary.unchangedMessages}/${boundary.previousMessages} previous messages")
                 boundary.firstChangedPreviousRole?.let { appendText(" · first changed role: $it") }
+                boundary.commonSystemPrefixChars?.let { appendText(" · common start of system text: $it chars") }
                 appendText(" · cached input: ${boundary.previousCachedInputTokens ?: "—"} → ${boundary.currentCachedInputTokens ?: "—"}")
                 append("</p>")
             }
@@ -61,12 +72,21 @@ internal class ScenarioEvaluationHtml(
         append("</details>")
     }
 
-    fun render(solved: Int, count: Int, calls: Int, durationMs: Long?, meanMs: Long?, jsonlName: String): String = buildString {
+    fun render(
+        solved: Int,
+        count: Int,
+        assertionsPassed: Int,
+        assertionsTotal: Int,
+        calls: Int,
+        durationMs: Long?,
+        meanMs: Long?,
+        jsonlName: String,
+    ): String = buildString {
         append(HTML_HEAD)
         append("<h1>Agent scenario evaluation</h1><p class=\"muted\">")
         appendText(listOfNotNull(model, providerHost, "Appointment fixture: $appointment").joinToString(" · "))
         append("</p><p>")
-        appendText("$solved/$count trials passed · $calls model calls")
+        appendText("$solved/$count trials passed · $assertionsPassed/$assertionsTotal assertions passed · $calls model calls")
         durationMs?.let { appendText(" · $it ms total") } ?: append(" · partial run")
         meanMs?.let { appendText(" · $it ms mean model latency") }
         append("</p><p><a href=\"")
