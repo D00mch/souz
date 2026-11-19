@@ -253,6 +253,69 @@ class GradleDependencyVerificationTest(unittest.TestCase):
             self.assertIsNotNone(component.find(
                 f"v:artifact[@name='tdlight-natives-4.0.558-{classifier}.jar']/v:sha256", VERIFICATION_NS))
 
+    def test_macos_release_toolchain_resolves_and_rejects_tampering(self):
+        # Compose 1.9.3 resolves ProGuard in a detached configuration: application
+        # version selection cannot supply its Kotlin, annotations or Log4j hashes.
+        coordinates = [
+            ("org.jetbrains.compose", "gradle-plugin-internal-jdk-version-probe", "1.9.3", ["jar", "module"]),
+            ("com.guardsquare", "proguard-gradle", "7.7.0", ["jar", "module"]),
+            ("com.guardsquare", "proguard-base", "7.7.0", ["jar", "module"]),
+            ("com.guardsquare", "proguard-core", "9.1.10", ["jar", "module"]),
+            ("com.github.zafarkhaja", "java-semver", "0.10.2", ["jar", "pom"]),
+            ("org.jetbrains", "annotations", "26.0.1", ["jar", "module"]),
+            ("org.jetbrains.kotlin", "kotlin-metadata-jvm", "2.1.0", ["jar", "pom"]),
+            ("org.jetbrains.kotlin", "kotlin-stdlib", "2.1.0", ["jar", "module"]),
+            ("org.jetbrains.kotlin", "kotlin-stdlib-common", "2.1.0", ["module"]),
+            ("org.apache.logging.log4j", "log4j", "2.24.2", ["pom"]),
+            ("org.apache.logging.log4j", "log4j-api", "2.24.2", ["jar", "pom"]),
+            ("org.apache.logging.log4j", "log4j-core", "2.24.2", ["jar", "pom"]),
+            ("org.json", "json", "20231013", ["jar", "pom"]),
+        ]
+        metadata = ET.parse(self.metadata)
+        dependencies, artifacts = [], {}
+        for group, name, version, extensions in coordinates:
+            repository = self.root / "repository" / group.replace(".", "/") / name / version
+            repository.mkdir(parents=True)
+            for extension in extensions:
+                artifact = repository / f"{name}-{version}.{extension}"
+                artifact.write_text(f"Synthetic macOS release toolchain artifact: {artifact.name}\n")
+                artifacts[artifact.name] = artifact
+                checksum = metadata.find(f"v:components/v:component[@group='{group}']"
+                                         f"[@name='{name}'][@version='{version}']/v:artifact"
+                                         f"[@name='{artifact.name}']/v:sha256", VERIFICATION_NS)
+                self.assertIsNotNone(checksum, f"macOS release requires a reviewed hash for {artifact.name}")
+                self.assertRegex(checksum.get("value"), r"^[0-9a-f]{64}$")
+                checksum.set("value", hashlib.sha256(artifact.read_bytes()).hexdigest())
+                dependencies.append(f"    proguardToolchain '{group}:{name}:{version}@{extension}'")
+        ET.register_namespace("", VERIFICATION_NS["v"])
+        metadata.write(self.metadata, encoding="UTF-8", xml_declaration=True)
+        # Resolve each pinned artifact explicitly, including metadata, with no network.
+        (self.root / "build.gradle").write_text(textwrap.dedent("""\
+            repositories {
+                maven { url = uri('repository'); metadataSources { artifact() } }
+            }
+            configurations { proguardToolchain }
+            """) + "dependencies {\n" + "\n".join(dependencies) + "\n}\n"
+            + textwrap.dedent(f"""\
+            tasks.register('verifyFixture') {{
+                doLast {{
+                    assert configurations.proguardToolchain.files*.name.sort() == {json.dumps(sorted(artifacts))}
+                    file('build-configured').text = 'ProGuard toolchain verified'
+                }}
+            }}
+            """))
+        result = self.run_gradle()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(self.marker.exists())
+        self.marker.unlink()
+        for name in ["proguard-core-9.1.10.jar", "proguard-gradle-7.7.0.module"]:
+            with self.subTest(tampered=name):
+                artifact = artifacts[name]
+                original = artifact.read_bytes()
+                artifact.write_bytes(original + b"Unreviewed modification\n")
+                self.assert_rejected()
+                artifact.write_bytes(original)
+
     def test_ci_build_metadata_is_pinned(self):
         metadata = ET.parse(VERIFICATION_METADATA)
         # Parent/BOM metadata is resolved even when its dependencies lose version selection.
