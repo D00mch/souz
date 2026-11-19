@@ -248,6 +248,35 @@ class BackendCompositionE2eTest {
         }
 
     @Test
+    fun `bootstrap advertises the Codex Sol model for selection with server credentials`() {
+        val credentials = mapOf(
+            "CODEX_ACCESS_TOKEN" to "test-codex-access",
+            "CODEX_REFRESH_TOKEN" to "test-codex-refresh",
+            "CODEX_ACCOUNT_ID" to "test-codex-account",
+            "CODEX_EXPIRES_AT" to Long.MAX_VALUE.toString(),
+        )
+        backendE2eTest("e2e_codex_model", settingsSource = object : BackendConfigSource {
+            override fun env(key: String): String? = credentials[key]
+            override fun property(key: String): String? = null
+        }) {
+            val userId = "codex-model-user"
+            val bootstrap = client.get(BackendHttpRoutes.BOOTSTRAP) { trusted(userId) }.jsonBody()
+            val model = bootstrap["capabilities"]["models"].single { it["model"].asText() == "gpt-6.2-sol" }
+            assertEquals("codex", model["provider"].asText())
+            assertTrue(model["serverManagedKey"].asBoolean())
+            assertFalse(model["userManagedKey"].asBoolean())
+            assertEquals(E2E_MODEL.alias, bootstrap["settings"]["defaultModel"].asText())
+
+            val selected = client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted(userId)
+                jsonBody("""{"defaultModel":"gpt-6.2-sol"}""")
+            }
+            assertEquals(HttpStatusCode.OK, selected.status)
+            assertEquals("gpt-6.2-sol", selected.jsonBody()["settings"]["defaultModel"].asText())
+        }
+    }
+
+    @Test
     fun `public and proxy chat state survives application restart on the same schema`() {
         val schema = ru.souz.backend.storage.postgres.newPostgresSchema("e2e_restart")
         val userId = UUID.randomUUID().toString()
@@ -376,6 +405,7 @@ class BackendCompositionE2eTest {
                 model["model"].asText() == E2E_MODEL.alias && model["serverManagedKey"].asBoolean()
             })
             assertFalse(models.any { it["provider"].asText() == "giga" })
+            assertFalse(models.any { it["model"].asText() == "gpt-6.2-sol" })
             assertTrue(initial.jsonBody()["required"].asBoolean())
             assertFalse(initial.jsonBody()["completed"].asBoolean())
             assertEquals("preferences", initial.jsonBody()["currentStep"].asText())

@@ -328,6 +328,54 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
+    fun `Codex Sol chat forwards the model ID reasoning effort and tools`() = runTest {
+        val settings = LlmSettingsStub().apply {
+            codexAccessToken = "codex-test-token"
+            codexExpiresAt = Long.MAX_VALUE
+        }
+        val engine = MockEngine {
+            respond(
+                """
+                data: {"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_123","name":"Lookup","arguments":"{}"}}
+
+                data: {"type":"response.completed","response":{}}
+
+                data: [DONE]
+                """.trimIndent() + "\n\n",
+                headers = headersOf(HttpHeaders.ContentType, "text/event-stream"),
+            )
+        }
+        val http = HttpClient(engine) { providerHttpClientDefaults() }
+        facadeFixture(
+            settingsProvider = settings,
+            llmConfig = NamedLlmConfig(reasoningEfforts = mapOf("gpt-6.2-sol" to "low")),
+            providerApiOverride = null,
+            client = http,
+        ).use { fixture ->
+            val request = chat("CodexGpt62Sol").copy(functions = listOf(LLMRequest.Function("Lookup")))
+            val unary = fixture.api.message(request)
+            val streaming = fixture.api.messageStream(
+                request.copy(model = "gpt-6.2-sol", provider = LlmProvider.CODEX, reasoningEffort = "high"),
+            ).toList().single()
+            for (response in listOf(unary, streaming)) {
+                val choice = assertIs<LLMResponse.Chat.Ok>(response).choices.single()
+                assertEquals("call_123", choice.message.functionsStateId)
+                assertEquals(LLMResponse.FunctionCall("Lookup", emptyMap()), choice.message.functionCall)
+            }
+            assertEquals(2, engine.requestHistory.size)
+            for ((sent, effort) in engine.requestHistory.zip(listOf("low", "high"))) {
+                assertEquals("https://chatgpt.com/backend-api/codex/responses", sent.url.toString())
+                val body = restJsonMapper.readTree(sent.body.toByteArray())
+                assertEquals("gpt-6.2-sol", body["model"].asText())
+                assertEquals(effort, body["reasoning"]["effort"].asText())
+                val tool = body["tools"].single()
+                assertEquals("function", tool["type"].asText())
+                assertEquals("Lookup", tool["name"].asText())
+            }
+        }
+    }
+
+    @Test
     fun `raw routes preserve IDs across providers retries and stream accounting`() = runTest {
         val requests = mutableListOf<Pair<LlmProvider, LLMRequest.Chat>>()
         val delays = mutableListOf<Long>()

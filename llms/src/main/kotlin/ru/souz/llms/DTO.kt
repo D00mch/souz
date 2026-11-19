@@ -165,6 +165,7 @@ enum class LLMModel(
     AnthropicSonnet45("Claude Sonnet 4.5", "claude-sonnet-4-5-20250929", LlmProvider.ANTHROPIC),
     AnthropicHaiku45("Claude Haiku 4.5", "claude-haiku-4-5-20251001", LlmProvider.ANTHROPIC),
     CodexGpt6Astra("GPT-6 Astra (Codex)", "gpt-6-astra", LlmProvider.CODEX),
+    CodexGpt62Sol("GPT-6.2 Sol (Codex)", "gpt-6.2-sol", LlmProvider.CODEX),
     CodexGpt61Sol("GPT-6.1 Sol (Codex)", "gpt-6.1-sol", LlmProvider.CODEX),
     CodexGpt6Sol("GPT-6 Sol (Codex)", "gpt-6-sol", LlmProvider.CODEX),
     CodexGpt6Luna("GPT-6 Luna (Codex)", "gpt-6-luna", LlmProvider.CODEX),
