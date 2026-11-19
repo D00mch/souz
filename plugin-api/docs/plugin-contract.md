@@ -84,8 +84,10 @@ invocations require strict verification, including the invocation receiving sign
 credentials. Missing or changed hashes fail the build. For dependency updates, generate candidate
 hashes with `./gradlew --write-verification-metadata sha256 :plugin-api:check`, independently
 verify changed artifacts against their upstream publications, and review the metadata diff.
-Include platform-specific desktop artifacts when updating them. Release jobs must use the
-reviewed third-party hashes and must never generate or accept new ones during publication.
+Include platform-specific desktop artifacts and IDE source attachments for both root and included
+builds when updating dependencies. The `build-logic` Kotlin DSL toolchain can use a different
+Kotlin version. Release jobs must use the reviewed third-party hashes and must never generate
+or accept new ones during publication.
 The standalone verifier copies this policy into its temporary project and exempts only the
 exact compile-only SDK coordinates being tested; its plugins and other dependencies remain
 subject to strict verification.

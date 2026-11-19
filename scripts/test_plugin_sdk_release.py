@@ -322,7 +322,7 @@ class GradleDependencyVerificationTest(unittest.TestCase):
         metadata = ET.parse(self.metadata)
         artifacts = []
         # IDE import resolves plugin and transitive sources as well as embedded Kotlin.
-        coordinates = [
+        root_coordinates = [
             ("org.jetbrains.kotlin", "kotlin-stdlib", "2.3.0"),
             ("org.jetbrains.kotlin", "kotlin-reflect", "2.3.0"),
             ("org.jetbrains.kotlin", "kotlin-gradle-plugin", "2.4.10"),
@@ -333,6 +333,30 @@ class GradleDependencyVerificationTest(unittest.TestCase):
             ("com.vanniktech", "gradle-maven-publish-plugin", "0.37.0"),
             ("com.vanniktech", "central-portal", "0.37.0"),
         ]
+        # Resolve builds separately so version selection cannot hide either Kotlin toolchain.
+        included_coordinates = [
+            ("org.jetbrains.kotlin", "abi-tools-api", "2.3.0"),
+            ("org.jetbrains.kotlin", "fus-statistics-gradle-plugin", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-assignment", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-build-statistics", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-build-tools-api", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-compiler-runner", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-daemon-client", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-gradle-plugin", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-gradle-plugin-annotations", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-gradle-plugin-api", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-gradle-plugin-idea", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-gradle-plugin-idea-proto", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-klib-commonizer-api", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-native-utils", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-sam-with-receiver", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-tooling-core", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-util-io", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-util-klib", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-util-klib-metadata", "2.3.0"),
+            ("org.gradle.kotlin", "gradle-kotlin-dsl-plugins", "6.5.2"),
+        ]
+        coordinates = root_coordinates + included_coordinates
         for group, name, version in coordinates:
             repository = self.root / "repository" / group.replace(".", "/") / name / version
             repository.mkdir(parents=True)
@@ -348,18 +372,22 @@ class GradleDependencyVerificationTest(unittest.TestCase):
             checksum.set("value", hashlib.sha256(artifact.read_bytes()).hexdigest())
         ET.register_namespace("", VERIFICATION_NS["v"])
         metadata.write(self.metadata, encoding="UTF-8", xml_declaration=True)
-        dependencies = "\n".join(f"    ideSources '{group}:{name}:{version}:sources@jar'"
-                                 for group, name, version in coordinates)
+        dependencies = "\n".join(
+            f"    {configuration} '{group}:{name}:{version}:sources@jar'"
+            for configuration, entries in [("rootBuildSources", root_coordinates),
+                                            ("includedBuildSources", included_coordinates)]
+            for group, name, version in entries)
         expected = json.dumps(sorted(artifact.name for artifact in artifacts))
         (self.root / "build.gradle").write_text(textwrap.dedent("""\
             repositories {
                 maven { url = uri('repository'); metadataSources { artifact() } }
             }
-            configurations { ideSources }
+            configurations { rootBuildSources; includedBuildSources }
             """) + "dependencies {\n" + dependencies + "\n}\n" + textwrap.dedent(f"""\
             tasks.register('verifyFixture') {{
                 doLast {{
-                    assert configurations.ideSources.files*.name.sort() == {expected}
+                    def sources = configurations.rootBuildSources.files + configurations.includedBuildSources.files
+                    assert sources*.name.sort() == {expected}
                     file('build-configured').text = 'Sources verified'
                 }}
             }}
