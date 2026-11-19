@@ -1,5 +1,6 @@
 package ru.souz.runtime.sandbox.docker
 
+import ru.souz.runtime.sandbox.PreparedAttachmentMount
 import ru.souz.runtime.sandbox.SandboxRuntimePaths
 import ru.souz.runtime.sandbox.SandboxScope
 import java.nio.file.Files
@@ -10,8 +11,10 @@ import java.security.MessageDigest
 internal class DockerSandboxLayout(
     hostRoot: Path,
     val containerRoot: String = CONTAINER_ROOT,
+    preparedAttachments: PreparedAttachmentMount? = null,
 ) {
     val hostRoot: Path = normalizeHostPath(hostRoot)
+    val hostPreparedAttachments: Path? = preparedAttachments?.hostDirectory?.let(::normalizeHostPath)
     val hostHomeRoot: Path = this.hostRoot.resolve("home")
     val hostWorkspaceRoot: Path = this.hostRoot.resolve("workspace")
     val hostStateRoot: Path = this.hostRoot.resolve("state")
@@ -44,8 +47,14 @@ internal class DockerSandboxLayout(
         skillValidationsDirPath = "$containerRoot/state/skill-validations",
     )
 
+    init {
+        hostPreparedAttachments?.let { attachments ->
+            require(!attachments.startsWith(this.hostRoot) && !this.hostRoot.startsWith(attachments))
+        }
+    }
+
     fun ensureHostDirectories() {
-        hostManagedRoots.forEach { path ->
+        (hostManagedRoots + listOfNotNull(hostPreparedAttachments)).forEach { path ->
             Files.createDirectories(path)
             check(!Files.isSymbolicLink(path)) {
                 "Docker sandbox host root must not contain symlink-managed directories: $path"
@@ -55,29 +64,31 @@ internal class DockerSandboxLayout(
 
     fun containerPathToHostPath(containerPath: String): Path? {
         val normalized = normalizeContainerPath(containerPath) ?: return null
-        if (!isUnderContainerRoot(normalized)) {
-            return null
-        }
-        val suffix = normalized.removePrefix(containerRoot).removePrefix("/")
-        val resolved = if (suffix.isEmpty()) {
-            hostRoot
-        } else {
-            hostRoot.resolve(suffix)
-        }.normalize()
-        return resolved.takeIf { it.startsWith(hostRoot) }
+        val root = hostRootFor(normalized) ?: return null
+        val prefix = if (isPreparedAttachmentPath(normalized)) PreparedAttachmentMount.SANDBOX_PATH else containerRoot
+        val suffix = normalized.removePrefix(prefix).removePrefix("/")
+        return root.resolve(suffix).normalize().takeIf { it.startsWith(root) }
     }
 
     fun hostPathToContainerPath(hostPath: Path): String {
         val normalized = hostPath.toAbsolutePath().normalize()
-        require(normalized.startsWith(hostRoot)) {
+        val preparedRoot = hostPreparedAttachments?.takeIf(normalized::startsWith)
+        val root = preparedRoot ?: hostRoot
+        require(normalized.startsWith(root)) {
             "Host path is outside the mounted Docker sandbox root: $hostPath"
         }
-        val relative = hostRoot.relativize(normalized)
-        return if (relative.nameCount == 0) {
-            containerRoot
-        } else {
-            "$containerRoot/${relative.toString().replace('\\', '/')}"
-        }
+        val relative = root.relativize(normalized).toString().replace('\\', '/')
+        val prefix = if (preparedRoot != null) PreparedAttachmentMount.SANDBOX_PATH else containerRoot
+        return if (relative.isEmpty()) prefix else "$prefix/$relative"
+    }
+
+    fun isPreparedAttachmentPath(path: String): Boolean =
+        isUnderContainerRoot(path, PreparedAttachmentMount.SANDBOX_PATH)
+
+    fun hostRootFor(path: String): Path? = when {
+        isUnderContainerRoot(path, containerRoot) -> hostRoot
+        isPreparedAttachmentPath(path) -> hostPreparedAttachments
+        else -> null
     }
 
     companion object {
@@ -87,9 +98,8 @@ internal class DockerSandboxLayout(
 
 internal object DockerSandboxIds {
     const val MAX_CONTAINER_NAME_LENGTH: Int = 63
-    private const val PREFIX = "souz-runtime"
 
-    fun defaultContainerName(scope: SandboxScope): String {
+    fun defaultContainerName(scope: SandboxScope, withPreparedAttachments: Boolean = false): String {
         val raw = buildString {
             append(scope.userId)
             scope.conversationId?.let {
@@ -102,7 +112,7 @@ internal object DockerSandboxIds {
             .trim('-')
             .ifEmpty { "scope" }
         val hash = digest(raw).take(10)
-        val prefix = "$PREFIX-"
+        val prefix = if (withPreparedAttachments) "souz-runtime-ro-" else "souz-runtime-"
         val suffix = "-$hash"
         val availableSlugLength = (MAX_CONTAINER_NAME_LENGTH - prefix.length - suffix.length).coerceAtLeast(1)
         val trimmedSlug = slug.take(availableSlugLength).trim('-').ifEmpty { "scope" }

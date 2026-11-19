@@ -49,8 +49,11 @@ class BackendPublicAttachmentsE2eTest {
         val finishReply = CompletableDeferred<Unit>()
         try {
             backendE2eTest("ws_file_roundtrip", attachments = config, clock = clock, sandboxFactory = { settings ->
-                DefaultRuntimeSandboxFactory(settings, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = root,
-                    dockerSandboxCreator = { scope, hostRoot, image, name -> DockerRuntimeSandbox(scope, hostRoot, image, name, autoStart = false) })
+                DefaultRuntimeSandboxFactory(settings, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = root, preparedAttachmentsEnabled = true,
+                    dockerSandboxCreator = { scope, hostRoot, image, name, attachments ->
+                        DockerRuntimeSandbox(scope, hostRoot, image, name, autoStart = false, preparedAttachments = attachments)
+                    },
+                )
             }, llm = E2eLlmApi { request ->
                 if (request.messages.last().role == LLMMessageRole.function) {
                     replyReady.complete(Unit)

@@ -7,6 +7,7 @@ import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.attachments.AttachmentStorage
 import ru.souz.backend.attachments.AttachmentStorageConfig
 import ru.souz.backend.attachments.BackendAttachmentAccess
+import ru.souz.backend.attachments.PreparedAttachmentWorkspace
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.runtime.sandbox.SandboxFileSystem
@@ -468,6 +469,7 @@ internal class BackendE2eBackend(
     val executionQuotas: ru.souz.backend.llm.quota.ExecutionQuotaManager get() = di.direct.instance()
     val imageGeneration: ru.souz.backend.attachments.ImageGeneration get() = di.direct.instance()
     val attachmentAccess: BackendAttachmentAccess get() = di.direct.instance()
+    suspend fun cleanupPreparedAttachments(): Int = di.direct.instance<PreparedAttachmentWorkspace>().cleanup()
     val pluginRuntime: BackendPluginRuntime get() = di.direct.instance()
     val pluginRepository: PostgresPluginRepository get() = di.direct.instance()
     val pluginArtifacts: S3PluginArtifacts get() = di.direct.instance()
