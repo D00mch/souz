@@ -79,7 +79,7 @@ jobs:
           cache-disabled: true
 
       - name: Check SDK and stage publication
-        run: ./gradlew :plugin-api:check :plugin-api:publishSdkPublicationToVerificationRepository --console=plain
+        run: ./gradlew :plugin-api:check :plugin-api:publishSdkPublicationToVerificationRepository --dependency-verification=strict --console=plain
 
       - name: Verify release tag matches SDK version
         id: sdk
@@ -111,7 +111,7 @@ jobs:
               exit 1
             fi
           done
-          ./gradlew :plugin-api:publishAndReleaseToMavenCentral -Psouz.signPluginSdk --no-daemon --console=plain
+          ./gradlew :plugin-api:publishAndReleaseToMavenCentral -Psouz.signPluginSdk --dependency-verification=strict --no-daemon --console=plain
 
       - name: Wait for public artifact availability
         env:

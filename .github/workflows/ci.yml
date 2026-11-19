@@ -279,7 +279,7 @@ jobs:
         run: python3 -m unittest discover -s scripts -p 'test_plugin_sdk_release.py'
 
       - name: Publish SDK to verification repository
-        run: ./gradlew :plugin-api:check :plugin-api:publishSdkPublicationToVerificationRepository --console=plain
+        run: ./gradlew :plugin-api:check :plugin-api:publishSdkPublicationToVerificationRepository --dependency-verification=strict --console=plain
 
       - name: Build standalone Hello plugin without local caches
         env:

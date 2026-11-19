@@ -77,6 +77,18 @@ does not require the publishing token or signing key. Keep
 [#1046](https://github.com/D00mch/souz/issues/1046) open until the first public release and
 standalone verification succeed.
 
+Gradle checks downloaded plugins, dependencies and their metadata against the committed
+[SHA-256 verification metadata](../../gradle/verification-metadata.xml). Both release Gradle
+invocations require strict verification, including the invocation receiving signing and Central
+credentials. Missing or changed hashes fail the build. For dependency updates, generate candidate
+hashes with `./gradlew --write-verification-metadata sha256 :plugin-api:check`, independently
+verify changed artifacts against their upstream publications, and review the metadata diff.
+Include platform-specific desktop artifacts when updating them. Release jobs must use the
+reviewed third-party hashes and must never generate or accept new ones during publication.
+The standalone verifier copies this policy into its temporary project and exempts only the
+exact compile-only SDK coordinates being tested; its plugins and other dependencies remain
+subject to strict verification.
+
 The [Dependabot configuration](../../.github/dependabot.yml) requests weekly action-update PRs
 targeting `kmp`. GitHub reads this configuration from the repository's default branch, so the
 maintainer must also install it there to activate updates. Review upstream release changes and

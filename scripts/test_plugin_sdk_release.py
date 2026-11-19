@@ -1,19 +1,24 @@
 """Exercise SDK release guards with synthetic Git, API and distribution fixtures."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
+import xml.etree.ElementTree as ET
 import zipfile
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = (REPO_ROOT / ".github/workflows/publish-plugin-sdk.yml").read_text()
+VERIFICATION_METADATA = REPO_ROOT / "gradle/verification-metadata.xml"
+VERIFICATION_NS = {"v": "https://schema.gradle.org/dependency-verification"}
 
 
 def workflow_script(step_name):
@@ -151,6 +156,140 @@ class PluginSdkReleaseTest(unittest.TestCase):
         for action in actions:
             with self.subTest(action=action):
                 self.assertRegex(action, r"^[\w./-]+@[0-9a-f]{40}$")
+
+    def test_release_dependencies_require_reviewed_hashes(self):
+        commands = [line.strip() for line in WORKFLOW.splitlines() if "./gradlew " in line]
+        self.assertEqual(len(commands), 2)
+        for command in commands:
+            self.assertIn("--dependency-verification=strict", command)
+            self.assertNotIn("--write-verification-metadata", command)
+        metadata = ET.parse(VERIFICATION_METADATA)
+        self.assertEqual(metadata.findtext("v:configuration/v:verify-metadata",
+                                          namespaces=VERIFICATION_NS), "true")
+        self.assertIsNone(metadata.find("v:configuration/v:trusted-artifacts", VERIFICATION_NS))
+        # Authenticate both the plugin marker and executable implementation, including metadata.
+        for group, name, artifacts in [
+            ("com.vanniktech.maven.publish.base", "com.vanniktech.maven.publish.base.gradle.plugin",
+             ["com.vanniktech.maven.publish.base.gradle.plugin-0.37.0.pom"]),
+            ("com.vanniktech", "gradle-maven-publish-plugin",
+             ["gradle-maven-publish-plugin-0.37.0.jar", "gradle-maven-publish-plugin-0.37.0.module"]),
+        ]:
+            component = metadata.find(f"v:components/v:component[@group='{group}']"
+                                      f"[@name='{name}'][@version='0.37.0']", VERIFICATION_NS)
+            self.assertIsNotNone(component)
+            for artifact in artifacts:
+                checksum = component.find(f"v:artifact[@name='{artifact}']/v:sha256", VERIFICATION_NS)
+                self.assertIsNotNone(checksum, artifact)
+                self.assertRegex(checksum.get("value"), r"^[0-9a-f]{64}$")
+
+
+class GradleDependencyVerificationTest(unittest.TestCase):
+    def setUp(self):
+        self.scratch = tempfile.TemporaryDirectory(prefix="souz-sdk-dependency-test-")
+        self.addCleanup(self.scratch.cleanup)
+        self.root = Path(self.scratch.name)
+        (self.root / "settings.gradle").write_text("rootProject.name = 'verification-fixture'\n")
+        (self.root / "gradle").mkdir()
+        self.metadata = self.root / "gradle/verification-metadata.xml"
+        shutil.copy2(VERIFICATION_METADATA, self.metadata)
+        self.marker = self.root / "build-configured"
+
+    def test_standalone_exempts_only_the_compile_only_sdk_under_test(self):
+        verifier = (REPO_ROOT / "scripts/verify-plugin-sdk.sh").read_text()
+        self.assertIn("--dependency-verification=strict", verifier)
+        script = verifier.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        shutil.copy2(REPO_ROOT / "plugin-api/examples/hello/build.gradle.kts", self.root)
+        subprocess.run([sys.executable, "-c", script, str(VERIFICATION_METADATA), str(self.root)],
+                       check=True, capture_output=True, text=True)
+        metadata = ET.parse(self.metadata)
+        configuration = metadata.find("v:configuration", VERIFICATION_NS)
+        self.assertEqual(configuration.findtext("v:verify-metadata", namespaces=VERIFICATION_NS), "true")
+        trusted = configuration.findall("v:trusted-artifacts/v:trust", VERIFICATION_NS)
+        self.assertEqual(len(trusted), 1)
+        self.assertEqual({key: value for key, value in trusted[0].attrib.items() if key != "reason"},
+                         {"group": "io.github.d00mch", "name": "plugin-api", "version": "2.0.0"})
+        self.assertEqual(ET.canonicalize(ET.tostring(metadata.find("v:components", VERIFICATION_NS))),
+                         ET.canonicalize(ET.tostring(ET.parse(VERIFICATION_METADATA).find(
+                             "v:components", VERIFICATION_NS))))
+
+    def test_supported_desktop_runtime_artifacts_are_pinned(self):
+        metadata = ET.parse(VERIFICATION_METADATA)
+        for platform in ["linux-x64", "linux-arm64", "macos-x64", "macos-arm64",
+                         "windows-x64", "windows-arm64"]:
+            name = f"skiko-awt-runtime-{platform}"
+            component = metadata.find(f"v:components/v:component[@group='org.jetbrains.skiko']"
+                                      f"[@name='{name}'][@version='0.9.22.2']", VERIFICATION_NS)
+            self.assertIsNotNone(component, platform)
+            for extension in ["pom", "jar"]:
+                self.assertIsNotNone(component.find(f"v:artifact[@name='{name}-0.9.22.2.{extension}']"
+                                                    "/v:sha256", VERIFICATION_NS))
+        component = metadata.find("v:components/v:component[@group='it.tdlight']"
+                                  "[@name='tdlight-natives'][@version='4.0.558']", VERIFICATION_NS)
+        for classifier in ["macos_arm64", "macos_amd64", "windows_amd64",
+                           "linux_arm64_gnu_ssl3", "linux_amd64_gnu_ssl3"]:
+            self.assertIsNotNone(component.find(
+                f"v:artifact[@name='tdlight-natives-4.0.558-{classifier}.jar']/v:sha256", VERIFICATION_NS))
+
+    def resolve_plugin(self, version="0.37.0"):
+        repository = self.root / "repository/com/vanniktech/gradle-maven-publish-plugin" / version
+        repository.mkdir(parents=True)
+        artifact = repository / f"gradle-maven-publish-plugin-{version}.jar"
+        with zipfile.ZipFile(artifact, "w") as archive:
+            archive.writestr("fixture.txt", "Synthetic substituted plugin")
+        (self.root / "build.gradle").write_text(textwrap.dedent(f"""\
+            buildscript {{
+                repositories {{
+                    maven {{ url = uri('repository'); metadataSources {{ artifact() }} }}
+                }}
+                dependencies {{ classpath 'com.vanniktech:gradle-maven-publish-plugin:{version}' }}
+            }}
+            file('build-configured').text = 'Build script evaluated'
+            tasks.register('verifyFixture')
+            """))
+        return artifact
+
+    def run_gradle(self):
+        env = dict(os.environ)
+        for option in ("JAVA_OPTS", "GRADLE_OPTS", "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS",
+                       "_JAVA_OPTIONS"):
+            env.pop(option, None)
+        # Use the installed wrapper with offline, fixture-only dependency resolution.
+        gradle_home = env.get("GRADLE_USER_HOME", str(Path.home() / ".gradle"))
+        return subprocess.run(["bash", str(REPO_ROOT / "gradlew"), "-g", gradle_home,
+                               f"-Duser.home={self.root}", "--no-daemon", "--offline",
+                               "--no-configuration-cache", "--no-build-cache",
+                               "--dependency-verification=strict", "--console=plain", "verifyFixture"],
+                              cwd=self.root, env=env, text=True, capture_output=True, timeout=90)
+
+    def assert_rejected(self):
+        result = self.run_gradle()
+        output = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertIn("Dependency verification failed", output)
+        self.assertFalse(self.marker.exists(), "Unverified buildscript dependency must not be loaded")
+
+    def test_substituted_publishing_plugin_is_rejected(self):
+        self.resolve_plugin()
+        self.assert_rejected()
+
+    def test_unlisted_publishing_plugin_is_rejected(self):
+        self.resolve_plugin("0.0.0-fixture")
+        self.assert_rejected()
+
+    def test_reviewed_fixture_hash_allows_configuration(self):
+        artifact = self.resolve_plugin()
+        metadata = ET.parse(self.metadata)
+        component = metadata.find("v:components/v:component[@group='com.vanniktech']"
+                                  "[@name='gradle-maven-publish-plugin'][@version='0.37.0']",
+                                  VERIFICATION_NS)
+        checksum = component.find("v:artifact[@name='gradle-maven-publish-plugin-0.37.0.jar']/v:sha256",
+                                  VERIFICATION_NS)
+        checksum.set("value", hashlib.sha256(artifact.read_bytes()).hexdigest())
+        ET.register_namespace("", VERIFICATION_NS["v"])
+        metadata.write(self.metadata, encoding="UTF-8", xml_declaration=True)
+        result = self.run_gradle()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(self.marker.exists())
 
 
 class GradleDistributionTest(unittest.TestCase):

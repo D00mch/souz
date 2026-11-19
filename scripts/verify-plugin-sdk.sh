@@ -17,12 +17,33 @@ cp "$repo_root/gradlew" "$scratch/"
 mkdir -p "$scratch/gradle/wrapper" "$scratch/maven-local"
 cp "$repo_root/gradle/wrapper/gradle-wrapper.jar" "$scratch/gradle/wrapper/"
 cp "$repo_root/gradle/wrapper/gradle-wrapper.properties" "$scratch/gradle/wrapper/"
+# Keep third-party build code verified in the standalone project as well. The compile-only
+# SDK is the publication under test, so exempt only its exact coordinates in this temporary copy.
+python3 - "$repo_root/gradle/verification-metadata.xml" "$scratch" <<'PY'
+from pathlib import Path
+import re
+import sys
+import xml.etree.ElementTree as E
+
+source, scratch = Path(sys.argv[1]), Path(sys.argv[2])
+namespace = "https://schema.gradle.org/dependency-verification"
+E.register_namespace("", namespace)
+metadata = E.parse(source)
+sdk = re.search(r'compileOnly\("([^":]+):([^":]+):([^":]+)"\)',
+                (scratch / "build.gradle.kts").read_text())
+if sdk is None:
+    raise SystemExit("Expected an exact compile-only SDK coordinate")
+trusted = E.SubElement(metadata.find(f"{{{namespace}}}configuration"), f"{{{namespace}}}trusted-artifacts")
+E.SubElement(trusted, f"{{{namespace}}}trust", group=sdk[1], name=sdk[2], version=sdk[3],
+             reason="Compile-only SDK publication under test; third-party build code remains verified")
+metadata.write(scratch / "gradle/verification-metadata.xml", encoding="UTF-8", xml_declaration=True)
+PY
 
 cd "$scratch"
 # A fresh Gradle home also prevents a previously cached SDK from hiding a missing publication.
 bash ./gradlew --gradle-user-home "$scratch/gradle-home" \
     -Dmaven.repo.local="$scratch/maven-local" -Pkotlin.compiler.execution.strategy=in-process \
-    --no-daemon --console=plain jar
+    --dependency-verification=strict --no-daemon --console=plain jar
 
 plugin_jar=build/libs/souz-plugin-hello.jar
 jar tf "$plugin_jar" > jar-entries.txt
