@@ -40,8 +40,9 @@ and `toPrettyString()` use the default recycler, which can retain retired classl
 
 ## Developer skill
 
-Download the raw [`souz-jvm-plugin` skill](../../docs/skills/souz-jvm-plugin/SKILL.md) from the Souz
-repository. Save it as `souz-jvm-plugin/SKILL.md` under your coding assistant's skills directory.
+Open the [`souz-jvm-plugin` skill](../../docs/skills/souz-jvm-plugin/SKILL.md) on GitHub and select
+**Raw**. Save the resulting file as `souz-jvm-plugin/SKILL.md` under your coding assistant's skills
+directory.
 In Codex, use `.agents/skills/` in your plugin project or `~/.agents/skills/` for all your projects.
 Restart Codex if the skill does not appear. [Codex skill setup](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)
 
