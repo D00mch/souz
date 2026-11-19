@@ -31,7 +31,9 @@ import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.attachments.AttachmentException
 import ru.souz.backend.attachments.AttachmentClock
 import ru.souz.backend.attachments.AttachmentMinio
-import ru.souz.backend.attachments.AttachmentStorageConfig
+import ru.souz.backend.attachments.ATTACHMENT_EXECUTION_SAVE_LIMIT
+import ru.souz.backend.attachments.ATTACHMENT_OWNER_SAVE_LIMIT
+import ru.souz.backend.attachments.AttachmentSaveBudget
 import ru.souz.backend.attachments.ToolAttachFileToReply
 import ru.souz.backend.attachments.ToolDetachFileFromReply
 import ru.souz.backend.attachments.ToolPrepareAttachment
@@ -42,6 +44,7 @@ import ru.souz.backend.storage.postgres.PostgresMessageRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.FileContent
 import ru.souz.llms.FilePresentation
+import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.MAX_MESSAGE_FILES
 import ru.souz.llms.ToolInvocationMeta
@@ -61,6 +64,7 @@ class BackendAttachmentContractsE2eTest {
         val childDone = CompletableDeferred<Unit>()
         var fileId = ""
         var preparedPath = ""
+        var childFileId = ""
         lateinit var readSandboxFile: (String) -> String
         lateinit var delegate: BackendConversationTurnRunner
         val waitingRunner = object : BackendConversationTurnRunner {
@@ -100,16 +104,22 @@ class BackendAttachmentContractsE2eTest {
                     val child = request.messages.last()
                     assertEquals("WaitSubagent", child.name)
                     assertTrue(child.replyFiles.isEmpty())
-                    val savedId = child.files.single().fileId
-                    assertEquals(savedId, restJsonMapper.readTree(child.content)["files"][0]["fileId"].asText())
-                    toolCallReply(request, "RunSkillCommand", mapOf("skillId" to "AttachFileToReply", "arguments" to mapOf("fileId" to savedId)))
+                    childFileId = child.files.single().fileId
+                    assertEquals(childFileId, restJsonMapper.readTree(child.content)["files"][0]["fileId"].asText())
+                    attach(request, "path" to "replacement.md")
                 }
-                5 -> toolCallReply(request, "RunSkillCommand", mapOf("skillId" to "AttachFileToReply", "arguments" to mapOf("fileId" to fileId)))
+                5 -> {
+                    assertSaveBudgetError(request.messages.last(), ATTACHMENT_EXECUTION_SAVE_LIMIT)
+                    attach(request, "fileId" to childFileId)
+                }
+                6 -> attach(request, "fileId" to fileId)
                 else -> reply(request, "Document ready")
             }
         }
         try {
-            backendE2eTest("attachment_contracts", attachments = storageConfig(), llm = llm,
+            backendE2eTest("attachment_contracts",
+                attachments = AttachmentMinio.config(AttachmentSaveBudget(maxExecutionSaves = 1, maxOwnerSavesPer24h = 1)),
+                llm = llm,
                 featureFlags = BackendFeatureFlags(wsEvents = true, options = true), turnRunnerOverride = waitingRunner,
                 sandboxFactory = dockerSandboxes(root), clock = clock,
             ) {
@@ -117,6 +127,7 @@ class BackendAttachmentContractsE2eTest {
                 val user = UUID.randomUUID().toString()
                 val fs = backend.sandboxFileSystem(user)
                 readSandboxFile = { path -> fs.readText(fs.resolvePath(path)) }
+                fs.writeText(fs.resolvePath("replacement.md"), "# Replacement")
                 val chat = createPublicChat(user)
                 client.patch(BackendHttpRoutes.SETTINGS) {
                     trusted(user)
@@ -124,7 +135,6 @@ class BackendAttachmentContractsE2eTest {
                 }
                 val stored = backend.attachmentStorage.save(user, "input", "report.md", "# Original".byteInputStream())
                 fileId = stored.id.toString()
-                // Internal ingress is exercised here; TG/VK intake is a separate rollout stage.
                 val sent = backend.dependencies.executionService.executeChatTurn(
                     user, UUID.fromString(chat), "return this document", attachments = listOf(stored.toContent()),
                 )
@@ -144,18 +154,40 @@ class BackendAttachmentContractsE2eTest {
                 val optionId = client.get(BackendHttpRoutes.chatEvents(chat)) { trusted(user) }.jsonBody()["items"]
                     .single { it["type"].asText() == "option.requested" }["payload"]["optionId"].asText()
                 var resumedPhase = 0
+                var nextTurnPhase = 0
 
                 withPeerBackend(E2eLlmApi { request ->
                     assertTrue(request.messages.any { message -> message.files.any { it.fileId == fileId } })
-                    when (resumedPhase++) {
+                    if (request.conversationPrompt() == "next independent turn") {
+                        when (nextTurnPhase++) {
+                            0 -> attach(request, "fileId" to retained.fileId)
+                            1 -> attach(request, "path" to "replacement.md")
+                            else -> {
+                                assertSaveBudgetError(request.messages.last(), ATTACHMENT_OWNER_SAVE_LIMIT)
+                                reply(request, "Existing document ready")
+                            }
+                        }
+                    } else when (resumedPhase++) {
                         0 -> {
                             assertEquals(0, backend.cleanupPreparedAttachments())
                             assertEquals("# Original", readSandboxFile(preparedPath))
+                            attach(request, "path" to preparedPath)
+                        }
+                        1 -> {
+                            assertEquals(selected.fileId, request.messages.last().files.single().fileId)
+                            attach(request, "path" to "replacement.md")
+                        }
+                        2 -> {
+                            assertSaveBudgetError(request.messages.last(), ATTACHMENT_EXECUTION_SAVE_LIMIT)
+                            toolCallReply(request, "RunSkillCommand", mapOf("skillId" to "PrepareAttachment",
+                                "arguments" to mapOf("fileId" to retained.fileId)))
+                        }
+                        3 -> {
+                            assertEquals(retained.fileId, request.messages.last().files.single().fileId)
                             toolCallReply(request, "RunSkillCommand", mapOf("skillId" to "DetachFileFromReply",
                                 "arguments" to mapOf("fileId" to selected.fileId)))
                         }
-                        1 -> toolCallReply(request, "RunSkillCommand", mapOf("skillId" to "AttachFileToReply",
-                            "arguments" to mapOf("fileId" to corrected.fileId)))
+                        4 -> attach(request, "fileId" to corrected.fileId)
                         else -> reply(request, "Continued")
                     }
                 }) { peer ->
@@ -185,7 +217,10 @@ class BackendAttachmentContractsE2eTest {
                     }
                     peer.backend.awaitExecution(UUID.fromString(peer.run { next.jsonBody()["execution"]["id"].asText() }))
                     val later = peer.client.get(BackendHttpRoutes.chatMessages(chat)) { peer.run { trusted(user) } }
-                    assertTrue(peer.run { later.jsonBody()["items"].last()["attachments"].isEmpty })
+                    val latestReply = peer.run { later.jsonBody()["items"].last() }
+                    assertEquals("Existing document ready", latestReply["content"].asText())
+                    assertEquals(listOf(retained.fileId), latestReply["attachments"].map { it["fileId"].asText() })
+                    clock.now = clock.now.plusSeconds(86_400)
                     assertEquals(1, peer.backend.cleanupPreparedAttachments())
                     assertFalse(fs.resolvePath(preparedPath).exists)
                 }
@@ -272,7 +307,7 @@ class BackendAttachmentContractsE2eTest {
             }
         }
         try {
-            backendE2eTest("attachment_limits", attachments = storageConfig(), llm = llm, sandboxFactory = { settings ->
+            backendE2eTest("attachment_limits", attachments = AttachmentMinio.config(), llm = llm, sandboxFactory = { settings ->
                 DefaultRuntimeSandboxFactory(settings, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = root.resolve("sandboxes"), preparedAttachmentsEnabled = true,
                     dockerSandboxCreator = { _, _, _, _, _ -> error("Stored-file replies must not create a Docker runtime") })
             }) {
@@ -308,7 +343,7 @@ class BackendAttachmentContractsE2eTest {
     fun `stored files can be selected and detached in local mode while workspace transfers still require Docker`() {
         val root = Files.createTempDirectory(Path.of("build"), "attachment-local-").toAbsolutePath()
         try {
-            backendE2eTest("attachment_local", attachments = storageConfig(), sandboxFactory = { settings ->
+            backendE2eTest("attachment_local", attachments = AttachmentMinio.config(), sandboxFactory = { settings ->
                 DefaultRuntimeSandboxFactory(settings, RuntimeSandboxModeResolver { "local" }, root, root.resolve("state"), root.resolve("workspace"))
             }) {
                 val user = UUID.randomUUID().toString()
@@ -343,7 +378,7 @@ class BackendAttachmentContractsE2eTest {
         val root = Files.createTempDirectory(Path.of("build"), "prepared-attachment-cleanup-").toAbsolutePath()
         val clock = AttachmentClock(Instant.now())
         try {
-            backendE2eTest("prepared_attachment_cleanup", attachments = storageConfig(), clock = clock,
+            backendE2eTest("prepared_attachment_cleanup", attachments = AttachmentMinio.config(), clock = clock,
                 sandboxFactory = dockerSandboxes(root),
             ) {
                 val user = UUID.randomUUID().toString()
@@ -405,7 +440,7 @@ class BackendAttachmentContractsE2eTest {
             reply(request, "Done")
         }
         try {
-            backendE2eTest("prepared_attachment_capacity", attachments = storageConfig(), clock = clock, llm = llm,
+            backendE2eTest("prepared_attachment_capacity", attachments = AttachmentMinio.config(), clock = clock, llm = llm,
                 sandboxFactory = dockerSandboxes(root),
             ) {
                 val user = UUID.randomUUID().toString()
@@ -445,7 +480,7 @@ class BackendAttachmentContractsE2eTest {
         val root = Files.createTempDirectory(Path.of("build"), "prepared-attachment-recovery-").toAbsolutePath()
         val clock = AttachmentClock(Instant.now())
         try {
-            backendE2eTest("prepared_attachment_recovery", attachments = storageConfig(), clock = clock,
+            backendE2eTest("prepared_attachment_recovery", attachments = AttachmentMinio.config(), clock = clock,
                 sandboxFactory = dockerSandboxes(root),
             ) {
                 val user = UUID.randomUUID().toString()
@@ -489,19 +524,21 @@ class BackendAttachmentContractsE2eTest {
         }
     }
 
+    private fun attach(request: LLMRequest.Chat, source: Pair<String, String>) =
+        toolCallReply(request, "RunSkillCommand", mapOf("skillId" to ToolAttachFileToReply.NAME, "arguments" to mapOf(source)))
+
+    private fun assertSaveBudgetError(message: LLMRequest.Message, code: String) {
+        val error = restJsonMapper.readTree(message.content)
+        assertEquals(code, error["error"].asText())
+        assertTrue(error["hint"].asText().contains("fileId"))
+        assertTrue(message.files.isEmpty() && message.replyFiles.isEmpty() && message.detachedReplyFiles.isEmpty())
+    }
+
     private fun dockerSandboxes(root: Path): (SettingsProvider) -> RuntimeSandboxFactory = { settings ->
         DefaultRuntimeSandboxFactory(settings, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = root, preparedAttachmentsEnabled = true,
             dockerSandboxCreator = { scope, hostRoot, image, name, attachments ->
                     DockerRuntimeSandbox(scope, hostRoot, image, name, autoStart = false, preparedAttachments = attachments)
             },
         )
-    }
-
-    private fun storageConfig(): AttachmentStorageConfig {
-        val id = UUID.randomUUID()
-        return AttachmentStorageConfig(
-            "http://${AttachmentMinio.server.host}:${AttachmentMinio.server.firstMappedPort}",
-            "contracts-$id", "contracts-$id", "contract-test-secret",
-        ).also(AttachmentMinio::provision)
     }
 }

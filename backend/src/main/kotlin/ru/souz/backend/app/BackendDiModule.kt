@@ -185,7 +185,7 @@ fun backendDiModule(
     bindSingleton { PreparedAttachmentRuntime(instance()) }
     appConfig.attachments?.let { config ->
         bindSingleton { S3AttachmentObjects(config) }
-        bindSingleton { PostgresAttachmentRepository(instance<HikariDataSource>()) }
+        bindSingleton { PostgresAttachmentRepository(instance<HikariDataSource>(), config.saveBudget, instance()) }
         bindSingleton { AttachmentStorage(config, instance(), instance(), instance()) }
         bindSingleton { AttachmentCleanupWorker(instance()) }
         bindSingleton { PreparedAttachmentWorkspace(instance<HikariDataSource>(), instance(), instance(), instance()) }

@@ -3,12 +3,15 @@ package ru.souz.backend.attachments
 import java.net.URI
 import java.time.Duration
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runInterruptible
 import ru.souz.backend.crypto.sha256Hex
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculation
 import software.amazon.awssdk.core.checksums.ResponseChecksumValidation
+import software.amazon.awssdk.core.exception.AbortedException
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import software.amazon.awssdk.regions.Region
@@ -28,9 +31,17 @@ class S3AttachmentObjects(config: AttachmentStorageConfig) : AutoCloseable {
         .overrideConfiguration { it.apiCallTimeout(Duration.ofSeconds(120)).apiCallAttemptTimeout(Duration.ofSeconds(120)) }
         .build()
 
-    suspend fun put(file: StoredAttachment, bytes: ByteArray): Unit = runInterruptible(Dispatchers.IO) {
-        client.putObject({ it.bucket(bucket).key(file.objectKey).contentType(file.mimeType) },
-            RequestBody.fromContentProvider({ bytes.inputStream() }, bytes.size.toLong(), file.mimeType))
+    suspend fun put(file: StoredAttachment, bytes: ByteArray) {
+        try {
+            runInterruptible(Dispatchers.IO) {
+                client.putObject({ it.bucket(bucket).key(file.objectKey).contentType(file.mimeType) },
+                    RequestBody.fromContentProvider({ bytes.inputStream() }, bytes.size.toLong(), file.mimeType))
+            }
+        } catch (aborted: AbortedException) {
+            // The SDK wraps a thread interruption; keep coroutine cancellation visible to the caller.
+            currentCoroutineContext().ensureActive()
+            throw aborted
+        }
     }
 
     suspend fun read(file: StoredAttachment): ByteArray = runInterruptible(Dispatchers.IO) {

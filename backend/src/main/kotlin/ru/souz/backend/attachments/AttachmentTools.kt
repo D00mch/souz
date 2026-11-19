@@ -132,6 +132,10 @@ private suspend fun attachmentToolResult(name: String, block: suspend () -> LLMR
             "error" to error.code,
             "hint" to "Use an existing copy or retry after unused copies expire.",
         )
+        ATTACHMENT_EXECUTION_SAVE_LIMIT, ATTACHMENT_OWNER_SAVE_LIMIT -> mapOf(
+            "error" to error.code,
+            "hint" to "Select an already saved file by fileId or finish the reply without saving a new attachment.",
+        )
         else -> mapOf("error" to error.code)
     }
     toolMessage(name, result)

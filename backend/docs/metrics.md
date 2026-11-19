@@ -30,6 +30,8 @@ scrape_configs:
 | `souz_tool_calls_total` | Counter | `category`, `outcome` | Compiled tools and client transports, including Skill helper calls. |
 | `souz_tool_duration_seconds` | Histogram | `category`, `outcome` | Tool latency, including client-result waits. |
 | `souz_pending_tool_calls` | Gauge | — | Outstanding compiled tools and client transports on this instance. |
+| `souz_attachment_save_admitted_bytes_total` | Counter | — | Bytes charged by committed workspace save reservations, including reservations whose uploads fail. |
+| `souz_attachment_save_rejected_total` | Counter | `scope` | Workspace saves rejected by the `execution` or `owner` budget. |
 | `souz_plugin_calls_total` | Counter | `plugin`, `outcome` | Plugin invocation completions on this replica: `success`, `technical_failure`, `ignored`. |
 | `souz_plugin_versions_loaded` | Gauge | `plugin` | Versions held by this replica, including preparation and draining work. |
 | `souz_plugin_observed_revision` | Gauge | `plugin` | Last registry revision observed by this replica; admin status reports the separately applied digest. |
