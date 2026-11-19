@@ -20,39 +20,57 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import ru.souz.backend.app.BackendLlmLimits
+import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.personality.PERSONALITY_SYNC_COMMAND
 import ru.souz.backend.personality.PERSONALITY_VALIDATION_PROMPT
 import ru.souz.backend.personality.PersonalityTool
+import ru.souz.backend.settings.model.PersonalityParameters
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.llms.restJsonMapper
 
 class BackendPersonalityE2eTest {
     private val owner = UUID.randomUUID().toString()
+    private val defaults = PersonalityParameters()
+    private val afina = PersonalityParameters(voice = "afina", appeal = "official", style = "formal")
 
     @Test
     fun `style lifecycle is isolated from settings and survives restart`() {
         val schema = newPostgresSchema("personality_lifecycle")
-        backendE2eTest("personality_lifecycle", schema = schema, llm = personalityApi()) {
+        backendE2eTest("personality_lifecycle", schema = schema, llm = personalityApi(),
+            llmLimits = BackendLlmLimits(perUserRequestsPerMinute = 100)) {
             val chat = createPublicChat(owner)
             patch("""{"systemPrompt":"Base prompt"}""")
-            val cases = listOf("formal" to "formal", "captain" to "captain", "also brief" to "captain; brief",
-                "reject" to "captain; brief", "malformed" to "captain; brief", "reset" to null)
+            val appended = afina.copy(personality = "captain; brief")
+            val cases = listOf(
+                "formal" to afina.copy(personality = "formal"),
+                "captain" to afina.copy(personality = "captain"),
+                "also brief" to appended,
+                "reject" to appended,
+                "malformed" to appended,
+                "voice only" to afina,
+                "reset" to defaults,
+            )
+            val personalityFields = listOf("personalityParameters", "personalityPrompt", "personalityRevision")
             var revision = 1L
-            for ((wish, expected) in cases) {
+            for ((wish, parameters) in cases) {
                 val rejected = wish == "reject" || wish == "malformed"
                 turn(chat, wish)
                 if (!rejected) revision++
                 val stored = settings()
+                val expected = parameters.personality.ifEmpty { null }
+                assertEquals(json.valueToTree<JsonNode>(parameters), stored["personalityParameters"])
                 assertEquals(expected, stored["personalityPrompt"].takeUnless(JsonNode::isNull)?.asText())
                 assertEquals(revision, stored["personalityRevision"].asLong())
                 assertEquals("Base prompt", stored["systemPrompt"].asText())
                 assertEquals(!rejected, toolResult()["saved"].asBoolean())
                 val prompt = llm.requests.last { !it.isSummarization }.messages.first().content
+                assertTrue("voice=${parameters.voice}" in prompt)
                 assertEquals(expected != null, "Current user communication style" in prompt)
                 if (expected != null) assertTrue(prompt.endsWith(expected))
-                patch("""{"temperature":0.2,"streamingMessages":true}""")
-                assertEquals(stored["personalityPrompt"], settings()["personalityPrompt"])
+                val patched = patch("""{"temperature":0.2,"streamingMessages":true}""")
+                for (field in personalityFields) assertEquals(stored[field], patched[field])
             }
             turn(chat, "brief")
             assertTrue(llm.requests.filter { it.messages.first().content == PERSONALITY_VALIDATION_PROMPT }.all {
@@ -63,14 +81,15 @@ class BackendPersonalityE2eTest {
             turn(chat, "formal")
             assertEquals("skill_not_found", toolResult()["error"]["code"].asText())
             assertEquals(validationCount, llm.requests.count { it.messages.first().content == PERSONALITY_VALIDATION_PROMPT })
-            assertEquals("brief", settings()["personalityPrompt"].asText())
+            val stored = settings()
+            assertEquals("brief", stored["personalityPrompt"].asText())
             val bootstrap = client.get(BackendHttpRoutes.BOOTSTRAP) { trusted(owner) }.jsonBody()
-            assertEquals(settings()["personalityRevision"], bootstrap["settings"]["personalityRevision"])
+            for (field in personalityFields) assertEquals(stored[field], bootstrap["settings"][field])
             assertEquals(1, settings(UUID.randomUUID().toString())["personalityRevision"].asLong())
         }
         backendE2eTest("personality_restart", schema = schema) {
             assertEquals("brief", settings()["personalityPrompt"].asText())
-            assertEquals(6, settings()["personalityRevision"].asLong())
+            assertEquals(7, settings()["personalityRevision"].asLong())
         }
     }
 
@@ -100,37 +119,58 @@ class BackendPersonalityE2eTest {
         }
 
     @Test
-    fun `Orion snapshots prefer the source fall back when offline and reconnect without replay`() =
+    fun `chat creation initializes Orion snapshots with receiver activation words through retry fallback and reconnect`() =
         backendE2eTest("personality_sync", llm = personalityApi()) {
-            val source = createPublicChat(owner, tools = clientToolsJson(PERSONALITY_SYNC_COMMAND))
-            val other = createPublicChat(owner, "other", clientToolsJson(PERSONALITY_SYNC_COMMAND))
+            val initial = PersonalityParameters(voice = "sber", appeal = "no_official", style = "neutral")
+            val activationWord = "  Луна "
+            val parameters = initial.wireParameters(activationWord) + ("future" to "a")
+            val payload = mapOf("userId" to owner, "parameters" to parameters, "tools" to json.readTree(clientToolsJson(PERSONALITY_SYNC_COMMAND)))
+            suspend fun create(id: String, body: Map<String, Any>) = client.post(BackendHttpRoutes.CHATS) {
+                trusted(owner)
+                jsonBody(json.writeValueAsString(body + mapOf("requestId" to id, "clientType" to "backend")))
+            }
+            patch("""{"temperature":0.2}""")
+            val source = withMultiChatSocket(owner) { socket ->
+                socket.send(Frame.Text(json.writeValueAsString(mapOf("kind" to "chat.create", "requestId" to "first", "payload" to payload))))
+                val ack = readRawJson(socket)
+                assertEquals("accepted", ack["status"].asText())
+                acknowledge(socket, snapshot(socket), initial, 2, yourName = activationWord)
+                val retry = create("first", payload)
+                assertEquals(200, retry.status.value)
+                assertEquals(ack["chatId"], retry.jsonBody()["chat"]["id"])
+                ack["chatId"].asText()
+            }
+            assertEquals(409, create("first", payload + ("parameters" to parameters + ("future" to "b"))).status.value)
+            for (invalid in listOf(json.nullNode(), mapOf("voice" to "sberkot"), mapOf("extra" to 1), mapOf("extra" to null))) {
+                assertEquals(400, create("invalid", payload + ("parameters" to invalid)).status.value)
+            }
+            val second = create("second", payload + ("parameters" to mapOf("voice" to "joy", "your_name" to "")))
+            assertEquals(201, second.status.value)
+            val other = second.jsonBody()["chat"]["id"].asText()
+            assertEquals(json.valueToTree<JsonNode>(initial.wireParameters()), settings()["personalityParameters"])
             withPublicSocket(other) { fallback ->
-                acknowledge(fallback, snapshot(fallback), null, 1)
+                acknowledge(fallback, snapshot(fallback), initial, 2, yourName = "")
                 withPublicSocket(source) { socket ->
-                    acknowledge(socket, snapshot(socket), null, 1)
+                    acknowledge(socket, snapshot(socket), initial, 2, yourName = activationWord)
                     coroutineScope {
                         val turn = async { turn(source, "brief") }
+                        val updated = afina.copy(personality = "brief")
                         val first = snapshot(socket)
-                        acknowledge(socket, first, "brief", 2, failed = true)
+                        acknowledge(socket, first, updated, 3, yourName = activationWord, failed = true)
                         val retry = snapshot(socket)
                         assertNotEquals(first["payload"]["toolCallId"], retry["payload"]["toolCallId"])
                         assertEquals(first["threadId"], retry["threadId"])
-                        acknowledge(socket, retry, "brief", 2)
+                        acknowledge(socket, retry, updated, 3, yourName = activationWord)
                         turn.await()
                         assertEquals("synced", toolResult()["sync"].asText())
                         assertEquals(1, llm.requests.count { it.messages.first().content == PERSONALITY_VALIDATION_PROMPT })
                     }
                 }
-                coroutineScope {
-                    val turn = async { turn(source, "captain") }
-                    acknowledge(fallback, snapshot(fallback), "captain", 3)
-                    turn.await()
-                    assertEquals("synced", toolResult()["sync"].asText())
-                }
+                updateAndAcknowledge(fallback, source, "captain", 4, yourName = "")
             }
             turn(source, "reset")
             assertEquals("skipped", toolResult()["sync"].asText())
-            withPublicSocket(source) { socket -> acknowledge(socket, snapshot(socket), null, 4) }
+            withPublicSocket(source) { acknowledge(it, snapshot(it), defaults, 5, yourName = activationWord) }
             for (chat in listOf(source, other)) {
                 val events = client.get(BackendHttpRoutes.chatEvents(chat)) { trusted(owner) }.jsonBody()["items"]
                 assertTrue(events.none { it.path("payload").path("name").asText() == PERSONALITY_SYNC_COMMAND })
@@ -143,75 +183,45 @@ class BackendPersonalityE2eTest {
             val source = createPublicChat(owner)
             val provider = createPublicChat(owner, "orion", clientToolsJson(PERSONALITY_SYNC_COMMAND))
             withPublicSocket(provider) { device ->
-                acknowledge(device, snapshot(device), null, 1)
+                acknowledge(device, snapshot(device), defaults, 1)
                 withPublicSocket(source) { bot ->
-                    coroutineScope {
-                        val changing = async { turn(source, "brief") }
-                        acknowledge(device, snapshot(device), "brief", 2)
-                        changing.await()
-                    }
-                    assertEquals("synced", toolResult()["sync"].asText())
+                    updateAndAcknowledge(device, source, "brief", 2)
                     assertFalse(PERSONALITY_SYNC_COMMAND in llm.requests.last().messages.first().content)
-                    // Read raw frames: the common reader acknowledges personality commands automatically.
-                    bot.send(Frame.Text(historyFrame(source, "barrier", "user", "passive context")))
-                    assertEquals("ack", readRawJson(bot)["kind"].asText())
+                    assertNoCommands(bot, source, "barrier")
                 }
             }
         }
 
     @Test
-    fun `unknown support saves immediately and discovered support synchronizes on reconnect`() {
+    fun `unknown and empty catalogues save immediately and discovered support synchronizes after restart`() {
         val schema = newPostgresSchema("personality_discovery")
         var source = ""
         backendE2eTest("personality_discovery_seed", schema = schema, llm = personalityApi()) {
             source = createPublicChat(owner)
             withPublicSocket(source) { socket ->
-                socket.send(Frame.Text(historyFrame(source, "ready", "user", "Connection ready")))
-                assertEquals("ack", readRawJson(socket)["kind"].asText())
-                turn(source, "brief")
-                assertTrue(toolResult()["saved"].asBoolean())
-                assertEquals("skipped", toolResult()["sync"].asText())
-                assertEquals(2, settings()["personalityRevision"].asLong())
-                assertEquals("brief", settings()["personalityPrompt"].asText())
-                assertEquals(1, llm.requests.count { it.messages.first().content == PERSONALITY_VALIDATION_PROMPT })
+                assertNoCommands(socket, source, "ready")
+                for ((index, style) in listOf("brief", "captain").withIndex()) {
+                    if (index == 1) discover(socket, source, "[]")
+                    turn(source, style)
+                    assertTrue(toolResult()["saved"].asBoolean())
+                    assertEquals("skipped", toolResult()["sync"].asText())
+                    val stored = settings()
+                    assertEquals(index + 2L, stored["personalityRevision"].asLong())
+                    assertEquals(style, stored["personalityPrompt"].asText())
+                    assertNoCommands(socket, source, "saved-$index")
+                }
                 discover(socket, source, clientToolsJson(PERSONALITY_SYNC_COMMAND))
-                assertEquals(0, toolResult()["tools"].size())
-                // Discovery does not resend the saved style or consume another revision.
-                socket.send(Frame.Text(historyFrame(source, "after-discovery", "user", "Still connected")))
-                assertEquals("ack", readRawJson(socket)["kind"].asText())
+                assertNoCommands(socket, source, "after-discovery")
             }
         }
         backendE2eTest("personality_discovery_restart", schema = schema, llm = personalityApi()) {
             withPublicSocket(source) { socket ->
-                // A saved discovery is sufficient for reconnect synchronization after restart.
-                acknowledge(socket, snapshot(socket), "brief", 2)
-                coroutineScope {
-                    val changing = async { turn(source, "captain") }
-                    acknowledge(socket, snapshot(socket), "captain", 3)
-                    changing.await()
-                }
-                assertEquals("synced", toolResult()["sync"].asText())
-                assertEquals(3, settings()["personalityRevision"].asLong())
+                acknowledge(socket, snapshot(socket), afina.copy(personality = "captain"), 3)
+                updateAndAcknowledge(socket, source, "formal", 4)
+                assertEquals(4, settings()["personalityRevision"].asLong())
             }
         }
     }
-
-    @Test
-    fun `completed empty catalogue saves without a receiver and does not rediscover`() =
-        backendE2eTest("personality_empty_catalogue", llm = personalityApi()) {
-            val source = createPublicChat(owner)
-            withPublicSocket(source) { socket ->
-                socket.send(Frame.Text(historyFrame(source, "ready", "user", "Connection ready")))
-                assertEquals("ack", readRawJson(socket)["kind"].asText())
-                discover(socket, source, "[]")
-                for ((index, style) in listOf("brief", "captain").withIndex()) {
-                    turn(source, style)
-                    assertTrue(toolResult()["saved"].asBoolean())
-                    assertEquals("skipped", toolResult()["sync"].asText())
-                    assertEquals(index + 2L, settings()["personalityRevision"].asLong())
-                }
-            }
-        }
 
     @Test
     fun `concurrent additions revalidate against the winning revision`() {
@@ -309,15 +319,13 @@ class BackendPersonalityE2eTest {
             }
             assertEquals(201, created.status.value)
             val httpChat = created.jsonBody()["chat"]["id"].asText()
-            val initial = mapOf("voice" to "sber", "appeal" to "official", "style" to "neutral", "personality" to "Owner instructions")
+            val initial = PersonalityParameters(voice = "sber", appeal = "official", style = "neutral", personality = "Owner instructions")
             val publicChat = withMultiChatSocket { socket ->
                 val payload = mapOf("userId" to owner, "tools" to tools, "parameters" to mapOf("your_name" to "  Луна ", "future" to "a"))
                 socket.send(Frame.Text(json.writeValueAsString(mapOf("kind" to "chat.create", "requestId" to "public-ws", "payload" to payload))))
                 val ack = readRawJson(socket)
                 assertEquals("accepted", ack["status"].asText())
-                val defaults = snapshot(socket)
-                assertEquals("  Луна ", defaults["payload"]["arguments"]["parameters"]["your_name"].asText())
-                acknowledge(socket, defaults, null, 1)
+                acknowledge(socket, snapshot(socket), defaults, 1, yourName = "  Луна ")
                 val response = client.post(BackendHttpRoutes.CHATS) {
                     trusted(owner)
                     jsonBody(json.writeValueAsString(mapOf("userId" to owner, "requestId" to "owner", "clientType" to "backend", "parameters" to initial)))
@@ -328,65 +336,26 @@ class BackendPersonalityE2eTest {
             }
             withPublicSocket(publicChat) { socket ->
                 val frame = snapshot(socket)
-                assertEquals(json.valueToTree<JsonNode>(initial + ("your_name" to "  Луна ")), frame["payload"]["arguments"]["parameters"])
+                assertEquals(json.valueToTree<JsonNode>(initial.wireParameters("  Луна ")), frame["payload"]["arguments"]["parameters"])
                 // This receiver already applied defaults at revision 1 before the owner authenticated.
-                acknowledge(socket, frame, "Owner instructions", 2)
+                acknowledge(socket, frame, initial, 2, yourName = "  Луна ")
             }
             withPublicSocket(httpChat) { socket ->
                 val frame = snapshot(socket)
                 assertEquals(json.valueToTree<JsonNode>(initial), frame["payload"]["arguments"]["parameters"])
-                acknowledge(socket, frame, "Owner instructions", 2)
+                acknowledge(socket, frame, initial, 2)
             }
         }
 
-    @Test
-    fun `HTTP and WebSocket creation share user preferences but each receiver keeps its own activation word`() =
-        backendE2eTest("personality_creation", llm = personalityApi()) {
-            val initial = mapOf("voice" to "sber", "appeal" to "official", "style" to "neutral", "personality" to "")
-            val tools = json.readTree(clientToolsJson(PERSONALITY_SYNC_COMMAND))
-            val payload = mapOf("userId" to owner, "parameters" to initial + mapOf("your_name" to "  Луна ", "future" to "a"), "tools" to tools)
-            suspend fun create(id: String, body: Map<String, Any>) = client.post(BackendHttpRoutes.CHATS) {
-                trusted(owner)
-                jsonBody(json.writeValueAsString(body + mapOf("requestId" to id, "clientType" to "backend")))
-            }
-            patch("""{"temperature":0.2}""")
-            withMultiChatSocket(owner) { socket ->
-                socket.send(Frame.Text(json.writeValueAsString(mapOf("kind" to "chat.create", "requestId" to "first", "payload" to payload))))
-                val ack = readRawJson(socket)
-                assertEquals("accepted", ack["status"].asText())
-                val frame = snapshot(socket)
-                assertEquals(json.valueToTree<JsonNode>(initial + ("your_name" to "  Луна ")), frame["payload"]["arguments"]["parameters"])
-                acknowledge(socket, frame, null, 2)
-                val retry = create("first", payload)
-                assertEquals(200, retry.status.value)
-                assertEquals(ack["chatId"], retry.jsonBody()["chat"]["id"])
-            }
-            assertEquals(409, create("first", payload + ("parameters" to initial + mapOf("your_name" to "  Луна ", "future" to "b"))).status.value)
-            for (invalid in listOf(json.nullNode(), mapOf("voice" to "sberkot"), mapOf("extra" to 1), mapOf("extra" to null))) {
-                assertEquals(400, create("invalid", payload + mapOf("parameters" to invalid)).status.value)
-            }
-            val second = create("second", payload + ("parameters" to mapOf("voice" to "joy", "your_name" to "")))
-            assertEquals(201, second.status.value)
-            val id = second.jsonBody()["chat"]["id"].asText()
-            withPublicSocket(id) { socket ->
-                val frame = snapshot(socket)
-                assertEquals(json.valueToTree<JsonNode>(initial + ("your_name" to "")), frame["payload"]["arguments"]["parameters"])
-                acknowledge(socket, frame, null, 2)
-                coroutineScope {
-                    val updating = async { turn(id, "formal") }
-                    val updated = snapshot(socket)
-                    val expected = mapOf("voice" to "afina", "appeal" to "official", "style" to "formal", "personality" to "formal")
-                    assertEquals(json.valueToTree<JsonNode>(expected + ("your_name" to "")), updated["payload"]["arguments"]["parameters"])
-                    acknowledge(socket, updated, "formal", 3)
-                    updating.await()
-                    assertEquals(json.valueToTree<JsonNode>(expected), settings()["personalityParameters"])
-                }
-            }
-            turn(id, "voice only")
-            assertEquals("", settings()["personalityParameters"]["personality"].asText())
-            assertEquals("afina", settings()["personalityParameters"]["voice"].asText())
-            turn(id, "reset")
-            assertEquals(json.readTree("""{"voice":"joy","appeal":"no_official","style":"informal","personality":""}"""), settings()["personalityParameters"])
+    private suspend fun BackendE2eScope.assertNoCommands(socket: DefaultClientWebSocketSession, chat: String, requestId: String) =
+        withTimeout(15_000) {
+            socket.send(Frame.Text(historyFrame(chat, requestId, "user", "Connection ready")))
+            var frame: JsonNode
+            do {
+                frame = readRawJson(socket)
+                assertNotEquals("tool.call.started", frame.path("type").asText())
+            } while (frame.path("requestId").asText() != requestId)
+            assertEquals("accepted", frame["status"].asText())
         }
 
     private suspend fun BackendE2eScope.discover(socket: DefaultClientWebSocketSession, chat: String, tools: String) =
@@ -397,12 +366,13 @@ class BackendPersonalityE2eTest {
                 do { frame = readRawJson(socket) } while (frame.path("payload").path("name").asText() != "orion.tools.list")
                 socket.send(Frame.Text(toolResultFrame(frame, "succeeded", mapOf("tools" to json.readTree(tools)))))
                 discovering.await()
+                assertEquals(json.createArrayNode(), toolResult()["tools"])
             }
         }
 
-    private suspend fun BackendE2eScope.patch(body: String) {
-        assertEquals(200, client.patch(BackendHttpRoutes.SETTINGS) { trusted(owner); jsonBody(body) }.status.value)
-    }
+    private suspend fun BackendE2eScope.patch(body: String) =
+        client.patch(BackendHttpRoutes.SETTINGS) { trusted(owner); jsonBody(body) }
+            .also { assertEquals(200, it.status.value) }.jsonBody()["settings"]
     private suspend fun BackendE2eScope.settings(user: String = owner) =
         client.get(BackendHttpRoutes.SETTINGS) { trusted(user) }.jsonBody()["settings"]
     private fun BackendE2eScope.toolResult() = json.readTree(llm.requests.last { !it.isSummarization }.messages.last { it.name == "RunSkillCommand" }.content)
@@ -410,7 +380,10 @@ class BackendPersonalityE2eTest {
         val result = client.post(BackendHttpRoutes.chatMessages(chat)) {
             trusted(owner); jsonBody("""{"content":"$wish","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
         }.jsonBody()
-        backend.awaitExecution(UUID.fromString(result["execution"]["id"].asText()))
+        val executionId = UUID.fromString(result["execution"]["id"].asText())
+        backend.awaitExecution(executionId)
+        val execution = backend.executionRepository.get(owner, executionId)!!
+        assertEquals(AgentExecutionStatus.COMPLETED, execution.status, execution.errorCode)
     }
     private suspend fun BackendE2eScope.snapshot(socket: DefaultClientWebSocketSession): JsonNode = withTimeout(15_000) {
         var frame: JsonNode
@@ -422,15 +395,31 @@ class BackendPersonalityE2eTest {
         } while (frame.path("payload").path("name").asText() != PERSONALITY_SYNC_COMMAND)
         frame
     }
-    private suspend fun BackendE2eScope.acknowledge(socket: DefaultClientWebSocketSession, frame: JsonNode, prompt: String?, revision: Long, failed: Boolean = false) {
+    private suspend fun BackendE2eScope.updateAndAcknowledge(
+        socket: DefaultClientWebSocketSession, chat: String, wish: String, revision: Long, yourName: String? = null,
+    ) = coroutineScope {
+        val changing = async { turn(chat, wish) }
+        acknowledge(socket, snapshot(socket), afina.copy(personality = wish), revision, yourName)
+        changing.await()
+        assertEquals("synced", toolResult()["sync"].asText())
+    }
+
+    private suspend fun BackendE2eScope.acknowledge(
+        socket: DefaultClientWebSocketSession, frame: JsonNode, parameters: PersonalityParameters, revision: Long,
+        yourName: String? = null, failed: Boolean = false,
+    ) {
         assertTrue(frame.has("seq") && frame["seq"].isNull)
         val arguments = frame["payload"]["arguments"]
         assertEquals(setOf("parameters", "revision"), arguments.fieldNames().asSequence().toSet())
-        assertEquals(prompt.orEmpty(), arguments["parameters"]["personality"].asText())
+        assertEquals(json.valueToTree<JsonNode>(parameters.wireParameters(yourName)), arguments["parameters"])
         assertEquals(revision, arguments["revision"].asLong())
         socket.send(Frame.Text(toolResultFrame(frame, if (failed) "failed" else "succeeded",
             if (failed) mapOf("code" to "client_tool_failed", "message" to "retry") else mapOf("outcome" to "applied", "revision" to revision))))
     }
+
+    private fun PersonalityParameters.wireParameters(yourName: String? = null) =
+        mapOf("voice" to voice, "appeal" to appeal, "style" to style, "personality" to personality) +
+            listOfNotNull(yourName?.let { "your_name" to it })
 }
 
 private fun personalityApi(before: suspend (String, String) -> Unit = { _, _ -> }) = E2eLlmApi { body ->

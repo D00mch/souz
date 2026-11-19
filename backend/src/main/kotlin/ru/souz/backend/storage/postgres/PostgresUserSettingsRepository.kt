@@ -61,15 +61,15 @@ class PostgresUserSettingsRepository(
     ): PersonalitySnapshot? = dataSource.write { connection ->
         val next = PersonalitySnapshot(parameters, previous.revision + 1)
         connection.prepareStatement("""
-            insert into user_personalities(user_id, parameters, revision) values (?, ?::jsonb, ?)
+            insert into user_personalities(user_id, parameters, revision) values (?, ?, ?)
             on conflict (user_id) do update set parameters = excluded.parameters, revision = excluded.revision
-            where user_personalities.revision = ? and user_personalities.parameters = ?::jsonb
+            where user_personalities.revision = ? and user_personalities.parameters = ?
         """.trimIndent()).use { statement ->
             statement.setString(1, userId)
-            statement.setString(2, postgresStorageMapper.writeValueAsString(parameters))
+            statement.setJson(2, postgresStorageMapper.writeValueAsString(parameters))
             statement.setLong(3, next.revision)
             statement.setLong(4, previous.revision)
-            statement.setString(5, postgresStorageMapper.writeValueAsString(previous.parameters))
+            statement.setJson(5, postgresStorageMapper.writeValueAsString(previous.parameters))
             next.takeIf { statement.executeUpdate() == 1 }
         }
     }

@@ -24,11 +24,8 @@ import ru.souz.backend.http.v1ErrorResponses
 
 internal fun Route.settingsRoutes(deps: BackendHttpDependencies) {
     get(BackendHttpRoutes.SETTINGS) {
-        call.respond(
-            BackendV1SettingsResponse(
-                settings = deps.userSettingsService.get(call.requireUserIdFromTrustedProxy()).toDto(),
-            )
-        )
+        val settings = deps.userSettingsService.get(call.requireUserIdFromTrustedProxy())
+        call.respond(BackendV1SettingsResponse(settings.toDto()))
     }.describeV1(
         operationId = "getUserSettings",
         tag = BackendOpenApiTags.SETTINGS,
@@ -44,14 +41,11 @@ internal fun Route.settingsRoutes(deps: BackendHttpDependencies) {
     patch(BackendHttpRoutes.SETTINGS) {
         call.requireJsonContentV1()
         val request = call.receiveSettingsBody<BackendV1SettingsPatchRequest>()
-        call.respond(
-            BackendV1SettingsResponse(
-                settings = deps.userSettingsService.patch(
-                    userId = call.requireUserIdFromTrustedProxy(),
-                    overrides = request.toUserSettingsOverrides(deps.userSettingsService.namedModelNames),
-                ).toDto(),
-            )
+        val settings = deps.userSettingsService.patch(
+            userId = call.requireUserIdFromTrustedProxy(),
+            overrides = request.toUserSettingsOverrides(deps.userSettingsService.namedModelNames),
         )
+        call.respond(BackendV1SettingsResponse(settings.toDto()))
     }.describeV1(
         operationId = "patchUserSettings",
         tag = BackendOpenApiTags.SETTINGS,

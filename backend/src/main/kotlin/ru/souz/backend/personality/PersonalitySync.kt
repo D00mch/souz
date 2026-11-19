@@ -1,5 +1,6 @@
 package ru.souz.backend.personality
 
+import com.fasterxml.jackson.databind.node.ObjectNode
 import java.time.Duration
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
@@ -7,11 +8,11 @@ import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRepository
-import ru.souz.backend.client.ClientToolChannel
 import ru.souz.backend.client.LiveClientToolDispatcher
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.settings.model.PersonalitySnapshot
 import ru.souz.backend.settings.repository.UserSettingsRepository
+import ru.souz.llms.restJsonMapper
 
 internal const val PERSONALITY_SYNC_COMMAND = "prompt.personality.set"
 
@@ -23,7 +24,7 @@ internal class PersonalitySync(
 ) {
     suspend fun connected(chat: Chat) {
         try {
-            if (connectedChannels(chat.userId, chat.id).none { it.chat.id == chat.id && it.supportsPersonality() }) return
+            if (eligibleChannels(chat.userId, chat.id).none { it.id == chat.id }) return
             deliver(chat.userId, settings.personality(chat.userId), chat.id)
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -37,12 +38,13 @@ internal class PersonalitySync(
         repeat(3) { attempt ->
             if (attempt > 0) delay(attempt * 1_000L)
             try {
-                val eligible = connectedChannels(userId, preferred).filter { it.supportsPersonality() }
+                val eligible = eligibleChannels(userId, preferred)
                 // Retry another receiver after rejected publication; a lone busy receiver may recover.
-                val chat = (eligible.firstOrNull { it.chat.id !in busyChannels } ?: eligible.firstOrNull())?.chat
-                    ?: return "skipped"
+                val chat = eligible.firstOrNull { it.id !in busyChannels } ?: eligible.firstOrNull() ?: return "skipped"
+                val parameters = restJsonMapper.valueToTree<ObjectNode>(snapshot.parameters)
+                chat.yourName?.let { parameters.put("your_name", it) }
                 val reply = dispatcher.call(chat, PERSONALITY_SYNC_COMMAND,
-                    mapOf("parameters" to snapshot.parameters.forChannel(chat.yourName), "revision" to snapshot.revision),
+                    mapOf("parameters" to parameters, "revision" to snapshot.revision),
                     Duration.ofSeconds(10), execution, threadId = execution ?: UUID.randomUUID())
                 if (reply.error?.code == "client_tool_busy") busyChannels += chat.id
                 if (reply.error?.code in permanentErrors) return "failed"
@@ -65,12 +67,11 @@ internal class PersonalitySync(
         return "pending"
     }
 
-    private suspend fun connectedChannels(userId: String, preferred: UUID?): List<ClientToolChannel> =
+    private suspend fun eligibleChannels(userId: String, preferred: UUID?): List<Chat> =
         chats.clientToolChannels(userId)
-            .filter { events.hasLiveSubscriber(userId, it.chat.id) }
-            .sortedWith(compareBy({ it.chat.id != preferred }, { it.chat.id.toString() }))
-
-    private fun ClientToolChannel.supportsPersonality() = tools.any { it.name == PERSONALITY_SYNC_COMMAND }
+            .filter { (chat, tools) -> tools.any { it.name == PERSONALITY_SYNC_COMMAND } && events.hasLiveSubscriber(userId, chat.id) }
+            .map { it.chat }
+            .sortedWith(compareBy({ it.id != preferred }, { it.id.toString() }))
 
     private val permanentErrors = setOf("personality_context_missing", "personality_invalid_arguments",
         "personality_revision_conflict", "personality_not_configured")
