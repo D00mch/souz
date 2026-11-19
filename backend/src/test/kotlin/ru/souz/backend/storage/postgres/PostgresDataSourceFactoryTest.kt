@@ -155,6 +155,22 @@ class PostgresDataSourceFactoryTest {
     }
 
     @Test
+    fun `upgrades a backend that already applied the bot bindings migration`() {
+        val config = postgresAppConfig(newPostgresSchema("attachment_runtime_upgrade")).postgres
+        val pg = SharedPostgresContainer.instance
+        val migrations = Flyway.configure().dataSource(pg.jdbcUrl, pg.username, pg.password).schemas(config.schema)
+            .locations("classpath:db/migration")
+        val previous = migrations.target("27").load()
+        previous.migrate()
+        assertEquals("V27__remove_embedded_bot_bindings.sql", previous.info().current().script)
+
+        PostgresDataSourceFactory.create(config).close()
+
+        val applied = migrations.target("latest").load().info().applied()
+        assertEquals("V28__prepared_attachment_runtime.sql", applied.single { it.version?.version == "28" }.script)
+    }
+
+    @Test
     fun `preserves initialization failure when close also fails`() {
         val dataSource = mockk<HikariDataSource>()
         val migrationFailure = IllegalStateException("migration failed")

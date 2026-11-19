@@ -112,7 +112,6 @@ class EffectiveSettingsResolver(
             locale = locale,
             timeZone = timeZone,
             systemPrompt = requestOverrides?.systemPrompt ?: persisted.systemPrompt,
-            personality = userSettingsRepository.personality(userId),
             enabledTools = enabledTools,
             showToolEvents = featureFlags.toolEvents && showToolEventsPreference,
             streamingMessages = featureFlags.streamingMessages && streamingPreference,

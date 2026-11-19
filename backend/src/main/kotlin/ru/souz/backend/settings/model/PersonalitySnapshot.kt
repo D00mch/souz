@@ -20,14 +20,6 @@ data class PersonalityParameters(
         require(personality.length <= PersonalitySnapshot.MAX_PROMPT_LENGTH && '\u0000' !in personality) { "Invalid personality text." }
     }
 
-    fun forChannel(yourName: String?): Map<String, String> = buildMap {
-        put("voice", voice)
-        put("appeal", appeal)
-        put("style", style)
-        put("personality", personality)
-        if (yourName != null) put("your_name", yourName)
-    }
-
     companion object {
         private val defaults = PersonalityParameters()
 
