@@ -8,12 +8,17 @@ threads or launch detached work. Await structured coroutines and propagate cance
 
 ## Build and package
 
-Run from the repository root with Java 21.
+Use Java 21 and resolve released SDK versions from Maven Central
+(`https://repo.maven.apache.org/maven2`), without credentials:
 
-```bash
-./gradlew :plugin-api:publishToMavenLocal
-./gradlew -p plugin-api/examples/hello jar
+```kotlin
+repositories { mavenCentral() }
+dependencies { compileOnly("io.github.d00mch:plugin-api:2.0.0") }
 ```
+
+Copy the [Hello project](../examples/hello/) into an independent Gradle project and run
+`./gradlew jar` with that project's Gradle wrapper. The example uses Gradle 9.4.1.
+No Souz checkout or `publishToMavenLocal` step is required.
 
 Use the [hello build](../examples/hello/build.gradle.kts) for the compile-only SDK dependency,
 Java toolchain and required manifest attributes. Implement one public no-argument
@@ -32,6 +37,42 @@ Avoid storing plugin objects in shared-worker thread locals. For Jackson, use a 
 `JsonRecyclerPools.nonRecyclingPool()` and serialize nodes through that mapper. `JsonNode.toString()`
 and `toPrettyString()` use the default recycler, which can retain retired classloaders.
 [Plugin classloader](../../backend/src/main/kotlin/ru/souz/backend/plugins/PluginClassLoader.kt)
+
+## SDK releases
+
+The Maven group is `io.github.d00mch`; Kotlin package names remain `ru.souz.plugins.api`.
+The [publication](../build.gradle.kts) includes the binary JAR, POM, sources and Javadoc JARs.
+Maven Central releases are immutable: increment the SDK version for each release and update
+the Hello dependency. The plugin ABI fingerprint changes only when its compatibility changes.
+
+Before the first release, the `D00mch` account owner must:
+
+1. Sign in to [Sonatype Central](https://central.sonatype.com/) through GitHub and verify the
+   `io.github.d00mch` namespace. A separate DNS domain is not required.
+2. Generate a [Central Portal user token](https://central.sonatype.org/publish/generate-portal-token/).
+3. Create a [signing key and publish its public key](https://central.sonatype.org/publish/requirements/gpg/).
+4. Configure these GitHub Actions repository secrets, without committing credentials or keys:
+
+| Secret | Value |
+| --- | --- |
+| `MAVEN_CENTRAL_USERNAME` | Generated Central Portal token username |
+| `MAVEN_CENTRAL_PASSWORD` | Generated Central Portal token password |
+| `MAVEN_SIGNING_KEY` | ASCII-armored private signing key |
+| `MAVEN_SIGNING_PASSWORD` | Signing key passphrase, if set |
+
+Push a tag matching the SDK version, such as `plugin-api-v2.0.0`, to run the
+[release workflow](../../.github/workflows/publish-plugin-sdk.yml). It verifies a staged
+publication, signs and releases the SDK, waits for Maven Central availability, and builds
+the standalone Hello project against the public repository. Downloading released SDK versions
+does not require the publishing token or signing key.
+
+The [standalone verifier](../../scripts/verify-plugin-sdk.sh) copies only the example and
+Gradle wrapper outside the checkout and uses fresh Gradle and Maven local directories.
+Run it with `SOUZ_PLUGIN_MAVEN_URL` unset to check a public release. For pre-release verification,
+run `./gradlew :plugin-api:publishSdkPublicationToVerificationRepository` and set
+`SOUZ_PLUGIN_MAVEN_URL` to the file URI of `plugin-api/build/maven-repository` before running it.
+The override resolves only the SDK from that repository and cannot fall back to Maven Central
+for a missing staged artifact.
 
 ## Invocation services
 
