@@ -277,6 +277,8 @@ class GradleDependencyVerificationTest(unittest.TestCase):
             ("org.apache.groovy", "groovy-bom", "4.0.27", ["pom", "module"]),
             ("org.apache.logging.log4j", "log4j", "2.25.1", ["pom"]),
             ("org.bouncycastle", "bc-jdk18on-bom", "1.84", ["module"]),
+            ("org.apache.pdfbox", "pdfbox-debugger", "3.0.5", ["pom"]),
+            ("org.jetbrains.kotlin", "kotlin-stdlib-common", "1.4.31", ["pom"]),
             ("org.jetbrains.kotlinx", "kotlinx-coroutines-bom", "1.6.4", ["pom"]),
             ("org.jetbrains.kotlinx", "kotlinx-serialization-bom", "1.6.2", ["pom"]),
             ("org.junit", "junit-bom", "5.7.0", ["module"]),
@@ -365,6 +367,7 @@ class GradleDependencyVerificationTest(unittest.TestCase):
             "applicationSources": [
                 ("org.jetbrains", "annotations", "23.0.0"),
                 ("org.jetbrains.kotlin", "kotlin-stdlib", "2.4.10"),
+                ("org.jetbrains.kotlin", "kotlin-stdlib-common", "1.4.31"),
                 ("org.jetbrains.kotlinx", "kotlinx-coroutines-core", "1.11.0"),
                 ("org.jetbrains.kotlinx", "kotlinx-coroutines-core-jvm", "1.11.0"),
                 ("org.jetbrains.kotlinx", "kotlinx-serialization-core", "1.11.0"),
@@ -374,6 +377,7 @@ class GradleDependencyVerificationTest(unittest.TestCase):
                 ("org.jetbrains.compose.ui", "ui", "1.9.3"),
                 ("org.jetbrains.compose.ui", "ui-desktop", "1.9.3"),
                 ("org.jetbrains.skiko", "skiko-awt", "0.9.22.2"),
+                ("org.apache.pdfbox", "pdfbox-debugger", "3.0.5"),
                 ("androidx.lifecycle", "lifecycle-runtime", "2.9.4"),
                 ("androidx.lifecycle", "lifecycle-runtime-desktop", "2.9.4"),
                 ("com.fasterxml.jackson.module", "jackson-module-kotlin", "2.21.3"),
@@ -397,13 +401,76 @@ class GradleDependencyVerificationTest(unittest.TestCase):
             ],
         })
 
-    def verify_source_attachments(self, configurations):
+    def test_ide_kmp_common_sources_resolve_and_reject_tampering(self):
+        # KMP import selects metadataSourcesElements, whose classifier differs from JVM sources.
+        self.verify_source_attachments({
+            "applicationCommonSources": [("org.jetbrains.kotlin", "kotlin-stdlib", "2.4.10")],
+            "transitiveCommonSources": [("org.jetbrains.kotlin", "kotlin-stdlib", "2.4.21")],
+        }, classifier="common-sources")
+
+    def test_ide_source_variant_alias_resolves_and_rejects_tampering(self):
+        # Lets-Plot's source variant names a different artifact than its download URL.
+        repository = self.root / "repository/org/jetbrains/lets-plot/lets-plot-kotlin-jvm/4.6.0"
+        repository.mkdir(parents=True)
+        artifact = repository / "lets-plot-kotlin-jvm-4.6.0-sources.jar"
+        with zipfile.ZipFile(artifact, "w") as archive:
+            archive.writestr("Fixture.kt", "// Synthetic IDE source variant\n")
+        alias = "plot-api-jvm-4.6.0-sources.jar"
+        module = repository / "lets-plot-kotlin-jvm-4.6.0.module"
+        module.write_text(json.dumps({
+            "formatVersion": "1.1",
+            "component": {"group": "org.jetbrains.lets-plot", "module": "lets-plot-kotlin-jvm",
+                          "version": "4.6.0"},
+            "variants": [{"name": "jvmSourcesElements-published",
+                          "attributes": {"org.gradle.category": "documentation",
+                                         "org.gradle.docstype": "sources"},
+                          "files": [{"name": alias, "url": artifact.name}]}],
+        }))
+        metadata = ET.parse(self.metadata)
+        component = metadata.find("v:components/v:component[@group='org.jetbrains.lets-plot']"
+                                  "[@name='lets-plot-kotlin-jvm'][@version='4.6.0']", VERIFICATION_NS)
+        for filename, fixture in [(alias, artifact), (module.name, module)]:
+            checksum = component.find(f"v:artifact[@name='{filename}']/v:sha256", VERIFICATION_NS)
+            self.assertIsNotNone(checksum, f"IDE source variants require a reviewed hash for {filename}")
+            self.assertRegex(checksum.get("value"), r"^[0-9a-f]{64}$")
+            checksum.set("value", hashlib.sha256(fixture.read_bytes()).hexdigest())
+        ET.register_namespace("", VERIFICATION_NS["v"])
+        metadata.write(self.metadata, encoding="UTF-8", xml_declaration=True)
+        (self.root / "build.gradle").write_text(textwrap.dedent("""\
+            repositories {
+                maven { url = uri('repository'); metadataSources { gradleMetadata() } }
+            }
+            configurations {
+                ideSources {
+                    attributes {
+                        attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, 'documentation'))
+                        attribute(DocsType.DOCS_TYPE_ATTRIBUTE, objects.named(DocsType, 'sources'))
+                    }
+                }
+            }
+            dependencies { ideSources 'org.jetbrains.lets-plot:lets-plot-kotlin-jvm:4.6.0' }
+            tasks.register('verifyFixture') {
+                doLast {
+                    assert configurations.ideSources.singleFile.name == 'plot-api-jvm-4.6.0-sources.jar'
+                    file('build-configured').text = 'Source variant verified'
+                }
+            }
+            """))
+        result = self.run_gradle()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(self.marker.exists())
+        self.marker.unlink()
+        with zipfile.ZipFile(artifact, "a") as archive:
+            archive.writestr("Tampered.kt", "// Unreviewed source\n")
+        self.assert_rejected()
+
+    def verify_source_attachments(self, configurations, classifier="sources"):
         metadata = ET.parse(self.metadata)
         artifacts = []
         for group, name, version in [entry for entries in configurations.values() for entry in entries]:
             repository = self.root / "repository" / group.replace(".", "/") / name / version
             repository.mkdir(parents=True)
-            artifact = repository / f"{name}-{version}-sources.jar"
+            artifact = repository / f"{name}-{version}-{classifier}.jar"
             with zipfile.ZipFile(artifact, "w") as archive:
                 archive.writestr("Fixture.kt", "// Synthetic IDE source attachment\n")
             artifacts.append(artifact)
@@ -416,7 +483,7 @@ class GradleDependencyVerificationTest(unittest.TestCase):
         ET.register_namespace("", VERIFICATION_NS["v"])
         metadata.write(self.metadata, encoding="UTF-8", xml_declaration=True)
         dependencies = "\n".join(
-            f"    {configuration} '{group}:{name}:{version}:sources@jar'"
+            f"    {configuration} '{group}:{name}:{version}:{classifier}@jar'"
             for configuration, entries in configurations.items()
             for group, name, version in entries)
         expected = json.dumps(sorted(artifact.name for artifact in artifacts))
