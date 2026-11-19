@@ -257,9 +257,49 @@ class GradleDependencyVerificationTest(unittest.TestCase):
         metadata = ET.parse(VERIFICATION_METADATA)
         # Parent/BOM metadata is resolved even when its dependencies lose version selection.
         for group, name, version, extensions in [
+            ("com.fasterxml", "oss-parent", "68", ["pom"]),
+            ("com.fasterxml.jackson", "jackson-base", "2.15.2", ["pom"]),
             ("com.fasterxml.jackson", "jackson-base", "2.21.3", ["pom"]),
-            ("org.junit", "junit-bom", "5.14.1", ["pom", "module"]),
+            ("com.fasterxml.jackson", "jackson-base", "2.22.1", ["pom"]),
+            ("com.fasterxml.jackson", "jackson-bom", "2.19.1", ["pom"]),
+            ("com.fasterxml.jackson", "jackson-parent", "2.19.2", ["pom"]),
+            ("com.fasterxml.jackson.dataformat", "jackson-dataformats-text", "2.15.2", ["pom"]),
+            ("com.fasterxml.jackson.dataformat", "jackson-dataformats-text", "2.21.3", ["pom"]),
+            ("com.fasterxml.jackson.dataformat", "jackson-dataformats-text", "2.22.1", ["pom"]),
+            ("com.fasterxml.jackson.module", "jackson-modules-java8", "2.15.2", ["pom"]),
+            ("com.fasterxml.jackson.module", "jackson-modules-java8", "2.21.3", ["pom"]),
+            ("com.fasterxml.jackson.module", "jackson-modules-java8", "2.22.1", ["pom"]),
+            ("io.opentelemetry", "opentelemetry-bom", "1.50.0", ["module"]),
+            ("io.opentelemetry", "opentelemetry-bom-alpha", "1.50.0-alpha", ["module"]),
+            ("io.opentelemetry.instrumentation", "opentelemetry-instrumentation-bom", "2.16.0", ["module"]),
+            ("io.opentelemetry.instrumentation", "opentelemetry-instrumentation-bom-alpha", "2.16.0-alpha", ["module"]),
+            ("org.apache.groovy", "groovy-bom", "4.0.22", ["module"]),
+            ("org.apache.groovy", "groovy-bom", "4.0.27", ["pom", "module"]),
+            ("org.apache.logging.log4j", "log4j", "2.25.1", ["pom"]),
+            ("org.bouncycastle", "bc-jdk18on-bom", "1.84", ["module"]),
+            ("org.jetbrains.kotlinx", "kotlinx-coroutines-bom", "1.6.4", ["pom"]),
+            ("org.jetbrains.kotlinx", "kotlinx-serialization-bom", "1.6.2", ["pom"]),
+            ("org.junit", "junit-bom", "5.7.0", ["module"]),
+            ("org.junit", "junit-bom", "5.8.2", ["pom", "module"]),
+            ("org.junit", "junit-bom", "5.9.0", ["module"]),
             ("org.junit", "junit-bom", "5.9.1", ["pom", "module"]),
+            ("org.junit", "junit-bom", "5.9.3", ["module"]),
+            ("org.junit", "junit-bom", "5.10.0", ["module"]),
+            ("org.junit", "junit-bom", "5.10.3", ["module"]),
+            ("org.junit", "junit-bom", "5.11.0-M2", ["module"]),
+            ("org.junit", "junit-bom", "5.11.4", ["module"]),
+            ("org.junit", "junit-bom", "5.12.2", ["module"]),
+            ("org.junit", "junit-bom", "5.13.0", ["module"]),
+            ("org.junit", "junit-bom", "5.13.1", ["module"]),
+            ("org.junit", "junit-bom", "5.13.2", ["pom", "module"]),
+            ("org.junit", "junit-bom", "5.13.4", ["module"]),
+            ("org.junit", "junit-bom", "5.14.1", ["pom", "module"]),
+            ("org.junit", "junit-bom", "5.14.3", ["pom", "module"]),
+            ("org.junit", "junit-bom", "5.14.4", ["module"]),
+            ("org.junit", "junit-bom", "6.0.1", ["module"]),
+            ("org.junit", "junit-bom", "6.0.2", ["pom"]),
+            ("org.springframework", "spring-framework-bom", "5.3.29", ["module"]),
+            ("org.springframework", "spring-framework-bom", "5.3.39", ["module"]),
         ]:
             component = metadata.find(f"v:components/v:component[@group='{group}']"
                                       f"[@name='{name}'][@version='{version}']", VERIFICATION_NS)
@@ -269,6 +309,14 @@ class GradleDependencyVerificationTest(unittest.TestCase):
                                           VERIFICATION_NS)
                 self.assertIsNotNone(checksum)
                 self.assertRegex(checksum.get("value"), r"^[0-9a-f]{64}$")
+
+    def test_settings_plugin_sources_are_pinned_for_ide_import(self):
+        metadata = ET.parse(VERIFICATION_METADATA)
+        checksum = metadata.find("v:components/v:component[@group='org.gradle.toolchains']"
+                                 "[@name='foojay-resolver'][@version='1.0.0']/v:artifact"
+                                 "[@name='foojay-resolver-1.0.0-sources.jar']/v:sha256", VERIFICATION_NS)
+        self.assertIsNotNone(checksum)
+        self.assertRegex(checksum.get("value"), r"^[0-9a-f]{64}$")
 
     def resolve_plugin(self, version="0.37.0"):
         repository = self.root / "repository/com/vanniktech/gradle-maven-publish-plugin" / version
