@@ -318,45 +318,57 @@ class GradleDependencyVerificationTest(unittest.TestCase):
         self.assertIsNotNone(checksum)
         self.assertRegex(checksum.get("value"), r"^[0-9a-f]{64}$")
 
-    def test_embedded_kotlin_sources_resolve_and_reject_tampering(self):
+    def test_ide_build_plugin_sources_resolve_and_reject_tampering(self):
         metadata = ET.parse(self.metadata)
         artifacts = []
-        for name in ["kotlin-stdlib", "kotlin-reflect"]:
-            repository = self.root / "repository/org/jetbrains/kotlin" / name / "2.3.0"
+        # IDE import resolves plugin and transitive sources as well as embedded Kotlin.
+        coordinates = [
+            ("org.jetbrains.kotlin", "kotlin-stdlib", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-reflect", "2.3.0"),
+            ("org.jetbrains.kotlin", "kotlin-gradle-plugin", "2.4.10"),
+            ("org.jetbrains.compose", "compose-gradle-plugin", "1.9.3"),
+            ("org.graalvm.buildtools", "utils", "0.10.6"),
+            ("com.gradleup.shadow", "shadow-gradle-plugin", "9.1.0"),
+            ("io.ktor.plugin", "plugin", "3.5.2"),
+            ("com.vanniktech", "gradle-maven-publish-plugin", "0.37.0"),
+            ("com.vanniktech", "central-portal", "0.37.0"),
+        ]
+        for group, name, version in coordinates:
+            repository = self.root / "repository" / group.replace(".", "/") / name / version
             repository.mkdir(parents=True)
-            artifact = repository / f"{name}-2.3.0-sources.jar"
+            artifact = repository / f"{name}-{version}-sources.jar"
             with zipfile.ZipFile(artifact, "w") as archive:
                 archive.writestr("Fixture.kt", "// Synthetic IDE source attachment\n")
             artifacts.append(artifact)
-            checksum = metadata.find("v:components/v:component[@group='org.jetbrains.kotlin']"
-                                     f"[@name='{name}'][@version='2.3.0']/v:artifact"
+            checksum = metadata.find(f"v:components/v:component[@group='{group}']"
+                                     f"[@name='{name}'][@version='{version}']/v:artifact"
                                      f"[@name='{artifact.name}']/v:sha256", VERIFICATION_NS)
             self.assertIsNotNone(checksum, f"IDE import requires a reviewed hash for {artifact.name}")
+            self.assertRegex(checksum.get("value"), r"^[0-9a-f]{64}$")
             checksum.set("value", hashlib.sha256(artifact.read_bytes()).hexdigest())
         ET.register_namespace("", VERIFICATION_NS["v"])
         metadata.write(self.metadata, encoding="UTF-8", xml_declaration=True)
+        dependencies = "\n".join(f"    ideSources '{group}:{name}:{version}:sources@jar'"
+                                 for group, name, version in coordinates)
+        expected = json.dumps(sorted(artifact.name for artifact in artifacts))
         (self.root / "build.gradle").write_text(textwrap.dedent("""\
             repositories {
                 maven { url = uri('repository'); metadataSources { artifact() } }
             }
             configurations { ideSources }
-            dependencies {
-                ideSources 'org.jetbrains.kotlin:kotlin-stdlib:2.3.0:sources@jar'
-                ideSources 'org.jetbrains.kotlin:kotlin-reflect:2.3.0:sources@jar'
-            }
-            tasks.register('verifyFixture') {
-                doLast {
-                    assert configurations.ideSources.files*.name.sort() ==
-                        ['kotlin-reflect-2.3.0-sources.jar', 'kotlin-stdlib-2.3.0-sources.jar']
+            """) + "dependencies {\n" + dependencies + "\n}\n" + textwrap.dedent(f"""\
+            tasks.register('verifyFixture') {{
+                doLast {{
+                    assert configurations.ideSources.files*.name.sort() == {expected}
                     file('build-configured').text = 'Sources verified'
-                }
-            }
+                }}
+            }}
             """))
         result = self.run_gradle()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(self.marker.exists())
         self.marker.unlink()
-        with zipfile.ZipFile(artifacts[0], "a") as archive:
+        with zipfile.ZipFile(artifacts[-1], "a") as archive:
             archive.writestr("Tampered.kt", "// Unreviewed source\n")
         self.assert_rejected()
 
