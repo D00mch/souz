@@ -33,7 +33,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines)
     implementation(libs.kotlinx.coroutinesSlf4j)
     implementation(libs.jackson)
-    implementation(libs.commonmark)
     implementation(libs.cron.utils)
     implementation(libs.jackson.dataformat.yaml)
     implementation(libs.flyway.core)

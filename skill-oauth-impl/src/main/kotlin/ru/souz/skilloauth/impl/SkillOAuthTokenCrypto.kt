@@ -6,11 +6,7 @@ import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
-/**
- * AES-GCM encryption for stored OAuth tokens, mirroring
- * `ru.souz.backend.telegram.TelegramBotTokenCrypto`. Uses a dedicated key so a leak of
- * the Telegram bot-token key does not also compromise skill OAuth tokens.
- */
+/** Encrypts stored Skill OAuth tokens with a dedicated AES-GCM key. */
 class SkillOAuthTokenCrypto(
     rawBase64Key: String,
 ) {

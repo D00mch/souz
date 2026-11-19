@@ -15,8 +15,6 @@ import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.personality.PersonalitySync
 import ru.souz.backend.settings.service.UserSettingsService
 import ru.souz.backend.storage.postgres.PostgresReadinessProbe
-import ru.souz.backend.telegram.TelegramBotBindingService
-import ru.souz.backend.vk.VkBotBindingService
 import ru.souz.skilloauth.impl.SkillOAuthGatewayImpl
 import ru.souz.backend.plugins.PluginAdministration
 
@@ -37,8 +35,6 @@ internal data class BackendHttpDependencies(
     val publicClientService: PublicClientService,
     val hookService: HookService,
     val pluginAdministration: PluginAdministration? = null,
-    val telegramBotBindingService: TelegramBotBindingService? = null,
-    val vkBotBindingService: VkBotBindingService? = null,
     val skillOAuthGatewayImpl: SkillOAuthGatewayImpl? = null,
     val featureFlags: BackendFeatureFlags,
     val trustedProxyToken: () -> String?,

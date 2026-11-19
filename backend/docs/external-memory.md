@@ -16,7 +16,7 @@
 
 ## Forgetting
 
-Expose forgetting tools only with Hindsight on authenticated interactive owner turns through the trusted proxy or linked Telegram/VK conversations. Persist this explicit authority for option continuations. Credential-free Client-Souz, hook and scheduled turns cannot delete memory; matching caller-supplied UUIDs and authenticated integrations do not grant owner deletion authority.
+Expose forgetting tools only with Hindsight on authenticated interactive owner turns through the trusted proxy. Persist this explicit authority for option continuations. Credential-free Client-Souz, hook and scheduled turns cannot delete memory; matching caller-supplied UUIDs and authenticated integrations do not grant owner deletion authority.
 
 `ForgetMemoryFact` requires an exact `factId` from `SearchMemory` in the trusted owner's bank. Semantic relevance alone cannot authorize deletion. Invalidation hides the fact and removes derived observations. `pendingCapture` includes queued or in-flight completed-turn capture, imported history and Hindsight extraction that may store the information again.
 

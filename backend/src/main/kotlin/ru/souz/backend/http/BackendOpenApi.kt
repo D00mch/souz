@@ -4,7 +4,6 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.openapi.GenericElement
 import io.ktor.openapi.JsonSchema
-import io.ktor.openapi.JsonSchemaInference
 import io.ktor.openapi.JsonType
 import io.ktor.openapi.Operation
 import io.ktor.openapi.Parameters
@@ -17,7 +16,6 @@ import io.ktor.server.routing.openapi.describe
 import io.ktor.utils.io.ExperimentalKtorApi
 import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.settings.service.UserSettingsLimits
-import ru.souz.llms.LlmProvider
 
 internal object BackendOpenApiTags {
     const val SYSTEM = "System"
@@ -30,8 +28,6 @@ internal object BackendOpenApiTags {
     const val EVENTS = "Events"
     const val EXECUTIONS = "Executions"
     const val OPTIONS = "Options"
-    const val TELEGRAM = "Telegram"
-    const val VK = "VK"
 }
 
 internal object BackendOpenApiSecurity {
@@ -257,7 +253,7 @@ internal object BackendOpenApiSchemas {
             .withNonBlankString("locale", "A recognized BCP 47 language tag.")
             .withNonBlankString("timeZone", "An IANA time-zone identifier.")
             .withEnabledTools()
-            .withPropertyDescription("narrateSteps", "Opt in to short RU/EN assistant progress and live WebSocket or bot delivery. Excludes initial waiting. Defaults to false; applies to new executions.")
+            .withPropertyDescription("narrateSteps", "Opt in to short RU/EN assistant progress and live WebSocket delivery. Excludes initial waiting. Defaults to false; applies to new executions.")
             .withPropertyDescription("intermediateMessages", "False suppresses the initial waiting phrase and step narration regardless of narrateSteps; final responses and technical events are unaffected. Defaults to true; applies to new executions.")
             .withStringEnum("interfaceLanguage", listOf("en", "ru"))
             .withMinimum("requestTimeoutMillis", 1_000.0, "Must be at least 1000 milliseconds.")
@@ -268,7 +264,7 @@ internal object BackendOpenApiSchemas {
             .withNonBlankString("locale", "A recognized BCP 47 language tag.")
             .withNonBlankString("timeZone", "An IANA time-zone identifier.")
             .withEnabledTools()
-            .withPropertyDescription("narrateSteps", "Opt in to short RU/EN assistant progress and live WebSocket or bot delivery. Excludes initial waiting. Defaults to false; applies to new executions.")
+            .withPropertyDescription("narrateSteps", "Opt in to short RU/EN assistant progress and live WebSocket delivery. Excludes initial waiting. Defaults to false; applies to new executions.")
             .withStringEnum("interfaceLanguage", listOf("en", "ru"))
             .withMinimum("requestTimeoutMillis", 1_000.0, "Must be at least 1000 milliseconds.")
 
@@ -309,40 +305,6 @@ internal object BackendOpenApiSchemas {
                 "metadata",
                 "String metadata. Keys must contain at least one non-whitespace character.",
             )
-
-    fun telegramToken(schema: JsonSchema): JsonSchema =
-        schema
-            .copy(required = listOf("token"))
-            .withProperty("token") { token ->
-                token.copy(
-                    type = JsonType.STRING,
-                    description = "Telegram bot token.",
-                    minLength = 1,
-                    pattern = NON_BLANK_PATTERN,
-                    maxLength = 4_096,
-                    writeOnly = true,
-                    default = null,
-                    example = null,
-                    examples = null,
-                )
-            }
-
-    fun vkToken(schema: JsonSchema): JsonSchema =
-        schema
-            .copy(required = listOf("token"))
-            .withProperty("token") { token ->
-                token.copy(
-                    type = JsonType.STRING,
-                    description = "VK community group access token.",
-                    minLength = 1,
-                    pattern = NON_BLANK_PATTERN,
-                    maxLength = 4_096,
-                    writeOnly = true,
-                    default = null,
-                    example = null,
-                    examples = null,
-                )
-            }
 }
 
 private fun HttpStatusCode.v1ErrorDescription(): String =

@@ -30,31 +30,6 @@ import ru.souz.llms.restJsonMapper
 
 class AgentEventBusTest {
     @Test
-    fun `observers receive progress without advertising or accepting device commands`() = runTest {
-        val bus = AgentEventBus()
-        val chat = UUID.randomUUID()
-        val observer = bus.subscribe("user", chat, acceptsClientCommands = false)
-        val progress = AgentLiveEvent(UUID.randomUUID(), "user", chat, UUID.randomUUID(),
-            AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload("Checking"), Instant.EPOCH)
-        val command = progress.copy(type = AgentEventType.TOOL_CALL_STARTED,
-            payload = PublicToolCallStartedPayload("call", "user.ask", arguments = restJsonMapper.createObjectNode()))
-        assertFalse(bus.hasSubscriber("user", chat))
-        assertFalse(bus.publishCommand(command))
-        bus.publish(progress)
-        assertEquals(progress, observer.events.receive())
-        val device = bus.subscribe("user", chat)
-        assertTrue(bus.hasSubscriber("user", chat))
-        assertTrue(bus.publishCommand(command))
-        assertEquals(command, device.commands.receive())
-        assertTrue(observer.commands.tryReceive().isFailure)
-        device.close()
-        assertFalse(bus.hasSubscriber("user", chat))
-        observer.close()
-        bus.publish(progress)
-        assertTrue(observer.events.receiveCatching().isClosed)
-    }
-
-    @Test
     fun `replay completes writes before signaling readiness and drops stale progress`() = runTest {
         for (phase in listOf("initial", "catch-up", "live")) for (tool in listOf(false, true)) {
             val progress = AgentLiveEvent(UUID.randomUUID(), "user", UUID.randomUUID(), UUID.randomUUID(),
@@ -110,7 +85,6 @@ class AgentEventBusTest {
             val progress = AgentLiveEvent(UUID.randomUUID(), "user", UUID.randomUUID(), UUID.randomUUID(),
                 AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload("Checking"), Instant.EPOCH)
             val client = bus.subscribe(progress.userId, progress.chatId)
-            val observer = bus.subscribe(progress.userId, progress.chatId, acceptsClientCommands = false)
             repeat(AgentEventLimits.LIVE_BUFFER_SIZE + 3) { bus.publish(progress) }
             bus.publish(durableEvent(progress.userId, progress.chatId, 1))
             val command = progress.copy(type = AgentEventType.TOOL_CALL_STARTED,
@@ -121,7 +95,6 @@ class AgentEventBusTest {
             val dropped = metrics.registry.get("souz.ws.events.dropped").tag("reason", "undelivered").counter()
             assertEquals(4.0, dropped.count())
             client.close()
-            observer.close()
             assertEquals((AgentEventLimits.LIVE_BUFFER_SIZE * 2 + 3).toDouble(), dropped.count())
         }
     }
@@ -134,7 +107,6 @@ class AgentEventBusTest {
                 AgentEventType.TOOL_CALL_STARTED,
                 PublicToolCallStartedPayload("call", "user.ask", arguments = restJsonMapper.createObjectNode()), Instant.EPOCH)
             val slow = List(2) { bus.subscribe(command.userId, command.chatId) }
-            val observer = bus.subscribe(command.userId, command.chatId, acceptsClientCommands = false)
             repeat(AgentEventLimits.LIVE_BUFFER_SIZE) { assertTrue(bus.publishCommand(command)) }
             val available = bus.subscribe(command.userId, command.chatId)
             val next = command.copy(id = UUID.randomUUID())
@@ -148,14 +120,12 @@ class AgentEventBusTest {
             assertFalse(bus.publishCommand(durable))
             assertFalse(bus.publishCommand(command.copy(payload = RawAgentEventPayload(emptyMap()))))
             assertEquals(2.0, rejected.count())
-            assertTrue(observer.commands.tryReceive().isFailure)
             slow.forEach { subscription ->
                 repeat(AgentEventLimits.LIVE_BUFFER_SIZE) { assertEquals(command, subscription.commands.receive()) }
                 assertTrue(subscription.commands.tryReceive().isFailure)
                 subscription.close()
                 subscription.close()
             }
-            observer.close()
             assertEquals(2.0, rejected.count())
             assertEquals(0.0, metrics.registry.get("souz.ws.events.dropped").tag("reason", "undelivered").counter().count())
         }

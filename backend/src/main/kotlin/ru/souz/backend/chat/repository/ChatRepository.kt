@@ -29,7 +29,6 @@ interface ChatRepository {
     suspend fun replaceDiscoveredClientTools(userId: String, chatId: UUID, tools: DiscoveredClientTools)
     suspend fun get(userId: String, chatId: UUID): Chat?
     suspend fun getById(chatId: UUID): Chat?
-    suspend fun getByIds(chatIds: List<UUID>): List<Chat>
     suspend fun findByRequestId(userId: String, requestId: String): Chat?
     suspend fun list(
         userId: String,
