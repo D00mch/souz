@@ -36,22 +36,56 @@ import kotlin.test.assertTrue
 
 class NodesCommonTest {
     @Test
-    fun `date and UTC offset use the host clock and time zone`() = runTest {
+    fun `date uses the host clock and time zone across daylight saving changes`() = runTest {
         val environment = object : AgentRuntimeEnvironment {
             override val locale: Locale = Locale.US
             override val zoneId: ZoneId = ZoneId.of("Europe/Berlin")
             override var clock: Clock = Clock.fixed(Instant.parse("2026-01-01T23:30:00Z"), ZoneId.of("UTC"))
         }
         val nodes = nodesCommon(mockk(relaxed = true), environment = environment)
-        for ((instant, date, offset) in listOf(
-            Triple("2026-01-01T23:30:00Z", "Friday, 2026-01-02 00:30:00", "+01:00"),
-            Triple("2026-06-01T23:30:00Z", "Tuesday, 2026-06-02 01:30:00", "+02:00"),
+        for ((instant, date) in listOf(
+            "2026-01-01T23:30:00Z" to "Friday, 2026-01-02 00:30:00",
+            "2026-06-01T23:30:00Z" to "Tuesday, 2026-06-02 01:30:00",
         )) {
             environment.clock = Clock.fixed(Instant.parse(instant), ZoneId.of("UTC"))
             val result = nodes.nodeAppendAdditionalData().execute(stringContext("calendar", "test"), graphRuntime())
             val content = result.history.single { it.isInjectedContextMessage() }.content
             assertTrue(content.contains(date), content)
-            assertTrue(content.contains("utc_offset=$offset"), content)
+        }
+    }
+
+    @Test
+    fun `host context refreshes the localized date and time without geolocation`() = runTest {
+        val environment = object : AgentRuntimeEnvironment {
+            override val locale: Locale = Locale.FRANCE
+            override var zoneId: ZoneId = ZoneId.of("Europe/Moscow")
+            override val clock: Clock = Clock.fixed(Instant.parse("2026-01-01T23:30:00Z"), ZoneId.of("UTC"))
+        }
+        val nodes = nodesCommon(mockk(relaxed = true), environment = environment)
+        var context = stringContext("Проверь Telegram", LLMModel.LocalQwen3_4B_Instruct_2507.alias)
+
+        for ((turn, zoneAndDate) in listOf(
+            "Europe/Moscow" to "vendredi, 2026-01-02 02:30:00",
+            "Asia/Tokyo" to "vendredi, 2026-01-02 08:30:00",
+            "UTC" to "jeudi, 2026-01-01 23:30:00",
+        ).withIndex()) {
+            val (zone, date) = zoneAndDate
+            environment.zoneId = ZoneId.of(zone)
+            val exchangeStart = if (turn == 0) {
+                1
+            } else {
+                context = NodesPlain.inputToHistory().execute(context, graphRuntime())
+                context.activeExchangeStartIndex - 1
+            }
+
+            context = nodes.nodeAppendAdditionalData().execute(context, graphRuntime())
+
+            val injectedContext = context.history.single { it.isInjectedContextMessage() }
+            assertEquals(exchangeStart, context.activeExchangeStartIndex)
+            assertEquals(injectedContext, context.history[exchangeStart])
+            assertFalse(injectedContext.content.contains("User geo:"), injectedContext.content)
+            val facts = injectedContext.content.substringAfter("\n---\n").substringBeforeLast("\n</context>").lines()
+            assertEquals(listOf("- [General fact]: Текущие дата и время: $date"), facts)
         }
     }
 

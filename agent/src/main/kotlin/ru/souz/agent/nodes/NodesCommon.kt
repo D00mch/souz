@@ -10,7 +10,6 @@ import ru.souz.db.StorredData
 import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
-import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 private const val INJECTED_CONTEXT_PREFIX = "<context>\nBackground information. Use ONLY if strictly relevant to the user query. If irrelevant (e.g. chitchat), IGNORE completely. Do NOT reference this data in output.\n---\n"
@@ -65,45 +64,6 @@ internal class NodesCommon(
         return LLMRequest.Message(LLMMessageRole.user, buildContextMessage(additionalData))
     }
 
-    private fun buildUserGeoLocationFact(now: ZonedDateTime): String? = try {
-        val locale = runtimeEnvironment.locale
-        val zoneId = runtimeEnvironment.zoneId
-
-        val parts = mutableListOf<String>()
-
-        val localeTag = locale.toLanguageTag().takeIf { it.isNotBlank() && it != "und" }
-        if (localeTag != null) {
-            parts += "locale=$localeTag"
-        }
-
-        val countryCode = locale.country.takeIf { it.isNotBlank() }
-        if (countryCode != null) {
-            val countryName = runCatching { locale.getDisplayCountry(locale) }.getOrNull()
-                ?.takeIf { it.isNotBlank() }
-            val countryValue = if (countryName != null && !countryName.equals(countryCode, ignoreCase = true)) {
-                "$countryName ($countryCode)"
-            } else {
-                countryCode
-            }
-            parts += "country/region=$countryValue"
-        }
-
-        val zoneIdText = zoneId.id.takeIf { it.isNotBlank() }
-        if (zoneIdText != null) {
-            parts += "timezone=$zoneIdText"
-            val cityHint = zoneIdText.substringAfterLast('/', "").replace('_', ' ').trim()
-            if (cityHint.isNotBlank() && !cityHint.equals(zoneIdText, ignoreCase = true)) {
-                parts += "city_hint=$cityHint"
-            }
-            parts += "utc_offset=${now.offset.id}"
-        }
-
-        if (parts.isEmpty()) null else "User geo: ${parts.joinToString("; ")}"
-    } catch (e: Exception) {
-        l.warn("Error collecting geo location hints: {}", e.message)
-        null
-    }
-
     private suspend fun loadAdditionalData(userText: String): List<StorredData> = buildList {
         val now = runtimeEnvironment.clock.instant().atZone(runtimeEnvironment.zoneId)
         try {
@@ -117,7 +77,6 @@ internal class NodesCommon(
         settingsProvider.defaultCalendar
             ?.takeIf(String::isNotBlank)
             ?.let { add(StorredData("Календарь по умолчанию: $it", StorredType.GENERAL_FACT)) }
-        buildUserGeoLocationFact(now)?.let { add(StorredData(it, StorredType.GENERAL_FACT)) }
         add(
             StorredData(
                 "Текущие дата и время: ${

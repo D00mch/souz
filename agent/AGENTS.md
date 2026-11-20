@@ -4,7 +4,7 @@
 
 - `:agent` owns the provider-agnostic agent contracts, graph orchestration, execution state, session tracing, and skill activation.
 - Keep the graph adapter internal. Hosts supply settings, tools, and runtime services through [agent SPIs](src/main/kotlin/ru/souz/agent/spi). Keep UI, application DI, and concrete desktop/backend services outside this module.
-- Use the host runtime environment's clock and time zone for context dates and UTC offsets.
+- Use the host runtime environment's clock, locale, and time zone for context dates. Do not infer user geolocation from locale or time-zone preferences.
 
 ## Invariants
 
