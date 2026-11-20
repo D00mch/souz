@@ -15,6 +15,11 @@ Run from the repository root with Java 21.
 ./gradlew -p plugin-api/examples/hello jar
 ```
 
+For a standalone project, copy the [released Hello project](https://github.com/D00mch/souz/tree/plugin-api-v2.0.0/plugin-api/examples/hello)
+into an independent directory. With an installed Gradle, run `gradle wrapper --gradle-version 9.4.1`
+to create the wrapper, then build with `./gradlew jar`. The released example resolves the SDK
+directly from Maven Central. Match its ABI to the target backend.
+
 Use the [hello build](../examples/hello/build.gradle.kts) for the compile-only SDK dependency,
 Java toolchain and required manifest attributes. Implement one public no-argument
 [`SouzPlugin` provider](../examples/hello/src/main/kotlin/example/HelloPlugin.kt) and register it
@@ -32,6 +37,17 @@ Avoid storing plugin objects in shared-worker thread locals. For Jackson, use a 
 `JsonRecyclerPools.nonRecyclingPool()` and serialize nodes through that mapper. `JsonNode.toString()`
 and `toPrettyString()` use the default recycler, which can retain retired classloaders.
 [Plugin classloader](../../backend/src/main/kotlin/ru/souz/backend/plugins/PluginClassLoader.kt)
+
+## Developer skill
+
+Open the [`souz-jvm-plugin` skill](../../docs/skills/souz-jvm-plugin/SKILL.md) on GitHub and select
+**Raw**. Save the resulting file as `souz-jvm-plugin/SKILL.md` under your coding assistant's skills
+directory.
+In Codex, use `.agents/skills/` in your plugin project or `~/.agents/skills/` for all your projects.
+Restart Codex if the skill does not appear. [Codex skill setup](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)
+
+Invoke it in the plugin project with a prompt such as
+`$souz-jvm-plugin Build a Kotlin plugin with a greeting tool that returns a JSON message.`
 
 ## Invocation services
 

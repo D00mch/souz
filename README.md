@@ -89,6 +89,8 @@ External Telegram and VK bot services connect through the [public WebSocket API]
 
 To run without Compose, start PostgreSQL, configure backend secrets, then run `./gradlew :backend:run` with JDK 21. Build a local distribution with `./gradlew :backend:installDist`. [Verification](AGENTS.md#verification) · [Quality gates](docs/quality-gates.md) · [Backend image build](scripts/build-backend-image.sh)
 
+For standalone JVM plugins, see the [SDK contract and developer skill](plugin-api/docs/plugin-contract.md#developer-skill).
+
 Run the desktop app with `./gradlew :desktopApp:run`. Run its UI tests with `./gradlew :sharedUI:jvmTest`. For native bridge builds, see [bridge packaging](native/docs/bridge-build-and-packaging.md). For macOS packaging and releases, see [release guidance](docs/release.md) and the scripts below.
 
 ```bash
