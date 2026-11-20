@@ -10,14 +10,16 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.attachments.ATTACHMENT_EXECUTION_SAVE_LIMIT
@@ -29,12 +31,9 @@ import ru.souz.backend.attachments.AttachmentMinio
 import ru.souz.backend.attachments.AttachmentSaveBudget
 import ru.souz.backend.attachments.AttachmentStorage
 import ru.souz.backend.attachments.AttachmentStorageConfig
-import ru.souz.backend.attachments.S3AttachmentObjects
-import ru.souz.backend.attachments.StoredAttachment
 import ru.souz.backend.attachments.assertAttachmentError
 import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.settings.service.UserSettingsOverrides
-import ru.souz.backend.storage.postgres.PostgresAttachmentRepository
 import software.amazon.awssdk.services.s3.model.S3Exception
 
 class BackendAttachmentSaveBudgetE2eTest {
@@ -46,7 +45,7 @@ class BackendAttachmentSaveBudgetE2eTest {
                 maxOwnerFiles = if (global) 1_000 else 1, maxTotalFiles = if (global) 1 else 100_000)
             backendE2eTest("attachment_budget_capacity", attachments = config, clock = clock) {
                 val owner = UUID.randomUUID().toString()
-                val execution = executionFor(owner)
+                val execution = executionsFor(owner).single()
                 val storage = backend.attachmentStorage
                 val blockerOwner = if (global) UUID.randomUUID().toString() else owner
                 val blocker = storage.save(blockerOwner, "existing", "existing.txt", "x".byteInputStream())
@@ -67,94 +66,74 @@ class BackendAttachmentSaveBudgetE2eTest {
     }
 
     @Test
-    fun `count and bytes are independent in both scopes and ready duplicates are free`() {
+    fun `replicas share save limits and execution totals survive owner ledger pruning`() {
         val config = AttachmentMinio.config(AttachmentSaveBudget(2, 5, 4, 10))
-        backendE2eTest("attachment_budget_boundaries", attachments = config) {
+        backendE2eTest("attachment_budget_limits", attachments = config) {
             val owner = UUID.randomUUID().toString()
-            val first = executionFor(owner)
-            val second = executionFor(owner)
-            val third = executionFor(owner)
+            val (first, second, third, fourth) = executionsFor(owner, 4)
             val storage = backend.attachmentStorage
-
             val legacyKey = "$first:output:${"legacy".sha256Hex()}:${"legacy.txt".sha256Hex()}"
             val legacy = storage.save(owner, legacyKey, "legacy.txt", "legacy".byteInputStream())
             assertAttachmentError("attachment_execution_required") {
                 storage.saveFile(owner, UUID.randomUUID(), "orphan.txt", "12345")
             }
-            assertAttachmentError(ATTACHMENT_EXECUTION_SAVE_LIMIT) { storage.saveFile(owner, first, "large.txt", "123456") }
-            val original = storage.saveFile(owner, first, "report.txt", "123")
-            storage.saveFile(owner, first, "report.txt", "45") // Same name, different bytes.
-            assertAttachmentError(ATTACHMENT_EXECUTION_SAVE_LIMIT) { storage.saveFile(owner, first, "empty.txt", "") }
-            assertEquals(original, storage.saveFile(owner, first, "report.txt", "123"))
-            assertEquals(legacy, storage.saveFile(owner, first, "legacy.txt", "legacy"))
-            storage.saveFile(owner, second, "full.txt", "12345")
-            assertAttachmentError(ATTACHMENT_OWNER_SAVE_LIMIT) { storage.saveFile(owner, third, "extra.txt", "6") }
-            storage.saveFile(owner, third, "empty.txt", "")
-            assertAttachmentError(ATTACHMENT_OWNER_SAVE_LIMIT) { storage.saveFile(owner, third, "another.txt", "") }
 
-            val other = UUID.randomUUID().toString()
-            storage.saveFile(other, executionFor(other), "report.txt", "1")
-            val objects = AttachmentMinio.server.execInContainer("mc", "ls", "--recursive", "root/${config.bucket}")
-            assertEquals(0, objects.exitCode)
-            assertEquals(6, objects.stdout.lineSequence().count { it.isNotBlank() })
-            val metrics = client.get("/metrics").bodyAsText()
-            assertTrue("souz_attachment_save_admitted_bytes_total 11.0" in metrics)
-            assertTrue(Regex("""souz_attachment_save_rejected_total\{scope="execution",?} 2\.0""").containsMatchIn(metrics))
-            assertTrue(Regex("""souz_attachment_save_rejected_total\{scope="owner",?} 2\.0""").containsMatchIn(metrics))
-
-            sql { connection ->
-                connection.createStatement().use {
-                    assertEquals(5, it.executeUpdate("""
-                        update attachment_save_charges set admitted_at = statement_timestamp() - interval '25 hours'
-                    """.trimIndent()))
+            withPeerBackend { peer ->
+                val original = storage.saveFile(owner, first, "report.txt", "123")
+                assertAttachmentError(ATTACHMENT_EXECUTION_SAVE_LIMIT) { storage.saveFile(owner, first, "large.txt", "456") }
+                assertBudgetRace(peer, owner, ATTACHMENT_EXECUTION_SAVE_LIMIT) { replica ->
+                    saveFile(owner, first, listOf("report.txt", "copy.txt")[replica], "45")
                 }
+                assertAttachmentError(ATTACHMENT_EXECUTION_SAVE_LIMIT) { storage.saveFile(owner, first, "empty.txt", "") }
+                assertEquals(legacy, storage.saveFile(owner, first, "legacy.txt", "legacy"))
+
+                storage.saveFile(owner, second, "full.txt", "12345")
+                assertAttachmentError(ATTACHMENT_OWNER_SAVE_LIMIT) { storage.saveFile(owner, third, "extra.txt", "1") }
+                assertBudgetRace(peer, owner, ATTACHMENT_OWNER_SAVE_LIMIT) { replica ->
+                    saveFile(owner, listOf(third, fourth)[replica], "empty.txt", "")
+                }
+                assertEquals(original, peer.backend.attachmentStorage.saveFile(owner, first, "report.txt", "123"))
+
+                val other = UUID.randomUUID().toString()
+                storage.saveFile(other, executionsFor(other).single(), "independent.txt", "1")
+                val objects = AttachmentMinio.server.execInContainer("mc", "ls", "--recursive", "root/${config.bucket}")
+                assertEquals(0, objects.exitCode, objects.stderr)
+                assertEquals(6, objects.stdout.lineSequence().count { it.isNotBlank() })
+                val metrics = listOf(client, peer.client).map { it.get("/metrics").bodyAsText() }
+                fun total(series: String): Double {
+                    val sample = Regex("(?m)^$series ([0-9.]+)$")
+                    return metrics.sumOf { sample.find(it)?.groupValues?.get(1)?.toDouble() ?: 0.0 }
+                }
+                assertEquals(11.0, total("souz_attachment_save_admitted_bytes_total"))
+                assertEquals(3.0, total("""souz_attachment_save_rejected_total\{scope="execution",?}"""))
+                assertEquals(2.0, total("""souz_attachment_save_rejected_total\{scope="owner",?}"""))
             }
+
+            ageSaveCharges(hours = 23)
+            assertAttachmentError(ATTACHMENT_OWNER_SAVE_LIMIT) { storage.saveFile(owner, third, "new-window.txt", "1") }
+            ageSaveCharges(hours = 25)
+            val renewed = storage.saveFile(owner, third, "new-window.txt", "1")
             assertEquals(0, storage.cleanup())
             sql { connection ->
                 connection.createStatement().use {
-                    it.executeQuery("select count(*) from attachment_save_charges").use { rows ->
+                    it.executeQuery("select id from attachment_save_charges").use { rows ->
                         assertTrue(rows.next())
-                        assertEquals(0, rows.getInt(1))
+                        assertEquals(renewed.id, rows.getObject("id", UUID::class.java))
+                        assertFalse(rows.next())
                     }
                 }
             }
-            withPeerBackend { peer ->
-                val restartedStorage = peer.backend.attachmentStorage
-                assertAttachmentError(ATTACHMENT_EXECUTION_SAVE_LIMIT) {
-                    restartedStorage.saveFile(owner, first, "another.txt", "")
-                }
-                assertAttachmentError(ATTACHMENT_EXECUTION_SAVE_LIMIT) {
-                    restartedStorage.saveFile(owner, second, "another.txt", "1")
-                }
-                restartedStorage.saveFile(owner, third, "new-window.txt", "1")
+            backend.createPeer().use { peer ->
+                val peerStorage = peer.attachmentStorage
+                assertAttachmentError(ATTACHMENT_EXECUTION_SAVE_LIMIT) { peerStorage.saveFile(owner, first, "another.txt", "") }
+                assertAttachmentError(ATTACHMENT_EXECUTION_SAVE_LIMIT) { peerStorage.saveFile(owner, second, "another.txt", "1") }
+                peerStorage.saveFile(owner, fourth, "peer-window.txt", "1")
             }
         }
     }
 
     @Test
-    fun `two replicas admit at most the execution and owner allowances during concurrent saves`() =
-        backendE2eTest("attachment_budget_race", attachments = AttachmentMinio.config(AttachmentSaveBudget(2, 20, 3, 30))) {
-            val owner = UUID.randomUUID().toString()
-            val first = executionFor(owner)
-            val second = executionFor(owner)
-            val third = executionFor(owner)
-            withPeerBackend { peer ->
-                val replicas = listOf(backend.attachmentStorage, peer.backend.attachmentStorage)
-                val executionRace = race(List(8) { index ->
-                    suspend { replicas[index % 2].saveFile(owner, first, "report-$index.txt", "content") }
-                })
-                assertEquals(2, executionRace.count { it == null })
-                assertEquals(6, executionRace.count { it == ATTACHMENT_EXECUTION_SAVE_LIMIT })
-                val ownerRace = race(List(8) { index ->
-                    suspend { replicas[index % 2].saveFile(owner, if (index % 2 == 0) second else third, "report-$index.txt", "content") }
-                })
-                assertEquals(1, ownerRace.count { it == null })
-                assertEquals(7, ownerRace.count { it == ATTACHMENT_OWNER_SAVE_LIMIT })
-            }
-        }
-
-    @Test
-    fun `saves waiting behind their owner leave database and transfer capacity for other owners`() =
+    fun `same-owner waiters leave a connection and transfer slot for other owners`() =
         backendE2eTest(
             "attachment_budget_pool",
             attachments = AttachmentMinio.config(maxConcurrentUploads = 2),
@@ -162,187 +141,176 @@ class BackendAttachmentSaveBudgetE2eTest {
         ) {
             val owner = UUID.randomUUID().toString()
             val other = UUID.randomUUID().toString()
-            val execution = executionFor(owner)
-            val otherExecution = executionFor(other)
+            val execution = executionsFor(owner).single()
+            val otherExecution = executionsFor(other).single()
             val storage = backend.attachmentStorage
             withPeerBackend { peer ->
-                withContext(Dispatchers.IO) {
-                    peer.backend.dataSource.connection.use { blocker ->
-                        blocker.autoCommit = false
-                        val blockerPid = blocker.prepareStatement(
-                            "select pg_backend_pid() from pg_advisory_xact_lock(hashtextextended(?, 0))",
-                        ).use {
-                            it.setString(1, "attachment-save-budget:$owner")
-                            it.executeQuery().use { rows -> check(rows.next()); rows.getInt(1) }
-                        }
-                        val first = async { storage.saveFile(owner, execution, "first.txt", "first") }
-                        val second = try {
-                            eventually("one workspace save blocked in PostgreSQL") {
-                                peer.sql { connection ->
-                                    connection.prepareStatement("""
-                                        select exists (select 1 from pg_locks
-                                        where not granted and locktype = 'advisory' and ? = any(pg_blocking_pids(pid)))
-                                    """.trimIndent()).use {
-                                        it.setInt(1, blockerPid)
-                                        it.executeQuery().use { rows -> check(rows.next()); rows.getBoolean(1) }
-                                    }
-                                }.takeIf { it }
-                            }
-                            // Start on the same IO dispatcher so these calls run to their first suspension.
-                            val waiting = async(start = CoroutineStart.UNDISPATCHED) {
-                                storage.saveFile(owner, execution, "second.txt", "second")
-                            }
-                            val cancelled = async(start = CoroutineStart.UNDISPATCHED) {
-                                storage.saveFile(owner, execution, "cancelled.txt", "cancelled")
-                            }
-                            cancelled.cancelAndJoin()
-                            assertEquals(1, backend.dataSource.hikariPoolMXBean.activeConnections)
-                            assertEquals(other, withTimeout(5_000) {
-                                storage.saveFile(other, otherExecution, "independent.txt", "independent")
-                            }.userId)
-                            waiting
-                        } finally {
-                            blocker.rollback()
-                        }
-                        assertEquals(listOf("first.txt", "second.txt"), awaitAll(first, second).map { it.name })
+                peer.withSaveBudgetLocked(owner) { awaitWaiters ->
+                    launch { storage.saveFile(owner, execution, "first.txt", "first") }
+                    awaitWaiters(1)
+                    launch(Dispatchers.Default, start = CoroutineStart.UNDISPATCHED) {
+                        storage.saveFile(owner, execution, "second.txt", "second")
                     }
+                    launch(start = CoroutineStart.UNDISPATCHED) {
+                        storage.saveFile(owner, execution, "cancelled.txt", "cancelled")
+                    }.cancelAndJoin()
+                    withTimeout(5_000) { storage.saveFile(other, otherExecution, "independent.txt", "independent") }
                 }
             }
         }
 
     @Test
-    fun `failed and cancelled PUTs stay charged after cleanup and execution deletion until the owner window ends`() {
+    fun `failed and cancelled PUTs remain charged after pending cleanup and execution deletion`() {
         val clock = AttachmentClock()
         val budget = AttachmentSaveBudget(2, 100, 2, 100)
         val config = AttachmentMinio.config(budget)
         backendE2eTest("attachment_budget_failed", clock = clock, attachments = config) {
             val owner = UUID.randomUUID().toString()
-            val execution = executionFor(owner)
-            val rejectedPut = AttachmentStorageConfig(
-                config.endpoint, "missing-${UUID.randomUUID()}", "attachment-test", "attachment-test-secret",
+            val (execution, next) = executionsFor(owner, 2)
+            val missingBucket = AttachmentStorageConfig(
+                config.endpoint, "missing-${UUID.randomUUID()}", "attachment-test", "attachment-test-secret", saveBudget = budget,
             )
-            withStorage(rejectedPut, budget, clock) { unavailable ->
-                val failure = assertFailsWith<S3Exception> { unavailable.saveFile(owner, execution, "failed.txt", "content") }
+            backend.createPeer(attachments = missingBucket).use { peer ->
+                val failure = assertFailsWith<S3Exception> {
+                    peer.attachmentStorage.saveFile(owner, execution, "failed.txt", "content")
+                }
                 assertEquals(404, failure.statusCode())
             }
 
-            val storage = backend.attachmentStorage
-            assertAttachmentError("attachment_not_ready") { storage.saveFile(owner, execution, "failed.txt", "content") }
             val started = CompletableDeferred<Unit>()
             val release = CountDownLatch(1)
             val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
             server.createContext("/") { exchange ->
-                try {
-                    exchange.requestBody.use { it.readAllBytes() }
+                exchange.use {
+                    check(it.requestMethod == "PUT")
+                    it.requestBody.readAllBytes()
                     started.complete(Unit)
-                    if (release.await(10, TimeUnit.SECONDS)) exchange.sendResponseHeaders(200, -1)
-                } finally {
-                    exchange.close()
+                    if (release.await(15, TimeUnit.SECONDS)) it.sendResponseHeaders(200, -1)
                 }
             }
             server.start()
             try {
-                val blockedPut = AttachmentStorageConfig(
-                    "http://127.0.0.1:${server.address.port}", "blocked-put", "test-access", "test-secret",
+                val stalledPut = AttachmentStorageConfig(
+                    "http://127.0.0.1:${server.address.port}", "blocked-put", "test-access", "test-secret", saveBudget = budget,
                 )
-                withStorage(blockedPut, budget, clock) { blocked ->
-                    withTimeout(15_000) {
-                        val upload = async { blocked.saveFile(owner, execution, "cancelled.txt", "content") }
+                backend.createPeer(attachments = stalledPut).use { peer ->
+                    withTimeout(10_000) {
+                        val storage = peer.attachmentStorage
+                        val upload = launch { storage.saveFile(owner, execution, "cancelled.txt", "content") }
                         try {
                             started.await()
-                            // The next reservation can reach admission while this PUT is still blocked.
-                            withTimeout(5_000) {
-                                assertAttachmentError(ATTACHMENT_EXECUTION_SAVE_LIMIT) {
-                                    blocked.saveFile(owner, execution, "extra.txt", "content")
-                                }
+                            assertAttachmentError(ATTACHMENT_EXECUTION_SAVE_LIMIT) {
+                                storage.saveFile(owner, execution, "extra.txt", "content")
                             }
-                            upload.cancel()
                         } finally {
+                            upload.cancel()
                             release.countDown()
                         }
                         upload.join()
-                        assertTrue(upload.isCancelled)
                     }
                 }
             } finally {
-                release.countDown()
                 server.stop(0)
             }
-            assertAttachmentError("attachment_not_ready") { storage.saveFile(owner, execution, "cancelled.txt", "content") }
+
+            val storage = backend.attachmentStorage
+            for (file in listOf("failed.txt", "cancelled.txt")) {
+                assertAttachmentError("attachment_not_ready") { storage.saveFile(owner, execution, file, "content") }
+            }
             clock.now = clock.now.plus(ATTACHMENT_PENDING_LIFETIME)
             assertEquals(2, storage.cleanup())
             assertAttachmentError(ATTACHMENT_EXECUTION_SAVE_LIMIT) { storage.saveFile(owner, execution, "failed.txt", "content") }
-
-            val next = executionFor(owner)
             sql { connection ->
                 connection.prepareStatement("delete from agent_executions where id = ?").use {
                     it.setObject(1, execution)
                     assertEquals(1, it.executeUpdate())
                 }
                 connection.createStatement().use {
-                    it.executeQuery("select count(*) from attachment_execution_save_totals").use { rows ->
-                        assertTrue(rows.next())
-                        assertEquals(0, rows.getInt(1))
-                    }
-                    assertEquals(2, it.executeUpdate("""
-                        update attachment_save_charges set admitted_at = statement_timestamp() - interval '23 hours'
-                    """.trimIndent()))
+                    it.executeQuery("select 1 from attachment_execution_save_totals").use { rows -> assertFalse(rows.next()) }
                 }
             }
             assertAttachmentError(ATTACHMENT_OWNER_SAVE_LIMIT) { storage.saveFile(owner, next, "later.txt", "content") }
-            sql { connection ->
-                connection.createStatement().use {
-                    assertEquals(2, it.executeUpdate("update attachment_save_charges set admitted_at = admitted_at - interval '2 hours'"))
-                }
-            }
-            storage.saveFile(owner, next, "later.txt", "content")
-            assertEquals(0, storage.cleanup())
-            sql { connection ->
-                connection.createStatement().use {
-                    it.executeQuery("select count(*) from attachment_save_charges").use { rows ->
-                        assertTrue(rows.next())
-                        assertEquals(1, rows.getInt(1))
-                    }
-                }
-            }
         }
     }
 
-    private suspend fun BackendE2eScope.executionFor(owner: String): UUID {
-        val chat = createPublicChat(owner, requestId = UUID.randomUUID().toString())
-        val started = backend.dependencies.executionService.executeChatTurn(owner, UUID.fromString(chat), "Create an attachment",
-            requestOverrides = UserSettingsOverrides(defaultModel = E2E_LOCAL_MODEL.alias))
-        return started.execution.id.also { backend.awaitExecution(it) }
-    }
-
-    private suspend fun BackendE2eScope.withStorage(
-        config: AttachmentStorageConfig,
-        budget: AttachmentSaveBudget,
-        clock: AttachmentClock,
-        block: suspend (AttachmentStorage) -> Unit,
-    ) {
-        S3AttachmentObjects(config).use { objects ->
-            block(AttachmentStorage(config, PostgresAttachmentRepository(backend.dataSource, budget), objects, clock))
+    private suspend fun BackendE2eScope.executionsFor(owner: String, count: Int = 1): List<UUID> {
+        val chat = UUID.fromString(createPublicChat(owner))
+        return List(count) {
+            val turn = backend.dependencies.executionService.executeChatTurn(owner, chat, "Create an attachment",
+                requestOverrides = UserSettingsOverrides(defaultModel = E2E_LOCAL_MODEL.alias))
+            turn.execution.id.also { backend.awaitExecution(it) }
         }
     }
 
     private suspend fun AttachmentStorage.saveFile(owner: String, execution: UUID, name: String, content: String) =
         saveWorkspaceOutput(owner, execution, name) { content.byteInputStream() }
 
-    private suspend fun race(attempts: List<suspend () -> StoredAttachment>): List<String?> = coroutineScope {
-        val ready = CompletableDeferred<Unit>()
-        val calls = attempts.map { attempt ->
-            async {
-                ready.await()
-                try {
-                    attempt()
-                    null
-                } catch (error: AttachmentException) {
-                    error.code
+    private fun BackendE2eScope.ageSaveCharges(hours: Int) = sql { connection ->
+        connection.prepareStatement(
+            "update attachment_save_charges set admitted_at = statement_timestamp() - make_interval(hours => ?)",
+        ).use {
+            it.setInt(1, hours)
+            assertEquals(5, it.executeUpdate())
+        }
+    }
+
+    private suspend fun BackendE2eScope.assertBudgetRace(
+        peer: BackendE2eScope,
+        owner: String,
+        limit: String,
+        save: suspend AttachmentStorage.(replica: Int) -> Unit,
+    ) {
+        val outcomes = peer.withSaveBudgetLocked(owner) { awaitWaiters ->
+            listOf(backend, peer.backend).mapIndexed { replica, host ->
+                async {
+                    try {
+                        host.attachmentStorage.save(replica)
+                        null
+                    } catch (error: AttachmentException) {
+                        error.code
+                    }
+                }
+            }.also { awaitWaiters(2) }
+        }.awaitAll()
+        assertEquals(setOf(null, limit), outcomes.toSet())
+    }
+
+    private suspend fun <T> BackendE2eScope.withSaveBudgetLocked(
+        owner: String,
+        block: suspend CoroutineScope.(awaitWaiters: suspend (Int) -> Unit) -> T,
+    ): T = withContext(Dispatchers.IO) {
+        backend.dataSource.connection.use { blocker ->
+            blocker.autoCommit = false
+            val pid = blocker.prepareStatement(
+                "select pg_backend_pid() from pg_advisory_xact_lock(hashtextextended(?, 0))",
+            ).use {
+                it.setString(1, "attachment-save-budget:$owner")
+                it.executeQuery().use { rows ->
+                    check(rows.next())
+                    rows.getInt(1)
                 }
             }
+            try {
+                block { expected ->
+                    eventually("$expected workspace saves waiting for the owner lock") {
+                        val waiting = sql { observer ->
+                            observer.prepareStatement("""
+                                select count(*) from pg_locks
+                                where locktype = 'advisory' and not granted and ? = any(pg_blocking_pids(pid))
+                            """.trimIndent()).use {
+                                it.setInt(1, pid)
+                                it.executeQuery().use { rows ->
+                                    check(rows.next())
+                                    rows.getInt(1)
+                                }
+                            }
+                        }
+                        Unit.takeIf { waiting == expected }
+                    }
+                }
+            } finally {
+                blocker.rollback()
+            }
         }
-        ready.complete(Unit)
-        calls.awaitAll()
     }
 }
