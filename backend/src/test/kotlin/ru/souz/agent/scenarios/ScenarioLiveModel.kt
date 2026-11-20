@@ -1,6 +1,7 @@
 package ru.souz.agent.scenarios
 
 import io.ktor.client.HttpClient
+import io.ktor.http.Url
 import io.mockk.every
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import ru.souz.llms.LLMChatAPI
@@ -18,11 +19,17 @@ class ScenarioLiveModel private constructor(
     val provider: LlmProvider,
     val api: LLMChatAPI,
     private val client: HttpClient,
+    private val baseClient: HttpClient,
+    internal val wire: ScenarioWireCapture?,
+    internal val providerHost: String?,
 ) : AutoCloseable {
-    override fun close() = client.close()
+    override fun close() {
+        client.close()
+        if (baseClient !== client) baseClient.close()
+    }
 
     companion object {
-        fun fromEnvironment(): ScenarioLiveModel {
+        fun fromEnvironment(captureWire: Boolean = false): ScenarioLiveModel {
             assumeTrue(System.getenv(SOUZ_AGENT_INTEGRATION_TESTS_ON).equals("true", ignoreCase = true),
                 "Set $SOUZ_AGENT_INTEGRATION_TESTS_ON=true to evaluate a live model.")
             fun required(name: String): String = requireNotNull(System.getenv(name)?.trim()?.takeIf { it.isNotEmpty() }) {
@@ -46,11 +53,13 @@ class ScenarioLiveModel private constructor(
                 every { settings.codexExpiresAt } returns null
             }
             val effort = System.getenv(SOUZ_AGENT_INTEGRATION_TEST_REASONING_EFFORT)?.trim()?.takeIf { it.isNotEmpty() }
-            val client = if (provider == LlmProvider.CODEX) createStandardProviderHttpClient() else createOpenAiProviderHttpClient()
+            val baseClient = if (provider == LlmProvider.CODEX) createStandardProviderHttpClient() else createOpenAiProviderHttpClient()
+            val wire = if (captureWire && provider == LlmProvider.OPENAI) ScenarioWireCapture() else null
+            val client = if (wire == null) baseClient else baseClient.config { install(wire.plugin) }
             val api = if (provider == LlmProvider.CODEX) {
                 CodexChatAPI(settings, CodexOAuthService(settings, client), client)
             } else OpenAICompatibleChatAPI(provider, settings, client, apiKey = key, baseUrl = baseUrl)
-            return ScenarioLiveModel(model, effort, provider, api, client)
+            return ScenarioLiveModel(model, effort, provider, api, client, baseClient, wire, baseUrl?.let { Url(it).host })
         }
     }
 }

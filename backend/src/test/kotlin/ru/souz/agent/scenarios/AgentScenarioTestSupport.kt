@@ -4,15 +4,22 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import java.nio.file.Files
+import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.kodein.di.direct
 import org.kodein.di.instance
 import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
+import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentId
+import ru.souz.agent.runtime.DEFAULT_SUBAGENT_TASK_TIMEOUT
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillFile
@@ -23,6 +30,7 @@ import ru.souz.backend.agent.runtime.BackendAgentErrorMessages
 import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
 import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.app.BackendRuntime
+import ru.souz.backend.channels.ChannelProviderRegistry
 import ru.souz.backend.config.SystemBackendConfigSource
 import ru.souz.backend.personality.PersonalityTool
 import ru.souz.backend.personality.personalityInstructions
@@ -32,7 +40,9 @@ import ru.souz.backend.memory.hindsight.ToolForgetAllMemory
 import ru.souz.backend.memory.hindsight.ToolForgetMemoryFact
 import ru.souz.db.SettingsProvider
 import ru.souz.knowledge.SandboxConversationKnowledgeStore
+import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
@@ -58,18 +68,37 @@ import ru.souz.tool.subagent.SubagentToolFactory
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.TimeSource
 
+private val SCENARIO_TIMEOUT = 4.minutes
+
 /** One selected model, fresh production agent wiring for every scenario. */
 suspend fun ScenarioLiveModel.runScenario(
     userPrompt: String,
     skillResources: Map<String, String> = emptyMap(),
     mockedTools: List<LLMToolSetup> = emptyList(),
-): ScenarioResult = withContext(Dispatchers.Default) {
-    val trace = ScenarioTrace(modelId, reasoningEffort)
+): ScenarioResult = requireNotNull(runConversation(
+    turns = listOf(userPrompt), skillResources = skillResources, mockedTools = mockedTools,
+    trace = ScenarioTrace(modelId, reasoningEffort),
+))
+
+internal suspend fun ScenarioLiveModel.runConversation(
+    turns: List<String>,
+    trace: ScenarioTrace,
+    initialHistory: List<LLMRequest.Message> = emptyList(),
+    skillResources: Map<String, String> = emptyMap(),
+    mockedTools: List<LLMToolSetup> = emptyList(),
+    skillBundles: List<SkillBundle>? = null,
+    commands: SandboxCommandExecutor? = null,
+    channels: ChannelProviderRegistry? = null,
+    afterTurn: (Int, String?) -> Unit = { _, _ -> },
+): ScenarioResult? = withContext(Dispatchers.Default) {
+    require(turns.isNotEmpty())
     val started = TimeSource.Monotonic.markNow()
     val home = Files.createTempDirectory("souz-model-scenario-")
+    val meta = ToolInvocationMeta("scenario-user", UUID.randomUUID().toString())
     var completed = false
     try {
-        val execution = withTimeout(4.minutes) {
+        val timeout = if (trace.continuesAfterFailure) SCENARIO_TIMEOUT * (turns.size + 1) else SCENARIO_TIMEOUT
+        val execution = withTimeout(timeout) {
             val baseSettings = scenarioSettings(modelId, provider)
             val settings = BackendConversationSettingsProvider(
                 delegate = baseSettings,
@@ -80,7 +109,7 @@ suspend fun ScenarioLiveModel.runScenario(
                 useFewShotExamples = true,
             ).apply {
                 applyRequest(BackendConversationTurnRequest(
-                    userPrompt, modelId, locale = "ru-RU", timeZone = "Europe/Moscow", clientToolsEnabled = true,
+                    turns.first(), modelId, locale = "ru-RU", timeZone = SCENARIO_ZONE, clientToolsEnabled = true,
                 ), temperature = 0f)
                 // Keep the scenario's selected provider, including when the model ID is a known alias.
                 gigaModel = baseSettings.gigaModel
@@ -89,33 +118,40 @@ suspend fun ScenarioLiveModel.runScenario(
                 coEvery { personality(any()) } returns PersonalitySnapshot()
             }
             val localSandbox = LocalRuntimeSandbox(
-                SandboxScope(SCENARIO_META.userId), settings,
+                SandboxScope(meta.userId), settings,
                 homePath = home, stateRoot = home.resolve("state"), workspaceRoot = home,
             )
             val sandbox = object : RuntimeSandbox by localSandbox {
-                override val commandExecutor = mockk<SandboxCommandExecutor> {
+                override val commandExecutor = commands ?: mockk<SandboxCommandExecutor> {
                     coEvery { execute(any()) } throws AssertionError("Scenario must not execute a process.")
                 }
             }
             val resolver = ToolInvocationRuntimeSandboxResolver.fixed(sandbox)
             val registry = FileSystemSkillRegistryRepository(sandbox)
-            installProductionSkillBundles(registry, SCENARIO_META.userId)
+            if (skillBundles == null) {
+                installProductionSkillBundles(registry, meta.userId)
+            } else {
+                skillBundles.forEach { registry.saveSkillBundle(meta.userId, it) }
+            }
             for ((id, resource) in skillResources) {
                 val bytes = requireNotNull(ScenarioLiveModel::class.java.getResourceAsStream(resource)) {
                     "Missing Skill resource: $resource"
                 }.use { it.readBytes() }
-                registry.saveSkillBundle(SCENARIO_META.userId, SkillBundle.fromFiles(
+                registry.saveSkillBundle(meta.userId, SkillBundle.fromFiles(
                     SkillId(id), listOf(SkillFile("SKILL.md", bytes)),
                 ))
             }
             val knowledge = SandboxConversationKnowledgeStore(resolver)
-            val production = scenarioBackendDi(settings, resolver, registry, knowledge)
+            val production = scenarioBackendDi(settings, resolver, registry, knowledge, channels)
             val productionCatalog = scenarioProductionCatalog(production, settings, resolver, this)
             val fixtureCatalog = AgentToolCatalog(mapOf(ToolCategory.FILES to mockedTools))
             val executionMocks = fixtureCatalog.toolsByCategory.values.flatMap { it.values }.associateBy { it.fn.name }
             val productionNames = productionCatalog.toolsByCategory.values.flatMap { it.keys }.toSet()
             val catalog = AgentToolCatalog.compose(
-                productionCatalog.mapTools { _, tool -> scenarioTool(tool, executionMocks[tool.fn.name]) },
+                productionCatalog.mapTools { _, tool ->
+                    if (channels != null && tool.fn.name in SCENARIO_CHANNEL_TOOLS) tool
+                    else scenarioTool(tool, executionMocks[tool.fn.name])
+                },
                 fixtureCatalog.filter { _, tool -> tool.fn.name !in productionNames },
             )
             val filter = RuntimePassThroughToolsFilter
@@ -135,7 +171,7 @@ suspend fun ScenarioLiveModel.runScenario(
                 toolCatalog = catalog,
                 toolsFilter = filter,
                 skillBundleProvider = registry,
-                runtimeEnvironment = BackendRequestRuntimeEnvironment("ru-RU", "Europe/Moscow"),
+                runtimeEnvironment = BackendRequestRuntimeEnvironment("ru-RU", SCENARIO_ZONE),
                 coreTools = AgentCoreTools(
                     getSkillByName = lookup,
                     getSkillsByCategory = ToolGetSkillsByCategory({ catalog }, RuntimePassThroughToolsFilter),
@@ -157,22 +193,53 @@ suspend fun ScenarioLiveModel.runScenario(
                 errorMessages = BackendAgentErrorMessages,
                 llmApi = trace.instrument(api),
                 conversationInstructions = {
-                    userSettings.personalityInstructions(SCENARIO_META.userId,
+                    userSettings.personalityInstructions(meta.userId,
                         canUpdate = PersonalityTool.NAME in catalog.toolsByCategory[ToolCategory.CONFIG].orEmpty())
                 },
                 automaticMemoryRecall = false,
                 captureScope = this,
             ).create()
-            val context = kernel.contextFactory.create(AgentId.SKILLS_GRAPH).copy(
-                toolInvocationMeta = SCENARIO_META,
-            )
-            kernel.executor.execute(AgentId.SKILLS_GRAPH, context, userPrompt, trace)
+            var history = initialHistory
+            var lastExecution: AgentExecutionResult? = null
+            for ((index, prompt) in turns.withIndex()) {
+                trace.startTurn()
+                suspend fun executeTurn(): AgentExecutionResult {
+                    val context = kernel.contextFactory.create(
+                        AgentId.SKILLS_GRAPH, history, settings.gigaModel, settings.contextSize, settings.temperature, meta,
+                    )
+                    return kernel.executor.execute(AgentId.SKILLS_GRAPH, context, prompt, trace)
+                }
+                val result = if (trace.continuesAfterFailure) {
+                    try {
+                        withTimeoutOrNull(SCENARIO_TIMEOUT) { executeTurn() }.also {
+                            if (it == null) trace.recordTurnError("Execution timed out.")
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Throwable) {
+                        currentCoroutineContext().ensureActive()
+                        if (failure !is Exception && failure !is AssertionError) throw failure
+                        trace.recordTurnError("Execution failed with ${failure.javaClass.simpleName}.")
+                        null
+                    }
+                } else {
+                    executeTurn()
+                }
+                val answer = trace.assertCompleted(result)
+                history = result?.context?.history ?: (history + LLMRequest.Message(LLMMessageRole.user, prompt))
+                afterTurn(index + 1, answer)
+                lastExecution = result
+            }
+            lastExecution
         }
-        trace.assertCompleted(execution)
         completed = true
-        ScenarioResult(execution, trace.requests.toList(), trace.events.toList(), trace.metrics(started.elapsedNow()))
+        execution?.let {
+            ScenarioResult(it, trace.requests.toList(), trace.events.toList(), trace.metrics(started.elapsedNow()))
+        }
     } finally {
-        println("Scenario execution=${if (completed) "completed" else "failed"}; ${trace.metrics(started.elapsedNow())}")
+        if (skillBundles == null) {
+            println("Scenario execution=${if (completed) "completed" else "failed"}; ${trace.metrics(started.elapsedNow())}")
+        }
         home.toFile().deleteRecursively()
     }
 }
@@ -187,6 +254,8 @@ internal fun scenarioSettings(modelId: String, provider: LlmProvider): SettingsP
     every { temperature } returns 0f
     every { forbiddenFolders } returns emptyList()
     every { requestTimeoutMillis } returns 60_000L
+    every { subagentTaskTimeout } returns DEFAULT_SUBAGENT_TASK_TIMEOUT
 }
 
-private val SCENARIO_META = ToolInvocationMeta("scenario-user", "scenario-conversation")
+internal const val SCENARIO_ZONE = "Europe/Moscow"
+private val SCENARIO_CHANNEL_TOOLS = setOf("ListActiveChannels", "SendMessageToChannel")
