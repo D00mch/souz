@@ -19,11 +19,20 @@ class AttachmentStorageConfigTest {
             assertEquals(20_000_000, config.maxFileBytes)
             assertEquals(true, config.pathStyleAccess)
             assertEquals(16, config.maxConcurrentUploads)
+            assertEquals(AttachmentSaveBudget(), config.saveBudget)
             assertEquals(1_000_000_000L, config.maxOwnerBytes)
             assertEquals(1_000, config.maxOwnerFiles)
             assertEquals(100_000_000_000L, config.maxTotalBytes)
             assertEquals(100_000, config.maxTotalFiles)
             assertFalse(config.toString().contains("test-secret"))
+            val configured = settings + mapOf(
+                "MAX_EXECUTION_SAVES" to "9",
+                "MAX_EXECUTION_SAVE_BYTES" to "3000000",
+                "MAX_OWNER_SAVES_PER_24H" to "19",
+                "MAX_OWNER_SAVE_BYTES_PER_24H" to "3000000000",
+            )
+            assertEquals(AttachmentSaveBudget(9, 3_000_000, 19, 3_000_000_000),
+                assertNotNull(AttachmentStorageConfig.load(source(configured, properties))).saveBudget)
             val quotas = assertNotNull(AttachmentStorageConfig.load(source(settings + mapOf(
                 "MAX_OWNER_BYTES" to "2000000000", "MAX_OWNER_FILES" to "42",
                 "MAX_TOTAL_BYTES" to "4000000000", "MAX_TOTAL_FILES" to "84",
@@ -48,6 +57,10 @@ class AttachmentStorageConfigTest {
             "MAX_CONCURRENT_UPLOADS" to "0",
             "MAX_CONCURRENT_UPLOADS" to "1001",
             "MAX_CONCURRENT_UPLOADS" to "invalid",
+            "MAX_EXECUTION_SAVES" to "0",
+            "MAX_EXECUTION_SAVE_BYTES" to "-1",
+            "MAX_OWNER_SAVES_PER_24H" to "invalid",
+            "MAX_OWNER_SAVE_BYTES_PER_24H" to "9223372036854775808",
             "MAX_OWNER_BYTES" to "0",
             "MAX_OWNER_FILES" to "-1",
             "MAX_TOTAL_BYTES" to "9223372036854775808",

@@ -2,11 +2,8 @@ package ru.souz.backend.attachments
 
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runInterruptible
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import ru.souz.backend.crypto.sha256Hex
 import ru.souz.llms.FileContent
 import ru.souz.llms.FilePresentation
 import ru.souz.llms.ToolInvocationMeta
@@ -34,15 +31,12 @@ class BackendAttachmentAccess internal constructor(
 
     /** Saves a completed sandbox file; the same bytes and name within one execution reuse the stored object. */
     suspend fun save(meta: ToolInvocationMeta, path: String, presentation: FilePresentation): FileContent = safely("save") {
-        val request = meta.requestId ?: throw AttachmentException("attachment_execution_required")
+        val executionId = meta.requestId?.let(UUID::fromString) ?: throw AttachmentException("attachment_execution_required")
         val fs = isolatedFileSystem(meta)
         val resolved = fs.resolvePath(path)
         if (!fs.isPathSafe(resolved) || resolved.isSymbolicLink) throw AttachmentException("attachment_path_forbidden")
         if (!resolved.exists || !resolved.isRegularFile) throw AttachmentException("attachment_path_not_found")
-        val nameHash = resolved.name.toByteArray().sha256Hex()
-        val file = runInterruptible(Dispatchers.IO) { fs.openInputStream(resolved) }.use { input ->
-            storage.save(meta.userId, resolved.name, input) { contentHash -> "$request:output:$contentHash:$nameHash" }
-        }
+        val file = storage.saveWorkspaceOutput(meta.userId, executionId, resolved.name) { fs.openInputStream(resolved) }
         file.toContent(presentation)
     }
 

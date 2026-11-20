@@ -1,19 +1,27 @@
 package ru.souz.backend.storage.postgres
 
+import java.sql.Connection
 import java.sql.ResultSet
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.attachments.ATTACHMENT_CLEANUP_LEASE
+import ru.souz.backend.attachments.ATTACHMENT_EXECUTION_SAVE_LIMIT
+import ru.souz.backend.attachments.ATTACHMENT_OWNER_SAVE_LIMIT
 import ru.souz.backend.attachments.ATTACHMENT_PENDING_LIFETIME
 import ru.souz.backend.attachments.ATTACHMENT_RETENTION
 import ru.souz.backend.attachments.AttachmentException
+import ru.souz.backend.attachments.AttachmentSaveBudget
 import ru.souz.backend.attachments.AttachmentStorageConfig
 import ru.souz.backend.attachments.StoredAttachment
 import ru.souz.backend.attachments.attachmentObjectKey
-import java.sql.Connection
+import ru.souz.backend.metrics.BackendMetrics
 
-class PostgresAttachmentRepository(private val dataSource: DataSource) {
+class PostgresAttachmentRepository(
+    private val dataSource: DataSource,
+    private val saveBudget: AttachmentSaveBudget = AttachmentSaveBudget(),
+    private val metrics: BackendMetrics? = null,
+) {
     /** Insert ready metadata only after the caller has verified the already-uploaded object. */
     suspend fun registerUpload(file: StoredAttachment, config: AttachmentStorageConfig): StoredAttachment = dataSource.write(networkTimeoutMillis = 15_000) { connection ->
         connection.lockAdmission()
@@ -55,9 +63,20 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
 
     suspend fun reserve(
         userId: String, sourceKey: String, name: String, mimeType: String, size: Long, sha256: String, now: Instant,
-        config: AttachmentStorageConfig,
-    ): StoredAttachment = dataSource.write(networkTimeoutMillis = 15_000) { connection ->
-        connection.reserve(userId, sourceKey, name, mimeType, size, sha256, now, config, validateContent = true)
+        config: AttachmentStorageConfig, executionId: UUID? = null,
+    ): StoredAttachment = try {
+        dataSource.write(networkTimeoutMillis = 15_000, afterCommit = { file ->
+            if (executionId != null && file.state == "pending") metrics?.attachmentSaveAdmitted(file.sizeBytes)
+        }) { connection ->
+            connection.reserve(userId, sourceKey, name, mimeType, size, sha256, now, config,
+                validateContent = true, executionId = executionId)
+        }
+    } catch (error: AttachmentException) {
+        when (error.code) {
+            ATTACHMENT_EXECUTION_SAVE_LIMIT -> metrics?.attachmentSaveRejected("execution")
+            ATTACHMENT_OWNER_SAVE_LIMIT -> metrics?.attachmentSaveRejected("owner")
+        }
+        throw error
     }
 
     /** A pending row accounts for the maximum download before any untrusted bytes are read. */
@@ -86,13 +105,17 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
         }
 
     private fun Connection.reserve(userId: String, sourceKey: String, name: String, mimeType: String,
-        size: Long, sha256: String, now: Instant, config: AttachmentStorageConfig, validateContent: Boolean): StoredAttachment {
+        size: Long, sha256: String, now: Instant, config: AttachmentStorageConfig, validateContent: Boolean,
+        executionId: UUID? = null): StoredAttachment {
+        if (executionId != null) lockOwnerSaveBudget(userId)
         lockAdmission()
+        findReservation(userId, sourceKey, name, mimeType, size, sha256, validateContent)?.let { return it }
+        val admittedAt = executionId?.let { checkSaveBudget(userId, it, size) }
         val id = UUID.randomUUID()
-        val inserted = attachmentStatement("""
+        val file = attachmentStatement("""
             insert into stored_attachments(id, user_id, source_key, name, mime_type, size_bytes, sha256, state, created_at, cleanup_due_at, object_key)
             values (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
-            on conflict (user_id, source_key) do nothing
+            returning *
         """.trimIndent()).use {
             it.setObject(1, id)
             it.setString(2, userId)
@@ -104,24 +127,29 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
             it.setInstant(8, now)
             it.setInstant(9, now.plus(ATTACHMENT_PENDING_LIFETIME))
             it.setString(10, attachmentObjectKey(userId, id))
-            it.executeUpdate() == 1
+            it.executeQuery().use { rows -> check(rows.next()); rows.attachment() }
         }
-        if (inserted) checkQuota(userId, config)
-        return attachmentStatement("select * from stored_attachments where user_id = ? and source_key = ?").use {
+        checkQuota(userId, config)
+        if (executionId != null) recordSaveCharge(file, executionId, checkNotNull(admittedAt))
+        return file
+    }
+
+    private fun Connection.findReservation(userId: String, sourceKey: String, name: String, mimeType: String,
+        size: Long, sha256: String, validateContent: Boolean): StoredAttachment? =
+        attachmentStatement("select * from stored_attachments where user_id = ? and source_key = ?").use {
             it.setString(1, userId)
             it.setString(2, sourceKey)
             it.executeQuery().use { rows ->
-                if (!rows.next()) throw AttachmentException("attachment_not_found")
+                if (!rows.next()) return@use null
                 rows.attachment().also { file ->
                     if (file.state == "deleting") throw AttachmentException("attachment_expired")
-                    if (!inserted && file.state == "pending") throw AttachmentException("attachment_not_ready")
+                    if (file.state == "pending") throw AttachmentException("attachment_not_ready")
                     if (validateContent && (file.sha256 != sha256 || file.sizeBytes != size || file.name != name || file.mimeType != mimeType)) {
                         throw AttachmentException("attachment_idempotency_conflict")
                     }
                 }
             }
         }
-    }
 
     internal suspend fun prepareClientImage(file: StoredAttachment, name: String, mimeType: String,
         size: Int, sha256: String, now: Instant): StoredAttachment = dataSource.write(networkTimeoutMillis = 15_000) { connection ->
@@ -168,6 +196,79 @@ class PostgresAttachmentRepository(private val dataSource: DataSource) {
                 }
             }
         }
+    }
+
+    private fun Connection.lockOwnerSaveBudget(userId: String) {
+        // Read charges with a fresh snapshot after waiting for the previous admission to commit.
+        attachmentStatement("set transaction isolation level read committed").use { it.execute() }
+        attachmentStatement("select pg_advisory_xact_lock(hashtextextended(?, 0))").use {
+            it.setString(1, "attachment-save-budget:$userId")
+            it.execute()
+        }
+    }
+
+    private fun Connection.checkSaveBudget(userId: String, executionId: UUID, size: Long): Instant {
+        attachmentStatement("""
+            select save_count, size_bytes from attachment_execution_save_totals where execution_id = ?
+        """.trimIndent()).use {
+            it.setObject(1, executionId)
+            it.executeQuery().use { rows ->
+                val hasTotals = rows.next()
+                val saves = if (hasTotals) rows.getInt(1) else 0
+                val bytes = if (hasTotals) rows.getLong(2) else 0L
+                if (saves >= saveBudget.maxExecutionSaves || size > saveBudget.maxExecutionSaveBytes - bytes) {
+                    throw AttachmentException(ATTACHMENT_EXECUTION_SAVE_LIMIT)
+                }
+            }
+        }
+        return attachmentStatement("""
+            select count(*), coalesce(sum(size_bytes), 0), statement_timestamp() as admitted_at
+            from attachment_save_charges
+            where user_id = ? and admitted_at > statement_timestamp() - interval '24 hours'
+        """.trimIndent()).use {
+            it.setString(1, userId)
+            it.executeQuery().use { rows ->
+                check(rows.next())
+                if (rows.getLong(1) >= saveBudget.maxOwnerSavesPer24h || size > saveBudget.maxOwnerSaveBytesPer24h - rows.getLong(2)) {
+                    throw AttachmentException(ATTACHMENT_OWNER_SAVE_LIMIT)
+                }
+                rows.instant("admitted_at")
+            }
+        }
+    }
+
+    private fun Connection.recordSaveCharge(file: StoredAttachment, executionId: UUID, admittedAt: Instant) {
+        attachmentStatement("""
+            insert into attachment_execution_save_totals(execution_id, save_count, size_bytes)
+            select id, 1, ? from agent_executions where id = ? and user_id = ?
+            on conflict (execution_id) do update set
+                save_count = attachment_execution_save_totals.save_count + 1,
+                size_bytes = attachment_execution_save_totals.size_bytes + excluded.size_bytes
+        """.trimIndent()).use {
+            it.setLong(1, file.sizeBytes)
+            it.setObject(2, executionId)
+            it.setString(3, file.userId)
+            if (it.executeUpdate() != 1) throw AttachmentException("attachment_execution_required")
+        }
+        attachmentStatement("""
+            insert into attachment_save_charges(id, user_id, size_bytes, admitted_at) values (?, ?, ?, ?)
+        """.trimIndent()).use {
+            it.setObject(1, file.id)
+            it.setString(2, file.userId)
+            it.setLong(3, file.sizeBytes)
+            it.setInstant(4, admittedAt)
+            it.executeUpdate()
+        }
+    }
+
+    internal suspend fun pruneSaveCharges(): Unit = dataSource.write(networkTimeoutMillis = 15_000) { connection ->
+        connection.attachmentStatement("""
+            delete from attachment_save_charges where id in (
+                select id from attachment_save_charges
+                where admitted_at <= statement_timestamp() - interval '24 hours'
+                order by admitted_at, id limit 1000 for update skip locked
+            )
+        """.trimIndent()).use { it.executeUpdate() }
     }
 
     suspend fun complete(file: StoredAttachment, now: Instant): StoredAttachment = dataSource.write(networkTimeoutMillis = 15_000) { connection ->
