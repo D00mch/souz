@@ -20,10 +20,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import ru.souz.backend.chat.model.Chat
+import ru.souz.backend.hooks.SCHEDULED_TASK_CHAT_TYPE
 import ru.souz.backend.http.BackendHttpRoutes
-import ru.souz.backend.scheduler.SCHEDULED_TASK_CHAT_TYPE
 import ru.souz.backend.scheduler.ScheduledTaskConfig
-import ru.souz.backend.scheduler.occurrenceId
 import ru.souz.jobs.JobInfo
 import ru.souz.jobs.JobRun
 import ru.souz.jobs.JobStatus
@@ -69,6 +68,9 @@ class BackendScheduledDispatchE2eTest {
                 peer.backend.awaitExecution(occurrence.occurrenceId("execution"))
                 peer.backend.runScheduledTask(occurrence.copy(attempt = 3))
                 assertEquals(2, quota(owner))
+                val receipts = scheduledReceipts(owner)
+                assertEquals(2, receipts.size, "Only newly admitted executions get a receipt.")
+                assertEquals(occurrence.occurrenceId("chat"), receipts[occurrence.occurrenceId("execution")])
             }
             // A newly composed host shares the same quota after the first peer closes.
             withPeerBackend { peer ->
@@ -99,6 +101,7 @@ class BackendScheduledDispatchE2eTest {
             assertFailsWith<IllegalStateException> { backend.runScheduledTask(run) }
             assertNull(backend.executionRepository.get(owner, run.occurrenceId("execution")), "Denied insert must roll back.")
             assertNull(backend.chatRepository.get(owner, run.occurrenceId("chat")), "Denied dispatch removes its empty chat.")
+            assertEquals(setOf(completed.run().occurrenceId("execution")), scheduledReceipts(owner).keys)
             assertEquals(1, quota(owner))
             // Deterministic database clock-window fixture: yesterday's consumption remains durable.
             backend.sql { connection ->
@@ -110,6 +113,7 @@ class BackendScheduledDispatchE2eTest {
             backend.runScheduledTask(run)
             assertEquals(1, quota(owner))
             assertNotNull(backend.executionRepository.get(owner, run.occurrenceId("execution")))
+            assertEquals(run.occurrenceId("chat"), scheduledReceipts(owner)[run.occurrenceId("execution")])
         }
     }
 
@@ -226,6 +230,21 @@ class BackendScheduledDispatchE2eTest {
         connection.prepareStatement("select count(*) from chats where user_id = ? and client_type = 'scheduled_task'").use {
             it.setString(1, owner)
             it.executeQuery().use { rows -> rows.next(); rows.getInt(1) }
+        }
+    }
+
+    private fun BackendE2eScope.scheduledReceipts(owner: String): Map<UUID, UUID> = backend.sql { connection ->
+        connection.prepareStatement(
+            """
+            select r.execution_id, e.chat_id
+            from scheduled_hook_receipts r join agent_executions e on e.id = r.execution_id
+            where e.user_id = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, owner)
+            statement.executeQuery().use { rows ->
+                buildMap { while (rows.next()) put(rows.getObject(1, UUID::class.java), rows.getObject(2, UUID::class.java)) }
+            }
         }
     }
 

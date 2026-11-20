@@ -60,7 +60,7 @@ import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
 import ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntime
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.scheduler.ScheduledTaskConfig
-import ru.souz.backend.scheduler.ScheduledTaskRunner
+import ru.souz.backend.scheduler.triggerScheduledTask
 import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.plugins.BackendPluginRuntime
 import ru.souz.backend.plugins.PostgresPluginRepository
@@ -483,11 +483,13 @@ internal class BackendE2eBackend(
     val conversationRuntimeFactory: BackendConversationRuntimeFactory get() = di.direct.instance()
 
     suspend fun startScheduledTaskWorker() {
-        val runner = di.direct.instance<ScheduledTaskRunner>()
-        di.direct.instance<PostgresJobService>().startWorker(applicationScope, runner::awaitCapacity, runner::run)
+        val hooks = dependencies.hookService
+        di.direct.instance<PostgresJobService>().startWorker(
+            applicationScope, hooks::awaitInternalCapacity, hooks::triggerScheduledTask,
+        )
     }
 
-    suspend fun runScheduledTask(job: JobRun) = di.direct.instance<ScheduledTaskRunner>().run(job)
+    suspend fun runScheduledTask(job: JobRun) = dependencies.hookService.triggerScheduledTask(job)
 
     fun <T> sql(block: (Connection) -> T): T =
         dataSource.connection.use(block)

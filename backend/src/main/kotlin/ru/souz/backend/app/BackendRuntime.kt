@@ -10,7 +10,7 @@ import ru.souz.backend.attachments.PreparedAttachmentWorkspace
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
-import ru.souz.backend.scheduler.ScheduledTaskRunner
+import ru.souz.backend.scheduler.triggerScheduledTask
 import ru.souz.jobs.impl.PostgresJobService
 import ru.souz.backend.plugins.BackendPluginRuntime
 
@@ -28,8 +28,10 @@ class BackendRuntime private constructor(
         runBlocking { httpDependencies.hookService.start(applicationScope) }
         // The worker keeps its first handler, so this is the only job dispatch path.
         runBlocking {
-            val runner = di.direct.instance<ScheduledTaskRunner>()
-            di.direct.instance<PostgresJobService>().startWorker(applicationScope, runner::awaitCapacity, runner::run)
+            val hooks = httpDependencies.hookService
+            di.direct.instance<PostgresJobService>().startWorker(
+                applicationScope, hooks::awaitInternalCapacity, hooks::triggerScheduledTask,
+            )
         }
         if (httpDependencies.featureFlags.wsEvents) {
             runBlocking { clientThreadRecoveryService.recover() }
