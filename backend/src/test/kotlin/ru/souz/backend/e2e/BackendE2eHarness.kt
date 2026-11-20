@@ -510,7 +510,11 @@ internal class BackendE2eBackend(
 
     suspend fun captureHistoryMemory(): Boolean = di.direct.instanceOrNull<HistoryMemoryWorker>()?.processNext() ?: false
 
-    fun createPeer(llm: E2eLlmApi = E2eLlmApi(), providerClients: ProviderHttpClients? = null): BackendE2eBackend =
+    fun createPeer(
+        llm: E2eLlmApi = E2eLlmApi(),
+        providerClients: ProviderHttpClients? = null,
+        attachments: AttachmentStorageConfig? = this.attachments,
+    ): BackendE2eBackend =
         BackendE2eBackend(
             schema = schema,
             featureFlags = featureFlags,
