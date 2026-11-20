@@ -5,6 +5,7 @@ import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.NonCancellable
@@ -92,7 +93,7 @@ internal class ScheduledHookDispatch(
         // Undispatched start enters the finally block even if the application scope is shutting down.
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
-                withTimeoutOrNull(config.runTimeoutMillis) { launcher.join(started.id) }
+                withTimeoutOrNull(config.runTimeoutMillis.milliseconds) { launcher.join(started.id) }
             } finally {
                 withContext(NonCancellable) {
                     launcher.cancel(started.id)
