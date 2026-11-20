@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.async
 import ru.souz.backend.execution.model.AgentExecutionStatus
-import ru.souz.backend.scheduler.occurrenceId
+import ru.souz.backend.scheduler.ScheduledTaskConfig
 import ru.souz.jobs.CreateJobRequest
 import ru.souz.jobs.JobInfo
 import ru.souz.jobs.JobSchedule
@@ -21,7 +21,7 @@ class BackendScheduledStartFailureE2eTest {
     @Test
     fun `start retries recover before persistence but at most once never relaunches a persisted failed execution`() {
         for (beforePersistence in listOf(true, false)) {
-            backendE2eTest(schemaPrefix = "e2e_scheduled_start") {
+            backendE2eTest(schemaPrefix = "e2e_scheduled_start", scheduledTasks = ScheduledTaskConfig(runsPerUserPerDay = 1)) {
                 val owner = UUID.randomUUID().toString()
                 scheduledTaskSetup(owner)
                 val job = backend.jobService.createJob(owner, CreateJobRequest(
@@ -29,8 +29,8 @@ class BackendScheduledStartFailureE2eTest {
                     JobSchedule.Cron("* * * * *", "UTC"), continueAfterFailure = true,
                 ))
                 val run = job.run()
-                val table = if (beforePersistence) "chats" else "messages"
-                val condition = if (beforePersistence) "new.client_type = 'scheduled_task'"
+                val table = if (beforePersistence) "scheduled_hook_receipts" else "messages"
+                val condition = if (beforePersistence) "true"
                     else "new.chat_id = '${run.occurrenceId("chat")}'::uuid"
                 backend.sql { connection ->
                     connection.createStatement().use {
@@ -50,8 +50,12 @@ class BackendScheduledStartFailureE2eTest {
                 eventually<JobInfo>("first start failure", timeout = 15.seconds) {
                     backend.jobService.listJobs(owner).items.single().takeIf { it.status == JobStatus.PENDING && it.attempts == 1 }
                 }
+                if (beforePersistence) {
+                    assertNull(backend.executionRepository.get(owner, run.occurrenceId("execution")))
+                    assertNull(backend.chatRepository.get(owner, run.occurrenceId("chat")))
+                }
                 backend.sql { it.createStatement().use { statement -> statement.execute("drop trigger reject_scheduled_start on $table") } }
-                // Safe pre-insert failures recover. A failed committed execution consumes its
+                // Receipt insertion failures roll back admission and quota. A failed committed execution consumes its
                 // reservation and must remain failed through the worker's remaining retries.
                 repeat(if (beforePersistence) 1 else 2) { index ->
                     makeScheduledJobReady(job.id)
@@ -89,8 +93,9 @@ class BackendScheduledStartFailureE2eTest {
             withTableLocked("chats", "exclusive") { connection ->
                 val dispatch = async {
                     assertFailsWith<IllegalStateException> {
-                        backend.dependencies.executionService.executeChatTurnIfAbsent(
-                            owner, chatId, "Check mail.", executionId, dailyLaunchLimit = 100,
+                        backend.dependencies.executionService.executeScheduledTurnIfAbsent(
+                            owner, chatId, "Check mail.", executionId,
+                            occurrenceKey = executionId.toString(), dailyLaunchLimit = 100,
                         )
                     }
                 }

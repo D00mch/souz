@@ -12,11 +12,13 @@ Serialize deduplication and quota checks per owner. Count active receipts agains
 
 ## Execution and recovery
 
+Scheduled tasks use the internal trigger. `HookStore` saves their admission receipts in `scheduled_hook_receipts`, keyed by execution ID. The job worker owns retries and uses scheduled-task quotas and capacity. Webhook recovery, receipt lookup, and quotas apply only to workspace webhooks. [Scheduled tasks](scheduled-tasks.md)
+
 Run hooks in one backend process and serialize dispatch per hook. Check the saved owner and revision before dispatch. Initial turns and option continuations share execution capacity and timeouts. `waiting_option` releases capacity while keeping the receipt running and its queue position and budget intact. [Dispatch and recovery](../src/main/kotlin/ru/souz/backend/hooks/HookService.kt)
 
 Recovery resumes pending receipts and preserves `waiting_option`. Fail interrupted receipt-linked work without replaying uncertain effects. Persist or repair the terminal event before finishing its receipt, including when the execution state is already terminal. [Execution finalization](../src/main/kotlin/ru/souz/backend/execution/service/AgentExecutionService.kt) · [Recovery scope](distributed-backend-boundary.md)
 
-Apply hook provider quotas only to receipt-linked executions. Acquire provider capacity before reserving an attempt and hold it through the full call, including stream collection. Reserve the per-event and per-owner UTC daily budgets together before each attempt, including retries, nested tools, and continuations. If either quota rejects the reservation, charge neither. Preserve lower request output limits when applying the hook cap. [Provider budget](../src/main/kotlin/ru/souz/backend/hooks/HookLlmBudget.kt)
+Apply hook provider quotas to webhook receipt executions. Acquire provider capacity before reserving an attempt and hold it through the full call, including stream collection. Reserve the per-event and per-owner UTC daily budgets together before each attempt, including retries, nested tools, and continuations. If either quota rejects the reservation, charge neither. Preserve lower request output limits when applying the hook cap. [Provider budget](../src/main/kotlin/ru/souz/backend/hooks/HookLlmBudget.kt)
 
 ## Verification
 

@@ -1,5 +1,6 @@
 package ru.souz.backend.hooks
 
+import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -38,11 +39,23 @@ internal class HookService(
     private val executionService: AgentExecutionService,
     private val messages: MessageRepository,
     private val verifier: HookVerifier,
+    private val scheduled: ScheduledHookDispatch,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val mutex = Mutex()
     private var hooks = emptyMap<String, List<LoadedHook>>()
     private val intake = config.owners.associateWith { Semaphore(config.concurrentRequestsPerOwner) }
+
+    suspend fun awaitInternalCapacity(): Set<String> = scheduled.awaitCapacity()
+
+    suspend fun triggerInternal(
+        userId: String,
+        title: String,
+        content: String,
+        occurrenceKey: String,
+        scheduledAt: Instant,
+        requiresDelivery: Boolean,
+    ) = scheduled.run(userId, title, content, occurrenceKey, scheduledAt, requiresDelivery)
 
     suspend fun start(scope: CoroutineScope) {
         for (owner in config.owners) reload(owner)

@@ -22,6 +22,7 @@ import io.ktor.utils.io.ByteChannel
 import io.ktor.utils.io.ByteReadChannel
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import java.util.UUID
 import java.util.Base64
 import kotlin.test.Test
@@ -54,6 +55,8 @@ import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
 import ru.souz.backend.storage.postgres.postgresAppConfig
 import ru.souz.backend.storage.postgres.write
 import ru.souz.backend.testutil.createSymbolicLinkOrSkip
+import ru.souz.jobs.JobRun
+import ru.souz.llms.restJsonMapper
 import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.runtime.sandbox.RuntimeSandboxModeResolver
 import ru.souz.runtime.sandbox.docker.DockerRuntimeSandbox
@@ -271,6 +274,31 @@ class BackendHooksE2eTest {
             assertEquals(1, awaitStatus(second, "failed")["llmCalls"].asInt())
             // Failed per-event reservations must roll back the daily counter.
             assertEquals(2, llm.requests.size, "Each event gets one call, including nested tool continuations")
+        }
+    }
+
+    @Test
+    fun `scheduled receipts leave workspace webhook admission and provider budgets available`() {
+        writeHook()
+        val llm = E2eLlmApi()
+        runHooks(HookConfig(setOf(owner), eventsPerUserPerDay = 1, llmCallsPerEvent = 1, llmCallsPerUserPerDay = 1), llm) {
+            setupOwner()
+            val run = JobRun(
+                UUID.randomUUID(), owner, "Check mail",
+                restJsonMapper.createObjectNode().put("prompt", "Check mail.").put("requiresDelivery", false),
+                Instant.now(), attempt = 1,
+            )
+            backend.runScheduledTask(run)
+            val executionId = run.occurrenceId("execution")
+            backend.awaitExecution(executionId)
+            assertEquals(HttpStatusCode.NotFound, client.get("/v1/hooks/receipts/$executionId") { trusted(owner) }.status)
+
+            val response = invoke()
+            assertEquals(HttpStatusCode.Accepted, response.status)
+            val status = awaitStatus(response.jsonBody()["receiptId"].asText(), "completed")
+            assertEquals(1, status["llmCalls"].asInt())
+            assertEquals(2, llm.requests.size)
+            assertEquals(HttpStatusCode.TooManyRequests, invoke().status)
         }
     }
 
