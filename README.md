@@ -78,6 +78,8 @@ External Telegram and VK bot services connect through the [public WebSocket API]
 
 To run without Compose, start PostgreSQL, configure backend secrets, then run `./gradlew :backend:run` with JDK 21. Build a local distribution with `./gradlew :backend:installDist`. [Verification](AGENTS.md#verification) · [Quality gates](docs/quality-gates.md) · [Backend image build](scripts/build-backend-image.sh)
 
+For standalone JVM plugins, see the [SDK contract and developer skill](plugin-api/docs/plugin-contract.md#developer-skill).
+
 ## Operational references
 
 - [WebSocket ownership](backend/docs/public-client-websocket.md) and [subagents](docs/subagents.md)
