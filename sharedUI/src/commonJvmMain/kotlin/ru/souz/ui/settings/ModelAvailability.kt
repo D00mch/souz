@@ -108,10 +108,11 @@ private fun LlmProvider.toVoiceRecognitionProviderOrNull(): VoiceRecognitionProv
     LlmProvider.CODEX -> null
 }
 
+// Speech routing keeps its regional policy independently of the combined desktop chat catalog.
 private fun VoiceRecognitionProvider.isEnabledInBuild(llmBuildProfile: LlmBuildProfile): Boolean = when (this) {
     VoiceRecognitionProvider.POLZA -> llmBuildProfile.supportsPolzaSpeechRecognition
-    VoiceRecognitionProvider.AI_TUNNEL -> LlmProvider.AI_TUNNEL in llmBuildProfile.availableProviders
-    VoiceRecognitionProvider.OPENAI -> LlmProvider.OPENAI in llmBuildProfile.availableProviders
+    VoiceRecognitionProvider.AI_TUNNEL -> llmBuildProfile.supportsPolzaSpeechRecognition
+    VoiceRecognitionProvider.OPENAI -> !llmBuildProfile.supportsPolzaSpeechRecognition
     VoiceRecognitionProvider.LOCAL_MACOS -> false
 }
 

@@ -1836,7 +1836,7 @@ class MainViewModelTest {
         every { localProviderAvailability.isProviderAvailable() } returns (localAvailableModel != null)
         every { localProviderAvailability.availableGigaModels() } returns listOfNotNull(localAvailableModel)
         every { localProviderAvailability.defaultGigaModel() } returns localAvailableModel
-        val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
+        val llmBuildProfile = LlmBuildProfile.desktop(settingsProvider, localProviderAvailability)
         val localModelStore = mockk<LocalModelStore>(relaxed = true)
         val localLlamaRuntime = mockk<LocalLlamaRuntime>(relaxed = true)
         localAvailableModel?.let { model ->

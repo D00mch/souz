@@ -189,7 +189,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { SqliteGraphSessionRepository(instance<SouzPaths>().stateRoot.resolve("desktop.db")) }
     bindSingleton<GraphSessionRepository> { instance<SqliteGraphSessionRepository>() }
     bindSingleton { VectorDB(instance<SouzPaths>().stateRoot.resolve("desktop.db")) }
-    bindSingleton { LlmBuildProfile(instance(), instance()) }
+    bindSingleton { LlmBuildProfile.desktop(instance(), instance()) }
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
     bindSingleton<MemoryOwnerProvider> { DesktopMemoryOwnerProvider() }
     bindSingleton<MemoryRepository> {

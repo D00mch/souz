@@ -16,7 +16,6 @@ data class SetupState(
     val polzaApiKey: String = "",
     val codexConnected: Boolean = false,
     val codexOAuthState: CodexOAuthUiState = CodexOAuthUiState.Idle,
-    val useEnglishVersion: Boolean = false,
     val availableApiKeyFields: Set<ApiKeyField> = emptySet(),
     val availableApiKeyProviders: List<ApiKeyProvider> = emptyList(),
     val supportsVoiceRecognitionApiKeys: Boolean = false,
@@ -29,7 +28,6 @@ data class SetupState(
 ) : VMState
 
 sealed interface SetupEvent : VMEvent {
-    data class InputUseEnglishVersion(val enabled: Boolean) : SetupEvent
     data class InputGigaChatKey(val key: String) : SetupEvent
     data class InputQwenChatKey(val key: String) : SetupEvent
     data class InputAiTunnelKey(val key: String) : SetupEvent

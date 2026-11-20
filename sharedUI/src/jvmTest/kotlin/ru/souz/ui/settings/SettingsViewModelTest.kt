@@ -110,7 +110,7 @@ class SettingsViewModelTest {
         every { localProviderAvailability.isProviderAvailable() } returns true
         every { localProviderAvailability.availableGigaModels() } returns listOf(LLMModel.LocalQwen3_4B_Instruct_2507)
         every { localProviderAvailability.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
-        val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
+        val llmBuildProfile = LlmBuildProfile.desktop(settingsProvider, localProviderAvailability)
         val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
 
         val supportsPolza = llmBuildProfile.supportsPolzaSpeechRecognition
@@ -671,6 +671,41 @@ class SettingsViewModelTest {
         settingsDispatcher = settingsIoDispatcher,
     )
 
+    @Test
+    fun `both regional models remain selected across interface and service language changes`() = runTest(dispatcher) {
+        var region = REGION_RU
+        var selected = LLMModel.QwenMax
+        val fixture = createLocalModelSettingsFixture(configureSettingsProvider = { settings ->
+            every { settings.gigaModel } answers { selected }
+            every { settings.regionProfile } answers { region }
+            every { settings.regionProfile = any() } answers { region = firstArg() }
+            every { settings.hasKey(LlmProvider.GIGA) } returns true
+            every { settings.hasKey(LlmProvider.OPENAI) } returns true
+        }, configureAgentFacade = { agent ->
+            every { agent.setModel(any()) } answers {
+                selected = firstArg()
+                "fixture-prompt"
+            }
+        })
+        val viewModel = fixture.viewModel
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
+        val catalog = viewModel.uiState.value.availableLlmModels
+        assertTrue(LLMModel.Max in catalog)
+        assertTrue(LLMModel.OpenAIGpt5Mini in catalog)
+        for (model in listOf(LLMModel.OpenAIGpt5Mini, LLMModel.Max)) {
+            viewModel.handleEvent(SettingsEvent.SelectModel(model))
+            advanceUntilIdle()
+            for (english in listOf(true, false)) {
+                viewModel.handleEvent(SettingsEvent.InputUseEnglishInterface(english))
+                viewModel.handleEvent(SettingsEvent.InputUseEnglishVersion(english))
+                advanceUntilIdle()
+                assertEquals(catalog, viewModel.uiState.value.availableLlmModels)
+                assertEquals(model, viewModel.uiState.value.gigaModel)
+            }
+        }
+    }
+
     private data class LocalModelSettingsFixture(
         val agentFacade: AgentFacade,
         val viewModel: SettingsViewModel,
@@ -712,7 +747,7 @@ class SettingsViewModelTest {
         every { localProviderAvailability.isProviderAvailable() } returns true
         every { localProviderAvailability.availableGigaModels() } returns availableGigaModels
         every { localProviderAvailability.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
-        val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
+        val llmBuildProfile = LlmBuildProfile.desktop(settingsProvider, localProviderAvailability)
         val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
 
         val localModelStore = mockk<LocalModelStore>(relaxed = true)

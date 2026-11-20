@@ -18,7 +18,6 @@ import org.kodein.di.bindSingleton
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
-import ru.souz.llms.BuildEdition
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
@@ -144,8 +143,7 @@ class SetupViewModelTest {
         viewModel.send(event)
         advanceUntilIdle()
 
-        val expectedModel = if (supportsProvider(provider)) defaultModel else LLMModel.Max
-        assertEquals(expectedModel, settingsProvider.gigaModel)
+        assertEquals(defaultModel, settingsProvider.gigaModel)
     }
 
     @Test
@@ -160,12 +158,7 @@ class SetupViewModelTest {
 
         viewModel.send(SetupEvent.InputGigaChatKey("giga-token"))
         advanceUntilIdle()
-        val expectedModel = if (supportsProvider(LlmProvider.GIGA)) {
-            LLMModel.Max
-        } else {
-            LLMModel.QwenMax
-        }
-        assertEquals(expectedModel, settingsProvider.gigaModel)
+        assertEquals(LLMModel.Max, settingsProvider.gigaModel)
     }
 
     @Test
@@ -184,29 +177,28 @@ class SetupViewModelTest {
     }
 
     @Test
-    fun `setup updates profile toggle and persists selection`() = runTest(dispatcher) {
-        val settingsProvider = settingsProviderStub()
-        val viewModel = createViewModel(settingsProvider)
+    fun `setup offers both regional provider sets without a region choice`() = runTest(dispatcher) {
+        for (region in listOf(REGION_RU, REGION_EN)) {
+            val settings = settingsProviderStub()
+            settings.regionProfile = region
+            val viewModel = createViewModel(settings)
+            advanceUntilIdle()
 
-        advanceUntilIdle()
-        assertFalse(viewModel.uiState.value.useEnglishVersion)
-
-        viewModel.send(SetupEvent.InputUseEnglishVersion(true))
-        advanceUntilIdle()
-
-        assertTrue(viewModel.uiState.value.useEnglishVersion)
-        verify { settingsProvider.regionProfile = REGION_EN }
-
-        viewModel.send(SetupEvent.InputUseEnglishVersion(false))
-        advanceUntilIdle()
-
-        assertFalse(viewModel.uiState.value.useEnglishVersion)
-        verify { settingsProvider.regionProfile = REGION_RU }
+            assertTrue(setOf(ApiKeyField.GIGA_CHAT, ApiKeyField.AI_TUNNEL,
+                ApiKeyField.OPENAI, ApiKeyField.ANTHROPIC, ApiKeyField.CODEX, ApiKeyField.QWEN_CHAT)
+                .all { it in viewModel.uiState.value.availableApiKeyFields })
+            assertFalse(viewModel.uiState.value.canProceed)
+            viewModel.send(SetupEvent.InputOpenAiKey("synthetic-key"))
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.canProceed)
+            assertEquals(LLMModel.OpenAIGpt5Mini, settings.gigaModel)
+            assertEquals(region, settings.regionProfile)
+        }
     }
 
     private fun createViewModel(settingsProvider: SettingsProvider): SetupViewModel {
         val speechPlayer = mockk<UiSpeechPlayer>(relaxed = true)
-        val llmBuildProfile = LlmBuildProfile(settingsProvider)
+        val llmBuildProfile = LlmBuildProfile.desktop(settingsProvider)
         val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
@@ -216,9 +208,6 @@ class SetupViewModelTest {
         }
         return SetupViewModel(di)
     }
-
-    private fun supportsProvider(provider: LlmProvider): Boolean =
-        LlmBuildProfile.defaultsForEdition(BuildEdition.RU)[provider] != null
 
     private fun settingsProviderStub(
         giga: String = "",
