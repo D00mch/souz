@@ -56,6 +56,12 @@ class BackendMetrics(nanoTime: () -> Long = System::nanoTime) : AutoCloseable {
     internal fun terminal(status: AgentExecutionStatus) =
         registry.counter("souz.executions", "outcome", status.value).increment()
 
+    internal fun attachmentSaveAdmitted(sizeBytes: Long) =
+        registry.counter("souz.attachment.save.admitted.bytes").increment(sizeBytes.toDouble())
+
+    internal fun attachmentSaveRejected(scope: String) =
+        registry.counter("souz.attachment.save.rejected", "scope", scope).increment()
+
     internal fun llmAttempt(provider: LlmProvider, model: String, outcome: String, elapsedNanos: Long) =
         recordCall("souz.llm.requests", "souz.llm.request.duration", outcome, elapsedNanos, *modelTags(provider, model))
 

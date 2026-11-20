@@ -17,6 +17,7 @@ class AttachmentStorageConfig(
     val maxOwnerFiles: Int = 1_000,
     val maxTotalBytes: Long = 100_000_000_000,
     val maxTotalFiles: Int = 100_000,
+    val saveBudget: AttachmentSaveBudget = AttachmentSaveBudget(),
 ) {
     init {
         val uri = try { URI(endpoint) } catch (_: URISyntaxException) {
@@ -48,8 +49,10 @@ class AttachmentStorageConfig(
             fun required(key: String) = requireNotNull(value(key)) { "Attachment $key is required." }
             fun <T : Any> parsed(key: String, default: T, parse: (String) -> T?): T =
                 value(key)?.let { requireNotNull(parse(it)) { "Invalid attachment $key." } } ?: default
+            val endpoint = value("S3_ENDPOINT") ?: return null
+            val defaults = AttachmentSaveBudget()
             return AttachmentStorageConfig(
-                endpoint = value("S3_ENDPOINT") ?: return null,
+                endpoint = endpoint,
                 bucket = required("S3_BUCKET"),
                 accessKey = required("S3_ACCESS_KEY"),
                 secretKey = required("S3_SECRET_KEY"),
@@ -61,6 +64,12 @@ class AttachmentStorageConfig(
                 maxOwnerFiles = parsed("MAX_OWNER_FILES", 1_000, String::toIntOrNull),
                 maxTotalBytes = parsed("MAX_TOTAL_BYTES", 100_000_000_000L, String::toLongOrNull),
                 maxTotalFiles = parsed("MAX_TOTAL_FILES", 100_000, String::toIntOrNull),
+                saveBudget = AttachmentSaveBudget(
+                    maxExecutionSaves = parsed("MAX_EXECUTION_SAVES", defaults.maxExecutionSaves, String::toIntOrNull),
+                    maxExecutionSaveBytes = parsed("MAX_EXECUTION_SAVE_BYTES", defaults.maxExecutionSaveBytes, String::toLongOrNull),
+                    maxOwnerSavesPer24h = parsed("MAX_OWNER_SAVES_PER_24H", defaults.maxOwnerSavesPer24h, String::toIntOrNull),
+                    maxOwnerSaveBytesPer24h = parsed("MAX_OWNER_SAVE_BYTES_PER_24H", defaults.maxOwnerSaveBytesPer24h, String::toLongOrNull),
+                ),
             )
         }
     }

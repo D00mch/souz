@@ -16,12 +16,26 @@ Without `SOUZ_ATTACHMENTS_S3_ENDPOINT`, neither storage nor its cleanup worker i
 | `SOUZ_ATTACHMENTS_S3_PATH_STYLE` | `true` (MinIO compatible) |
 | `SOUZ_ATTACHMENTS_MAX_FILE_BYTES` | Upload limit: `20000000`, maximum `100000000` |
 | `SOUZ_ATTACHMENTS_MAX_CONCURRENT_UPLOADS` | `16`; shared concurrency limit for saves and reads |
+| `SOUZ_ATTACHMENTS_MAX_EXECUTION_SAVES` | New workspace objects per execution: `20` |
+| `SOUZ_ATTACHMENTS_MAX_EXECUTION_SAVE_BYTES` | Total workspace bytes per execution: `200000000` |
+| `SOUZ_ATTACHMENTS_MAX_OWNER_SAVES_PER_24H` | New workspace objects per owner in a rolling 24-hour window: `100` |
+| `SOUZ_ATTACHMENTS_MAX_OWNER_SAVE_BYTES_PER_24H` | Total workspace bytes per owner in a rolling 24-hour window: `1000000000` |
 | `SOUZ_ATTACHMENTS_MAX_OWNER_BYTES` | `1000000000`; reserved and stored bytes per owner |
 | `SOUZ_ATTACHMENTS_MAX_OWNER_FILES` | `1000`; reserved and stored objects per owner |
 | `SOUZ_ATTACHMENTS_MAX_TOTAL_BYTES` | `100000000000`; reserved and stored bytes across all owners |
 | `SOUZ_ATTACHMENTS_MAX_TOTAL_FILES` | `100000`; reserved and stored objects across all owners |
 
 JVM properties use `souz.attachments.` plus the lowercase suffix, e.g. `souz.attachments.s3_endpoint`. Grant only `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on `arn:aws:s3:::<bucket>/*`. All four storage quotas must be positive and agree across replicas sharing metadata. The backend does not create buckets or manage bucket policies or lifecycle rules. Verify anonymous GET denial and keep the bucket stable for the lifetime of its files.
+
+## Workspace save budgets
+
+The four save limits take positive integers and apply to `AttachFileToReply(path)`. Deploy the policy and configure the same limits on all replicas. These limits apply in addition to the owner/global storage-capacity quotas. Workspace edits and preparation stay in the sandbox. Selection by ID, image generation, client uploads, and JVM plugin file services use separate paths.
+
+Each replica queues workspace saves for the same owner before acquiring a shared transfer permit or borrowing a database connection. PostgreSQL coordinates admission across replicas and commits the charge with the pending object reservation before the PUT. Each new reservation counts once and charges its file size. The execution budget is shared by the parent, its children, and continuations or retries using the same execution ID. A new execution starts with a fresh execution budget. The owner budget uses PostgreSQL time and includes reservations from all of that owner's executions over the preceding 24 hours.
+
+Within an execution, changing the bytes or filename requires a new reservation. Duplicate requests keep the original reservation's budget accounting. Reservations stay charged after expiry or cleanup, failed or cancelled uploads, discarded or replaced selections, and failed composites or executions. One row stores the count and bytes for the lifetime of each charged execution. The owner ledger survives execution deletion, and the attachment cleanup worker prunes all entries older than the 24-hour window. Accounting starts with reservations admitted through this policy.
+
+On rejection, the tool returns `attachment_execution_save_limit_exceeded` or `attachment_owner_save_limit_exceeded` with guidance to select an existing file or finish the reply. The current reply selection is preserved. Track charged bytes and rejections through the [attachment meters](metrics.md#application-meters). To investigate heavy usage by owner, group `attachment_save_charges` by `user_id` for `admitted_at > statement_timestamp() - interval '24 hours'` and sum `size_bytes`.
 
 ## Lifecycle
 
