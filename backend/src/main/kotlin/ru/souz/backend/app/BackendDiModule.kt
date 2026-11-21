@@ -217,12 +217,13 @@ fun backendDiModule(
     }
     bindSingleton { SystemBackendConfigSource.loadNamedModels() }
     bindSingleton { ImageModelRoute(appConfig.imageModel, instance()) }
-    bindSingleton<SettingsProvider> {
+    bindSingleton {
         BackendSettingsProvider(
             preferenceStore = instance(),
             namedModels = instance(),
         )
     }
+    bindSingleton<SettingsProvider> { instance<BackendSettingsProvider>() }
     bindSingleton<UserRepository> { PostgresUserRepository(instance()) }
     bindSingleton<ChatRepository> { PostgresChatRepository(instance()) }
     bindSingleton<ConversationKnowledgeStore> { PostgresConversationKnowledgeStore(instance<HikariDataSource>()) }

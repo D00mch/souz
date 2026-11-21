@@ -76,7 +76,6 @@ suspend fun ScenarioLiveModel.runScenario(
                 defaultSystemPrompt = BackendRuntime.backendSystemPrompt(),
                 policyPrompt = SystemBackendConfigSource.value("SOUZ_BACKEND_POLICY_PROMPT", "souz.backend.policyPrompt")
                     ?.trim()?.takeIf { it.isNotEmpty() },
-                locale = "ru-RU",
                 useFewShotExamples = true,
             ).apply {
                 applyRequest(BackendConversationTurnRequest(
@@ -181,7 +180,6 @@ internal fun scenarioSettings(modelId: String, provider: LlmProvider): SettingsP
     every { gigaModel } returns if (provider == LlmProvider.CODEX) LLMModel.CodexGpt6Astra else LLMModel.OpenAICompatibleCustom
     every { executionModelId(any()) } returns modelId
     every { activeAgentId } returns AgentId.SKILLS_GRAPH
-    every { regionProfile } returns "ru"
     every { useStreaming } returns false
     every { contextSize } returns 32_000
     every { temperature } returns 0f

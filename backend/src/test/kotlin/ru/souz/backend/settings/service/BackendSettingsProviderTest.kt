@@ -174,7 +174,7 @@ class BackendSettingsProviderTest {
     fun `backend deploy config controls non codex provider settings`() {
         val provider = provider(
             env = mapOf(
-                "APP_LANGUAGE" to "en",
+                "APP_LANGUAGE" to "ru",
                 "GIGA_MODEL" to "gpt-5.2",
                 "OPENAI_API_KEY" to "openai-key",
                 "OPENAI_MODEL" to "custom-model",
@@ -186,7 +186,7 @@ class BackendSettingsProviderTest {
             ),
         )
 
-        assertEquals("en", provider.regionProfile)
+        assertEquals("ru-RU", provider.defaultLocale.toLanguageTag())
         assertEquals(LLMModel.OpenAIGpt52, provider.gigaModel)
         assertEquals("openai-key", provider.openaiKey)
         assertEquals("custom-model", provider.openaiModel)
@@ -213,9 +213,9 @@ class BackendSettingsProviderTest {
         )
 }
 
-private class MapBackendConfigSource(
-    private val env: Map<String, String>,
-    private val properties: Map<String, String>,
+internal class MapBackendConfigSource(
+    private val env: Map<String, String> = emptyMap(),
+    private val properties: Map<String, String> = emptyMap(),
 ) : BackendConfigSource {
     override fun env(key: String): String? = env[key]
 

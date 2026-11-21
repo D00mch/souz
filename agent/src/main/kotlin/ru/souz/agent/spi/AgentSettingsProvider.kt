@@ -22,9 +22,6 @@ interface AgentSettingsProvider {
     /** Persists a model-specific system prompt override or clears it when null. */
     fun setSystemPromptForAgentModel(agentId: AgentId, model: LLMModel, prompt: String?)
 
-    /** Active regional profile used to resolve default prompts and other behavior. */
-    var regionProfile: String
-
     /** Currently selected agent implementation. */
     var activeAgentId: AgentId
 

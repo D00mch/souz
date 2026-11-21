@@ -55,6 +55,7 @@ class BackendCompositionE2eTest {
             val state = client.get(BackendHttpRoutes.ONBOARDING_STATE) { trusted(userId) }.jsonBody()
             assertEquals("test-chat", state["recommendedDefaultModel"].asText())
             assertTrue(state["hasUsableModelAccess"].asBoolean())
+            assertFalse(state["availableUserManagedProviders"].flatMap { it["models"] }.any { it.asText() == "test-chat" })
             assertEquals(HttpStatusCode.OK, client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
                 trusted(userId); jsonBody("{}")
             }.status)
@@ -415,6 +416,44 @@ class BackendCompositionE2eTest {
             assertEquals(45_000L, completed["currentSettings"]["requestTimeoutMillis"].asLong())
             assertFalse(completed["currentSettings"]["useFewShotExamples"].asBoolean())
         }
+
+    @Test
+    fun `bootstrap advertises the same providers in both languages before keys are added`() {
+        var firstCatalog: JsonNode? = null
+        for (language in listOf("ru", "en")) {
+            val source = object : BackendConfigSource {
+                override fun env(key: String): String? = when (key) {
+                    "APP_LANGUAGE" -> language
+                    "CODEX_ACCESS_TOKEN" -> "incomplete-codex-credentials"
+                    "OPENAI_MODEL" -> "unkeyed-custom-model"
+                    else -> null
+                }
+
+                override fun property(key: String): String? = null
+            }
+            backendE2eTest("e2e_catalog_$language", settingsSource = source, mockProvider = false) {
+                val userId = "catalog-user"
+                val bootstrap = client.get(BackendHttpRoutes.BOOTSTRAP) { trusted(userId) }.jsonBody()
+                val models = bootstrap["capabilities"]["models"]
+                firstCatalog?.let { assertEquals(it, models) }
+                firstCatalog = models
+                val providers = setOf("openai", "anthropic", "ai_tunnel", "qwen")
+                assertEquals(providers, models.map { it["provider"].asText() }.toSet())
+                assertTrue(models.any { it["model"].asText() == LLMModel.OpenAICompatibleCustom.alias })
+                assertTrue(models.none { it["serverManagedKey"].asBoolean() || it["userManagedKey"].asBoolean() })
+                assertEquals(language, bootstrap["settings"]["interfaceLanguage"].asText())
+                assertEquals(LLMModel.QwenMax.alias, bootstrap["settings"]["defaultModel"].asText())
+
+                val state = client.get(BackendHttpRoutes.ONBOARDING_STATE) { trusted(userId) }.jsonBody()
+                assertEquals("provider", state["currentStep"].asText())
+                assertEquals(providers, state["availableUserManagedProviders"].map { it["provider"].asText() }.toSet())
+                assertEquals(HttpStatusCode.BadRequest, client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
+                    trusted(userId)
+                    jsonBody("""{"defaultModel":"${LLMModel.OpenAIGpt5Mini.alias}"}""")
+                }.status)
+            }
+        }
+    }
 
     @Test
     fun `onboarding validation rejects malformed preferences without partial completion`() =

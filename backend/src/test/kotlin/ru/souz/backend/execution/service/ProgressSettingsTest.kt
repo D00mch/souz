@@ -9,10 +9,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.config.BackendFeatureFlags
-import ru.souz.backend.llm.LlmSettingsStub
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
+import ru.souz.backend.settings.service.BackendSettingsProvider
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
+import ru.souz.backend.settings.service.MapBackendConfigSource
+import ru.souz.backend.settings.service.MapBackendServerPreferenceStore
 import ru.souz.backend.storage.postgres.StoredSettingsPayload
 import ru.souz.backend.testutil.TestToolCatalog
 import ru.souz.llms.restJsonMapper
@@ -25,7 +27,8 @@ class ProgressSettingsTest {
             var stored = UserSettings("user", defaultModel = "test-chat", narrateSteps = narrate, intermediateMessages = intermediate)
             val repository = mockk<UserSettingsRepository>()
             coEvery { repository.get("user") } answers { stored }
-            val resolver = EffectiveSettingsResolver(LlmSettingsStub(), repository, mockk(), BackendFeatureFlags(),
+            val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), MapBackendConfigSource())
+            val resolver = EffectiveSettingsResolver(settings, repository, mockk(), BackendFeatureFlags(),
                 TestToolCatalog(), namedModelNames = setOf("test-chat"))
             val factory = AgentExecutionRequestFactory(resolver)
             val prepared = factory.prepareChatTurn("user", UUID.randomUUID(), "hello")
