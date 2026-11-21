@@ -28,7 +28,7 @@ class SettingsProviderImpl(
             ?: System.getProperty(SUBAGENT_MODELS_JSON),
     )
 
-    private val llmBuildProfile by lazy { LlmBuildProfile(this, localProviderAvailability) }
+    private val llmBuildProfile by lazy { LlmBuildProfile.desktop(this, localProviderAvailability) }
 
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _appLanguageDelegate: String?

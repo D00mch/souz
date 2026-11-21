@@ -91,8 +91,8 @@
     <string name="setting_notification_sound_desc">Проигрывать короткий звук, когда ответ ассистента готов</string>
     <string name="setting_voice_input_review_title">Проверка голосового ввода</string>
     <string name="setting_voice_input_review_desc">Вставлять распознанный текст в поле ввода чата вместо немедленной отправки</string>
-    <string name="setting_language_profile_title">Региональный профиль</string>
-    <string name="setting_language_profile_desc">В России доступны специальные модели</string>
+    <string name="setting_language_profile_title">Язык речи и настройки по умолчанию</string>
+    <string name="setting_language_profile_desc">Задаёт язык речи и предпочтительные сервисы по умолчанию. Все провайдеры чата доступны при любом языке.</string>
     <string name="setting_interface_language_title">Язык интерфейса</string>
     <string name="setting_theme_title">Оформление</string>
     <string name="setting_theme_system">Системная</string>
@@ -650,4 +650,5 @@
     <string name="clear_local_caches_confirmation">Очистить все локальные логи и навсегда удалить сохранённую историю графов? Это действие нельзя отменить. Новые действия снова создадут логи и историю графов.</string>
     <string name="local_caches_cleared">Локальные логи и сохранённая история графов очищены.</string>
     <string name="error_clear_local_caches">Не удалось очистить часть локального кэша. Попробуйте ещё раз.</string>
+    <string name="setup_hint_local_inference">API-ключ не настроен. Локальный inference доступен.</string>
 </resources>
