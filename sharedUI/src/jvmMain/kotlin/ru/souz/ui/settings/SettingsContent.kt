@@ -278,7 +278,7 @@ fun ModelsSettingsContent(
                         is SharedSettingsEvent.SelectChatModel ->
                             state.availableLlmModels.firstOrNull { it.alias == event.id }?.let { onEvent(SettingsEvent.SelectModel(it)) }
                         is SharedSettingsEvent.SelectEmbeddingsModel ->
-                            state.availableEmbeddingsModels.firstOrNull { it.alias == event.id }?.let { onEvent(SettingsEvent.SelectEmbeddingsModel(it)) }
+                            state.availableEmbeddingsModels.firstOrNull { it.name == event.id }?.let { onEvent(SettingsEvent.SelectEmbeddingsModel(it)) }
                         is SharedSettingsEvent.SelectVoiceModel ->
                             state.availableVoiceRecognitionModels.firstOrNull { it.alias == event.id }?.let { onEvent(SettingsEvent.SelectVoiceRecognitionModel(it)) }
                         is SharedSettingsEvent.TemperatureChanged -> onEvent(SettingsEvent.InputTemperature(event.value))
@@ -525,7 +525,7 @@ private fun SettingsState.toSharedModelsSettingsUiState(): SharedModelsSettingsU
             it.toSharedOption(includeAlias = true, openaiModel = openaiModel)
         },
         embeddingsModelLabel = stringResource(Res.string.label_embeddings_model),
-        selectedEmbeddingsModelId = embeddingsModel.alias,
+        selectedEmbeddingsModelId = embeddingsModel.name,
         embeddingsModelOptions = availableEmbeddingsModels.map { it.toSharedOption() },
         voiceModelLabel = stringResource(Res.string.label_voice_recognition_model),
         selectedVoiceModelId = voiceRecognitionModel.alias,
@@ -656,7 +656,7 @@ private fun LLMModel.toSharedOption(includeAlias: Boolean, openaiModel: String =
 
 private fun EmbeddingsModel.toSharedOption(): SharedModelOptionUi =
     SharedModelOptionUi(
-        id = alias,
+        id = name,
         label = displayName,
     )
 
