@@ -7,7 +7,7 @@
 ## Invariants
 
 - Keep wire DTOs and enum aliases backward compatible unless all persisted and remote consumers are migrated together.
-- Preserve [regional model defaults and provider priorities](src/main/kotlin/ru/souz/llms/LlmBuildProfile.kt) and the [shared state-directory contract](src/main/kotlin/ru/souz/paths/SouzPaths.kt).
+- Preserve the [shared state-directory contract](src/main/kotlin/ru/souz/paths/SouzPaths.kt).
 
 ## Pain points
 

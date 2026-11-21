@@ -23,7 +23,6 @@ internal class LlmSettingsStub : SettingsProvider {
     override var codexRefreshToken: String? = null
     override var codexAccountId: String? = null
     override var codexExpiresAt: Long? = null
-    override var regionProfile: String = "ru"
     override var activeAgentId: AgentId = AgentId.default
     override var gigaModel: LLMModel = LLMModel.Max
     override var useFewShotExamples: Boolean = false

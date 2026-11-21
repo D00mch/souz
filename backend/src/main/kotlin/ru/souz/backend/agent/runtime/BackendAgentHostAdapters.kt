@@ -7,8 +7,6 @@ import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.memory.hindsight.MEMORY_MUTATION_NOTICE
-import ru.souz.db.REGION_EN
-import ru.souz.db.REGION_RU
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.findLLMModel
 import ru.souz.llms.LLMModel
@@ -18,7 +16,6 @@ class BackendConversationSettingsProvider(
     private val delegate: SettingsProvider,
     private val defaultSystemPrompt: String,
     private val policyPrompt: String?,
-    locale: String,
     useFewShotExamples: Boolean = delegate.useFewShotExamples,
     requestTimeoutMillis: Long = delegate.requestTimeoutMillis,
 ) : SettingsProvider by delegate {
@@ -28,7 +25,6 @@ class BackendConversationSettingsProvider(
     override fun executionModelId(model: LLMModel): String =
         namedModel?.takeIf { model == LLMModel.OpenAICompatibleCustom } ?: delegate.executionModelId(model)
 
-    override var regionProfile: String = localeToRegionProfile(locale)
     override var gigaModel: LLMModel = delegate.gigaModel
     override var useFewShotExamples: Boolean = useFewShotExamples
     override var useStreaming: Boolean = false
@@ -39,14 +35,6 @@ class BackendConversationSettingsProvider(
 
     override fun setSystemPromptForAgentModel(agentId: AgentId, model: LLMModel, prompt: String?) = Unit
 
-    fun restore(
-        temperature: Float,
-        locale: String,
-    ) {
-        this.temperature = temperature
-        this.regionProfile = localeToRegionProfile(locale)
-    }
-
     internal fun applyRequest(
         request: BackendConversationTurnRequest,
         temperature: Float,
@@ -55,7 +43,6 @@ class BackendConversationSettingsProvider(
         this.namedModel = request.model.takeIf { builtin == null }
         this.gigaModel = builtin ?: LLMModel.OpenAICompatibleCustom
         this.temperature = request.temperature ?: temperature
-        this.regionProfile = localeToRegionProfile(request.locale)
         this.systemPrompt = listOfNotNull(
             request.systemPrompt ?: defaultSystemPrompt,
             policyPrompt,
@@ -63,7 +50,7 @@ class BackendConversationSettingsProvider(
             MEMORY_MUTATION_NOTICE.takeIf { request.clientToolsEnabled },
             when {
                 !request.narrateSteps -> null
-                regionProfile == REGION_EN ->
+                Locale.forLanguageTag(request.locale).language == "en" ->
                     "Before every tool call, write ONE short first-person sentence (max ~120 characters, " +
                         "plain text, no Markdown): what you just learned and what you are about to do. " +
                         "This is a status line, not the final answer."
@@ -76,16 +63,6 @@ class BackendConversationSettingsProvider(
         this.useStreaming = request.streamingMessages == true
         this.useFewShotExamples = request.useFewShotExamples ?: this.useFewShotExamples
         this.requestTimeoutMillis = request.requestTimeoutMillis ?: this.requestTimeoutMillis
-    }
-
-    private fun localeToRegionProfile(locale: String): String {
-        val language = runCatching { Locale.forLanguageTag(locale).language.lowercase() }
-            .getOrDefault("")
-        return if (language == REGION_EN) {
-            REGION_EN
-        } else {
-            REGION_RU
-        }
     }
 }
 

@@ -16,7 +16,7 @@ class BackendLlmSupportTest {
         )
         assertFalse(LlmProvider.GIGA in BackendLlmSupport.userManagedKeyProviders)
         assertFalse(LlmProvider.GIGA in BackendLlmSupport.embeddingProviders)
-        assertEquals(LLMModel.QwenFlash, BackendLlmSupport.fallbackChatModel)
+        assertEquals(LLMModel.QwenMax, BackendLlmSupport.fallbackChatModel)
     }
 
     @Test

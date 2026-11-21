@@ -426,7 +426,7 @@ internal class BackendE2eBackend(
             bindSingleton<RuntimeSandboxFactory>(overrides = true) { sandboxFactory(instance()) }
         }
         bindSingleton<NamedLlmConfig>(overrides = true) { source.loadNamedModels() }
-        bindSingleton<SettingsProvider>(overrides = true) {
+        bindSingleton<BackendSettingsProvider>(overrides = true) {
             BackendSettingsProvider(instance(), source, instance())
         }
         if (mockProvider) {

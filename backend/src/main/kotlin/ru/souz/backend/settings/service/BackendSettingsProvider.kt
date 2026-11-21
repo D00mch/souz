@@ -1,6 +1,7 @@
 package ru.souz.backend.settings.service
 
 import com.fasterxml.jackson.module.kotlin.readValue
+import java.util.Locale
 import ru.souz.agent.AgentId
 import ru.souz.agent.runtime.DEFAULT_SUBAGENT_TASK_TIMEOUT
 import ru.souz.backend.config.NamedLlmConfig
@@ -8,16 +9,15 @@ import ru.souz.backend.config.loadNamedModels
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.config.SystemBackendConfigSource
 import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.common.hasServerChatAccess
+import ru.souz.backend.common.supportsChatModel
 import ru.souz.backend.settings.repository.BackendServerPreferenceStore
 import ru.souz.db.DEFAULT_REQUEST_TIMEOUT_MILLIS
-import ru.souz.db.REGION_EN
-import ru.souz.db.REGION_RU
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SUBAGENT_MODELS_JSON
 import ru.souz.db.parseSubagentModels
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.findLLMModel
 import ru.souz.llms.restJsonMapper
@@ -43,7 +43,6 @@ class BackendSettingsProvider(
     } + namedModels.subagentModels.associateWith { LlmProvider.OPENAI }
 
     private val promptOverrides = mutableMapOf<Pair<AgentId, LLMModel>, String>()
-    private val llmBuildProfile by lazy { LlmBuildProfile(this) }
 
     override var gigaChatKey: String? = configured("GIGA_KEY")
     override var qwenChatKey: String? = configured("QWEN_KEY")
@@ -61,7 +60,11 @@ class BackendSettingsProvider(
         }.orEmpty()
         restJsonMapper.writeValueAsString(defaults + restJsonMapper.readValue<Map<String, Any?>>(parameters))
     } ?: configured("OPENAI_SUMMARIZATION_PARAMETERS")
-    override var regionProfile: String = normalizeRegion(configured(APP_LANGUAGE))
+    internal val defaultLocale: Locale = if (configured(APP_LANGUAGE).equals("en", ignoreCase = true)) {
+        Locale.US
+    } else {
+        Locale.forLanguageTag("ru-RU")
+    }
     override var activeAgentId: AgentId = AgentId.fromStorageValue(configured(ACTIVE_AGENT_ID))
     override var useFewShotExamples: Boolean = configured(USE_FEW_SHOTS)?.toBooleanStrictOrNull() ?: false
     override var useStreaming: Boolean = configured(USE_STREAMING)?.toBooleanStrictOrNull()
@@ -104,12 +107,18 @@ class BackendSettingsProvider(
         get() = storedOrConfigured(CODEX_EXPIRES_AT)?.toLongOrNull()
         set(value) = putOrTombstone(CODEX_EXPIRES_AT, value?.toString())
 
-    override var gigaModel: LLMModel = configured(GIGA_MODEL)
+    internal val configuredChatModel: LLMModel? = configured(GIGA_MODEL)
         ?.let(::findLLMModel)
-        ?.let { model -> llmBuildProfile.normalizeConfiguredModel(model, openaiModel) { defaultLlmModel() } }
-        ?: defaultLlmModel()
+        ?.takeIf { supportsChatModel(it) }
+
+    // Resolving the automatic default can read stored Codex credentials.
+    private val initialChatModel by lazy { configuredChatModel ?: defaultLlmModel() }
+    private var chatModelOverride: LLMModel? = null
+
+    override var gigaModel: LLMModel
+        get() = chatModelOverride ?: initialChatModel
         set(value) {
-            field = llmBuildProfile.normalizeConfiguredModel(value, openaiModel) { defaultLlmModel() }
+            chatModelOverride = value.takeIf { supportsChatModel(it) } ?: defaultLlmModel()
         }
 
     override fun getSystemPromptForAgentModel(agentId: AgentId, model: LLMModel): String? {
@@ -124,15 +133,6 @@ class BackendSettingsProvider(
         } else {
             promptOverrides[key] = prompt
         }
-    }
-
-    override fun hasKey(provider: LlmProvider): Boolean = when (provider) {
-        LlmProvider.GIGA -> !gigaChatKey.isNullOrBlank()
-        LlmProvider.QWEN -> !qwenChatKey.isNullOrBlank()
-        LlmProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
-        LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
-        LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
-        LlmProvider.CODEX -> !codexAccessToken.isNullOrBlank()
     }
 
     private fun configured(envKey: String, propertyKey: String = envKey): String? =
@@ -165,10 +165,9 @@ class BackendSettingsProvider(
         }
     }
 
-    private fun normalizeRegion(value: String?): String =
-        if (value?.lowercase() == REGION_EN) REGION_EN else REGION_RU
-
-    private fun defaultLlmModel(): LLMModel = llmBuildProfile.defaultConfiguredModel(::hasKey)
+    private fun defaultLlmModel(): LLMModel = BackendLlmSupport.defaultModelOrder
+        .firstOrNull { supportsChatModel(it) && hasServerChatAccess(it.provider) }
+        ?: BackendLlmSupport.fallbackChatModel
 
     private companion object {
         const val OPENAI_BASE_URL = "OPENAI_BASE_URL"
