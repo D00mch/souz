@@ -4,7 +4,6 @@ import ru.souz.agent.AgentId
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
@@ -28,7 +27,7 @@ class SettingsProviderImpl(
             ?: System.getProperty(SUBAGENT_MODELS_JSON),
     )
 
-    private val llmBuildProfile by lazy { LlmBuildProfile.desktop(this, localProviderAvailability) }
+    private val modelCatalog = DesktopModelCatalog(localProviderAvailability)
 
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _appLanguageDelegate: String?
@@ -170,21 +169,17 @@ class SettingsProviderImpl(
         }
 
     override var gigaModel: LLMModel
-        get() = _gigaModelDelegate?.let { value ->
-            findLLMModel(value)
-        }?.let { model -> llmBuildProfile.normalizeConfiguredModel(model, openaiModel) { defaultLlmModel() } }
-            ?: defaultLlmModel()
+        get() = resolveChatModel(_gigaModelDelegate?.let(::findLLMModel))
         set(value) {
-            _gigaModelDelegate = llmBuildProfile.normalizeConfiguredModel(value, openaiModel) { defaultLlmModel() }.alias
+            _gigaModelDelegate = resolveChatModel(value).alias
         }
 
     override var ambientAnalysisModel: LLMModel
         get() = _ambientAnalysisModelDelegate?.let { value ->
             findLLMModel(value)
-        }?.let(llmBuildProfile::normalizeAmbientAnalysisModel)
-            ?: llmBuildProfile.defaultAmbientAnalysisModel()
+        }?.takeIf(modelCatalog::isLocalModelAvailable) ?: defaultAmbientAnalysisModel()
         set(value) {
-            _ambientAnalysisModelDelegate = llmBuildProfile.normalizeAmbientAnalysisModel(value).alias
+            _ambientAnalysisModelDelegate = (value.takeIf(modelCatalog::isLocalModelAvailable) ?: defaultAmbientAnalysisModel()).alias
         }
 
     override var useFewShotExamples: Boolean
@@ -311,7 +306,15 @@ class SettingsProviderImpl(
         envKey = MCP_SERVERS_FILE
     )
 
-    private fun defaultLlmModel(): LLMModel = llmBuildProfile.defaultConfiguredModel(::hasKey)
+    private fun resolveChatModel(model: LLMModel?): LLMModel {
+        val customOpenAiModel = openaiModel
+        return model?.takeIf { modelCatalog.supportsModel(it, customOpenAiModel) }
+            ?: modelCatalog.defaultChatModel(customOpenAiModel, ::hasKey)
+            ?: DesktopModelCatalog.fallbackChatModel
+    }
+
+    private fun defaultAmbientAnalysisModel(): LLMModel =
+        modelCatalog.defaultLocalModel() ?: LLMModel.LocalQwen3_4B_Instruct_2507
 
     private fun enforcedEmbeddingsModel(): EmbeddingsModel? = when {
         gigaModel.provider == LlmProvider.LOCAL && localProviderAvailability.isProviderAvailable() ->

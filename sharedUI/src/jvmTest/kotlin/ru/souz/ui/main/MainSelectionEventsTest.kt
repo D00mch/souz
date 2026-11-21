@@ -22,6 +22,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.jetbrains.compose.resources.getStringArray
 import ru.souz.agent.AgentId
+import ru.souz.db.DesktopModelCatalog
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
@@ -164,10 +165,7 @@ class MainSelectionEventsTest {
                 every { activeAgentId } returns MutableStateFlow(AgentId.GRAPH)
             },
             settingsProvider = settings,
-            llmBuildProfile = mockk {
-                every { availableModels } returns emptyList()
-                every { availableProviders } returns emptySet()
-            },
+            modelCatalog = DesktopModelCatalog(),
             chatCommandInputSource = mockk {
                 every { incomingMessages } returns emptyFlow()
                 every { cleanCommands } returns emptyFlow()

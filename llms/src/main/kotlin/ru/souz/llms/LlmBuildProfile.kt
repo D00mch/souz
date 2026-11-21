@@ -5,18 +5,13 @@ private const val REGION_EN = "en"
 class LlmBuildProfile(
     private val settingsProvider: LlmBuildProfileSettings,
     private val localProviderAvailability: LocalModelAvailability = LocalModelsUnavailable,
-    private val combineRegionalCatalogs: Boolean = false,
 ) {
 
     private fun currentEdition(): BuildEdition =
         if (settingsProvider.regionProfile == REGION_EN) BuildEdition.EN else BuildEdition.RU
 
     private fun currentDefaults(): Map<LlmProvider, LLMModel> =
-        if (combineRegionalCatalogs) {
-            defaultsForEdition(currentEdition()) + desktopProviderDefaults
-        } else {
-            defaultsForEdition(currentEdition())
-        }
+        defaultsForEdition(currentEdition())
 
     val availableProviders: Set<LlmProvider>
         get() = currentDefaults().keys.filterTo(linkedSetOf()) { provider ->
@@ -49,15 +44,7 @@ class LlmBuildProfile(
         else -> currentDefaults()[provider]
     }
 
-    fun providerPriorities(): List<LlmProvider> {
-        val preferred = providerPrioritiesForEdition(currentEdition())
-        return if (combineRegionalCatalogs) {
-            (preferred + BuildEdition.entries.flatMap(::providerPrioritiesForEdition))
-                .distinct().filter { it != LlmProvider.LOCAL } + LlmProvider.LOCAL
-        } else {
-            preferred
-        }
-    }
+    fun providerPriorities(): List<LlmProvider> = providerPrioritiesForEdition(currentEdition())
 
     fun defaultConfiguredModel(hasKey: (LlmProvider) -> Boolean): LLMModel {
         val availableLocalDefault = localProviderAvailability.defaultGigaModel()
@@ -94,12 +81,6 @@ class LlmBuildProfile(
     }
 
     companion object {
-        /** Desktop catalogs share providers; the persisted region only supplies legacy default priorities and speech policy. */
-        fun desktop(
-            settingsProvider: LlmBuildProfileSettings,
-            localProviderAvailability: LocalModelAvailability = LocalModelsUnavailable,
-        ): LlmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability, combineRegionalCatalogs = true)
-
         private val providerDefaultsByEdition: Map<BuildEdition, Map<LlmProvider, LLMModel>> = mapOf(
             BuildEdition.RU to mapOf(
                 LlmProvider.GIGA to LLMModel.Max,
@@ -115,9 +96,6 @@ class LlmBuildProfile(
                 LlmProvider.LOCAL to LLMModel.LocalQwen3_4B_Instruct_2507,
             ),
         )
-
-        private val desktopProviderDefaults =
-            providerDefaultsByEdition.getValue(BuildEdition.RU) + providerDefaultsByEdition.getValue(BuildEdition.EN)
 
         fun defaultsForEdition(edition: BuildEdition): Map<LlmProvider, LLMModel> =
             providerDefaultsByEdition.getValue(edition)

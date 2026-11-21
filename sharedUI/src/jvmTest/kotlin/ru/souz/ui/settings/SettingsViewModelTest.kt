@@ -34,13 +34,14 @@ import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
+import ru.souz.db.DesktopModelCatalog
+import ru.souz.db.REGION_EN
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
@@ -110,10 +111,10 @@ class SettingsViewModelTest {
         every { localProviderAvailability.isProviderAvailable() } returns true
         every { localProviderAvailability.availableGigaModels() } returns listOf(LLMModel.LocalQwen3_4B_Instruct_2507)
         every { localProviderAvailability.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
-        val llmBuildProfile = LlmBuildProfile.desktop(settingsProvider, localProviderAvailability)
-        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
+        val modelCatalog = DesktopModelCatalog(localProviderAvailability)
+        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(modelCatalog, settingsProvider)
 
-        val supportsPolza = llmBuildProfile.supportsPolzaSpeechRecognition
+        val supportsPolza = settingsProvider.regionProfile != REGION_EN
         every { settingsProvider.hasKey(any<LlmProvider>()) } answers {
             firstArg<LlmProvider>() == LlmProvider.QWEN
         }
@@ -131,7 +132,7 @@ class SettingsViewModelTest {
             VoiceRecognitionModel.PolzaGigaAm
         }
 
-        val configuredModel = llmBuildProfile.availableModels.first {
+        val configuredModel = modelCatalog.availableModels(null).first {
             it.provider != LlmProvider.QWEN && it.provider != LlmProvider.OPENAI
         }
 
@@ -192,7 +193,7 @@ class SettingsViewModelTest {
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
             bindSingleton<BackgroundIndexRefresher> { desktopInfoRepository }
-            bindSingleton<LlmBuildProfile> { llmBuildProfile }
+            bindSingleton<DesktopModelCatalog> { modelCatalog }
             bindSingleton { localModelStore }
             bindSingleton { localLlamaRuntime }
             bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
@@ -229,13 +230,13 @@ class SettingsViewModelTest {
 
         viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
         advanceUntilIdle()
-        val expectedLlmModel = settingsProvider.defaultLlmModel(llmBuildProfile)
+        val expectedLlmModel = settingsProvider.defaultLlmModel(modelCatalog)
         assertNotNull(expectedLlmModel, "Expected at least one available llm model")
-        val expectedAmbientAnalysisModel = settingsProvider.defaultAmbientAnalysisModel(llmBuildProfile)
+        val expectedAmbientAnalysisModel = settingsProvider.defaultAmbientAnalysisModel(modelCatalog)
         assertNotNull(expectedAmbientAnalysisModel, "Expected at least one available ambient model")
-        val expectedEmbeddingsModel = settingsProvider.defaultEmbeddingsModel(llmBuildProfile)
+        val expectedEmbeddingsModel = settingsProvider.defaultEmbeddingsModel(modelCatalog)
         assertNotNull(expectedEmbeddingsModel, "Expected at least one available embeddings model")
-        val expectedVoiceRecognitionModel = settingsProvider.defaultVoiceRecognitionModel(llmBuildProfile)
+        val expectedVoiceRecognitionModel = settingsProvider.defaultVoiceRecognitionModel()
         assertNotNull(expectedVoiceRecognitionModel, "Expected at least one available voice recognition model")
 
         val state = viewModel.uiState.value
@@ -747,8 +748,8 @@ class SettingsViewModelTest {
         every { localProviderAvailability.isProviderAvailable() } returns true
         every { localProviderAvailability.availableGigaModels() } returns availableGigaModels
         every { localProviderAvailability.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
-        val llmBuildProfile = LlmBuildProfile.desktop(settingsProvider, localProviderAvailability)
-        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
+        val modelCatalog = DesktopModelCatalog(localProviderAvailability)
+        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(modelCatalog, settingsProvider)
 
         val localModelStore = mockk<LocalModelStore>(relaxed = true)
         configureLocalModelStore(localModelStore)
@@ -769,7 +770,7 @@ class SettingsViewModelTest {
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
             bindSingleton<BackgroundIndexRefresher> { desktopInfoRepository }
-            bindSingleton<LlmBuildProfile> { llmBuildProfile }
+            bindSingleton<DesktopModelCatalog> { modelCatalog }
             bindSingleton { localModelStore }
             bindSingleton { localLlamaRuntime }
             bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }

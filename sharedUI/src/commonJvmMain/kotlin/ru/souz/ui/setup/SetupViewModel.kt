@@ -7,9 +7,8 @@ import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
+import ru.souz.db.DesktopModelCatalog
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.codex.CodexOAuthState
@@ -26,7 +25,7 @@ class SetupViewModel(
 
     private val l = LoggerFactory.getLogger(SetupViewModel::class.java)
     private val settingsProvider: SettingsProvider by di.instance()
-    private val llmBuildProfile: LlmBuildProfile by di.instance()
+    private val modelCatalog: DesktopModelCatalog by di.instance()
     private val apiKeyAvailabilityUseCase: ApiKeyAvailabilityUseCase by di.instance()
     private val speechPlayer: UiSpeechPlayer by di.instance()
     private val codexOAuthService: CodexOAuthService by di.instance()
@@ -345,14 +344,7 @@ class SetupViewModel(
             LlmProvider.ANTHROPIC to anthropicKey,
             LlmProvider.OPENAI to openAiKey,
         )
-        val preferredProvider = llmBuildProfile.providerPriorities()
-            .firstOrNull { provider -> keysByProvider[provider].orEmpty().isNotBlank() }
-            ?: return
-
-        settingsProvider.gigaModel = defaultSetupModelForProvider(preferredProvider)
+        modelCatalog.defaultChatModel(settingsProvider.openaiModel) { !keysByProvider[it].isNullOrBlank() }
+            ?.let { settingsProvider.gigaModel = it }
     }
-
-    private fun defaultSetupModelForProvider(provider: LlmProvider): LLMModel =
-        llmBuildProfile.defaultModelForProvider(provider)
-            ?: error("Default setup model is not configured for provider: $provider")
 }

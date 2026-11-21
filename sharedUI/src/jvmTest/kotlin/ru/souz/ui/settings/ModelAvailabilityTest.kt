@@ -3,10 +3,10 @@ package ru.souz.ui.settings
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.unmockkAll
+import ru.souz.db.DesktopModelCatalog
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.local.LocalProviderAvailability
@@ -30,10 +30,11 @@ class ModelAvailabilityTest {
                     else -> false
                 }
             }
-            val profile = LlmBuildProfile.desktop(settings)
+            val profile = DesktopModelCatalog()
             val models = settings.availableLlmModels(profile)
             assertTrue(LLMModel.Max in models)
             assertTrue(LLMModel.OpenAIGpt5Mini in models)
+            assertEquals(LLMModel.OpenAIGpt5Mini, settings.defaultLlmModel(profile))
             assertFalse(models.any {
                 it.provider == LlmProvider.LOCAL || it.provider == LlmProvider.ANTHROPIC || it.provider == LlmProvider.CODEX
             })
@@ -44,13 +45,13 @@ class ModelAvailabilityTest {
     }
 
     @Test
-    fun `combined chat catalog preserves regional speech provider gating`() {
+    fun `speech models retain regional provider gating`() {
         for ((region, excluded) in listOf("ru" to ru.souz.llms.VoiceRecognitionProvider.OPENAI,
             "en" to ru.souz.llms.VoiceRecognitionProvider.AI_TUNNEL)) {
             val settings = mockk<SettingsProvider>(relaxed = true)
             every { settings.regionProfile } returns region
             every { settings.hasKey(any<ru.souz.llms.VoiceRecognitionProvider>()) } returns true
-            val models = settings.availableVoiceRecognitionModels(LlmBuildProfile.desktop(settings))
+            val models = settings.availableVoiceRecognitionModels()
             assertFalse(models.any { it.provider == excluded })
         }
     }
@@ -61,16 +62,14 @@ class ModelAvailabilityTest {
     }
 
     @Test
-    fun `default voice recognition model skips codex and uses openai for en profile`() {
+    fun `default voice recognition model uses openai for en profile`() {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_EN
         every { settingsProvider.hasKey(ru.souz.llms.VoiceRecognitionProvider.OPENAI) } returns true
 
-        val llmBuildProfile = LlmBuildProfile.desktop(settingsProvider)
-
         assertEquals(
             VoiceRecognitionModel.OpenAIGpt4oTranscribe,
-            settingsProvider.defaultVoiceRecognitionModel(llmBuildProfile),
+            settingsProvider.defaultVoiceRecognitionModel(),
         )
     }
 
@@ -80,8 +79,6 @@ class ModelAvailabilityTest {
         every { settingsProvider.regionProfile } returns REGION_EN
         every { settingsProvider.hasKey(ru.souz.llms.VoiceRecognitionProvider.OPENAI) } returns true
 
-        val llmBuildProfile = LlmBuildProfile.desktop(settingsProvider)
-
         assertEquals(
             listOf(
                 VoiceRecognitionModel.OpenAIGpt4oTranscribe,
@@ -89,7 +86,7 @@ class ModelAvailabilityTest {
                 VoiceRecognitionModel.OpenAIGptTranscribe,
                 VoiceRecognitionModel.OpenAIWhisper1,
             ),
-            settingsProvider.availableVoiceRecognitionModels(llmBuildProfile),
+            settingsProvider.availableVoiceRecognitionModels(),
         )
     }
 
@@ -98,12 +95,9 @@ class ModelAvailabilityTest {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_EN
 
-        val llmBuildProfile = LlmBuildProfile.desktop(settingsProvider)
-
         assertEquals(
             listOf(VoiceRecognitionModel.LocalMacOsStt),
             settingsProvider.availableVoiceRecognitionModels(
-                llmBuildProfile = llmBuildProfile,
                 localMacOsSpeechAvailable = true,
             ),
         )
@@ -114,9 +108,7 @@ class ModelAvailabilityTest {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_EN
 
-        val llmBuildProfile = LlmBuildProfile.desktop(settingsProvider)
-
-        assertEquals(emptyList(), settingsProvider.availableVoiceRecognitionModels(llmBuildProfile))
+        assertEquals(emptyList(), settingsProvider.availableVoiceRecognitionModels())
     }
 
     @Test
@@ -133,8 +125,8 @@ class ModelAvailabilityTest {
         )
         every { localProviderAvailability.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
 
-        val llmBuildProfile = LlmBuildProfile.desktop(settingsProvider, localProviderAvailability)
-        val models = settingsProvider.availableAmbientAnalysisModels(llmBuildProfile)
+        val modelCatalog = DesktopModelCatalog(localProviderAvailability)
+        val models = settingsProvider.availableAmbientAnalysisModels(modelCatalog)
 
         assertEquals(
             listOf(
@@ -151,12 +143,14 @@ class ModelAvailabilityTest {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_EN
         every { settingsProvider.hasKey(LlmProvider.OPENAI) } returns true
-        val llmBuildProfile = LlmBuildProfile.desktop(settingsProvider)
+        val modelCatalog = DesktopModelCatalog()
 
         every { settingsProvider.openaiModel } returns ""
-        assertFalse(LLMModel.OpenAICompatibleCustom in settingsProvider.availableLlmModels(llmBuildProfile))
+        assertFalse(LLMModel.OpenAICompatibleCustom in settingsProvider.availableLlmModels(modelCatalog))
+        assertEquals(LLMModel.OpenAIGpt5Mini, settingsProvider.defaultLlmModel(modelCatalog))
 
         every { settingsProvider.openaiModel } returns "provider-chat-model"
-        assertTrue(LLMModel.OpenAICompatibleCustom in settingsProvider.availableLlmModels(llmBuildProfile))
+        assertTrue(LLMModel.OpenAICompatibleCustom in settingsProvider.availableLlmModels(modelCatalog))
+        assertEquals(LLMModel.OpenAICompatibleCustom, settingsProvider.defaultLlmModel(modelCatalog))
     }
 }

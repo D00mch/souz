@@ -10,10 +10,10 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import io.mockk.every
 import io.mockk.mockk
+import ru.souz.db.DesktopModelCatalog
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.ui.AppTheme
 import kotlin.test.Test
@@ -33,7 +33,7 @@ class ModelsSettingsContentTest {
         }
         val tunnel = EmbeddingsModel.AiTunnelEmbedding3Small
         val openAi = EmbeddingsModel.OpenAITextEmbedding3Small
-        val available = settings.availableEmbeddingsModels(LlmBuildProfile.desktop(settings))
+        val available = settings.availableEmbeddingsModels(DesktopModelCatalog())
         assertTrue(tunnel in available && openAi in available)
         assertEquals(tunnel.alias, openAi.alias)
         var state by mutableStateOf(SettingsState(

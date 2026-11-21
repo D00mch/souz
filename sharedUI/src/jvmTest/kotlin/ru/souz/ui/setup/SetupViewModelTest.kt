@@ -15,11 +15,11 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
+import ru.souz.db.DesktopModelCatalog
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.ui.common.ApiKeyField
@@ -147,18 +147,21 @@ class SetupViewModelTest {
     }
 
     @Test
-    fun `setup prefers giga model when giga key appears during first setup`() = runTest(dispatcher) {
-        val settingsProvider = settingsProviderStub()
-        val viewModel = createViewModel(settingsProvider)
+    fun `setup uses the same automatic order in either language`() = runTest(dispatcher) {
+        for (region in listOf(REGION_RU, REGION_EN)) {
+            val settingsProvider = settingsProviderStub()
+            settingsProvider.regionProfile = region
+            val viewModel = createViewModel(settingsProvider)
 
-        advanceUntilIdle()
-        viewModel.send(SetupEvent.InputQwenChatKey("qwen-token"))
-        advanceUntilIdle()
-        assertEquals(LLMModel.QwenMax, settingsProvider.gigaModel)
+            advanceUntilIdle()
+            viewModel.send(SetupEvent.InputGigaChatKey("giga-token"))
+            advanceUntilIdle()
+            assertEquals(LLMModel.Max, settingsProvider.gigaModel)
 
-        viewModel.send(SetupEvent.InputGigaChatKey("giga-token"))
-        advanceUntilIdle()
-        assertEquals(LLMModel.Max, settingsProvider.gigaModel)
+            viewModel.send(SetupEvent.InputOpenAiKey("openai-token"))
+            advanceUntilIdle()
+            assertEquals(LLMModel.OpenAIGpt5Mini, settingsProvider.gigaModel)
+        }
     }
 
     @Test
@@ -198,11 +201,11 @@ class SetupViewModelTest {
 
     private fun createViewModel(settingsProvider: SettingsProvider): SetupViewModel {
         val speechPlayer = mockk<UiSpeechPlayer>(relaxed = true)
-        val llmBuildProfile = LlmBuildProfile.desktop(settingsProvider)
-        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
+        val modelCatalog = DesktopModelCatalog()
+        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(modelCatalog, settingsProvider)
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
-            bindSingleton<LlmBuildProfile> { llmBuildProfile }
+            bindSingleton<DesktopModelCatalog> { modelCatalog }
             bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
             bindSingleton<UiSpeechPlayer> { speechPlayer }
         }

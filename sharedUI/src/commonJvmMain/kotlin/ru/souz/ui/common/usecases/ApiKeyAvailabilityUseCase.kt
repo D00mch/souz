@@ -1,7 +1,8 @@
 package ru.souz.ui.common.usecases
 
-import ru.souz.llms.LlmBuildProfile
-import ru.souz.llms.LlmProvider
+import ru.souz.db.DesktopModelCatalog
+import ru.souz.db.REGION_EN
+import ru.souz.db.SettingsProvider
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 
@@ -23,7 +24,8 @@ data class ApiKeyAvailability(
 )
 
 class ApiKeyAvailabilityUseCase(
-    private val llmBuildProfile: LlmBuildProfile,
+    private val modelCatalog: DesktopModelCatalog,
+    private val settingsProvider: SettingsProvider,
 ) {
     fun availability(): ApiKeyAvailability {
         val availableFields = availableFields()
@@ -31,7 +33,7 @@ class ApiKeyAvailabilityUseCase(
             fields = availableFields,
             providers = availableProviders(availableFields),
             supportsVoiceRecognitionApiKeys = supportsVoiceRecognitionApiKeys(availableFields),
-            supportsLocalInference = LlmProvider.LOCAL in llmBuildProfile.availableProviders,
+            supportsLocalInference = modelCatalog.supportsLocalInference,
         )
     }
 
@@ -54,16 +56,13 @@ class ApiKeyAvailabilityUseCase(
     fun hasAnyConfiguredKey(values: ApiKeyValues): Boolean = configuredKeysCount(values) > 0
 
     private fun availableFields(): Set<ApiKeyField> = buildSet {
-        val providers = llmBuildProfile.availableProviders
-        if (LlmProvider.GIGA in providers) {
-            add(ApiKeyField.GIGA_CHAT)
-        }
-        if (llmBuildProfile.supportsPolzaSpeechRecognition) add(ApiKeyField.POLZA)
-        if (LlmProvider.QWEN in providers) add(ApiKeyField.QWEN_CHAT)
-        if (LlmProvider.AI_TUNNEL in providers) add(ApiKeyField.AI_TUNNEL)
-        if (LlmProvider.ANTHROPIC in providers) add(ApiKeyField.ANTHROPIC)
-        if (LlmProvider.OPENAI in providers) add(ApiKeyField.OPENAI)
-        if (LlmProvider.CODEX in providers) add(ApiKeyField.CODEX)
+        add(ApiKeyField.GIGA_CHAT)
+        add(ApiKeyField.QWEN_CHAT)
+        add(ApiKeyField.AI_TUNNEL)
+        add(ApiKeyField.ANTHROPIC)
+        add(ApiKeyField.OPENAI)
+        add(ApiKeyField.CODEX)
+        if (settingsProvider.regionProfile != REGION_EN) add(ApiKeyField.POLZA)
     }
 
     private fun supportsVoiceRecognitionApiKeys(availableFields: Set<ApiKeyField>): Boolean =

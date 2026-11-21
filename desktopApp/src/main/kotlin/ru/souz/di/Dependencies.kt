@@ -35,6 +35,7 @@ import ru.souz.service.audio.Say
 import ru.souz.db.ConfigStore
 import ru.souz.db.DesktopDataExtractor
 import ru.souz.db.DesktopInfoRepository
+import ru.souz.db.DesktopModelCatalog
 import ru.souz.db.SettingsProvider
 import ru.souz.db.VectorDB
 import ru.souz.db.SqliteGraphSessionRepository
@@ -43,9 +44,7 @@ import ru.souz.llms.polza.PolzaVoiceAPI
 import ru.souz.llms.http.GigaHttpClientResource
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.giga.toGiga
-import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.LlmProvider
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
@@ -189,7 +188,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { SqliteGraphSessionRepository(instance<SouzPaths>().stateRoot.resolve("desktop.db")) }
     bindSingleton<GraphSessionRepository> { instance<SqliteGraphSessionRepository>() }
     bindSingleton { VectorDB(instance<SouzPaths>().stateRoot.resolve("desktop.db")) }
-    bindSingleton { LlmBuildProfile.desktop(instance(), instance()) }
+    bindSingleton { DesktopModelCatalog(instance<LocalProviderAvailability>()) }
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
     bindSingleton<MemoryOwnerProvider> { DesktopMemoryOwnerProvider() }
     bindSingleton<MemoryRepository> {
@@ -385,13 +384,13 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         )
     }
     bindSingleton<AmbientLocalLlm> {
-        val buildProfile = instance<LlmBuildProfile>()
+        val modelCatalog = instance<DesktopModelCatalog>()
         val settingsProvider = instance<SettingsProvider>()
         LocalChatAmbientLocalLlm(instance<LocalChatAPI>()) {
             selectAmbientLocalModel(
                 configuredModel = settingsProvider.ambientAnalysisModel,
-                isModelAvailable = buildProfile::isModelAvailable,
-                defaultLocalModel = { buildProfile.defaultModelForProvider(LlmProvider.LOCAL) },
+                isModelAvailable = modelCatalog::isLocalModelAvailable,
+                defaultLocalModel = modelCatalog::defaultLocalModel,
             )
         }
     }

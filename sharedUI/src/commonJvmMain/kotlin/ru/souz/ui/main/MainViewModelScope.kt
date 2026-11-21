@@ -33,7 +33,7 @@ fun createMainViewModel(
         agentFacade = direct.instance(),
         backgroundIndexRefresher = direct.instance(),
         settingsProvider = direct.instance(),
-        llmBuildProfile = direct.instance(),
+        modelCatalog = direct.instance(),
         localModelUiHost = direct.instance(),
         pathOpener = direct.instance(),
         chatCommandInputSource = direct.instance(),

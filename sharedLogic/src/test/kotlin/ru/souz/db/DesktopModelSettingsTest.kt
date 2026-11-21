@@ -55,13 +55,35 @@ class DesktopModelSettingsTest {
     }
 
     @Test
+    fun `automatic chat defaults follow credentials and local capabilities across languages`() {
+        val settings = spyk(SettingsProviderImpl(ConfigStore, local))
+        val configured = mutableSetOf(LlmProvider.GIGA, LlmProvider.LOCAL)
+        every { settings.hasKey(any<LlmProvider>()) } answers { firstArg<LlmProvider>() in configured }
+        every { local.availableGigaModels() } returns listOf(LLMModel.LocalQwen3_4B_Instruct_2507)
+        every { local.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
+
+        for (region in listOf(REGION_RU, REGION_EN)) {
+            configured.add(LlmProvider.OPENAI)
+            stored["APP_LANGUAGE"] = region
+            assertEquals(LLMModel.OpenAIGpt5Mini, settings.gigaModel)
+            stored["OPENAI_MODEL"] = "fixture-model"
+            assertEquals(LLMModel.OpenAICompatibleCustom, settings.gigaModel)
+            configured.remove(LlmProvider.OPENAI)
+            assertEquals(LLMModel.Max, settings.gigaModel)
+            stored.remove("OPENAI_MODEL")
+        }
+        configured.remove(LlmProvider.GIGA)
+        assertEquals(LLMModel.LocalQwen3_4B_Instruct_2507, settings.gigaModel)
+    }
+
+    @Test
     fun `unknown unavailable local and unconfigured custom models fall back without rewriting saved values`() {
         stored["APP_LANGUAGE"] = REGION_RU
         val settings = spyk(SettingsProviderImpl(ConfigStore, local))
         every { settings.hasKey(any<LlmProvider>()) } returns false
         for (value in listOf("removed-model", LLMModel.LocalGemma4_E2B_It.alias, LLMModel.OpenAICompatibleCustom.alias)) {
             stored["GIGA_MODEL"] = value
-            assertEquals(LLMModel.Max, settings.gigaModel)
+            assertEquals(LLMModel.QwenMax, settings.gigaModel)
             assertEquals(value, stored["GIGA_MODEL"])
         }
         stored["OPENAI_MODEL"] = "fixture-model"

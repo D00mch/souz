@@ -6,7 +6,7 @@ Desktop interface language and regional formatting are separate concerns. `Deskt
 
 The desktop agent runtime receives the untouched startup locale before the interface locale is applied. Interface changes may update Compose resources immediately, but they must not change the locale already held by the agent runtime.
 
-Desktop chat providers share one RU/EN catalog. API credentials and host local-model capabilities determine selectable models. Persisted regional settings retain speech behavior and default-provider priorities; they do not restrict chat models or normalize away supported saved selections. Onboarding requires no region choice.
+Desktop chat providers share one catalog and automatic model order across languages. API credentials and host local-model capabilities determine selectable models. Supported saved selections take precedence over automatic defaults. Persisted language settings still govern speech and embedding preferences. Onboarding requires no region choice.
 
 ## Why it is fragile
 
