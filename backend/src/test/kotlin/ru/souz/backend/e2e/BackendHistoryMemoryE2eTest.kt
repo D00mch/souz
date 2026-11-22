@@ -56,6 +56,7 @@ import ru.souz.backend.options.model.OptionKind
 import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.http.providerHttpClientDefaults
 
@@ -671,9 +672,19 @@ class BackendHistoryMemoryE2eTest {
                 )).id.toString()
             }
 
-            val requested = results.last()["confirmationId"].asText()
-            assertEquals(json.readTree("""{"forgotten":false,"confirmationId":"$requested",""" +
-                """"message":"Nothing was deleted. Ask the user to confirm in a new message."}"""), results.last())
+            fun requestedConfirmation(result: JsonNode): String {
+                val id = assertNotNull(result["confirmationId"]).asText()
+                UUID.fromString(id)
+                assertEquals(json.readTree("""{"forgotten":false,"confirmationId":"$id",""" +
+                    """"message":"Nothing was deleted. Ask the user to confirm in a new message."}"""), result)
+                return id
+            }
+
+            val requested = requestedConfirmation(results.last())
+            val emptyId = requestedConfirmation(forgetAll("""{"confirmationId":""}"""))
+            val confirmationId = requestedConfirmation(forgetAll("""{"confirmationId":" \t "}"""))
+            assertEquals("confirmation_invalid", forgetAll("malformed")["error"]["code"].asText())
+            assertEquals("confirmation_invalid", forgetAll("""{"confirmationId":17}""")["error"]["code"].asText())
             assertEquals("confirmation_invalid", forgetAll("self")["error"]["code"].asText())
             assertEquals("confirmation_invalid", forgetAll(requested, inChat = secondChat)["error"]["code"].asText())
             assertEquals("confirmation_invalid", forgetAll(requestExecution)["error"]["code"].asText())
@@ -686,8 +697,10 @@ class BackendHistoryMemoryE2eTest {
             clock.shift = Duration.ZERO
             assertTrue(hindsight.deletedBanks.isEmpty())
 
+            val nullId = requestedConfirmation(forgetAll("""{"confirmationId":null}"""))
+            assertEquals(4, setOf(requested, nullId, emptyId, confirmationId).size)
             hindsight.forgetStatus = HttpStatusCode.InternalServerError
-            assertEquals("forget_failed", forgetAll(forgetAll(null)["confirmationId"].asText())["error"]["code"].asText())
+            assertEquals("forget_failed", forgetAll(nullId)["error"]["code"].asText())
             hindsight.forgetStatus = HttpStatusCode.OK
 
             // A fragment being sent finishes before the bank is deleted; queued ones are dropped.
@@ -696,7 +709,6 @@ class BackendHistoryMemoryE2eTest {
             val sending = assertNotNull(backend.historyMemoryRepository.claim())
             withPublicSocket(chat) { appendHistory(it, chat, "owner-queued", "user", "I play chess") }
             withPublicSocket(otherChat) { appendHistory(it, otherChat, "other-queued", "user", "I live in Kazan") }
-            val confirmationId = forgetAll(null)["confirmationId"].asText()
             coroutineScope {
                 val sent = async {
                     delay(1_000)
@@ -739,7 +751,7 @@ class BackendHistoryMemoryE2eTest {
     }
 }
 
-/** Calls the memory tool named by the prompt's first word with its optional value, then records the last result. */
+/** Calls the memory tool named by the prompt's first word with an optional value or JSON arguments. */
 private fun forgetLlm(results: MutableList<JsonNode>): E2eLlmApi {
     val mapper = jacksonObjectMapper()
     val search = mapOf("semanticQuery" to "everything about the user", "lexicalHints" to listOf("user"))
@@ -756,6 +768,9 @@ private fun forgetLlm(results: MutableList<JsonNode>): E2eLlmApi {
             turn.isEmpty() -> toolCallReply(request, tool, when {
                 tool == "SearchMemory" -> search
                 value == null || value == "self" -> emptyMap()
+                value.startsWith('{') -> mapper.readValue(
+                    """{"name":"$tool","arguments":$value}""", LLMResponse.FunctionCall::class.java,
+                ).arguments
                 tool == ToolForgetMemoryFact.NAME -> mapOf("factId" to value)
                 else -> mapOf("confirmationId" to value)
             })
