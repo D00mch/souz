@@ -308,6 +308,31 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `Qwen 3_8 is selectable with the Qwen key and disappears when it is cleared`() = runTest(dispatcher) {
+        var hasQwenKey = true
+        val fixture = createLocalModelSettingsFixture(configureSettingsProvider = { settings ->
+            every { settings.hasKey(LlmProvider.QWEN) } answers { hasQwenKey }
+            every { settings.hasKey(LlmProvider.OPENAI) } returns true
+        })
+        val viewModel = fixture.viewModel
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
+        assertTrue(LLMModel.Qwen38_27B in viewModel.uiState.value.availableLlmModels)
+        assertTrue(LLMModel.QwenFlash in viewModel.uiState.value.availableLlmModels)
+
+        viewModel.handleEvent(SettingsEvent.SelectModel(LLMModel.Qwen38_27B))
+        advanceUntilIdle()
+        assertEquals(LLMModel.Qwen38_27B, viewModel.uiState.value.gigaModel)
+        verify(exactly = 1) { fixture.agentFacade.setModel(LLMModel.Qwen38_27B) }
+        assertNull(viewModel.uiState.value.localModelDownloadPrompt)
+
+        hasQwenKey = false
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.availableLlmModels.none { it.provider == LlmProvider.QWEN })
+    }
+
+    @Test
     fun `chat choices and selected model survive both desktop language changes`() = runTest(dispatcher) {
         var serviceLanguage = REGION_RU
         val fixture = createLocalModelSettingsFixture(

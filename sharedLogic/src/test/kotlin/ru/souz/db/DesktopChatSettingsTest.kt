@@ -46,6 +46,14 @@ class DesktopChatSettingsTest {
     }
 
     @Test
+    fun `Qwen 3_8 selection stores the hosted ID and survives settings reconstruction`() {
+        val settings = SettingsProviderImpl(ConfigStore, localModels)
+        settings.gigaModel = LLMModel.Qwen38_27B
+        assertEquals("qwen3.8-27b", stored["GIGA_MODEL"])
+        assertEquals(LLMModel.Qwen38_27B, SettingsProviderImpl(ConfigStore, localModels).gigaModel)
+    }
+
+    @Test
     fun `automatic chat default uses keys and a supported local model in both languages`() {
         val settings = spyk(SettingsProviderImpl(ConfigStore, localModels))
         val local = LLMModel.LocalQwen3_4B_Instruct_2507
