@@ -2,6 +2,8 @@
 
 package ru.souz.ui.settings
 
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import io.mockk.every
 import io.mockk.just
 import io.mockk.coEvery
@@ -13,6 +15,12 @@ import io.mockk.unmockkAll
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.job
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.CompletableDeferred
@@ -88,6 +96,8 @@ import kotlin.test.assertTrue
 class SettingsViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
+    private val viewModelStore = ViewModelStore()
+    private val viewModelJobs = mutableListOf<Job>()
 
     @BeforeTest
     fun setUp() {
@@ -98,8 +108,48 @@ class SettingsViewModelTest {
 
     @AfterTest
     fun tearDown() {
-        Dispatchers.resetMain()
-        unmockkAll()
+        try {
+            runTest(dispatcher) { clearViewModels() }
+        } finally {
+            Dispatchers.resetMain()
+            unmockkAll()
+        }
+    }
+
+    private fun trackViewModel(viewModel: SettingsViewModel): SettingsViewModel = viewModel.also {
+        viewModelJobs += it.viewModelScope.coroutineContext.job
+        viewModelStore.put("settings-${viewModelJobs.size}", it)
+    }
+
+    private suspend fun clearViewModels() {
+        // IO work must finish cancellation before resource and service mocks are removed.
+        viewModelStore.clear()
+        viewModelJobs.joinAll()
+    }
+
+    @Test
+    fun `fixture disposal waits for an in-flight balance lookup to be cancelled`() = runTest(dispatcher) {
+        val lookupStarted = CompletableDeferred<Unit>()
+        val lookupCancelled = CompletableDeferred<Unit>()
+        coEvery { org.jetbrains.compose.resources.getString(any()) } coAnswers {
+            try {
+                lookupStarted.complete(Unit)
+                awaitCancellation()
+            } finally {
+                withContext(NonCancellable + dispatcher) {
+                    lookupCancelled.complete(Unit)
+                }
+            }
+        }
+        val viewModel = createViewModel()
+        viewModel.handleEvent(SettingsEvent.RefreshBalance)
+        lookupStarted.await()
+        assertFalse(lookupCancelled.isCompleted)
+
+        clearViewModels()
+
+        assertTrue(lookupCancelled.isCompleted)
+        assertTrue(viewModel.viewModelScope.coroutineContext.job.isCompleted)
     }
 
     @Test
@@ -219,7 +269,7 @@ class SettingsViewModelTest {
         }
 
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
-        val viewModel = SettingsViewModel(di, settingsDispatcher = dispatcher)
+        val viewModel = trackViewModel(SettingsViewModel(di, settingsDispatcher = dispatcher))
         assertEquals(false, telegramHostCreated)
         advanceUntilIdle()
         assertTrue(telegramHostCreated)
@@ -291,13 +341,13 @@ class SettingsViewModelTest {
     @Test
     fun `interface language change preserves active settings section`() = runTest(dispatcher) {
         val settingsHostPreferences = InMemorySettingsHostPreferences()
-        val viewModel = SettingsViewModel(
+        val viewModel = trackViewModel(SettingsViewModel(
             di = DI {
                 bindSingleton<TelegramSettingsHost> { ru.souz.ui.host.NoopTelegramSettingsHost }
                 bindSingleton<SettingsHostPreferences> { settingsHostPreferences }
             },
             settingsDispatcher = dispatcher,
-        )
+        ))
 
         viewModel.handleEvent(SettingsEvent.SelectSettingsSection(SettingsSection.GENERAL))
         viewModel.handleEvent(SettingsEvent.InputUseEnglishInterface(true))
@@ -695,14 +745,14 @@ class SettingsViewModelTest {
         verify(exactly = 0) { fixture.agentFacade.setModel(model) }
     }
 
-    private fun cacheCleanupViewModel(cleaner: LocalCacheCleaner) = SettingsViewModel(
+    private fun cacheCleanupViewModel(cleaner: LocalCacheCleaner) = trackViewModel(SettingsViewModel(
         di = DI {
             bindSingleton<TelegramSettingsHost> { ru.souz.ui.host.NoopTelegramSettingsHost }
             bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
             bindSingleton<LocalCacheCleaner> { cleaner }
         },
         settingsDispatcher = dispatcher,
-    )
+    ))
 
     private fun createViewModel(
         telegramHost: TelegramSettingsHost = ru.souz.ui.host.NoopTelegramSettingsHost,
@@ -710,7 +760,7 @@ class SettingsViewModelTest {
         sessionRepository: GraphSessionRepository = mockk(relaxed = true),
         settingsProvider: SettingsProvider = mockk(relaxed = true),
         settingsIoDispatcher: CoroutineDispatcher = dispatcher,
-    ) = SettingsViewModel(
+    ) = trackViewModel(SettingsViewModel(
         di = DI {
             bindSingleton<TelegramSettingsHost> { telegramHost }
             bindSingleton<SettingsHostPreferences> { preferences }
@@ -718,7 +768,7 @@ class SettingsViewModelTest {
             bindSingleton<SettingsProvider> { settingsProvider }
         },
         settingsDispatcher = settingsIoDispatcher,
-    )
+    ))
 
     private data class LocalModelSettingsFixture(
         val agentFacade: AgentFacade,
@@ -801,7 +851,7 @@ class SettingsViewModelTest {
             bindSingleton<CalendarListProvider> { { emptyList() } }
             bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
         }
-        return LocalModelSettingsFixture(agentFacade, SettingsViewModel(di, settingsDispatcher = dispatcher))
+        return LocalModelSettingsFixture(agentFacade, trackViewModel(SettingsViewModel(di, settingsDispatcher = dispatcher)))
     }
 
     @Test
