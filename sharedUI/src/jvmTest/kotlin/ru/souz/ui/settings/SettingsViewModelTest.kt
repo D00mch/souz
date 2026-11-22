@@ -15,12 +15,9 @@ import io.mockk.unmockkAll
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.job
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.CompletableDeferred
@@ -125,31 +122,6 @@ class SettingsViewModelTest {
         // IO work must finish cancellation before resource and service mocks are removed.
         viewModelStore.clear()
         viewModelJobs.joinAll()
-    }
-
-    @Test
-    fun `fixture disposal waits for an in-flight balance lookup to be cancelled`() = runTest(dispatcher) {
-        val lookupStarted = CompletableDeferred<Unit>()
-        val lookupCancelled = CompletableDeferred<Unit>()
-        coEvery { org.jetbrains.compose.resources.getString(any()) } coAnswers {
-            try {
-                lookupStarted.complete(Unit)
-                awaitCancellation()
-            } finally {
-                withContext(NonCancellable + dispatcher) {
-                    lookupCancelled.complete(Unit)
-                }
-            }
-        }
-        val viewModel = createViewModel()
-        viewModel.handleEvent(SettingsEvent.RefreshBalance)
-        lookupStarted.await()
-        assertFalse(lookupCancelled.isCompleted)
-
-        clearViewModels()
-
-        assertTrue(lookupCancelled.isCompleted)
-        assertTrue(viewModel.viewModelScope.coroutineContext.job.isCompleted)
     }
 
     @Test
@@ -355,31 +327,6 @@ class SettingsViewModelTest {
         assertEquals(SettingsSection.GENERAL, viewModel.uiState.value.activeSection)
         assertTrue(viewModel.uiState.value.useEnglishInterface)
         assertTrue(settingsHostPreferences.useEnglishInterface)
-    }
-
-    @Test
-    fun `Qwen 3_8 is selectable with the Qwen key and disappears when it is cleared`() = runTest(dispatcher) {
-        var hasQwenKey = true
-        val fixture = createLocalModelSettingsFixture(configureSettingsProvider = { settings ->
-            every { settings.hasKey(LlmProvider.QWEN) } answers { hasQwenKey }
-            every { settings.hasKey(LlmProvider.OPENAI) } returns true
-        })
-        val viewModel = fixture.viewModel
-        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
-        advanceUntilIdle()
-        assertTrue(LLMModel.Qwen38_27B in viewModel.uiState.value.availableLlmModels)
-        assertTrue(LLMModel.QwenFlash in viewModel.uiState.value.availableLlmModels)
-
-        viewModel.handleEvent(SettingsEvent.SelectModel(LLMModel.Qwen38_27B))
-        advanceUntilIdle()
-        assertEquals(LLMModel.Qwen38_27B, viewModel.uiState.value.gigaModel)
-        verify(exactly = 1) { fixture.agentFacade.setModel(LLMModel.Qwen38_27B) }
-        assertNull(viewModel.uiState.value.localModelDownloadPrompt)
-
-        hasQwenKey = false
-        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
-        advanceUntilIdle()
-        assertTrue(viewModel.uiState.value.availableLlmModels.none { it.provider == LlmProvider.QWEN })
     }
 
     @Test

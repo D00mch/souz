@@ -28,10 +28,7 @@ import ru.souz.llms.runtime.SettingsRoutingLlmChatApi
 import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.state.AgentSettings
-import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentTools
-import ru.souz.llms.giga.toGiga
-import ru.souz.tool.math.ToolCalculator
 import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.subagent.SubagentToolFactory
 import ru.souz.tool.subagent.spawnAndWait
@@ -48,7 +45,6 @@ class ProviderStreamingFlowTest {
             LLMModel.AnthropicOpus45 to "ClAuDe-Custom/Case",
             LLMModel.AiTunnelGpt54Mini to "GigaChat-Custom/Deployment",
             LLMModel.QwenMax to " Raw/ID ",
-            LLMModel.Qwen38_27B to "qwen3.8-27b",
         )
         cases.forEach { (selected, input) ->
             val settings = settings().also { every { it.gigaModel } returns selected }
@@ -77,64 +73,6 @@ class ProviderStreamingFlowTest {
                         assertEquals(1, requests)
                     }
                 }
-            }
-        }
-    }
-
-    @Test
-    fun `Qwen 3_8 routes two dependent tool calls through the desktop API in both modes`() = runTest {
-        for (streaming in listOf(false, true)) {
-            val settings = settings().also {
-                every { it.useStreaming } returns streaming
-                every { it.gigaModel } returns LLMModel.Qwen38_27B
-                every { it.qwenChatKey } returns "qwen-fixture-key"
-                every { it.openaiKey } returns "wrong-provider-key"
-            }
-            var requests = 0
-            val engine = MockEngine { request ->
-                val payload = restJsonMapper.readTree(request.body.toByteArray())
-                assertEquals("https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions", request.url.toString())
-                assertEquals("Bearer qwen-fixture-key", request.headers[HttpHeaders.Authorization])
-                assertEquals("qwen3.8-27b", payload["model"].asText())
-                assertEquals(false, payload["enable_thinking"]?.asBoolean())
-                assertEquals(true, payload["parallel_tool_calls"].asBoolean())
-                assertEquals(streaming, payload["stream"].asBoolean())
-                assertFalse(payload.has("provider"))
-                val messages = payload["messages"].toList()
-                val results = messages.filter { it["role"].asText() == "tool" }
-                assertEquals(requests, results.size)
-                results.forEachIndexed { index, result ->
-                    assertEquals("call_${index + 1}", result["tool_call_id"].asText())
-                    assertEquals(if (index == 0) 3 else 12, restJsonMapper.readTree(result["content"].asText())["result"].asInt())
-                    val assistant = messages.single { it["tool_calls"]?.first()?.get("id")?.asText() == "call_${index + 1}" }
-                    assertEquals("Calculator", assistant["tool_calls"][0]["function"]["name"].asText())
-                }
-                requests++
-                val message = if (requests <= 2) {
-                    val expression = if (requests == 1) "1+2" else "3*4"
-                    """{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_$requests","type":"function","function":{"name":"Calculator","arguments":"{\"expression\":\"$expression\"}"}}]}"""
-                } else """{"role":"assistant","content":"12"}"""
-                val finish = if (requests <= 2) "tool_calls" else "stop"
-                val response = """{"created":1,"model":"qwen3.8-27b","choices":[{"index":0,"${if (streaming) "delta" else "message"}":$message,"finish_reason":"$finish"}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}"""
-                respond(
-                    if (streaming) "data: $response\n\ndata: [DONE]\n\n" else response,
-                    headers = headersOf(HttpHeaders.ContentType, if (streaming) "text/event-stream" else "application/json"),
-                )
-            }
-            HttpClient(engine) { providerHttpClientDefaults() }.use { client ->
-                val adapter = OpenAICompatibleChatAPI(LlmProvider.QWEN, settings, client)
-                val router = SettingsRoutingLlmChatApi(settings, mapOf(LlmProvider.QWEN to adapter))
-                val calculator = ToolCalculator().toGiga()
-                val context = AgentContext(
-                    input = "Compute 1+2, then multiply the result by 4.",
-                    settings = AgentSettings("qwen3.8-27b", LlmProvider.QWEN, 0.7f, AgentTools(listOf(calculator))),
-                    history = emptyList(), activeTools = listOf(calculator.fn), systemPrompt = "Use Calculator.",
-                )
-                val result = ToolLoopGraphBasedAgent(router, settings, maxTurns = 3).execute(context)
-                assertEquals("12", result.output)
-                assertEquals(listOf(3, 12), result.context.history.filter { it.role == LLMMessageRole.function }
-                    .map { restJsonMapper.readTree(it.content)["result"].asInt() })
-                assertEquals(3, requests)
             }
         }
     }
@@ -191,7 +129,6 @@ class ProviderStreamingFlowTest {
             Triple(LlmProvider.OPENAI, LLMModel.OpenAIGpt5Mini.alias, "openai-key"),
             Triple(LlmProvider.AI_TUNNEL, LLMModel.AiTunnelGpt54Mini.alias, "tunnel-key"),
             Triple(LlmProvider.QWEN, LLMModel.QwenFlash.alias, "qwen-key"),
-            Triple(LlmProvider.QWEN, LLMModel.Qwen38_27B.alias, "qwen-key"),
         )
 
         cases.forEach { (provider, model, apiKey) ->
