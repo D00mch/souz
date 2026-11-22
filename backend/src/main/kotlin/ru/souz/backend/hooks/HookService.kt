@@ -17,6 +17,9 @@ import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.service.AgentExecutionService
+import ru.souz.backend.scheduler.dispatchScheduledTask
+import ru.souz.jobs.JobRun
+import ru.souz.jobs.impl.PostgresJobService
 
 internal data class HookAccepted(val receiptId: UUID, val duplicate: Boolean)
 internal data class HookStatus(
@@ -38,11 +41,20 @@ internal class HookService(
     private val executionService: AgentExecutionService,
     private val messages: MessageRepository,
     private val verifier: HookVerifier,
+    private val scheduled: ScheduledHookDispatch,
+    private val jobs: PostgresJobService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val mutex = Mutex()
     private var hooks = emptyMap<String, List<LoadedHook>>()
     private val intake = config.owners.associateWith { Semaphore(config.concurrentRequestsPerOwner) }
+
+    /** Wait for capacity before the single worker claims a scheduled job. */
+    suspend fun startScheduledTaskWorker(scope: CoroutineScope) {
+        jobs.startWorker(scope, scheduled::awaitCapacity, ::triggerInternal)
+    }
+
+    private suspend fun triggerInternal(job: JobRun) = scheduled.dispatchScheduledTask(job)
 
     suspend fun start(scope: CoroutineScope) {
         for (owner in config.owners) reload(owner)

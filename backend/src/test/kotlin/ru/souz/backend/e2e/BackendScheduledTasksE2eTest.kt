@@ -30,7 +30,6 @@ import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.scheduler.ScheduledTaskConfig
-import ru.souz.backend.scheduler.occurrenceId
 import ru.souz.backend.scheduler.scheduledTaskInput
 import ru.souz.jobs.CreateJobRequest
 import ru.souz.jobs.JobRun

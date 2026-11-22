@@ -112,11 +112,12 @@ class AgentExecutionService internal constructor(
      * including after a crash before launch; null means another call already inserted it.
      * A persisted failure fails every later call for the same ID.
      */
-    internal suspend fun executeChatTurnIfAbsent(
+    internal suspend fun executeScheduledTurnIfAbsent(
         userId: String,
         chatId: UUID,
         content: String,
         executionId: UUID,
+        occurrenceKey: String,
         dailyLaunchLimit: Int,
         requiredTools: Set<String> = emptySet(),
     ): AgentExecution? {
@@ -132,7 +133,7 @@ class AgentExecutionService internal constructor(
         check(prepared.effectiveSettings.enabledTools.containsAll(requiredTools)) {
             "Scheduled reminder requires enabled SendMessageToChannel; delivery is unavailable."
         }
-        if (!executionRepository.createIfAbsent(prepared.execution, dailyLaunchLimit)) {
+        if (!executionRepository.createScheduledIfAbsent(prepared.execution, occurrenceKey, dailyLaunchLimit)) {
             // A competing call inserted it after the lookup above and may already have failed it.
             checkNotFailed(checkNotNull(executionRepository.get(userId, executionId)))
             return null
