@@ -22,6 +22,7 @@ import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -253,6 +254,10 @@ class OpenAICompatibleChatAPI(
             }
             if (provider == LlmProvider.QWEN) {
                 put("parallel_tool_calls", true)
+                if (body.model == LLMModel.Qwen38_27B.alias) {
+                    // Keep unary calls and tool history usable without carrying thinking traces.
+                    put("enable_thinking", false)
+                }
             }
             if (tools.isNotEmpty()) {
                 put("tools", tools)

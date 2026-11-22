@@ -164,6 +164,7 @@ enum class LLMModel(
     QwenFlash("Qwen Flash", "qwen-flash", LlmProvider.QWEN),
     QwenPlus("Qwen Plus", "qwen-plus", LlmProvider.QWEN),
     Qwen3OpenSource("Qwen3 open source", "qwen3-vl-32b-instruct", LlmProvider.QWEN),
+    Qwen38_27B("Qwen3.8 27B", "qwen3.8-27b", LlmProvider.QWEN),
     QwenMax("Qwen Max", "qwen-max", LlmProvider.QWEN),
     AiTunnelGpt4oMini("AiT.gpt-4o-mini", "gpt-4o-mini", LlmProvider.AI_TUNNEL),
     AiTunnelGpt54Mini("AiT.gpt-5.4-mini", "gpt-5.4-mini", LlmProvider.AI_TUNNEL),
