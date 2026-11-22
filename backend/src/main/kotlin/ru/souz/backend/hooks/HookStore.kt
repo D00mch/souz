@@ -111,6 +111,15 @@ internal class HookStore(private val dataSource: DataSource, private val config:
             s.executeQuery().use { if (!it.next()) throw hookError(429, "hook_execution_llm_limit") }
         }
     }
+
+    companion object {
+        /** JobService owns retries; this receipt records synchronous admission to agent execution. */
+        fun recordScheduledDispatch(connection: Connection, executionId: UUID, occurrenceKey: String) {
+            connection.prepare("""
+                insert into scheduled_hook_receipts(execution_id, occurrence_key) values (?, ?)
+            """, executionId, occurrenceKey).use { it.executeUpdate() }
+        }
+    }
 }
 
 private fun Connection.prepare(sql: String, vararg values: Any?) = prepareStatement(sql.trimIndent()).apply {

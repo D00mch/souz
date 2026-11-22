@@ -45,7 +45,7 @@ import ru.souz.backend.channels.tool.BackendChannelToolCatalog
 import ru.souz.backend.channels.tool.ToolListActiveChannels
 import ru.souz.backend.channels.tool.ToolSendMessageToChannel
 import ru.souz.backend.chat.repository.ChatRepository
-import ru.souz.backend.scheduler.ScheduledTaskRunner
+import ru.souz.backend.hooks.ScheduledHookDispatch
 import ru.souz.backend.scheduler.ToolCreateScheduledTask
 import ru.souz.backend.scheduler.ToolDeleteScheduledTask
 import ru.souz.backend.scheduler.ToolListScheduledTasks
@@ -305,7 +305,19 @@ fun backendDiModule(
     bindSingleton { HookStore(instance<HikariDataSource>(), appConfig.hooks) }
     bindSingleton { HookDefinitions(instance(), appConfig.hooks) }
     bindSingleton { HookVerifier(appConfig.hooks, instance()) }
-    bindSingleton { HookService(appConfig.hooks, instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton {
+        HookService(
+            config = appConfig.hooks,
+            definitions = instance(),
+            store = instance(),
+            executions = instance(),
+            executionService = instance(),
+            messages = instance(),
+            verifier = instance(),
+            scheduled = instance(),
+            jobs = instance(),
+        )
+    }
     bindSingleton<ProviderCredentialResolver> {
         StoredProviderCredentialResolver(
             baseSettingsProvider = instance(),
@@ -507,7 +519,7 @@ fun backendDiModule(
         )
     }
     bindSingleton {
-        ScheduledTaskRunner(
+        ScheduledHookDispatch(
             chats = instance(),
             executions = instance(),
             launcher = instance(),

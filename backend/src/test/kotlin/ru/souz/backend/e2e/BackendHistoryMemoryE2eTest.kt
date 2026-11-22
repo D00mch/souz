@@ -55,7 +55,6 @@ import ru.souz.backend.memory.hindsight.ToolForgetMemoryFact
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.model.OptionKind
 import ru.souz.backend.options.model.OptionStatus
-import ru.souz.backend.scheduler.occurrenceId
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.jobs.JobRun
 import ru.souz.llms.LLMMessageRole
