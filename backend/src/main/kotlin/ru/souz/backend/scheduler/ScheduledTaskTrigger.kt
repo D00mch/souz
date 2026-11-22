@@ -2,7 +2,7 @@ package ru.souz.backend.scheduler
 
 import ru.souz.backend.channels.tool.SEND_MESSAGE_TO_CHANNEL_TOOL_NAME
 import ru.souz.backend.channels.tool.ToolSendMessageToChannel
-import ru.souz.backend.hooks.HookService
+import ru.souz.backend.hooks.ScheduledHookDispatch
 import ru.souz.jobs.JobRun
 
 data class ScheduledTaskConfig(
@@ -15,8 +15,8 @@ data class ScheduledTaskConfig(
     }
 }
 
-internal suspend fun HookService.triggerScheduledTask(job: JobRun) {
-    triggerInternal(
+internal suspend fun ScheduledHookDispatch.dispatchScheduledTask(job: JobRun) {
+    run(
         userId = job.userId,
         title = job.title,
         content = scheduledTaskInput(job),

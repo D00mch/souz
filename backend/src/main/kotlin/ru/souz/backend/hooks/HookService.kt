@@ -1,6 +1,5 @@
 package ru.souz.backend.hooks
 
-import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -18,6 +17,9 @@ import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.service.AgentExecutionService
+import ru.souz.backend.scheduler.dispatchScheduledTask
+import ru.souz.jobs.JobRun
+import ru.souz.jobs.impl.PostgresJobService
 
 internal data class HookAccepted(val receiptId: UUID, val duplicate: Boolean)
 internal data class HookStatus(
@@ -40,22 +42,19 @@ internal class HookService(
     private val messages: MessageRepository,
     private val verifier: HookVerifier,
     private val scheduled: ScheduledHookDispatch,
+    private val jobs: PostgresJobService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val mutex = Mutex()
     private var hooks = emptyMap<String, List<LoadedHook>>()
     private val intake = config.owners.associateWith { Semaphore(config.concurrentRequestsPerOwner) }
 
-    suspend fun awaitInternalCapacity(): Set<String> = scheduled.awaitCapacity()
+    /** Wait for capacity before the single worker claims a scheduled job. */
+    suspend fun startScheduledTaskWorker(scope: CoroutineScope) {
+        jobs.startWorker(scope, scheduled::awaitCapacity, ::triggerInternal)
+    }
 
-    suspend fun triggerInternal(
-        userId: String,
-        title: String,
-        content: String,
-        occurrenceKey: String,
-        scheduledAt: Instant,
-        requiresDelivery: Boolean,
-    ) = scheduled.run(userId, title, content, occurrenceKey, scheduledAt, requiresDelivery)
+    private suspend fun triggerInternal(job: JobRun) = scheduled.dispatchScheduledTask(job)
 
     suspend fun start(scope: CoroutineScope) {
         for (owner in config.owners) reload(owner)

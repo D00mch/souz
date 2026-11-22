@@ -13,7 +13,7 @@ Only the caller that inserts an execution may launch it. Empty-chat cleanup must
 
 ## Capacity and quotas
 
-Route job kinds through the worker's single sequential handler. Await capacity before claiming so busy owners' jobs stay pending without spending attempts. The handler returns after launch. Each process allows one active execution per owner and a configurable total. Release slots only after execution cleanup, including timeout and shutdown. Overload can delay jobs indefinitely. [Scheduled dispatch](../src/main/kotlin/ru/souz/backend/hooks/ScheduledHookDispatch.kt)
+Enqueue scheduled triggers through `JobService`. `HookService` registers a private handler with the single sequential worker. The worker awaits capacity before claiming so busy owners' jobs stay pending without spending attempts. The handler returns after launch. Each process allows one active execution per owner and a configurable total. Release slots only after execution cleanup, including timeout and shutdown. Overload can delay jobs indefinitely. [Scheduled dispatch](../src/main/kotlin/ru/souz/backend/hooks/ScheduledHookDispatch.kt)
 
 The creation budget estimates planned runs from active tasks and can be exceeded by concurrent creates. Dispatch enforces a separate durable per-owner quota per UTC day using PostgreSQL time. Save the hook receipt and charge the quota in the execution insert transaction. Duplicates spend nothing. Crashes and failures leave reservations spent. Quota rejection rolls back admission and follows normal retries. [Admission transaction](../src/main/kotlin/ru/souz/backend/storage/postgres/PostgresAgentExecutionRepository.kt)
 

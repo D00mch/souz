@@ -304,6 +304,7 @@ fun backendDiModule(
             messages = instance(),
             verifier = instance(),
             scheduled = instance(),
+            jobs = instance(),
         )
     }
     bindSingleton<ProviderCredentialResolver> {
