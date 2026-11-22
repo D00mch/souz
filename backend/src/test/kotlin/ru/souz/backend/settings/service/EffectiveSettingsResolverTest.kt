@@ -83,7 +83,7 @@ class EffectiveSettingsResolverTest {
             Case(QwenMax.alias, selected = AnthropicHaiku45.alias, listings = 1, region = "en", keys = setOf(AI_TUNNEL, ANTHROPIC)),
             Case(QwenMax.alias, selected = LocalQwen3_4B_Instruct_2507.alias, listings = 1, local = true),
             Case(LocalQwen3_4B_Instruct_2507.alias, selected = QwenMax.alias, listings = 1, keys = setOf(QWEN)),
-            Case(LocalQwen3_4B_Instruct_2507.alias, selected = AiTunnelClaudeHaiku.alias, listings = 0, serverKeys = setOf(AI_TUNNEL)),
+            Case(LocalQwen3_4B_Instruct_2507.alias, selected = AiTunnelClaudeHaiku.alias, listings = 1, serverKeys = setOf(AI_TUNNEL)),
             Case(OpenAICompatibleCustom.alias, selected = QwenMax.alias, listings = 1, region = "en", customOpenAi = true, keys = setOf(QWEN)),
             Case(OpenAICompatibleCustom.alias, selected = OpenAIGpt5Mini.alias, listings = 1, region = "en", keys = setOf(OPENAI)),
             Case(null, selected = OpenAICompatibleCustom.alias, listings = 1, region = "en", customOpenAi = true, keys = setOf(OPENAI)),
