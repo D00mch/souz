@@ -56,11 +56,12 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
+import ru.souz.backend.hooks.ScheduledHookDispatch
 import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
 import ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntime
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.scheduler.ScheduledTaskConfig
-import ru.souz.backend.scheduler.ScheduledTaskRunner
+import ru.souz.backend.scheduler.dispatchScheduledTask
 import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.plugins.BackendPluginRuntime
 import ru.souz.backend.plugins.PostgresPluginRepository
@@ -482,12 +483,11 @@ internal class BackendE2eBackend(
     val turnRunner: BackendConversationTurnRunner get() = di.direct.instance()
     val conversationRuntimeFactory: BackendConversationRuntimeFactory get() = di.direct.instance()
 
-    suspend fun startScheduledTaskWorker() {
-        val runner = di.direct.instance<ScheduledTaskRunner>()
-        di.direct.instance<PostgresJobService>().startWorker(applicationScope, runner::awaitCapacity, runner::run)
-    }
+    suspend fun startScheduledTaskWorker() =
+        dependencies.hookService.startScheduledTaskWorker(applicationScope)
 
-    suspend fun runScheduledTask(job: JobRun) = di.direct.instance<ScheduledTaskRunner>().run(job)
+    suspend fun runScheduledTask(job: JobRun) =
+        di.direct.instance<ScheduledHookDispatch>().dispatchScheduledTask(job)
 
     fun <T> sql(block: (Connection) -> T): T =
         dataSource.connection.use(block)
