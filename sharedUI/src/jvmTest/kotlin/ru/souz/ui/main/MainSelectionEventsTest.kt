@@ -164,10 +164,7 @@ class MainSelectionEventsTest {
                 every { activeAgentId } returns MutableStateFlow(AgentId.GRAPH)
             },
             settingsProvider = settings,
-            llmBuildProfile = mockk {
-                every { availableModels } returns emptyList()
-                every { availableProviders } returns emptySet()
-            },
+            localModels = mockk(relaxed = true),
             chatCommandInputSource = mockk {
                 every { incomingMessages } returns emptyFlow()
                 every { cleanCommands } returns emptyFlow()

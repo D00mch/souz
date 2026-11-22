@@ -17,7 +17,6 @@ class BackendConversationSettingsProvider(
     private val delegate: SettingsProvider,
     private val defaultSystemPrompt: String,
     private val policyPrompt: String?,
-    locale: String,
     useFewShotExamples: Boolean = delegate.useFewShotExamples,
     requestTimeoutMillis: Long = delegate.requestTimeoutMillis,
 ) : SettingsProvider by delegate {
@@ -28,7 +27,6 @@ class BackendConversationSettingsProvider(
         namedModel?.takeIf { model == LLMModel.OpenAICompatibleCustom } ?: delegate.executionModelId(model)
 
     override var defaultCalendar: String? = null
-    override var regionProfile: String = localeToRegionProfile(locale)
     override var gigaModel: LLMModel = delegate.gigaModel
     override var useFewShotExamples: Boolean = useFewShotExamples
     override var useStreaming: Boolean = false
@@ -39,14 +37,6 @@ class BackendConversationSettingsProvider(
 
     override fun setSystemPromptForAgentModel(agentId: AgentId, model: LLMModel, prompt: String?) = Unit
 
-    fun restore(
-        temperature: Float,
-        locale: String,
-    ) {
-        this.temperature = temperature
-        this.regionProfile = localeToRegionProfile(locale)
-    }
-
     internal fun applyRequest(
         request: BackendConversationTurnRequest,
         temperature: Float,
@@ -55,7 +45,6 @@ class BackendConversationSettingsProvider(
         this.namedModel = request.model.takeIf { builtin == null }
         this.gigaModel = builtin ?: LLMModel.OpenAICompatibleCustom
         this.temperature = request.temperature ?: temperature
-        this.regionProfile = localeToRegionProfile(request.locale)
         this.systemPrompt = listOfNotNull(
             request.systemPrompt ?: defaultSystemPrompt,
             policyPrompt,
@@ -63,7 +52,7 @@ class BackendConversationSettingsProvider(
             MEMORY_MUTATION_NOTICE.takeIf { request.clientToolsEnabled },
             when {
                 !request.narrateSteps -> null
-                regionProfile == SettingsProviderImpl.REGION_EN ->
+                Locale.forLanguageTag(request.locale).language == "en" ->
                     "Before every tool call, write ONE short first-person sentence (max ~120 characters, " +
                         "plain text, no Markdown): what you just learned and what you are about to do. " +
                         "This is a status line, not the final answer."
@@ -77,16 +66,6 @@ class BackendConversationSettingsProvider(
         this.useFewShotExamples = request.useFewShotExamples ?: this.useFewShotExamples
         this.requestTimeoutMillis = request.requestTimeoutMillis ?: this.requestTimeoutMillis
     }
-
-    private fun localeToRegionProfile(locale: String): String {
-        val language = runCatching { Locale.forLanguageTag(locale).language.lowercase() }
-            .getOrDefault("")
-        return if (language == SettingsProviderImpl.REGION_EN) {
-            SettingsProviderImpl.REGION_EN
-        } else {
-            SettingsProviderImpl.REGION_RU
-        }
-    }
 }
 
 /** Backend runtime environment derived from one validated execution request. */
@@ -99,11 +78,6 @@ class BackendRequestRuntimeEnvironment(
         ?: Locale.getDefault()
 
     override val zoneId: ZoneId = ZoneId.of(timeZone)
-}
-
-private object SettingsProviderImpl {
-    const val REGION_RU = "ru"
-    const val REGION_EN = "en"
 }
 
 /** Backend implementation for hosts without desktop indexing. */

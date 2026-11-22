@@ -13,7 +13,6 @@ import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.backend.settings.service.UserSettingsService
-import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.findLLMModel
 
@@ -32,9 +31,6 @@ class BackendOnboardingService(
         val recommendedProvider = bootstrap.capabilities.models.firstOrNull { it.model == recommendedDefaultModel }?.provider
             ?: findLLMModel(recommendedDefaultModel)?.provider?.name?.lowercase()
         val hasUsableModelAccess = bootstrap.capabilities.models.any { it.serverManagedKey || it.userManagedKey }
-        val hasOpenAiCompatibleCustomModel = bootstrap.capabilities.models.any {
-            it.model == LLMModel.OpenAICompatibleCustom.alias
-        }
         val serverManagedProviders = bootstrap.capabilities.models
             .filter { it.serverManagedKey }
             .groupByProvider()
@@ -45,22 +41,16 @@ class BackendOnboardingService(
                     recommended = provider == recommendedProvider,
                 )
             }
-        val userManagedProviders = BackendLlmSupport.chatModels
-            .filter {
-                (it != LLMModel.OpenAICompatibleCustom || hasOpenAiCompatibleCustomModel) &&
-                    it.provider != LlmProvider.LOCAL &&
-                    it.provider != LlmProvider.CODEX
-            }
-            .groupBy { it.provider.name.lowercase() }
+        val keyProviders = BackendLlmSupport.userManagedKeyProviders.mapTo(hashSetOf()) { it.name.lowercase() }
+        val userManagedProviders = bootstrap.capabilities.models
+            .filter { it.provider in keyProviders && it.model !in userSettingsService.namedModelNames }
+            .groupBy { it.provider }
             .toSortedMap()
             .map { (provider, models) ->
-                val configured = bootstrap.capabilities.models.any {
-                    it.provider == provider && it.userManagedKey
-                }
                 OnboardingUserManagedProvider(
                     provider = provider,
-                    models = models.map { it.alias }.sorted(),
-                    configured = configured,
+                    models = models.map { it.model }.sorted(),
+                    configured = models.any { it.userManagedKey },
                     recommended = provider == recommendedProvider && serverManagedProviders.none { it.recommended },
                 )
             }

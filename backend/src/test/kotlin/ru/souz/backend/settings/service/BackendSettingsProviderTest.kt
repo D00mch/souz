@@ -215,7 +215,7 @@ class BackendSettingsProviderTest {
         )
 }
 
-private class MapBackendConfigSource(
+internal class MapBackendConfigSource(
     private val env: Map<String, String>,
     private val properties: Map<String, String>,
 ) : BackendConfigSource {

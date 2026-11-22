@@ -1,6 +1,7 @@
 package ru.souz.backend.settings.service
 
 import com.fasterxml.jackson.module.kotlin.readValue
+import java.util.Locale
 import ru.souz.agent.AgentId
 import ru.souz.agent.runtime.DEFAULT_SUBAGENT_TASK_TIMEOUT
 import ru.souz.backend.config.NamedLlmConfig
@@ -8,6 +9,7 @@ import ru.souz.backend.config.loadNamedModels
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.config.SystemBackendConfigSource
 import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.common.hasServerChatAccess
 import ru.souz.backend.settings.repository.BackendServerPreferenceStore
 import ru.souz.db.DEFAULT_REQUEST_TIMEOUT_MILLIS
 import ru.souz.db.REGION_EN
@@ -17,14 +19,15 @@ import ru.souz.db.SUBAGENT_MODELS_JSON
 import ru.souz.db.parseSubagentModels
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.VoiceRecognitionModel
-import ru.souz.llms.VoiceRecognitionProvider
+import ru.souz.llms.automaticChatModels
 import ru.souz.llms.findVoiceRecognitionModel
 import ru.souz.llms.findLLMModel
+import ru.souz.llms.isSupportedChatModel
 import ru.souz.llms.restJsonMapper
+import ru.souz.llms.supportedChatModels
 import ru.souz.llms.local.LocalEmbeddingProfiles
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -49,7 +52,6 @@ class BackendSettingsProvider(
     } + namedModels.subagentModels.associateWith { LlmProvider.OPENAI }
 
     private val promptOverrides = mutableMapOf<Pair<AgentId, LLMModel>, String>()
-    private val llmBuildProfile by lazy { LlmBuildProfile(this, localProviderAvailability) }
 
     override var gigaChatKey: String? = configured("GIGA_KEY")
     override var qwenChatKey: String? = configured("QWEN_KEY")
@@ -70,12 +72,15 @@ class BackendSettingsProvider(
     override var polzaApiKey: String? = configured("POLZA_API_KEY")
     override var supportEmail: String? = configured(SUPPORT_EMAIL)
     override var defaultCalendar: String? = configured(DEFAULT_CALENDAR)
-    override var regionProfile: String = normalizeRegion(configured(APP_LANGUAGE))
+    override var regionProfile: String = if (configured(APP_LANGUAGE).equals(REGION_EN, ignoreCase = true)) REGION_EN else REGION_RU
+    internal val defaultLocale: Locale
+        get() = if (regionProfile == REGION_EN) Locale.US else Locale.forLanguageTag("ru-RU")
     override var activeAgentId: AgentId = AgentId.fromStorageValue(configured(ACTIVE_AGENT_ID))
     override var ambientAnalysisModel: LLMModel = configured(AMBIENT_ANALYSIS_MODEL)
         ?.let(::findLLMModel)
-        ?.let(llmBuildProfile::normalizeAmbientAnalysisModel)
-        ?: llmBuildProfile.defaultAmbientAnalysisModel()
+        ?.takeIf { it.provider == LlmProvider.LOCAL && it in localProviderAvailability.availableGigaModels() }
+        ?: localProviderAvailability.defaultGigaModel()
+        ?: LLMModel.LocalQwen3_4B_Instruct_2507
     override var useFewShotExamples: Boolean = configured(USE_FEW_SHOTS)?.toBooleanStrictOrNull() ?: false
     override var useStreaming: Boolean = configured(USE_STREAMING)?.toBooleanStrictOrNull()
         ?: configured(USE_GRPC_LEGACY)?.toBooleanStrictOrNull()
@@ -134,13 +139,39 @@ class BackendSettingsProvider(
         get() = storedOrConfigured(CODEX_EXPIRES_AT)?.toLongOrNull()
         set(value) = putOrTombstone(CODEX_EXPIRES_AT, value?.toString())
 
-    override var gigaModel: LLMModel = configured(GIGA_MODEL)
+    internal val configuredChatModel: LLMModel? = configured(GIGA_MODEL)
         ?.let(::findLLMModel)
-        ?.let { model -> llmBuildProfile.normalizeConfiguredModel(model, openaiModel) { defaultLlmModel() } }
-        ?: defaultLlmModel()
+        ?.takeIf(::supportsChatModel)
+
+    // Automatic selection may read stored Codex credentials.
+    private val initialChatModel by lazy { configuredChatModel ?: defaultChatModel() }
+    private var chatModelOverride: LLMModel? = null
+    override var gigaModel: LLMModel
+        get() = chatModelOverride ?: initialChatModel
         set(value) {
-            field = llmBuildProfile.normalizeConfiguredModel(value, openaiModel) { defaultLlmModel() }
+            chatModelOverride = value.takeIf(::supportsChatModel) ?: defaultChatModel()
         }
+
+    private fun defaultChatModel(): LLMModel =
+        automaticChatModels().firstOrNull { hasServerChatAccess(it.provider) } ?: BackendLlmSupport.fallbackChatModel
+
+    internal fun hasDeploymentChatAccess(provider: LlmProvider): Boolean =
+        if (provider == LlmProvider.CODEX) {
+            CODEX_CREDENTIAL_KEYS.all { configured(it) != null } &&
+                configured(CODEX_EXPIRES_AT)?.toLongOrNull() != null
+        } else {
+            hasKey(provider)
+        }
+
+    internal fun supportsChatModel(model: LLMModel): Boolean =
+        model in BackendLlmSupport.chatModels &&
+            model.isSupportedChatModel(openaiModel, localProviderAvailability::availableGigaModels)
+
+    internal fun supportedChatModels(): List<LLMModel> =
+        localProviderAvailability.supportedChatModels(openaiModel).filter { it in BackendLlmSupport.chatModels }
+
+    internal fun automaticChatModels(): Sequence<LLMModel> =
+        localProviderAvailability.automaticChatModels(openaiModel).filter { it in BackendLlmSupport.chatModels }
 
     override var embeddingsModel: EmbeddingsModel
         get() = enforcedEmbeddingsModel() ?: configuredEmbeddingsModel
@@ -160,23 +191,6 @@ class BackendSettingsProvider(
         } else {
             promptOverrides[key] = prompt
         }
-    }
-
-    override fun hasKey(provider: LlmProvider): Boolean = when (provider) {
-        LlmProvider.GIGA -> !gigaChatKey.isNullOrBlank()
-        LlmProvider.QWEN -> !qwenChatKey.isNullOrBlank()
-        LlmProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
-        LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
-        LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
-        LlmProvider.LOCAL -> true
-        LlmProvider.CODEX -> !codexAccessToken.isNullOrBlank()
-    }
-
-    override fun hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
-        VoiceRecognitionProvider.POLZA -> !polzaApiKey.isNullOrBlank()
-        VoiceRecognitionProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
-        VoiceRecognitionProvider.OPENAI -> !openaiKey.isNullOrBlank()
-        VoiceRecognitionProvider.LOCAL_MACOS -> true
     }
 
     private fun configured(envKey: String, propertyKey: String = envKey): String? =
@@ -208,11 +222,6 @@ class BackendSettingsProvider(
             if (key == CODEX_ACCESS_TOKEN) preferenceStore.remove(CODEX_REJECTED_DEPLOY_REFRESH_TOKEN)
         }
     }
-
-    private fun normalizeRegion(value: String?): String =
-        if (value?.lowercase() == REGION_EN) REGION_EN else REGION_RU
-
-    private fun defaultLlmModel(): LLMModel = llmBuildProfile.defaultConfiguredModel(::hasKey)
 
     private fun enforcedEmbeddingsModel(): EmbeddingsModel? = when {
         gigaModel.provider == LlmProvider.LOCAL && localProviderAvailability.isProviderAvailable() ->

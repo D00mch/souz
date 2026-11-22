@@ -26,8 +26,9 @@ import ru.souz.ambient.AmbientSpeechAvailability
 import ru.souz.ambient.AmbientTranscriptionService
 import ru.souz.ambient.SemanticBlockBuilder
 import ru.souz.db.SettingsProvider
+import ru.souz.db.defaultChatModel
 import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.ui.BaseViewModel
 import ru.souz.ui.main.search.ChatMessageSearchProjection
@@ -51,7 +52,6 @@ import ru.souz.ui.host.LocalModelUiHost
 import ru.souz.ui.host.PathOpener
 import ru.souz.ui.host.PermissionPromptService
 import ru.souz.ui.settings.availableLlmModels
-import ru.souz.ui.settings.defaultLlmModel
 import ru.souz.ui.settings.displayNameForConfiguredOpenAiModel
 import kotlin.time.Duration.Companion.minutes
 import souz.sharedui.generated.resources.Res
@@ -67,7 +67,7 @@ class MainViewModel(
     private val agentFacade: AgentFacade,
     private val backgroundIndexRefresher: BackgroundIndexRefresher,
     private val settingsProvider: SettingsProvider,
-    private val llmBuildProfile: LlmBuildProfile,
+    private val localModels: LocalModelAvailability,
     private val localModelUiHost: LocalModelUiHost,
     private val pathOpener: PathOpener,
     private val chatCommandInputSource: ChatCommandInputSource,
@@ -123,7 +123,7 @@ class MainViewModel(
         viewModelScope.launch {
             startTips = getStringArray(Res.array.start_tips)
             val randomTip = startTips.randomOrNull() ?: ""
-            val availableModels = settingsProvider.availableLlmModels(llmBuildProfile)
+            val availableModels = settingsProvider.availableLlmModels(localModels)
             val selectedModel = pickConfiguredOrDefaultModel(availableModels)
             val downloadPrompt = localModelUiHost.downloadPromptFor(selectedModel)
             if (downloadPrompt == null) {
@@ -661,7 +661,7 @@ class MainViewModel(
 
     private suspend fun updateChatModel(modelAlias: String) {
         if (currentState.localModelDownloadState != null) return
-        val availableModels = settingsProvider.availableLlmModels(llmBuildProfile)
+        val availableModels = settingsProvider.availableLlmModels(localModels)
         val model = availableModels.firstOrNull { it.alias == modelAlias } ?: return
         val downloadPrompt = localModelUiHost.downloadPromptFor(model)
         if (downloadPrompt != null) {
@@ -739,7 +739,7 @@ class MainViewModel(
     }
 
     private suspend fun refreshSettings() {
-        val availableModels = settingsProvider.availableLlmModels(llmBuildProfile)
+        val availableModels = settingsProvider.availableLlmModels(localModels)
         val selectedModel = pickConfiguredOrDefaultModel(availableModels)
         val downloadPrompt = localModelUiHost.downloadPromptFor(selectedModel)
         if (downloadPrompt == null) {
@@ -760,7 +760,7 @@ class MainViewModel(
     private fun pickConfiguredOrDefaultModel(availableModels: List<LLMModel>) = when {
         availableModels.isEmpty() -> settingsProvider.gigaModel
         settingsProvider.gigaModel in availableModels -> settingsProvider.gigaModel
-        else -> settingsProvider.defaultLlmModel(llmBuildProfile) ?: availableModels.first()
+        else -> settingsProvider.defaultChatModel(localModels) ?: availableModels.first()
     }
 
     private fun applySelectedModel(model: LLMModel) {

@@ -100,7 +100,7 @@ fun sharedUiCommonJvmDiModule(): DI.Module = DI.Module("sharedUiCommonJvm") {
     bindSingleton { SemanticBlockBuilder() }
     bindSingleton<Set<SelectionApprovalSource>> { emptySet() }
     bindSingleton<MemoryConversationCleanup> { NoopMemoryConversationCleanup }
-    bindSingleton { ApiKeyAvailabilityUseCase(instance()) }
+    bindSingleton { ApiKeyAvailabilityUseCase(instance(), instance()) }
     bindSingleton { FinderPathExtractor(instance(), instance()) }
 }
 

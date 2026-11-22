@@ -1,7 +1,6 @@
 package ru.souz.backend.agent.runtime.conversation
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.plus
@@ -129,15 +128,10 @@ internal class BackendConversationRuntimeFactory(
             delegate = baseSettingsProvider,
             defaultSystemPrompt = request.systemPrompt ?: systemPrompt,
             policyPrompt = policyPrompt,
-            locale = persistedSession?.locale ?: request.locale,
             useFewShotExamples = request.useFewShotExamples ?: baseSettingsProvider.useFewShotExamples,
             requestTimeoutMillis = request.requestTimeoutMillis ?: baseSettingsProvider.requestTimeoutMillis,
         )
         val temperature = persistedSession?.temperature ?: settingsProvider.temperature
-        settingsProvider.restore(
-            temperature = temperature,
-            locale = persistedSession?.locale ?: request.locale,
-        )
         settingsProvider.applyRequest(request = request, temperature = temperature)
         val basedOnMessageSeq = persistedSession?.basedOnMessageSeq ?: 0L
         val initialMessages = loadInitialConversationMessages(
@@ -164,7 +158,7 @@ internal class BackendConversationRuntimeFactory(
             providerApiOverride = testApi?.let { api -> { api } },
             hookBudget = hookBudget,
             metrics = metrics,
-            fallbackModels = effectiveSettingsResolver.fallbackModels(key.userId, Locale.forLanguageTag(request.locale)),
+            fallbackModels = effectiveSettingsResolver.fallbackModels(key.userId),
             failureMemory = modelFailures,
             attachmentStorage = attachmentStorage,
             visionModel = visionModel,

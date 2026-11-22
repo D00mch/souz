@@ -1,7 +1,8 @@
 package ru.souz.ui.common.usecases
 
-import ru.souz.llms.LlmBuildProfile
-import ru.souz.llms.LlmProvider
+import ru.souz.db.REGION_EN
+import ru.souz.db.SettingsProvider
+import ru.souz.llms.LocalModelAvailability
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 
@@ -23,20 +24,20 @@ data class ApiKeyAvailability(
 )
 
 class ApiKeyAvailabilityUseCase(
-    private val llmBuildProfile: LlmBuildProfile,
+    private val localModels: LocalModelAvailability,
+    private val settingsProvider: SettingsProvider,
 ) {
     fun availability(): ApiKeyAvailability {
-        val availableFields = availableFields()
+        val keys = availableKeys()
         return ApiKeyAvailability(
-            fields = availableFields,
-            providers = availableProviders(availableFields),
-            supportsVoiceRecognitionApiKeys = supportsVoiceRecognitionApiKeys(availableFields),
-            supportsLocalInference = LlmProvider.LOCAL in llmBuildProfile.availableProviders,
+            fields = keys.keys,
+            providers = keys.values.toList(),
+            supportsVoiceRecognitionApiKeys = ApiKeyField.POLZA in keys || ApiKeyField.OPENAI in keys,
+            supportsLocalInference = localModels.isProviderAvailable(),
         )
     }
 
-    fun configuredKeysCount(values: ApiKeyValues): Int {
-        val availableFields = availableFields()
+    fun configuredKeysCount(values: ApiKeyValues, fields: Set<ApiKeyField>): Int {
         val codexValue = if (values.codexConnected) "connected" else ""
         return mapOf(
             ApiKeyField.GIGA_CHAT to values.gigaChatKey,
@@ -47,35 +48,17 @@ class ApiKeyAvailabilityUseCase(
             ApiKeyField.POLZA to values.polzaApiKey,
             ApiKeyField.CODEX to codexValue,
         ).count { (field, key) ->
-            field in availableFields && key.isNotBlank()
+            field in fields && key.isNotBlank()
         }
     }
 
-    fun hasAnyConfiguredKey(values: ApiKeyValues): Boolean = configuredKeysCount(values) > 0
-
-    private fun availableFields(): Set<ApiKeyField> = buildSet {
-        val providers = llmBuildProfile.availableProviders
-        if (LlmProvider.GIGA in providers) {
-            add(ApiKeyField.GIGA_CHAT)
-        }
-        if (llmBuildProfile.supportsPolzaSpeechRecognition) add(ApiKeyField.POLZA)
-        if (LlmProvider.QWEN in providers) add(ApiKeyField.QWEN_CHAT)
-        if (LlmProvider.AI_TUNNEL in providers) add(ApiKeyField.AI_TUNNEL)
-        if (LlmProvider.ANTHROPIC in providers) add(ApiKeyField.ANTHROPIC)
-        if (LlmProvider.OPENAI in providers) add(ApiKeyField.OPENAI)
-        if (LlmProvider.CODEX in providers) add(ApiKeyField.CODEX)
-    }
-
-    private fun supportsVoiceRecognitionApiKeys(availableFields: Set<ApiKeyField>): Boolean =
-        ApiKeyField.POLZA in availableFields || ApiKeyField.OPENAI in availableFields
-
-    private fun availableProviders(availableFields: Set<ApiKeyField>): List<ApiKeyProvider> = buildList {
-        if (ApiKeyField.GIGA_CHAT in availableFields) add(ApiKeyProvider.SBER)
-        if (ApiKeyField.POLZA in availableFields) add(ApiKeyProvider.POLZA)
-        if (ApiKeyField.OPENAI in availableFields) add(ApiKeyProvider.OPENAI)
-        if (ApiKeyField.QWEN_CHAT in availableFields) add(ApiKeyProvider.QWEN)
-        if (ApiKeyField.AI_TUNNEL in availableFields) add(ApiKeyProvider.AI_TUNNEL)
-        if (ApiKeyField.ANTHROPIC in availableFields) add(ApiKeyProvider.ANTHROPIC)
-        if (ApiKeyField.CODEX in availableFields) add(ApiKeyProvider.CODEX)
+    private fun availableKeys(): Map<ApiKeyField, ApiKeyProvider> = buildMap {
+        put(ApiKeyField.GIGA_CHAT, ApiKeyProvider.SBER)
+        if (settingsProvider.regionProfile != REGION_EN) put(ApiKeyField.POLZA, ApiKeyProvider.POLZA)
+        put(ApiKeyField.OPENAI, ApiKeyProvider.OPENAI)
+        put(ApiKeyField.QWEN_CHAT, ApiKeyProvider.QWEN)
+        put(ApiKeyField.AI_TUNNEL, ApiKeyProvider.AI_TUNNEL)
+        put(ApiKeyField.ANTHROPIC, ApiKeyProvider.ANTHROPIC)
+        put(ApiKeyField.CODEX, ApiKeyProvider.CODEX)
     }
 }

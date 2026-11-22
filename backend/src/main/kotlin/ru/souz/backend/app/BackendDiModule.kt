@@ -225,13 +225,14 @@ fun backendDiModule(
     }
     bindSingleton { SystemBackendConfigSource.loadNamedModels() }
     bindSingleton { ImageModelRoute(appConfig.imageModel, instance()) }
-    bindSingleton<SettingsProvider> {
+    bindSingleton {
         BackendSettingsProvider(
             preferenceStore = instance(),
             localProviderAvailability = instance<LocalProviderAvailability>(),
             namedModels = instance(),
         )
     }
+    bindSingleton<SettingsProvider> { instance<BackendSettingsProvider>() }
     bindSingleton<UserRepository> { PostgresUserRepository(instance()) }
     bindSingleton<ChatRepository> { PostgresChatRepository(instance()) }
     bindSingleton<ConversationKnowledgeStore> { PostgresConversationKnowledgeStore(instance<HikariDataSource>()) }
@@ -319,7 +320,6 @@ fun backendDiModule(
             userProviderKeyRepository = instance(),
             featureFlags = instance(),
             toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
-            localModelAvailability = instance<LocalProviderAvailability>(),
             pluginToolCatalog = { instanceOrNull<BackendPluginRuntime>()?.snapshot?.catalog ?: AgentToolCatalog() },
         )
     }
@@ -556,7 +556,6 @@ fun backendDiModule(
             settingsProvider = instance(),
             userSettingsService = instance(),
             featureFlags = instance(),
-            localModelAvailability = instance<LocalProviderAvailability>(),
             userProviderKeyRepository = instance(),
         )
     }
@@ -585,7 +584,7 @@ fun backendDiModule(
             pluginAdministration = instanceOrNull(),
             featureFlags = featureFlags,
             readinessProbe = instance(),
-            selectedModel = { settingsResolver.defaultModel() },
+            selectedModel = settingsResolver::healthModel,
             trustedProxyToken = { appConfig.server.proxyToken },
             ensureTrustedUser = userRepository::ensureUser,
         )

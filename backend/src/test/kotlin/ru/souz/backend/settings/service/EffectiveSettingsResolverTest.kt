@@ -3,7 +3,6 @@ package ru.souz.backend.settings.service
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
-import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -12,7 +11,6 @@ import kotlinx.coroutines.test.runTest
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.keys.model.UserProviderKey
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
-import ru.souz.backend.llm.LlmSettingsStub
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.testutil.TestToolCatalog
@@ -37,12 +35,11 @@ class EffectiveSettingsResolverTest {
         val names = (0 until 256).map { "я".repeat(32) + it }.toSet()
         val repository = mockk<UserSettingsRepository>()
         val resolver = EffectiveSettingsResolver(
-            baseSettingsProvider = LlmSettingsStub(),
+            baseSettingsProvider = BackendSettingsProvider(MapBackendServerPreferenceStore(), NoLocalModels, MapBackendConfigSource(emptyMap(), emptyMap())),
             userSettingsRepository = repository,
             userProviderKeyRepository = mockk(),
             featureFlags = BackendFeatureFlags(),
             toolCatalog = TestToolCatalog(),
-            localModelAvailability = mockk(),
         )
         // These fit in 16,384 UTF-16 units, but exceed that budget as UTF-8 bytes.
         for (override in listOf(false, true)) {
@@ -68,6 +65,9 @@ class EffectiveSettingsResolverTest {
             Case(QwenMax.alias, selected = named, listings = 1, named = true),
             Case(null, selected = named, saved = named, listings = 1, newUser = true, named = true, region = "en"),
             Case(QwenMax.alias, selected = LocalQwen3_4B_Instruct_2507.alias, listings = 1, local = true, named = true),
+            Case(null, selected = QwenMax.alias, listings = 1, unavailableLocalDefault = true, fallbacks = emptyList()),
+            Case(null, selected = AiTunnelClaudeHaiku.alias, listings = 1, region = "en", keys = setOf(AI_TUNNEL),
+                local = true, fallbacks = listOf(AiTunnelClaudeHaiku.alias, LocalQwen3_4B_Instruct_2507.alias)),
             Case(named, selected = named, listings = 0, named = true),
             Case(QwenMax.alias, requestModel = named, selected = named, listings = 0, named = true),
             Case(QwenMax.alias, selected = QwenMax.alias, listings = 1, region = "en", customOpenAi = true, keys = setOf(QWEN)),
@@ -78,8 +78,8 @@ class EffectiveSettingsResolverTest {
             Case(LLMModel.Max.alias, selected = LLMModel.Max.alias, listings = 0),
             Case(LocalQwen3_4B_Instruct_2507.alias, selected = LocalQwen3_4B_Instruct_2507.alias, listings = 0, local = true),
             Case(OpenAIGpt5Mini.alias, selected = OpenAICompatibleCustom.alias, listings = 1, region = "en", customOpenAi = true, keys = setOf(OPENAI)),
-            Case(QwenMax.alias, selected = CodexGpt54.alias, listings = 1, region = "en", customOpenAi = true),
-            Case(QwenMax.alias, selected = AiTunnelClaudeHaiku.alias, listings = 1, keys = setOf(AI_TUNNEL, ANTHROPIC)),
+            Case(QwenMax.alias, selected = QwenMax.alias, listings = 1, region = "en", customOpenAi = true, codexToken = true),
+            Case(QwenMax.alias, selected = AnthropicHaiku45.alias, listings = 1, keys = setOf(AI_TUNNEL, ANTHROPIC)),
             Case(QwenMax.alias, selected = AnthropicHaiku45.alias, listings = 1, region = "en", keys = setOf(AI_TUNNEL, ANTHROPIC)),
             Case(QwenMax.alias, selected = LocalQwen3_4B_Instruct_2507.alias, listings = 1, local = true),
             Case(LocalQwen3_4B_Instruct_2507.alias, selected = QwenMax.alias, listings = 1, keys = setOf(QWEN)),
@@ -111,21 +111,27 @@ class EffectiveSettingsResolverTest {
     private suspend fun resolve(case: Case): Case {
         var listings = 0
         var saved: String? = null
-        val settings = LlmSettingsStub().apply {
-            regionProfile = case.region
-            gigaModel = case.serverDefault
-            qwenChatKey = SERVER_KEY.takeIf { QWEN in case.serverKeys }
-            aiTunnelKey = SERVER_KEY.takeIf { AI_TUNNEL in case.serverKeys }
-            anthropicKey = SERVER_KEY.takeIf { ANTHROPIC in case.serverKeys }
-            openaiKey = SERVER_KEY.takeIf { OPENAI in case.serverKeys }
-            openaiModel = "custom-model".takeIf { case.customOpenAi }
+        val env = buildMap {
+            put("APP_LANGUAGE", case.region)
+            case.serverDefault?.let { put("GIGA_MODEL", it.alias) }
+            if (QWEN in case.serverKeys) put("QWEN_KEY", SERVER_KEY)
+            if (AI_TUNNEL in case.serverKeys) put("AITUNNEL_KEY", SERVER_KEY)
+            if (ANTHROPIC in case.serverKeys) put("ANTHROPIC_API_KEY", SERVER_KEY)
+            if (OPENAI in case.serverKeys) put("OPENAI_API_KEY", SERVER_KEY)
+            if (case.customOpenAi) put("OPENAI_MODEL", "custom-model")
+            if (case.codex || case.codexToken) put("CODEX_ACCESS_TOKEN", "access")
             if (case.codex) {
-                codexAccessToken = "access"
-                codexRefreshToken = "refresh"
-                codexAccountId = "account"
-                codexExpiresAt = Long.MAX_VALUE
+                put("CODEX_REFRESH_TOKEN", "refresh")
+                put("CODEX_ACCOUNT_ID", "account")
+                put("CODEX_EXPIRES_AT", Long.MAX_VALUE.toString())
             }
         }
+        val localModels = object : LocalModelAvailability {
+            override fun availableGigaModels() = listOfNotNull(LocalQwen3_4B_Instruct_2507.takeIf { case.local })
+            override fun defaultGigaModel() = LocalQwen3_4B_Instruct_2507.takeIf { case.local || case.unavailableLocalDefault }
+            override fun isProviderAvailable() = case.local
+        }
+        val settings = BackendSettingsProvider(MapBackendServerPreferenceStore(), localModels, MapBackendConfigSource(env, emptyMap()))
         val settingsRepository = mockk<UserSettingsRepository>()
         coEvery { settingsRepository.get(USER) } returns
             if (case.newUser) null else UserSettings(USER, defaultModel = case.model)
@@ -143,15 +149,10 @@ class EffectiveSettingsResolverTest {
             userProviderKeyRepository = keyRepository,
             featureFlags = BackendFeatureFlags(),
             toolCatalog = TestToolCatalog(),
-            localModelAvailability = object : LocalModelAvailability {
-                override fun availableGigaModels() = listOfNotNull(LocalQwen3_4B_Instruct_2507.takeIf { case.local })
-                override fun defaultGigaModel() = availableGigaModels().firstOrNull()
-                override fun isProviderAvailable() = case.local
-            },
         )
         val resolved = resolver.resolve(USER, UserSettingsOverrides(defaultModel = case.requestModel), userManagedProviders = case.supplied)
         val selection = case.copy(selected = resolved.defaultModel, saved = saved, listings = listings)
-        return selection.copy(fallbacks = if (case.fallbacks == null) null else resolver.fallbackModels(USER, Locale.forLanguageTag(case.region)))
+        return selection.copy(fallbacks = if (case.fallbacks == null) null else resolver.fallbackModels(USER))
     }
 }
 
@@ -168,10 +169,12 @@ private data class Case(
     val serverKeys: Set<LlmProvider> = emptySet(),
     val customOpenAi: Boolean = false,
     val codex: Boolean = false,
+    val codexToken: Boolean = false,
     val local: Boolean = false,
+    val unavailableLocalDefault: Boolean = false,
     val newUser: Boolean = false,
     val named: Boolean = false,
-    val serverDefault: LLMModel = LLMModel.Max,
+    val serverDefault: LLMModel? = null,
     val fallbacks: List<String>? = null,
 )
 

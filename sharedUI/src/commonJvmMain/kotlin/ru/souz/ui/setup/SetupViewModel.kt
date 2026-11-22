@@ -7,12 +7,7 @@ import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
-import ru.souz.db.REGION_EN
-import ru.souz.db.REGION_RU
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfile
-import ru.souz.llms.LlmProvider
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.codex.CodexOAuthState
 import ru.souz.ui.BaseViewModel
@@ -28,192 +23,47 @@ class SetupViewModel(
 
     private val l = LoggerFactory.getLogger(SetupViewModel::class.java)
     private val settingsProvider: SettingsProvider by di.instance()
-    private val llmBuildProfile: LlmBuildProfile by di.instance()
     private val apiKeyAvailabilityUseCase: ApiKeyAvailabilityUseCase by di.instance()
     private val speechPlayer: UiSpeechPlayer by di.instance()
     private val codexOAuthService: CodexOAuthService by di.instance()
     private val externalLinkOpener: ExternalLinkOpener by di.instance()
     private var codexOAuthJob: Job? = null
-    private val startedWithoutAnyApiKeys: Boolean = !apiKeyAvailabilityUseCase.hasAnyConfiguredKey(
-        values = ApiKeyValues(
-            gigaChatKey = settingsProvider.gigaChatKey.orEmpty(),
-            qwenChatKey = settingsProvider.qwenChatKey.orEmpty(),
-            aiTunnelKey = settingsProvider.aiTunnelKey.orEmpty(),
-            anthropicKey = settingsProvider.anthropicKey.orEmpty(),
-            openaiKey = settingsProvider.openaiKey.orEmpty(),
-            polzaApiKey = settingsProvider.polzaApiKey.orEmpty(),
-            codexConnected = !settingsProvider.codexAccessToken.isNullOrBlank(),
-        ),
-    )
-
     init {
-        viewModelScope.launch {
-            val gigaChatKey = settingsProvider.gigaChatKey.orEmpty()
-            val qwenChatKey = settingsProvider.qwenChatKey.orEmpty()
-            val aiTunnelKey = settingsProvider.aiTunnelKey.orEmpty()
-            val anthropicKey = settingsProvider.anthropicKey.orEmpty()
-            val openAiKey = settingsProvider.openaiKey.orEmpty()
-            val polzaApiKey = settingsProvider.polzaApiKey.orEmpty()
-            updateKeysState(
-                gigaChatKey = gigaChatKey,
-                qwenChatKey = qwenChatKey,
-                aiTunnelKey = aiTunnelKey,
-                anthropicKey = anthropicKey,
-                openAiKey = openAiKey,
-                polzaApiKey = polzaApiKey,
-            )
-        }
+        viewModelScope.launch { refreshKeys() }
     }
 
     override fun initialState(): SetupState = SetupState()
 
     override suspend fun handleEvent(event: SetupEvent) {
         when (event) {
-            is SetupEvent.InputUseEnglishVersion -> {
-                val newLanguage = if (event.enabled) REGION_EN else REGION_RU
-                if (settingsProvider.regionProfile != newLanguage) {
-                    settingsProvider.regionProfile = newLanguage
-                    updateKeysState(
-                        gigaChatKey = currentState.gigaChatKey,
-                        qwenChatKey = currentState.qwenChatKey,
-                        aiTunnelKey = currentState.aiTunnelKey,
-                        anthropicKey = currentState.anthropicKey,
-                        openAiKey = currentState.openaiKey,
-                        polzaApiKey = currentState.polzaApiKey,
-                    )
-                }
-            }
-
             is SetupEvent.InputGigaChatKey -> {
                 settingsProvider.gigaChatKey = event.key
-                val qwenChatKey = currentState.qwenChatKey
-                val aiTunnelKey = currentState.aiTunnelKey
-                val anthropicKey = currentState.anthropicKey
-                val openAiKey = currentState.openaiKey
-                val polzaApiKey = currentState.polzaApiKey
-                updateKeysState(
-                    gigaChatKey = event.key,
-                    qwenChatKey = qwenChatKey,
-                    aiTunnelKey = aiTunnelKey,
-                    anthropicKey = anthropicKey,
-                    openAiKey = openAiKey,
-                    polzaApiKey = polzaApiKey,
-                )
-                tryToChooseDefaultMode(
-                    gigaChatKey = event.key,
-                    qwenChatKey = qwenChatKey,
-                    aiTunnelKey = aiTunnelKey,
-                    anthropicKey = anthropicKey,
-                    openAiKey = openAiKey,
-                )
+                refreshKeys()
             }
 
             is SetupEvent.InputQwenChatKey -> {
                 settingsProvider.qwenChatKey = event.key
-                val gigaChatKey = currentState.gigaChatKey
-                val aiTunnelKey = currentState.aiTunnelKey
-                val anthropicKey = currentState.anthropicKey
-                val openAiKey = currentState.openaiKey
-                val polzaApiKey = currentState.polzaApiKey
-                updateKeysState(
-                    gigaChatKey = gigaChatKey,
-                    qwenChatKey = event.key,
-                    aiTunnelKey = aiTunnelKey,
-                    anthropicKey = anthropicKey,
-                    openAiKey = openAiKey,
-                    polzaApiKey = polzaApiKey,
-                )
-                tryToChooseDefaultMode(
-                    gigaChatKey = gigaChatKey,
-                    qwenChatKey = event.key,
-                    aiTunnelKey = aiTunnelKey,
-                    anthropicKey = anthropicKey,
-                    openAiKey = openAiKey,
-                )
+                refreshKeys()
             }
 
             is SetupEvent.InputAiTunnelKey -> {
                 settingsProvider.aiTunnelKey = event.key
-                val gigaChatKey = currentState.gigaChatKey
-                val qwenChatKey = currentState.qwenChatKey
-                val anthropicKey = currentState.anthropicKey
-                val openAiKey = currentState.openaiKey
-                val polzaApiKey = currentState.polzaApiKey
-                updateKeysState(
-                    gigaChatKey = gigaChatKey,
-                    qwenChatKey = qwenChatKey,
-                    aiTunnelKey = event.key,
-                    anthropicKey = anthropicKey,
-                    openAiKey = openAiKey,
-                    polzaApiKey = polzaApiKey,
-                )
-                tryToChooseDefaultMode(
-                    gigaChatKey = gigaChatKey,
-                    qwenChatKey = qwenChatKey,
-                    aiTunnelKey = event.key,
-                    anthropicKey = anthropicKey,
-                    openAiKey = openAiKey,
-                )
+                refreshKeys()
             }
 
             is SetupEvent.InputAnthropicKey -> {
                 settingsProvider.anthropicKey = event.key
-                val gigaChatKey = currentState.gigaChatKey
-                val qwenChatKey = currentState.qwenChatKey
-                val aiTunnelKey = currentState.aiTunnelKey
-                val openAiKey = currentState.openaiKey
-                val polzaApiKey = currentState.polzaApiKey
-                updateKeysState(
-                    gigaChatKey = gigaChatKey,
-                    qwenChatKey = qwenChatKey,
-                    aiTunnelKey = aiTunnelKey,
-                    anthropicKey = event.key,
-                    openAiKey = openAiKey,
-                    polzaApiKey = polzaApiKey,
-                )
-                tryToChooseDefaultMode(
-                    gigaChatKey = gigaChatKey,
-                    qwenChatKey = qwenChatKey,
-                    aiTunnelKey = aiTunnelKey,
-                    anthropicKey = event.key,
-                    openAiKey = openAiKey,
-                )
+                refreshKeys()
             }
 
             is SetupEvent.InputOpenAiKey -> {
                 settingsProvider.openaiKey = event.key
-                val gigaChatKey = currentState.gigaChatKey
-                val qwenChatKey = currentState.qwenChatKey
-                val aiTunnelKey = currentState.aiTunnelKey
-                val anthropicKey = currentState.anthropicKey
-                val polzaApiKey = currentState.polzaApiKey
-                updateKeysState(
-                    gigaChatKey = gigaChatKey,
-                    qwenChatKey = qwenChatKey,
-                    aiTunnelKey = aiTunnelKey,
-                    anthropicKey = anthropicKey,
-                    openAiKey = event.key,
-                    polzaApiKey = polzaApiKey,
-                )
-                tryToChooseDefaultMode(
-                    gigaChatKey = gigaChatKey,
-                    qwenChatKey = qwenChatKey,
-                    aiTunnelKey = aiTunnelKey,
-                    anthropicKey = anthropicKey,
-                    openAiKey = event.key,
-                )
+                refreshKeys()
             }
 
             is SetupEvent.InputPolzaApiKey -> {
                 settingsProvider.polzaApiKey = event.key
-                updateKeysState(
-                    gigaChatKey = currentState.gigaChatKey,
-                    qwenChatKey = currentState.qwenChatKey,
-                    aiTunnelKey = currentState.aiTunnelKey,
-                    anthropicKey = currentState.anthropicKey,
-                    openAiKey = currentState.openaiKey,
-                    polzaApiKey = event.key,
-                )
+                refreshKeys()
             }
 
             SetupEvent.StartCodexOAuth -> {
@@ -228,24 +78,7 @@ class SetupViewModel(
                             is CodexOAuthState.Error -> CodexOAuthUiState.Error(oauthState.message)
                         }
                         setState { copy(codexOAuthState = uiState) }
-                        if (oauthState is CodexOAuthState.Success) {
-                            updateKeysState(
-                                gigaChatKey = currentState.gigaChatKey,
-                                qwenChatKey = currentState.qwenChatKey,
-                                aiTunnelKey = currentState.aiTunnelKey,
-                                anthropicKey = currentState.anthropicKey,
-                                openAiKey = currentState.openaiKey,
-                                polzaApiKey = currentState.polzaApiKey,
-                            )
-                            tryToChooseDefaultMode(
-                                gigaChatKey = currentState.gigaChatKey,
-                                qwenChatKey = currentState.qwenChatKey,
-                                aiTunnelKey = currentState.aiTunnelKey,
-                                anthropicKey = currentState.anthropicKey,
-                                openAiKey = currentState.openaiKey,
-                                codexConnected = true,
-                            )
-                        }
+                        if (oauthState is CodexOAuthState.Success) refreshKeys()
                     }
                 }
                 codexOAuthService.launchFlow(viewModelScope)
@@ -297,43 +130,33 @@ class SetupViewModel(
 
     override suspend fun handleSideEffect(effect: SetupEffect) = Unit
 
-    private suspend fun updateKeysState(
-        gigaChatKey: String,
-        qwenChatKey: String,
-        aiTunnelKey: String,
-        anthropicKey: String,
-        openAiKey: String,
-        polzaApiKey: String,
-    ) {
-        val codexConnected = !settingsProvider.codexAccessToken.isNullOrBlank()
+    private suspend fun refreshKeys() {
         val availability = apiKeyAvailabilityUseCase.availability()
-        val configuredKeysCount = apiKeyAvailabilityUseCase.configuredKeysCount(
-            values = ApiKeyValues(
-                gigaChatKey = gigaChatKey,
-                qwenChatKey = qwenChatKey,
-                aiTunnelKey = aiTunnelKey,
-                anthropicKey = anthropicKey,
-                openaiKey = openAiKey,
-                polzaApiKey = polzaApiKey,
-                codexConnected = codexConnected,
-            ),
+        val keys = ApiKeyValues(
+            gigaChatKey = settingsProvider.gigaChatKey.orEmpty(),
+            qwenChatKey = settingsProvider.qwenChatKey.orEmpty(),
+            aiTunnelKey = settingsProvider.aiTunnelKey.orEmpty(),
+            anthropicKey = settingsProvider.anthropicKey.orEmpty(),
+            openaiKey = settingsProvider.openaiKey.orEmpty(),
+            polzaApiKey = settingsProvider.polzaApiKey.orEmpty(),
+            codexConnected = !settingsProvider.codexAccessToken.isNullOrBlank(),
         )
+        val configuredKeysCount = apiKeyAvailabilityUseCase.configuredKeysCount(keys, availability.fields)
         setState {
             copy(
-                gigaChatKey = gigaChatKey,
-                qwenChatKey = qwenChatKey,
-                aiTunnelKey = aiTunnelKey,
-                anthropicKey = anthropicKey,
-                openaiKey = openAiKey,
-                polzaApiKey = polzaApiKey,
-                codexConnected = codexConnected,
+                gigaChatKey = keys.gigaChatKey,
+                qwenChatKey = keys.qwenChatKey,
+                aiTunnelKey = keys.aiTunnelKey,
+                anthropicKey = keys.anthropicKey,
+                openaiKey = keys.openaiKey,
+                polzaApiKey = keys.polzaApiKey,
+                codexConnected = keys.codexConnected,
                 availableApiKeyFields = availability.fields,
                 availableApiKeyProviders = availability.providers,
                 supportsVoiceRecognitionApiKeys = availability.supportsVoiceRecognitionApiKeys,
                 supportsLocalInference = availability.supportsLocalInference,
-                useEnglishVersion = settingsProvider.regionProfile == REGION_EN,
                 configuredKeysCount = configuredKeysCount,
-                canProceed = configuredKeysCount > 0 || availability.supportsLocalInference
+                canProceed = configuredKeysCount > 0 || availability.supportsLocalInference,
             )
         }
     }
@@ -343,34 +166,4 @@ class SetupViewModel(
             settingsProvider.needsOnboarding = true
         }
     }
-
-    /** Choose default LLM base on the keys provided */
-    private fun tryToChooseDefaultMode(
-        gigaChatKey: String,
-        qwenChatKey: String,
-        aiTunnelKey: String,
-        anthropicKey: String,
-        openAiKey: String,
-        codexConnected: Boolean = !settingsProvider.codexAccessToken.isNullOrBlank(),
-    ) {
-        if (!startedWithoutAnyApiKeys) return
-
-        val keysByProvider = mapOf(
-            LlmProvider.CODEX to if (codexConnected) "connected" else "",
-            LlmProvider.GIGA to gigaChatKey,
-            LlmProvider.QWEN to qwenChatKey,
-            LlmProvider.AI_TUNNEL to aiTunnelKey,
-            LlmProvider.ANTHROPIC to anthropicKey,
-            LlmProvider.OPENAI to openAiKey,
-        )
-        val preferredProvider = llmBuildProfile.providerPriorities()
-            .firstOrNull { provider -> keysByProvider[provider].orEmpty().isNotBlank() }
-            ?: return
-
-        settingsProvider.gigaModel = defaultSetupModelForProvider(preferredProvider)
-    }
-
-    private fun defaultSetupModelForProvider(provider: LlmProvider): LLMModel =
-        llmBuildProfile.defaultModelForProvider(provider)
-            ?: error("Default setup model is not configured for provider: $provider")
 }
