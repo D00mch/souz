@@ -73,11 +73,13 @@ internal class ToolForgetAllMemory(
     override val fn = LLMRequest.Function(
         name = NAME,
         description = "Forget all persistent memory of the user in every conversation. Use only when the user explicitly " +
-            "asks to forget everything. Without confirmationId nothing is deleted and the result returns one: ask the user " +
-            "to confirm and end your turn. Call again with it only after the user explicitly confirms in a later message " +
+            "asks to forget everything. Omit confirmationId or pass a blank string to get a new ID without deleting anything. " +
+            "Ask the user to confirm and end your turn. Call again with the ID only after the user explicitly confirms in a later message " +
             "within 10 minutes; each confirmationId works once. forgotten=true confirms deletion. $CAPTURE_NOTE",
         parameters = LLMRequest.Parameters("object", mapOf(
-            "confirmationId" to LLMRequest.Property("string", "confirmationId from the previous ForgetAllMemory result."),
+            "confirmationId" to LLMRequest.Property(
+                "string", "Omit or leave blank to start confirmation. After user confirmation, pass the ID from the previous result.",
+            ),
         ), additionalProperties = false),
     )
 
@@ -91,7 +93,7 @@ internal class ToolForgetAllMemory(
         val requested = (confirmationId as? String).toUuid()
         return forgetting(NAME) {
             when {
-                confirmationId == null -> {
+                confirmationId == null || (confirmationId is String && confirmationId.isBlank()) -> {
                     val now = clock.instant()
                     // Without items, the generic option-answer route cannot answer this confirmation.
                     val confirmation = options.save(Option(
