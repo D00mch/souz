@@ -11,17 +11,13 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.jupiter.params.ParameterizedTest
-import org.junit.jupiter.params.provider.EnumSource
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
-import ru.souz.llms.BuildEdition
 import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfile
-import ru.souz.llms.LlmProvider
+import ru.souz.llms.LocalModelAvailability
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
@@ -127,47 +123,6 @@ class SetupViewModelTest {
         verify(exactly = 0) { settingsProvider.needsOnboarding = true }
     }
 
-    @ParameterizedTest(name = "first configured key: {0}")
-    @EnumSource(LlmProvider::class, names = ["QWEN", "AI_TUNNEL", "ANTHROPIC", "OPENAI"])
-    fun `setup picks the provider default model for the first key`(provider: LlmProvider) = runTest(dispatcher) {
-        val (event, defaultModel) = when (provider) {
-            LlmProvider.QWEN -> SetupEvent.InputQwenChatKey("token") to LLMModel.QwenMax
-            LlmProvider.AI_TUNNEL -> SetupEvent.InputAiTunnelKey("token") to LLMModel.AiTunnelClaudeHaiku
-            LlmProvider.ANTHROPIC -> SetupEvent.InputAnthropicKey("token") to LLMModel.AnthropicHaiku45
-            LlmProvider.OPENAI -> SetupEvent.InputOpenAiKey("token") to LLMModel.OpenAIGpt5Mini
-            else -> error("Unexpected provider: $provider")
-        }
-        val settingsProvider = settingsProviderStub()
-        val viewModel = createViewModel(settingsProvider)
-
-        advanceUntilIdle()
-        viewModel.send(event)
-        advanceUntilIdle()
-
-        val expectedModel = if (supportsProvider(provider)) defaultModel else LLMModel.Max
-        assertEquals(expectedModel, settingsProvider.gigaModel)
-    }
-
-    @Test
-    fun `setup prefers giga model when giga key appears during first setup`() = runTest(dispatcher) {
-        val settingsProvider = settingsProviderStub()
-        val viewModel = createViewModel(settingsProvider)
-
-        advanceUntilIdle()
-        viewModel.send(SetupEvent.InputQwenChatKey("qwen-token"))
-        advanceUntilIdle()
-        assertEquals(LLMModel.QwenMax, settingsProvider.gigaModel)
-
-        viewModel.send(SetupEvent.InputGigaChatKey("giga-token"))
-        advanceUntilIdle()
-        val expectedModel = if (supportsProvider(LlmProvider.GIGA)) {
-            LLMModel.Max
-        } else {
-            LLMModel.QwenMax
-        }
-        assertEquals(expectedModel, settingsProvider.gigaModel)
-    }
-
     @Test
     fun `setup does not auto-change model when setup starts with existing keys`() = runTest(dispatcher) {
         val settingsProvider = settingsProviderStub(
@@ -184,41 +139,39 @@ class SetupViewModelTest {
     }
 
     @Test
-    fun `setup updates profile toggle and persists selection`() = runTest(dispatcher) {
-        val settingsProvider = settingsProviderStub()
-        val viewModel = createViewModel(settingsProvider)
+    fun `setup offers every chat provider in either service language without saving a model`() = runTest(dispatcher) {
+        val chatKeys = setOf(
+            ApiKeyField.GIGA_CHAT, ApiKeyField.QWEN_CHAT, ApiKeyField.AI_TUNNEL,
+            ApiKeyField.ANTHROPIC, ApiKeyField.OPENAI, ApiKeyField.CODEX,
+        )
+        for (language in listOf(REGION_RU, REGION_EN)) {
+            val settings = settingsProviderStub()
+            settings.regionProfile = language
+            val viewModel = createViewModel(settings)
+            advanceUntilIdle()
 
-        advanceUntilIdle()
-        assertFalse(viewModel.uiState.value.useEnglishVersion)
+            assertEquals(chatKeys, viewModel.uiState.value.availableApiKeyFields - ApiKeyField.POLZA)
+            viewModel.send(SetupEvent.InputOpenAiKey("openai-key"))
+            advanceUntilIdle()
 
-        viewModel.send(SetupEvent.InputUseEnglishVersion(true))
-        advanceUntilIdle()
-
-        assertTrue(viewModel.uiState.value.useEnglishVersion)
-        verify { settingsProvider.regionProfile = REGION_EN }
-
-        viewModel.send(SetupEvent.InputUseEnglishVersion(false))
-        advanceUntilIdle()
-
-        assertFalse(viewModel.uiState.value.useEnglishVersion)
-        verify { settingsProvider.regionProfile = REGION_RU }
+            assertTrue(viewModel.uiState.value.canProceed)
+            assertEquals("openai-key", settings.openaiKey)
+            assertEquals(language, settings.regionProfile)
+            verify(exactly = 0) { settings.gigaModel = any() }
+        }
     }
 
     private fun createViewModel(settingsProvider: SettingsProvider): SetupViewModel {
         val speechPlayer = mockk<UiSpeechPlayer>(relaxed = true)
-        val llmBuildProfile = LlmBuildProfile(settingsProvider)
-        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
+        val localModels = mockk<LocalModelAvailability>(relaxed = true)
+        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(localModels, settingsProvider)
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
-            bindSingleton<LlmBuildProfile> { llmBuildProfile }
             bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
             bindSingleton<UiSpeechPlayer> { speechPlayer }
         }
         return SetupViewModel(di)
     }
-
-    private fun supportsProvider(provider: LlmProvider): Boolean =
-        LlmBuildProfile.defaultsForEdition(BuildEdition.RU)[provider] != null
 
     private fun settingsProviderStub(
         giga: String = "",

@@ -71,7 +71,7 @@ import ru.souz.ambient.AmbientTranscriptionService
 import ru.souz.ambient.AmbientTranscriptionState
 import ru.souz.ambient.SemanticBlockBuilder
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
@@ -1836,7 +1836,6 @@ class MainViewModelTest {
         every { localProviderAvailability.isProviderAvailable() } returns (localAvailableModel != null)
         every { localProviderAvailability.availableGigaModels() } returns listOfNotNull(localAvailableModel)
         every { localProviderAvailability.defaultGigaModel() } returns localAvailableModel
-        val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
         val localModelStore = mockk<LocalModelStore>(relaxed = true)
         val localLlamaRuntime = mockk<LocalLlamaRuntime>(relaxed = true)
         localAvailableModel?.let { model ->
@@ -1913,7 +1912,7 @@ class MainViewModelTest {
             bindSingleton<SpeechRecognitionProvider> { speechRecognitionProvider }
             bindSingleton<BackgroundIndexRefresher> { desktopInfoRepository }
             bindSingleton<SettingsProvider> { settingsProvider }
-            bindSingleton<LlmBuildProfile> { llmBuildProfile }
+            bindSingleton<LocalModelAvailability> { localProviderAvailability }
             bindSingleton { localModelStore }
             bindSingleton { localLlamaRuntime }
             bindSingleton<LocalModelUiHost> {

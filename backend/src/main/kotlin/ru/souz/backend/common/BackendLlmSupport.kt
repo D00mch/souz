@@ -1,5 +1,7 @@
 package ru.souz.backend.common
 
+import ru.souz.backend.llm.hasCompleteCodexOAuthCredentials
+import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
 
@@ -18,7 +20,7 @@ object BackendLlmSupport {
     val chatModels: Set<LLMModel> =
         LLMModel.entries.filterTo(linkedSetOf()) { it.provider in chatProviders }
 
-    val fallbackChatModel: LLMModel = LLMModel.QwenFlash
+    val fallbackChatModel: LLMModel = LLMModel.QwenMax
 
     val userManagedKeyProviders: Set<LlmProvider> = setOf(
         LlmProvider.QWEN,
@@ -34,3 +36,6 @@ object BackendLlmSupport {
         LlmProvider.LOCAL,
     )
 }
+
+internal fun SettingsProvider.hasServerChatAccess(provider: LlmProvider): Boolean =
+    if (provider == LlmProvider.CODEX) hasCompleteCodexOAuthCredentials() else hasKey(provider)

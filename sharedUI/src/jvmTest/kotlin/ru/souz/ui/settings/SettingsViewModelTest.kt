@@ -35,12 +35,13 @@ import ru.souz.agent.AgentFacade
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.db.SettingsProvider
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
@@ -110,10 +111,9 @@ class SettingsViewModelTest {
         every { localProviderAvailability.isProviderAvailable() } returns true
         every { localProviderAvailability.availableGigaModels() } returns listOf(LLMModel.LocalQwen3_4B_Instruct_2507)
         every { localProviderAvailability.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
-        val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
-        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
+        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(localProviderAvailability, settingsProvider)
 
-        val supportsPolza = llmBuildProfile.supportsPolzaSpeechRecognition
+        val supportsPolza = settingsProvider.regionProfile == REGION_RU
         every { settingsProvider.hasKey(any<LlmProvider>()) } answers {
             firstArg<LlmProvider>() == LlmProvider.QWEN
         }
@@ -131,9 +131,7 @@ class SettingsViewModelTest {
             VoiceRecognitionModel.PolzaGigaAm
         }
 
-        val configuredModel = llmBuildProfile.availableModels.first {
-            it.provider != LlmProvider.QWEN && it.provider != LlmProvider.OPENAI
-        }
+        val configuredModel = LLMModel.Pro
 
         var embeddingsModelValue = EmbeddingsModel.GigaEmbeddings
         var voiceRecognitionModelValue = configuredVoiceRecognitionModel
@@ -192,7 +190,7 @@ class SettingsViewModelTest {
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
             bindSingleton<BackgroundIndexRefresher> { desktopInfoRepository }
-            bindSingleton<LlmBuildProfile> { llmBuildProfile }
+            bindSingleton<LocalModelAvailability> { localProviderAvailability }
             bindSingleton { localModelStore }
             bindSingleton { localLlamaRuntime }
             bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
@@ -229,14 +227,10 @@ class SettingsViewModelTest {
 
         viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
         advanceUntilIdle()
-        val expectedLlmModel = settingsProvider.defaultLlmModel(llmBuildProfile)
-        assertNotNull(expectedLlmModel, "Expected at least one available llm model")
-        val expectedAmbientAnalysisModel = settingsProvider.defaultAmbientAnalysisModel(llmBuildProfile)
-        assertNotNull(expectedAmbientAnalysisModel, "Expected at least one available ambient model")
-        val expectedEmbeddingsModel = settingsProvider.defaultEmbeddingsModel(llmBuildProfile)
-        assertNotNull(expectedEmbeddingsModel, "Expected at least one available embeddings model")
-        val expectedVoiceRecognitionModel = settingsProvider.defaultVoiceRecognitionModel(llmBuildProfile)
-        assertNotNull(expectedVoiceRecognitionModel, "Expected at least one available voice recognition model")
+        val expectedLlmModel = LLMModel.QwenMax
+        val expectedAmbientAnalysisModel = LLMModel.LocalQwen3_4B_Instruct_2507
+        val expectedEmbeddingsModel = EmbeddingsModel.QwenEmbeddings
+        val expectedVoiceRecognitionModel = VoiceRecognitionModel.PolzaGigaAm
 
         val state = viewModel.uiState.value
         assertEquals(expectedLlmModel, state.gigaModel)
@@ -311,6 +305,36 @@ class SettingsViewModelTest {
         assertEquals(SettingsSection.GENERAL, viewModel.uiState.value.activeSection)
         assertTrue(viewModel.uiState.value.useEnglishInterface)
         assertTrue(settingsHostPreferences.useEnglishInterface)
+    }
+
+    @Test
+    fun `chat choices and selected model survive both desktop language changes`() = runTest(dispatcher) {
+        var serviceLanguage = REGION_RU
+        val fixture = createLocalModelSettingsFixture(
+            gigaModel = LLMModel.OpenAIGpt52,
+            configureSettingsProvider = { settings ->
+                every { settings.regionProfile } answers { serviceLanguage }
+                every { settings.regionProfile = any() } answers { serviceLanguage = firstArg() }
+                every { settings.hasKey(LlmProvider.GIGA) } returns true
+                every { settings.hasKey(LlmProvider.OPENAI) } returns true
+            },
+        )
+        val viewModel = fixture.viewModel
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
+
+        val models = viewModel.uiState.value.availableLlmModels
+        assertTrue(LLMModel.Pro in models)
+        assertTrue(LLMModel.OpenAIGpt52 in models)
+        viewModel.handleEvent(SettingsEvent.InputUseEnglishVersion(true))
+        advanceUntilIdle()
+        assertEquals(REGION_EN, serviceLanguage)
+        assertEquals(models, viewModel.uiState.value.availableLlmModels)
+        assertEquals(LLMModel.OpenAIGpt52, viewModel.uiState.value.gigaModel)
+
+        viewModel.handleEvent(SettingsEvent.InputUseEnglishInterface(true))
+        assertEquals(models, viewModel.uiState.value.availableLlmModels)
+        assertEquals(LLMModel.OpenAIGpt52, viewModel.uiState.value.gigaModel)
     }
 
     @Test
@@ -712,8 +736,7 @@ class SettingsViewModelTest {
         every { localProviderAvailability.isProviderAvailable() } returns true
         every { localProviderAvailability.availableGigaModels() } returns availableGigaModels
         every { localProviderAvailability.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
-        val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
-        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
+        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(localProviderAvailability, settingsProvider)
 
         val localModelStore = mockk<LocalModelStore>(relaxed = true)
         configureLocalModelStore(localModelStore)
@@ -734,7 +757,7 @@ class SettingsViewModelTest {
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
             bindSingleton<BackgroundIndexRefresher> { desktopInfoRepository }
-            bindSingleton<LlmBuildProfile> { llmBuildProfile }
+            bindSingleton<LocalModelAvailability> { localProviderAvailability }
             bindSingleton { localModelStore }
             bindSingleton { localLlamaRuntime }
             bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }

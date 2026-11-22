@@ -81,7 +81,6 @@ suspend fun ScenarioLiveModel.runScenario(
                 defaultSystemPrompt = BackendRuntime.backendSystemPrompt(),
                 policyPrompt = SystemBackendConfigSource.value("SOUZ_BACKEND_POLICY_PROMPT", "souz.backend.policyPrompt")
                     ?.trim()?.takeIf { it.isNotEmpty() },
-                locale = "ru-RU",
                 useFewShotExamples = true,
             ).apply {
                 applyRequest(BackendConversationTurnRequest(

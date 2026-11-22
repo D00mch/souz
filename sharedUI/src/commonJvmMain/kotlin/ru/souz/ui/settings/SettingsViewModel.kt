@@ -19,10 +19,11 @@ import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.db.REGION_EN
 import ru.souz.db.REGION_RU
 import ru.souz.db.SettingsProvider
+import ru.souz.db.defaultChatModel
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.codex.CodexOAuthService
@@ -52,7 +53,7 @@ class SettingsViewModel(
 
     private val l = LoggerFactory.getLogger(SettingsViewModel::class.java)
     private val keysProvider: SettingsProvider by di.instance()
-    private val llmBuildProfile: LlmBuildProfile by di.instance()
+    private val localModels: LocalModelAvailability by di.instance()
     private val localModelUiHost: LocalModelUiHost by di.instance()
     private val apiKeyAvailabilityUseCase: ApiKeyAvailabilityUseCase by di.instance()
     private val chatApi: LLMChatAPI by di.instance()
@@ -524,7 +525,7 @@ class SettingsViewModel(
                 gigaModel = model,
                 systemPrompt = newPrompt,
                 embeddingsModel = effectiveEmbeddingsModel,
-                availableEmbeddingsModels = keysProvider.availableEmbeddingsModels(llmBuildProfile),
+                availableEmbeddingsModels = keysProvider.availableEmbeddingsModels(localModels),
                 localModelDownloadPrompt = null,
             )
         }
@@ -627,18 +628,18 @@ class SettingsViewModel(
                 }
             }
 
-        val availableLlmModels = keysProvider.availableLlmModels(llmBuildProfile)
+        val availableLlmModels = keysProvider.availableLlmModels(localModels)
         val configuredLlmModel = keysProvider.gigaModel
         val selectedLlmModel = pickConfiguredOrDefault(
             configured = configuredLlmModel,
             available = availableLlmModels,
-        ) { keysProvider.defaultLlmModel(llmBuildProfile) }
-        val availableAmbientAnalysisModels = keysProvider.availableAmbientAnalysisModels(llmBuildProfile)
+        ) { keysProvider.defaultChatModel(localModels) }
+        val availableAmbientAnalysisModels = localModels.availableGigaModels()
         val configuredAmbientAnalysisModel = keysProvider.ambientAnalysisModel
         val selectedAmbientAnalysisModel = pickConfiguredOrDefault(
             configured = configuredAmbientAnalysisModel,
             available = availableAmbientAnalysisModels,
-        ) { keysProvider.defaultAmbientAnalysisModel(llmBuildProfile) }
+        ) { localModels.defaultGigaModel()?.takeIf { it in availableAmbientAnalysisModels } }
         if (selectedAmbientAnalysisModel != configuredAmbientAnalysisModel) {
             keysProvider.ambientAnalysisModel = selectedAmbientAnalysisModel
         }
@@ -652,11 +653,11 @@ class SettingsViewModel(
         val availableAgents = agentFacade.availableAgents
 
         val configuredEmbeddingsModel = keysProvider.embeddingsModel
-        val availableEmbeddingsModels = keysProvider.availableEmbeddingsModels(llmBuildProfile)
+        val availableEmbeddingsModels = keysProvider.availableEmbeddingsModels(localModels)
         val selectedEmbeddingsModel = pickConfiguredOrDefault(
             configured = configuredEmbeddingsModel,
             available = availableEmbeddingsModels,
-        ) { keysProvider.defaultEmbeddingsModel(llmBuildProfile) }
+        ) { keysProvider.defaultEmbeddingsModel(availableEmbeddingsModels) }
         if (selectedEmbeddingsModel != configuredEmbeddingsModel) {
             keysProvider.embeddingsModel = selectedEmbeddingsModel
             localModelUiHost.rebuildIndex(viewModelScope, ioDispatchers)
@@ -664,19 +665,13 @@ class SettingsViewModel(
 
         val localMacOsSpeechAvailable = settingsHostPreferences.isLocalMacOsSpeechAvailable()
         val availableVoiceRecognitionModels = keysProvider.availableVoiceRecognitionModels(
-            llmBuildProfile = llmBuildProfile,
             localMacOsSpeechAvailable = localMacOsSpeechAvailable,
         )
         val configuredVoiceRecognitionModel = keysProvider.voiceRecognitionModel
         val selectedVoiceRecognitionModel = pickConfiguredOrDefault(
             configured = configuredVoiceRecognitionModel,
             available = availableVoiceRecognitionModels,
-        ) {
-            keysProvider.defaultVoiceRecognitionModel(
-                llmBuildProfile = llmBuildProfile,
-                localMacOsSpeechAvailable = localMacOsSpeechAvailable,
-            )
-        }
+        ) { defaultVoiceRecognitionModel(availableVoiceRecognitionModels) }
         if (selectedVoiceRecognitionModel != configuredVoiceRecognitionModel) {
             keysProvider.voiceRecognitionModel = selectedVoiceRecognitionModel
         }
@@ -939,7 +934,7 @@ class SettingsViewModel(
                 val wasCustomOpenAiCompatibleModelSelected = keysProvider.gigaModel == LLMModel.OpenAICompatibleCustom
                 keysProvider.openaiModel = value.trim().takeUnless(String::isBlank)
                 if (wasCustomOpenAiCompatibleModelSelected && keysProvider.openaiModel.isNullOrBlank()) {
-                    keysProvider.gigaModel = keysProvider.defaultLlmModel(llmBuildProfile)
+                    keysProvider.gigaModel = keysProvider.defaultChatModel(localModels)
                         ?: LLMModel.OpenAIGpt5Mini
                 }
             }

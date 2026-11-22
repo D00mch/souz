@@ -91,8 +91,8 @@
     <string name="setting_notification_sound_desc">Проигрывать короткий звук, когда ответ ассистента готов</string>
     <string name="setting_voice_input_review_title">Проверка голосового ввода</string>
     <string name="setting_voice_input_review_desc">Вставлять распознанный текст в поле ввода чата вместо немедленной отправки</string>
-    <string name="setting_language_profile_title">Региональный профиль</string>
-    <string name="setting_language_profile_desc">В России доступны специальные модели</string>
+    <string name="setting_language_profile_title">Язык сервисов</string>
+    <string name="setting_language_profile_desc">Определяет язык системных инструкций и настройки речи и эмбеддингов.</string>
     <string name="setting_interface_language_title">Язык интерфейса</string>
     <string name="setting_theme_title">Оформление</string>
     <string name="setting_theme_system">Системная</string>
@@ -301,6 +301,7 @@
     <!-- Setup Screen -->
     <string name="setup_title">Подключите API-ключи</string>
     <string name="setup_hint_add_key">Для старта добавьте хотя бы один ключ. Остальные можно подключить позже в настройках.</string>
+    <string name="setup_hint_local_available">Локальные модели доступны без API-ключа.</string>
     <string name="setup_hint_keys_found">Найдено ключей: %d. Можно продолжать.</string>
     <string name="setup_hint_voice_required">Для голосовых команд нужен хотя бы один ключ распознавания речи.</string>
     <string name="setup_hint_voice_unavailable">Голосовые команды в этой сборке пока недоступны.</string>

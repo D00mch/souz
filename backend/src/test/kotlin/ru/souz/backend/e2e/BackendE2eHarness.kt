@@ -426,7 +426,7 @@ internal class BackendE2eBackend(
         }
         if (settingsSource != null) {
             bindSingleton<NamedLlmConfig>(overrides = true) { settingsSource.loadNamedModels() }
-            bindSingleton<SettingsProvider>(overrides = true) {
+            bindSingleton<BackendSettingsProvider>(overrides = true) {
                 BackendSettingsProvider(instance(), localAvailability, settingsSource, instance())
             }
         }

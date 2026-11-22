@@ -4,12 +4,12 @@ import ru.souz.agent.AgentId
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.findVoiceRecognitionModel
 import ru.souz.llms.findLLMModel
+import ru.souz.llms.isSupportedChatModel
 import ru.souz.llms.local.LocalBridgeLoader
 import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalHostInfoProvider
@@ -27,8 +27,6 @@ class SettingsProviderImpl(
             ?: System.getenv(SUBAGENT_MODELS_JSON)
             ?: System.getProperty(SUBAGENT_MODELS_JSON),
     )
-
-    private val llmBuildProfile by lazy { LlmBuildProfile(this, localProviderAvailability) }
 
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _appLanguageDelegate: String?
@@ -170,21 +168,15 @@ class SettingsProviderImpl(
         }
 
     override var gigaModel: LLMModel
-        get() = _gigaModelDelegate?.let { value ->
-            findLLMModel(value)
-        }?.let { model -> llmBuildProfile.normalizeConfiguredModel(model, openaiModel) { defaultLlmModel() } }
-            ?: defaultLlmModel()
+        get() = resolveChatModel(_gigaModelDelegate?.let(::findLLMModel))
         set(value) {
-            _gigaModelDelegate = llmBuildProfile.normalizeConfiguredModel(value, openaiModel) { defaultLlmModel() }.alias
+            _gigaModelDelegate = resolveChatModel(value).alias
         }
 
     override var ambientAnalysisModel: LLMModel
-        get() = _ambientAnalysisModelDelegate?.let { value ->
-            findLLMModel(value)
-        }?.let(llmBuildProfile::normalizeAmbientAnalysisModel)
-            ?: llmBuildProfile.defaultAmbientAnalysisModel()
+        get() = resolveAmbientModel(_ambientAnalysisModelDelegate?.let(::findLLMModel))
         set(value) {
-            _ambientAnalysisModelDelegate = llmBuildProfile.normalizeAmbientAnalysisModel(value).alias
+            _ambientAnalysisModelDelegate = resolveAmbientModel(value).alias
         }
 
     override var useFewShotExamples: Boolean
@@ -311,7 +303,15 @@ class SettingsProviderImpl(
         envKey = MCP_SERVERS_FILE
     )
 
-    private fun defaultLlmModel(): LLMModel = llmBuildProfile.defaultConfiguredModel(::hasKey)
+    private fun resolveChatModel(model: LLMModel?): LLMModel =
+        model?.takeIf { it.isSupportedChatModel(openaiModel, localProviderAvailability::availableGigaModels) }
+            ?: defaultChatModel(localProviderAvailability)
+            ?: LLMModel.QwenMax
+
+    private fun resolveAmbientModel(model: LLMModel?): LLMModel =
+        model?.takeIf { it in localProviderAvailability.availableGigaModels() }
+            ?: localProviderAvailability.defaultGigaModel()
+            ?: LLMModel.LocalQwen3_4B_Instruct_2507
 
     private fun enforcedEmbeddingsModel(): EmbeddingsModel? = when {
         gigaModel.provider == LlmProvider.LOCAL && localProviderAvailability.isProviderAvailable() ->

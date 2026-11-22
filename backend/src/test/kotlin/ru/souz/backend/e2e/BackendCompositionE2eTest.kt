@@ -426,6 +426,40 @@ class BackendCompositionE2eTest {
         }
 
     @Test
+    fun `bootstrap and onboarding advertise one chat catalog in both languages`() {
+        var catalog: JsonNode? = null
+        for (language in listOf("ru", "en")) {
+            val source = object : BackendConfigSource {
+                override fun env(key: String): String? = when (key) {
+                    "APP_LANGUAGE" -> language
+                    "OPENAI_MODEL" -> "custom-model"
+                    "CODEX_ACCESS_TOKEN" -> "incomplete"
+                    else -> null
+                }
+
+                override fun property(key: String): String? = null
+            }
+            backendE2eTest("e2e_catalog_$language", settingsSource = source, localModels = emptyList()) {
+                val bootstrap = client.get(BackendHttpRoutes.BOOTSTRAP) { trusted("catalog-user") }.jsonBody()
+                val models = bootstrap["capabilities"]["models"]
+                catalog?.let { assertEquals(it, models) }
+                catalog = models
+                val providers = setOf("openai", "anthropic", "ai_tunnel", "qwen")
+                assertEquals(providers, models.map { it["provider"].asText() }.toSet())
+                assertTrue(models.any { it["model"].asText() == LLMModel.OpenAICompatibleCustom.alias })
+                assertTrue(models.none { it["serverManagedKey"].asBoolean() || it["userManagedKey"].asBoolean() })
+                assertEquals(language, bootstrap["settings"]["interfaceLanguage"].asText())
+                assertEquals(LLMModel.QwenMax.alias, bootstrap["settings"]["defaultModel"].asText())
+                assertEquals(LLMModel.QwenMax.alias, client.get(BackendHttpRoutes.HEALTH).jsonBody()["model"].asText())
+
+                val onboarding = client.get(BackendHttpRoutes.ONBOARDING_STATE) { trusted("catalog-user") }.jsonBody()
+                assertEquals("provider", onboarding["currentStep"].asText())
+                assertEquals(providers, onboarding["availableUserManagedProviders"].map { it["provider"].asText() }.toSet())
+            }
+        }
+    }
+
+    @Test
     fun `onboarding validation rejects malformed preferences without partial completion`() =
         backendE2eTest("e2e_onboarding_validation") {
             val invalidBodies = listOf(

@@ -6,6 +6,8 @@ Desktop interface language and regional formatting are separate concerns. `Deskt
 
 The desktop agent runtime receives the untouched startup locale before the interface locale is applied. Interface changes may update Compose resources immediately, but they must not change the locale already held by the agent runtime.
 
+The desktop chat catalog and automatic model order are independent of both interface and service language. Credentials and host capabilities determine which chat models are selectable. Service language continues to control default prompts and the speech and embedding provider preferences.
+
 ## Why it is fragile
 
 Compose resources follow the JVM default locale, while date, number, and agent prompt behavior may also consult locale state. Treating the UI toggle as a wholesale regional change can silently alter formatting or the language context supplied to the agent.

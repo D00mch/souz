@@ -3,8 +3,9 @@ package ru.souz.db
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfileSettings
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.LocalModelAvailability
+import ru.souz.llms.automaticChatModels
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
 
@@ -12,7 +13,7 @@ const val REGION_RU = "ru"
 const val REGION_EN = "en"
 const val DEFAULT_REQUEST_TIMEOUT_MILLIS = 400_000L
 
-interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
+interface SettingsProvider : AgentSettingsProvider {
     val subagentModels: Map<String, LlmProvider> get() = emptyMap()
 
     override fun executionModelId(model: LLMModel): String =
@@ -71,3 +72,6 @@ interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
         VoiceRecognitionProvider.LOCAL_MACOS -> true
     }
 }
+
+fun SettingsProvider.defaultChatModel(localModels: LocalModelAvailability): LLMModel? =
+    localModels.automaticChatModels(openaiModel).firstOrNull { hasKey(it.provider) }

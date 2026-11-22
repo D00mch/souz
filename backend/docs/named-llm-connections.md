@@ -24,7 +24,9 @@ Set `SOUZ_LLM_CONFIG_FILE` to a JSON file readable by the backend, and supply th
 
 All configured model names are advertised in `/v1/bootstrap`; no per-user allowlist is required. Assign a name with trusted `PATCH /v1/me/settings`, for example `{"defaultModel":"test-chat"}`. HTTP `options.model` and WebSocket `payload.meta.model` accept the same names. Settings and execution records persist the name. Unknown or removed names fail explicitly. When no built-in or local model is accessible, the first model in this file is the default for new users and the fallback for unavailable built-in selections.
 
-`GET /health` reports the server default using the same selection policy, without user settings or user-managed keys.
+The chat catalog and automatic model order are independent of locale. Bootstrap advertises supported cloud models with their access flags. It includes Codex with complete server OAuth credentials, custom OpenAI-compatible models when configured, and local models supported by the host. An available configured default takes precedence over the automatic order.
+
+`GET /health` reports the default from deployment configuration and host capabilities. It remains available without a PostgreSQL connection.
 
 `subagentModels` and `summarization` are optional. A child without an explicit model inherits the parent's named selection. Dedicated summarization uses its own connection and shallow-merges `OPENAI_SUMMARIZATION_PARAMETERS` with the selected model's `parameters`, with model values winning. Existing `OPENAI_*`, summarization model/connection/parameter settings and `SUBAGENT_MODELS_JSON` remain usable when no named override is configured.
 
