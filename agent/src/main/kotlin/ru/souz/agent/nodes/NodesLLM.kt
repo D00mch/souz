@@ -77,37 +77,44 @@ internal class NodesLLM(
         ctx: AgentContext<String>,
         instructions: String,
         streamRevision: Long,
-        release: Deferred<Unit>? = null,
     ): AgentContext<LLMResponse.Chat> {
-        fun build(history: List<LLMRequest.Message>) =
-            ctx.toChatRequest(history, maxOutputTokens = CHAT_MAX_OUTPUT_TOKENS)
-                .withConversationInstructions(instructions)
-                .withFileReferences()
-
         var history = ctx.history
-        var request = build(history)
+        var request = ctx.prepareChatRequest(instructions)
         if (request.exceedsContextBudget(ctx.settings.contextSize)) {
             history = llmApi.compactHistory(
                 ctx.toChatRequest(history, maxOutputTokens = SUMMARIZATION_MAX_OUTPUT_TOKENS),
                 ctx.activeExchangeStartIndex,
                 attachmentHistoryLimit,
             )
-            request = build(history)
+            request = ctx.prepareChatRequest(instructions, history)
         }
         val response = if (request.exceedsContextBudget(ctx.settings.contextSize)) {
             LLMResponse.Chat.Error(-1, "The conversation, instructions and tools exceed the context budget. " +
                 "Shorten the request or increase the configured context size.")
-        } else request(ctx, request, streamRevision, release)
-        return ctx.map(
-            history = history + (response as? LLMResponse.Chat.Ok)?.choices.orEmpty().mapNotNull { it.toMessage() },
-            activeExchangeStartIndex = ctx.activeExchangeStartIndex + history.size - ctx.history.size,
-        ) { response }
+        } else request(ctx, request, streamRevision)
+        return ctx.withChatResponse(response, history)
     }
 
+    private fun AgentContext<String>.prepareChatRequest(
+        instructions: String,
+        history: List<LLMRequest.Message> = this.history,
+    ): LLMRequest.Chat =
+        toChatRequest(history, maxOutputTokens = CHAT_MAX_OUTPUT_TOKENS)
+            .withConversationInstructions(instructions)
+            .withFileReferences()
+
+    private fun AgentContext<String>.withChatResponse(
+        response: LLMResponse.Chat,
+        history: List<LLMRequest.Message> = this.history,
+    ): AgentContext<LLMResponse.Chat> =
+        map(
+            history = history + (response as? LLMResponse.Chat.Ok)?.choices.orEmpty().mapNotNull { it.toMessage() },
+            activeExchangeStartIndex = activeExchangeStartIndex + history.size - this.history.size,
+        ) { response }
+
     /**
-     * Starts the simple model at once and holds its streamed output until [classifier] decides. A complex turn
-     * cancels it and calls the complex model; a classifier failure uses the turn's own model. The chosen
-     * context, with settings without routing and tools bound to them, serves every later call of the turn.
+     * Starts the simple model in parallel when its prepared request fits. The classifier gates its streamed
+     * output and chooses the model whose call may compact history. A classifier failure uses the turn's model.
      */
     private suspend fun route(
         ctx: AgentContext<String>,
@@ -119,10 +126,13 @@ internal class NodesLLM(
         val normal = ctx.settings.copy(routing = null)
         val simple = ctx.copy(settings = normal.routedTo(routing.simple)).withOnlyTools(emptyList())
         val complex = ctx.on(normal.routedTo(routing.complex))
+        val simpleRequest = simple.prepareChatRequest(instructions)
         // A failed speculative call matters only when the simple model is chosen.
         return supervisorScope {
             val decided = CompletableDeferred<Unit>()
-            val speculative = async { call(simple, instructions, streamRevision, decided) }
+            val speculative = if (simpleRequest.exceedsContextBudget(simple.settings.contextSize)) null else async {
+                simple.withChatResponse(request(simple, simpleRequest, streamRevision, decided))
+            }
             val started = TimeSource.Monotonic.markNow()
             val classification = try {
                 classifier.classify(ctx.classificationRequest(), ctx.routingCapabilities)
@@ -140,11 +150,11 @@ internal class NodesLLM(
             l.info("Model routing class={} model={} waitCategory={} durationMs={}", verdict, target.settings.model,
                 classification?.waitCategory, started.elapsedNow().inWholeMilliseconds)
             decideInitialWait(ctx, send = target !== simple, classification?.waitCategory)
-            if (target === simple) {
+            if (target === simple && speculative != null) {
                 decided.complete(Unit)
                 speculative.await()
             } else {
-                speculative.cancelAndJoin()
+                speculative?.cancelAndJoin()
                 call(target, instructions, streamRevision)
             }
         }
