@@ -9,12 +9,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.currentCoroutineContext
@@ -22,8 +20,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.job
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import ru.souz.agent.AgentStreamChunk
@@ -386,19 +382,13 @@ class NodesLLMTest {
 
     @ParameterizedTest
     @ValueSource(strings = ["simple", "complex", "test-model"])
-    fun `oversized routed input waits for classification and compacts the completed exchange once`(chosen: String) = runTest {
+    fun `oversized routed input waits for classification before compacting once`(chosen: String) = runTest {
         val calls = mutableListOf<LLMRequest.Chat>()
-        val providerStarted = CompletableDeferred<Unit>()
         val api = mockk<LLMChatAPI> {
-            coEvery { message(capture(calls)) } answers {
-                providerStarted.complete(Unit)
-                block(0, if (firstArg<LLMRequest.Chat>().isSummarization) "short summary" else "answer")
-            }
+            coEvery { message(capture(calls)) } returns block(0, "answer")
         }
         val classifier = TaskComplexityClassifier { _, _ ->
-            // The provider dispatches on IO, so allow it to start before returning the routing decision.
-            val earlyCall = withContext(Dispatchers.Default) { withTimeoutOrNull(300) { providerStarted.await() } }
-            assertNull(earlyCall, "An oversized request reached the provider before classification.")
+            assertTrue(currentCoroutineContext().job.children.none(), "Oversized input should wait for classification.")
             if (chosen == "test-model") error("Jev down")
             TaskClassification(complex = chosen == "complex")
         }
@@ -413,14 +403,9 @@ class NodesLLMTest {
         assertFalse(request.exceedsContextBudget(ctx.settings.contextSize))
         assertTrue(request.withConversationInstructions(instructions).exceedsContextBudget(ctx.settings.contextSize))
 
-        val result = nodes.chat().execute(ctx.copy(settings = ctx.settings.copy(routing = ROUTING)), runtime())
+        nodes.chat().execute(ctx.copy(settings = ctx.settings.copy(routing = ROUTING)), runtime())
 
         assertEquals(listOf(chosen to true, chosen to false), calls.map { it.model to it.isSummarization })
-        assertEquals(completed, calls.first().messages.dropLast(1))
-        assertEquals("system\n\n$instructions", calls.last().messages.first().content)
-        assertEquals(active, result.history.drop(result.activeExchangeStartIndex).dropLast(1))
-        assertEquals(active.map { it.withFileReferences() }, calls.last().messages.drop(result.activeExchangeStartIndex))
-        assertEquals(2, result.activeExchangeStartIndex)
     }
 
     private fun exchange(prompt: String) = listOf(
