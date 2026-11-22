@@ -6,7 +6,9 @@ The [execution kernel](../src/main/kotlin/ru/souz/agent/AgentExecutionKernel.kt)
 
 ### Model routing
 
-Only confidently tool-free requests qualify for the simple route. Jev sends attachments and oversized current requests directly to complex, without truncating the current request to make it eligible. The simple route advertises and executes no tools and withholds output until selected. Complex and fallback calls retain core tools. Classifier failure uses the turn's configured model. The selected provider and model serve later calls and become the default child route. All routes share [request preparation and compaction](skills-oriented-graph.md#context-budget-and-compaction). [Model calls](../src/main/kotlin/ru/souz/agent/nodes/NodesLLM.kt)
+Only confidently tool-free requests qualify for the simple route. Jev sends attachments and oversized current requests directly to complex, without truncating the current request to make it eligible. The simple route advertises and executes no tools and withholds output until selected. Complex and fallback calls retain core tools. Classifier failure uses the turn's configured model. The selected provider and model serve later calls and become the default child route.
+
+Souz calls the simple model in parallel with classification when its prepared request fits the shared context budget. If it exceeds the budget, Souz waits for classification and invokes the selected model through the common [request preparation and compaction](skills-oriented-graph.md#context-budget-and-compaction) path. [Model calls](../src/main/kotlin/ru/souz/agent/nodes/NodesLLM.kt)
 
 Classification receives bounded, untrusted capability hints from the filtered inventory without schemas or additional discovery. Treat earlier dialogue as reference and keep the current request separate. [Jev](../../sharedLogic/src/main/kotlin/ru/souz/llms/runtime/JevClassifier.kt)
 
