@@ -2,64 +2,51 @@ package ru.souz.agent.scenarios
 
 import io.ktor.client.HttpClient
 import io.ktor.http.Url
-import io.mockk.every
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.codex.CodexChatAPI
-import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.createOpenAiProviderHttpClient
-import ru.souz.llms.http.createStandardProviderHttpClient
 import ru.souz.llms.openai.OpenAICompatibleChatAPI
 
 /** Credentials remain inside the provider; only safe model metadata is exposed. */
-class ScenarioLiveModel private constructor(
+internal class ScenarioLiveModel private constructor(
     val modelId: String,
     val reasoningEffort: String?,
     val provider: LlmProvider,
     val api: LLMChatAPI,
     private val client: HttpClient,
     private val baseClient: HttpClient,
-    internal val wire: ScenarioWireCapture?,
-    internal val providerHost: String?,
+    val wire: ScenarioWireCapture,
+    val providerHost: String,
 ) : AutoCloseable {
     override fun close() {
         client.close()
-        if (baseClient !== client) baseClient.close()
+        baseClient.close()
     }
 
     companion object {
-        fun fromEnvironment(captureWire: Boolean = false): ScenarioLiveModel {
+        fun fromEnvironment(): ScenarioLiveModel {
             assumeTrue(System.getenv(SOUZ_AGENT_INTEGRATION_TESTS_ON).equals("true", ignoreCase = true),
                 "Set $SOUZ_AGENT_INTEGRATION_TESTS_ON=true to evaluate a live model.")
             fun required(name: String): String = requireNotNull(System.getenv(name)?.trim()?.takeIf { it.isNotEmpty() }) {
                 "$name is required when $SOUZ_AGENT_INTEGRATION_TESTS_ON=true."
             }
             val model = required("OPENAI_MODEL")
-            val provider = when (System.getenv(SOUZ_AGENT_INTEGRATION_TEST_PROVIDER)?.lowercase()) {
-                null, "openai" -> LlmProvider.OPENAI
-                "codex" -> LlmProvider.CODEX
-                else -> error("$SOUZ_AGENT_INTEGRATION_TEST_PROVIDER must be openai or codex.")
+            val configuredProvider = System.getenv(SOUZ_AGENT_INTEGRATION_TEST_PROVIDER) ?: "openai"
+            require(configuredProvider.equals("openai", ignoreCase = true)) {
+                "$SOUZ_AGENT_INTEGRATION_TEST_PROVIDER must be openai for scenario evaluation."
             }
-            val settings = scenarioSettings(model, provider)
-            val baseUrl = if (provider == LlmProvider.OPENAI) required("OPENAI_BASE_URL") else null
-            val key = if (provider == LlmProvider.OPENAI) required("OPENAI_API_KEY") else null
-            if (provider == LlmProvider.CODEX) {
-                val accessToken = required("CODEX_ACCESS_TOKEN")
-                val accountId = required("CODEX_ACCOUNT_ID")
-                every { settings.codexAccessToken } returns accessToken
-                every { settings.codexAccountId } returns accountId
-                // Borrow an existing access token; its owning Codex session manages refresh.
-                every { settings.codexExpiresAt } returns null
-            }
+            val settings = scenarioSettings(model)
+            val provider = LlmProvider.OPENAI
+            val baseUrl = required("OPENAI_BASE_URL")
+            val providerHost = Url(baseUrl).host
+            val key = required("OPENAI_API_KEY")
             val effort = System.getenv(SOUZ_AGENT_INTEGRATION_TEST_REASONING_EFFORT)?.trim()?.takeIf { it.isNotEmpty() }
-            val baseClient = if (provider == LlmProvider.CODEX) createStandardProviderHttpClient() else createOpenAiProviderHttpClient()
-            val wire = if (captureWire && provider == LlmProvider.OPENAI) ScenarioWireCapture() else null
-            val client = if (wire == null) baseClient else baseClient.config { install(wire.plugin) }
-            val api = if (provider == LlmProvider.CODEX) {
-                CodexChatAPI(settings, CodexOAuthService(settings, client), client)
-            } else OpenAICompatibleChatAPI(provider, settings, client, apiKey = key, baseUrl = baseUrl)
-            return ScenarioLiveModel(model, effort, provider, api, client, baseClient, wire, baseUrl?.let { Url(it).host })
+            val baseClient = createOpenAiProviderHttpClient()
+            val wire = ScenarioWireCapture()
+            val client = baseClient.config { install(wire.plugin) }
+            val api = OpenAICompatibleChatAPI(provider, settings, client, apiKey = key, baseUrl = baseUrl)
+            return ScenarioLiveModel(model, effort, provider, api, client, baseClient, wire, providerHost)
         }
     }
 }

@@ -14,29 +14,15 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
-internal enum class EvaluationCase(val id: String) {
-    DOCTOR_SEND("doctor-send-link"),
-    TRAIN("rybinsk-train"),
-    THEATRE("afisha-theatre"),
-    SKILL_SWITCH("skill-switch"),
-}
-
-internal class ScenarioFixture(case: EvaluationCase, today: LocalDate, appointment: LocalDate) {
+internal class ScenarioFixture(today: LocalDate, appointment: LocalDate) {
     private val doctor = doctorTask(today, appointment)
-    private val train = trainTask(appointment.plusDays(2))
-    private val theatre = theatreTask(appointment.plusDays(3))
-    private val tasks = when (case) {
-        EvaluationCase.DOCTOR_SEND -> listOf(doctor)
-        EvaluationCase.TRAIN -> listOf(train)
-        EvaluationCase.THEATRE -> listOf(theatre)
-        EvaluationCase.SKILL_SWITCH -> listOf(doctor, train, theatre)
-    }
+    private val tasks = listOf(doctor, trainTask(appointment.plusDays(2)), theatreTask(appointment.plusDays(3)))
     private val taskByTurn = tasks.flatMap { task -> List(task.turns.size) { task } }
     val turns = tasks.flatMap { it.turns }
-    val initialHistory = if (tasks.first() === doctor) listOf(
+    val initialHistory = listOf(
         LLMRequest.Message(LLMMessageRole.user, "Болит спина."),
         LLMRequest.Message(LLMMessageRole.assistant, "Помочь подобрать врача?"),
-    ) else emptyList()
+    )
 
     private data class SearchResult(val options: Map<String, String>, val output: String)
 

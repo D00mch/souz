@@ -1,6 +1,8 @@
 package ru.souz.agent.scenarios
 
 import ru.souz.llms.LLMRequest
+import java.text.NumberFormat
+import java.util.Locale
 
 /** Standalone test report created alongside the JSONL on every evaluation run. */
 internal class ScenarioEvaluationHtml(
@@ -85,6 +87,7 @@ internal class ScenarioEvaluationHtml(
         calls: Int,
         durationMs: Long?,
         meanMs: Long?,
+        tokens: ScenarioTokenSummary,
         jsonlName: String,
     ): String = buildString {
         append(HTML_HEAD)
@@ -94,12 +97,31 @@ internal class ScenarioEvaluationHtml(
         appendText("$solved/$count trials passed · $assertionsPassed/$assertionsTotal assertions passed · $calls model calls")
         durationMs?.let { appendText(" · $it ms total") } ?: append(" · partial run")
         meanMs?.let { appendText(" · $it ms mean model latency") }
-        append("</p><p><a href=\"")
+        append("</p>")
+        appendTokenSummary(tokens)
+        append("<p><a href=\"")
         appendText(jsonlName)
         append("\">JSONL data</a></p>")
         append(trials)
         append("</main></body></html>")
     }
+}
+
+private fun StringBuilder.appendTokenSummary(tokens: ScenarioTokenSummary) {
+    val integers = NumberFormat.getIntegerInstance(Locale.US)
+    val percent = NumberFormat.getPercentInstance(Locale.US).apply {
+        minimumFractionDigits = 1
+        maximumFractionDigits = 1
+    }
+    fun count(value: Number?) = value?.let { integers.format(it) } ?: "—"
+    fun share(value: Double?) = value?.let { percent.format(it) } ?: "—"
+    append("<p>")
+    appendText("${count(tokens.total)} total tokens (${count(tokens.input)} input + ${count(tokens.output)} output)")
+    appendText(" · ${count(tokens.cachedInput)} cached input tokens (${share(tokens.cachedInputFraction)} of input)")
+    append("</p><p>")
+    appendText("Per request, on average · ${count(tokens.meanTotal)} total tokens")
+    appendText(" · ${count(tokens.meanCachedInput)} cached input tokens")
+    append("</p>")
 }
 
 private fun StringBuilder.appendMessage(role: String, content: String) {

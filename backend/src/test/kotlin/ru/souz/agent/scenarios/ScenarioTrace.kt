@@ -7,58 +7,29 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.plus
-import ru.souz.llms.restJsonMapper
 import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolInvokeSkill
-import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.TimeSource
 
-data class ScenarioResult(
-    val execution: AgentExecutionResult,
-    val requests: List<LLMRequest.Chat>,
-    val events: List<AgentRuntimeEvent>,
-    val metrics: ScenarioMetrics,
-)
-
-data class ScenarioMetrics(
-    val model: String,
-    val reasoningEffort: String?,
-    val modelCalls: Int,
-    val usage: LLMResponse.Usage,
-    val duration: Duration,
-    val toolCalls: List<AgentRuntimeEvent.ToolCallStarted>,
-) {
-    override fun toString(): String =
-        "model=$model; reasoningEffort=${reasoningEffort ?: "provider-default"}; " +
-            "modelCalls=$modelCalls; durationMs=${duration.inWholeMilliseconds}; tokens=$usage; " +
-            "tools=${restJsonMapper.writeValueAsString(toolCalls.map { mapOf("name" to it.name, "arguments" to it.arguments) })}"
-}
+private const val MAX_MODEL_CALLS_PER_TURN = 24
 
 /** The kernel makes model calls and emits events sequentially within one execution. */
 internal class ScenarioTrace(
-    private val modelId: String,
     private val reasoningEffort: String?,
-    private val wire: ScenarioWireCapture? = null,
-    private val normalizeDate: Boolean = true,
-    private val maxModelCalls: Int = 24,
-    private val initialHistory: List<LLMRequest.Message> = emptyList(),
-    private val assertions: ScenarioAssertions? = null,
+    private val wire: ScenarioWireCapture,
+    private val initialHistory: List<LLMRequest.Message>,
+    private val assertions: ScenarioAssertions,
 ) : AgentRuntimeEventSink {
-    val requests = mutableListOf<LLMRequest.Chat>()
-    val events = mutableListOf<AgentRuntimeEvent>()
     val calls = mutableListOf<ScenarioCall>()
     val prefixes = mutableListOf<ScenarioPrefix>()
     var seededHistory: ScenarioHistory? = null
         private set
     private val toolUses = mutableListOf<ScenarioToolUse>()
-    private var usage = LLMResponse.Usage(0, 0, 0, 0)
     private var lastResponse: LLMResponse.Chat? = null
     private var turnError: String? = null
     var hasTurnErrors = false
         private set
-    val continuesAfterFailure: Boolean get() = assertions != null
     private var turn = 0
     private var callsAtTurnStart = 0
     private var currentConversationRequest: Pair<ScenarioWireRequest, ScenarioCall>? = null
@@ -76,7 +47,7 @@ internal class ScenarioTrace(
         currentAnswer = null
         lastResponse = null
         turnError = null
-        callsAtTurnStart = requests.size
+        callsAtTurnStart = calls.size
         turn++
     }
 
@@ -87,22 +58,17 @@ internal class ScenarioTrace(
 
     fun instrument(api: LLMChatAPI): LLMChatAPI = object : LLMChatAPI by api {
         override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-            check(requests.size - callsAtTurnStart < maxModelCalls) {
-                "Turn $turn exceeded $maxModelCalls model calls without completing."
+            check(calls.size - callsAtTurnStart < MAX_MODEL_CALLS_PER_TURN) {
+                "Turn $turn exceeded $MAX_MODEL_CALLS_PER_TURN model calls without completing."
             }
-            val request = body.copy(
-                reasoningEffort = reasoningEffort,
-                messages = if (normalizeDate) body.messages.map { it.withScenarioDate() } else body.messages,
-            )
-            requests += request
-            wire?.reset()
+            val request = body.copy(reasoningEffort = reasoningEffort)
+            wire.reset()
             val started = TimeSource.Monotonic.markNow()
             var response: LLMResponse.Chat? = null
             try {
                 return api.message(request).also {
                     response = it
                     lastResponse = it
-                    if (it is LLMResponse.Chat.Ok) usage += it.usage
                 }
             } finally {
                 recordCall(request, response, started.elapsedNow())
@@ -113,9 +79,9 @@ internal class ScenarioTrace(
     private fun recordCall(request: LLMRequest.Chat, response: LLMResponse.Chat?, duration: Duration) {
         val kind = if (request.functions.isEmpty()) "auxiliary" else "conversation"
         val ok = response as? LLMResponse.Chat.Ok
-        val reported = wire?.usage
+        val reported = wire.usage
         val call = ScenarioCall(
-            number = requests.size,
+            number = calls.size + 1,
             turn = turn,
             kind = kind,
             responseModel = ok?.model,
@@ -128,7 +94,7 @@ internal class ScenarioTrace(
         )
         calls += call
         if (kind == "conversation") {
-            wire?.request?.let { sent ->
+            wire.request?.let { sent ->
                 if (currentConversationRequest == null) {
                     if (turn == 1 && initialHistory.isNotEmpty()) seededHistory = sent.checkSeededHistory(initialHistory)
                     previousConversationRequest?.let { (previous, lastCall) ->
@@ -147,7 +113,6 @@ internal class ScenarioTrace(
     }
 
     override suspend fun emit(event: AgentRuntimeEvent) {
-        events += event
         if (event is AgentRuntimeEvent.ToolCallStarted) {
             val skillId = when (event.name) {
                 ToolGetSkillByName.NAME, ToolInvokeSkill.NAME -> event.arguments["skillId"] as? String
@@ -167,11 +132,11 @@ internal class ScenarioTrace(
         val outputMatches = !output.isNullOrBlank() && choices.any { it.message.content.trim() == output.trim() }
         val providerFailures = calls.subList(callsAtTurnStart, calls.size).filter { it.status == "error" }
             .map { "call ${it.number} (${it.providerStatus ?: "no response"})" }
-        assertCheck(providerFailures.isEmpty(), "Turn $turn provider failures: $providerFailures")
-        assertCheck(result != null && response != null, "Turn $turn: ${turnError ?: "No successful final model response."}")
-        assertCheck(completed, "Turn $turn ended without a completed assistant response.")
-        assertCheck(!output.isNullOrBlank(), "Turn $turn returned no final answer.")
-        assertCheck(outputMatches, "Turn $turn output must come from the final model response.")
+        assertions.check(providerFailures.isEmpty(), "Turn $turn provider failures: $providerFailures")
+        assertions.check(result != null && response != null, "Turn $turn: ${turnError ?: "No successful final model response."}")
+        assertions.check(completed, "Turn $turn ended without a completed assistant response.")
+        assertions.check(!output.isNullOrBlank(), "Turn $turn returned no final answer.")
+        assertions.check(outputMatches, "Turn $turn output must come from the final model response.")
         currentAnswer = output.takeIf { completed && outputMatches }
         return currentAnswer
     }
@@ -179,7 +144,7 @@ internal class ScenarioTrace(
     fun assertHistoryPreserved(turns: Int) {
         if (initialHistory.isNotEmpty()) {
             val history = seededHistory
-            assertCheck(history != null && history.matched == history.expected,
+            assertions.check(history != null && history.matched == history.expected,
                 if (history == null) "The first conversational request was not captured."
                 else "The first conversational request preserved ${history.matched} of ${history.expected} seeded messages " +
                     "(first missing role: ${history.firstMissingRole}).")
@@ -187,29 +152,12 @@ internal class ScenarioTrace(
         val byTurn = prefixes.associateBy { it.turn }
         for (number in 2..turns) {
             val history = byTurn[number]?.history
-            assertCheck(history != null && history.matched == history.expected,
+            assertions.check(history != null && history.matched == history.expected,
                 if (history == null) "Turn $number has no recorded history comparison."
                 else "Turn $number preserved ${history.matched} of ${history.expected} earlier messages " +
                     "(first missing role: ${history.firstMissingRole}).")
         }
     }
-
-    private fun assertCheck(passed: Boolean, failure: String) {
-        if (assertions == null) assertTrue(passed, failure) else assertions.check(passed, failure)
-    }
-
-    fun metrics(duration: Duration): ScenarioMetrics = ScenarioMetrics(
-        modelId, reasoningEffort, requests.size, usage, duration,
-        events.filterIsInstance<AgentRuntimeEvent.ToolCallStarted>(),
-    )
 }
 
 internal data class ScenarioToolUse(val turn: Int, val name: String, val skillId: String?)
-
-private val HOST_DATE_LINE = Regex("(?m)^- \\[General fact]: Текущие дата и время: .*${'$'}")
-internal const val SCENARIO_DATE_LINE = "- [General fact]: Текущие дата и время: понедельник, 2026-06-01 10:00:00"
-
-private fun LLMRequest.Message.withScenarioDate(): LLMRequest.Message =
-    if (role == LLMMessageRole.user && content.startsWith("<context>\nBackground information.") && content.endsWith("</context>")) {
-        copy(content = HOST_DATE_LINE.replace(content, SCENARIO_DATE_LINE))
-    } else this
