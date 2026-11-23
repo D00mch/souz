@@ -94,8 +94,11 @@ class BackendImagesE2eTest {
         try {
             backendE2eTest("images", llm = llm, settingsSource = settings, attachments = AttachmentMinio.config(),
                 providerClients = ProviderHttpClients(http, http, mcp = http), sandboxFactory = { config ->
-                    DefaultRuntimeSandboxFactory(config, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = root,
-                        dockerSandboxCreator = { scope, host, image, name -> DockerRuntimeSandbox(scope, host, image, name, autoStart = false) })
+                    DefaultRuntimeSandboxFactory(config, RuntimeSandboxModeResolver { "docker" }, dockerHostRoot = root, preparedAttachmentsEnabled = true,
+                        dockerSandboxCreator = { scope, host, image, name, attachments ->
+                            DockerRuntimeSandbox(scope, host, image, name, autoStart = false, preparedAttachments = attachments)
+                        },
+                    )
                 }) {
                 val user = UUID.randomUUID().toString()
                 val chat = createPublicChat(user)

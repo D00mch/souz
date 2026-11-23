@@ -4,9 +4,19 @@
 
 ## Tools and selection
 
-With S3 configured, the enabled-tool catalogue exposes preparation, attachment, and detachment. Preparing a working copy or saving a workspace file requires Docker isolation because LOCAL workspaces are shared. Selecting an available stored file by ID uses owner-scoped metadata in either mode without resolving a sandbox. Detachment changes only the selection and needs neither storage nor a sandbox, even after expiry. [Attachment tools](../src/main/kotlin/ru/souz/backend/attachments/AttachmentTools.kt) · [Workspace access](../src/main/kotlin/ru/souz/backend/attachments/BackendAttachmentAccess.kt)
+With S3 configured, the enabled-tool catalogue exposes preparation, attachment, and detachment. Preparing a working copy or saving a workspace file requires Docker isolation because LOCAL workspaces are shared. Selecting an available stored file by ID uses owner-scoped metadata in either mode without resolving a sandbox. Detachment changes only the selection and needs neither storage nor a sandbox, even after expiry. [Attachment tools](../src/main/kotlin/ru/souz/backend/attachments/AttachmentTools.kt) · [Workspace access](../src/main/kotlin/ru/souz/backend/attachments/BackendAttachmentAccess.kt) · [Workspace save budgets](s3-storage.md#workspace-save-budgets)
 
 Message `files` describe available artifacts. Only trusted tool results change reply selection, in call order. Reject an over-limit selection change as a whole and keep saved artifacts available. Subagents return references without selecting the parent's reply. Propagate cancellation and keep raw exception messages and transport secrets out of tool errors and logs. [Selection rules and limits](../../agent/src/main/kotlin/ru/souz/agent/nodes/ReplyFileSelection.kt) · [Composite commands](../../docs/composite-skill-commands.md)
+
+## Prepared working copies
+
+`PrepareAttachment(fileId)` exposes an owner-scoped read-only copy at `/souz-attachments/<fileId>/<name>`. Copy it into the workspace to edit or retain it. Existing workspace files under `/souz/workspace/attachments/` are ordinary user data. Preparing the same available file again renews the copy's 24-hour lifetime.
+
+The backend checks expired copies every minute. Queued, running, or cancelling executions owned by a live backend protect the owner's copies. Executions waiting for a choice keep their protection across backend restarts until they resume or are cancelled. Copies survive Docker restarts on the same host volume. Later turns can use paths while they exist or prepare a new copy while the original is available in S3. S3 has its own retention policy.
+
+Each owner can have up to 128 managed copies and 512 MiB of prepared bytes on the volume. Expired copies still count when cleanup is deferred. When the limit is reached, preparation returns `attachment_workspace_capacity_exceeded`. Capacity rejections and cleanup failures produce safe warnings. Debug logs include tracked files, reserved bytes and removals.
+
+The Docker host volume must support atomic file operations, hard links and process file locks. Attachment-enabled Docker runtimes use a separate container name and retain the existing workspace bind mount. The previous container can be retired after its processes are no longer needed. [Workspace lifecycle](../src/main/kotlin/ru/souz/backend/attachments/PreparedAttachmentWorkspace.kt)
 
 ## WebSocket transport
 

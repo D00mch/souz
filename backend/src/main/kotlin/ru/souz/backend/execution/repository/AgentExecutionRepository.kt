@@ -18,10 +18,10 @@ interface AgentExecutionRepository {
     suspend fun create(execution: AgentExecution): AgentExecution
     /**
      * Atomically inserts by primary key; false leaves an existing execution unchanged, in any status.
-     * A dailyLaunchLimit reserves one scheduled launch in the same transaction (UTC database day).
+     * Saves the scheduled receipt and reserves one launch (UTC database day) in the same transaction.
      * A duplicate spends no quota; exceeding the limit rolls back insertion and throws.
      */
-    suspend fun createIfAbsent(execution: AgentExecution, dailyLaunchLimit: Int? = null): Boolean
+    suspend fun createScheduledIfAbsent(execution: AgentExecution, occurrenceKey: String, dailyLaunchLimit: Int): Boolean
     /** Changes lifecycle fields only, guarded by status, cancellation intent and runtime owner. */
     suspend fun transitionIfCurrent(
         expected: AgentExecution,

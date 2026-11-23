@@ -23,8 +23,6 @@ class BackendFeatureFlagsTest {
         assertFalse(flags.streamingMessages)
         assertFalse(flags.toolEvents)
         assertFalse(flags.options)
-        assertFalse(flags.telegramBot)
-        assertFalse(flags.vkBot)
         assertFalse(flags.wsAutomaticMemoryRecall)
     }
 
@@ -35,8 +33,6 @@ class BackendFeatureFlagsTest {
                 env = mapOf(
                     "SOUZ_FEATURE_WS_EVENTS" to "true",
                     "SOUZ_FEATURE_STREAMING_MESSAGES" to "TRUE",
-                    "ENABLE_BACKEND_TG_FEATURE" to "true",
-                    "ENABLE_BACKEND_VK_FEATURE" to "true",
                     "SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL" to " TRUE ",
                 ),
                 properties = mapOf(
@@ -50,8 +46,6 @@ class BackendFeatureFlagsTest {
         assertTrue(flags.streamingMessages)
         assertTrue(flags.toolEvents)
         assertTrue(flags.options)
-        assertTrue(flags.telegramBot)
-        assertTrue(flags.vkBot)
         assertTrue(flags.wsAutomaticMemoryRecall)
     }
 
@@ -218,7 +212,6 @@ class BackendAppConfigTest {
             MapBackendConfigSource(
                 env = mapOf(
                     "SOUZ_MASTER_KEY" to "postgres-master-key",
-                    "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                 )
             )
         ).validate()
@@ -234,7 +227,6 @@ class BackendAppConfigTest {
                     "souz.backend.db.maxPoolSize" to "17",
                     "souz.backend.db.connectionTimeoutMs" to "45000",
                     "souz.masterKey" to "postgres-prop-master-key",
-                    "souz.telegram.tokenEncryptionKey" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                 ),
             )
         ).validate()
@@ -275,7 +267,6 @@ class BackendAppConfigTest {
             MapBackendConfigSource(
                 env = mapOf(
                     "SOUZ_MASTER_KEY" to "test-master-key",
-                    "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                     "SOUZ_BACKEND_LIMIT_PER_USER_CONCURRENT_EXECUTIONS" to "3",
                     "SOUZ_BACKEND_LIMIT_PER_USER_REQUESTS_PER_MINUTE" to "17",
                     "SOUZ_BACKEND_LIMIT_PER_USER_TOKENS_PER_MINUTE" to "32000",
@@ -320,73 +311,12 @@ class BackendAppConfigTest {
     }
 
     @Test
-    fun `backend config does not require telegram encryption key when telegram feature is disabled`() {
-        val config = BackendAppConfig.load(
-            MapBackendConfigSource(
-                env = mapOf(
-                    "SOUZ_MASTER_KEY" to "test-master-key",
-                )
-            )
-        ).validate()
-
-        assertFalse(config.featureFlags.telegramBot)
-        assertNull(config.telegramTokenEncryptionKey)
-    }
-
-    @Test
-    fun `backend config requires telegram encryption key when telegram feature is enabled`() {
-        val error = assertFailsWith<BackendConfigurationException> {
-            BackendAppConfig.load(
-                MapBackendConfigSource(
-                    env = mapOf(
-                        "SOUZ_MASTER_KEY" to "test-master-key",
-                        "ENABLE_BACKEND_TG_FEATURE" to "true",
-                    )
-                )
-            ).validate()
-        }
-
-        assertTrue(error.message.orEmpty().contains("TELEGRAM_TOKEN_ENCRYPTION_KEY"))
-    }
-
-    @Test
-    fun `backend config does not require vk encryption key when vk feature is disabled`() {
-        val config = BackendAppConfig.load(
-            MapBackendConfigSource(
-                env = mapOf(
-                    "SOUZ_MASTER_KEY" to "test-master-key",
-                )
-            )
-        ).validate()
-
-        assertFalse(config.featureFlags.vkBot)
-        assertNull(config.vkTokenEncryptionKey)
-    }
-
-    @Test
-    fun `backend config requires vk encryption key when vk feature is enabled`() {
-        val error = assertFailsWith<BackendConfigurationException> {
-            BackendAppConfig.load(
-                MapBackendConfigSource(
-                    env = mapOf(
-                        "SOUZ_MASTER_KEY" to "test-master-key",
-                        "ENABLE_BACKEND_VK_FEATURE" to "true",
-                    )
-                )
-            ).validate()
-        }
-
-        assertTrue(error.message.orEmpty().contains("VK_TOKEN_ENCRYPTION_KEY"))
-    }
-
-    @Test
     fun `backend config rejects invalid llm limits and retry policy`() {
         val invalidLimit = assertFailsWith<BackendConfigurationException> {
             BackendAppConfig.load(
                 MapBackendConfigSource(
                     env = mapOf(
                         "SOUZ_MASTER_KEY" to "test-master-key",
-                        "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                         "SOUZ_BACKEND_LIMIT_PER_USER_REQUESTS_PER_MINUTE" to "0",
                     )
                 )
@@ -397,7 +327,6 @@ class BackendAppConfigTest {
                 MapBackendConfigSource(
                     env = mapOf(
                         "SOUZ_MASTER_KEY" to "test-master-key",
-                        "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                     ),
                     properties = mapOf(
                         "souz.backend.provider.max429Retries" to "-1",
@@ -445,5 +374,3 @@ private class MapBackendConfigSource(
 
     override fun property(key: String): String? = properties[key]
 }
-
-private const val TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="

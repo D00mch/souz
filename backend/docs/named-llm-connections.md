@@ -26,6 +26,8 @@ All configured model names are advertised in `/v1/bootstrap`; no per-user allowl
 
 `GET /health` reports the server default using the same selection policy, without user settings or user-managed keys.
 
+Bootstrap lists built-in models across providers regardless of locale and reports access through `serverManagedKey` and `userManagedKey`. Codex requires complete server OAuth to appear. The custom OpenAI selector requires `OPENAI_MODEL`. Automatic selection uses the first accessible model in this order: custom OpenAI, Codex, OpenAI, Anthropic, AI Tunnel, Qwen.
+
 `subagentModels` and `summarization` are optional. A child without an explicit model inherits the parent's named selection. Dedicated summarization uses its own connection and shallow-merges `OPENAI_SUMMARIZATION_PARAMETERS` with the selected model's `parameters`, with model values winning. Existing `OPENAI_*`, summarization model/connection/parameter settings and `SUBAGENT_MODELS_JSON` remain usable when no named override is configured.
 
 Named model `parameters` are optional OpenAI-compatible body defaults scoped to the connection and model, including DeepSeek `thinking`. Supply a JSON object and leave agent-controlled fields to the runtime. See the [config parser](../src/main/kotlin/ru/souz/backend/config/NamedLlmConfig.kt) for reserved fields and startup validation.

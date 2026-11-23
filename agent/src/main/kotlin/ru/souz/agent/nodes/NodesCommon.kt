@@ -49,70 +49,16 @@ internal class NodesCommon(
         ctx.map(history = newHistory, activeExchangeStartIndex = activeExchangeStartIndex)
     }
 
-    private fun appendActualInformation(
-        userText: String,
-    ): LLMRequest.Message? {
+    private fun appendActualInformation(userText: String): LLMRequest.Message? {
         if (userText.isBlank()) return null
 
-        val additionalData = loadAdditionalData()
-        if (additionalData.isEmpty()) return null
-        return LLMRequest.Message(LLMMessageRole.user, buildContextMessage(additionalData))
-    }
-
-    private fun buildUserGeoLocationFact(): String? = try {
-        val locale = runtimeEnvironment.locale
-        val zoneId = runtimeEnvironment.zoneId
-
-        val parts = mutableListOf<String>()
-
-        val localeTag = locale.toLanguageTag().takeIf { it.isNotBlank() && it != "und" }
-        if (localeTag != null) {
-            parts += "locale=$localeTag"
-        }
-
-        val countryCode = locale.country.takeIf { it.isNotBlank() }
-        if (countryCode != null) {
-            val countryName = runCatching { locale.getDisplayCountry(locale) }.getOrNull()
-                ?.takeIf { it.isNotBlank() }
-            val countryValue = if (countryName != null && !countryName.equals(countryCode, ignoreCase = true)) {
-                "$countryName ($countryCode)"
-            } else {
-                countryCode
-            }
-            parts += "country/region=$countryValue"
-        }
-
-        val zoneIdText = zoneId.id.takeIf { it.isNotBlank() }
-        if (zoneIdText != null) {
-            parts += "timezone=$zoneIdText"
-            val cityHint = zoneIdText.substringAfterLast('/', "").replace('_', ' ').trim()
-            if (cityHint.isNotBlank() && !cityHint.equals(zoneIdText, ignoreCase = true)) {
-                parts += "city_hint=$cityHint"
-            }
-            parts += "utc_offset=${ZonedDateTime.now(zoneId).offset.id}"
-        }
-
-        if (parts.isEmpty()) null else "User geo: ${parts.joinToString("; ")}"
-    } catch (e: Exception) {
-        l.warn("Error collecting geo location hints: {}", e.message)
-        null
-    }
-
-    private fun loadAdditionalData(): List<String> = buildList {
-        buildUserGeoLocationFact()?.let(::add)
-        add(
-            "Текущие дата и время: ${
-                ZonedDateTime.now(runtimeEnvironment.zoneId).format(
-                    DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss", runtimeEnvironment.locale)
-                )
-            }",
+        val dateTime = ZonedDateTime.now(runtimeEnvironment.zoneId).format(
+            DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss", runtimeEnvironment.locale)
         )
-    }
-
-    private fun buildContextMessage(additionalData: List<String>): String = buildString {
-        append(INJECTED_CONTEXT_PREFIX)
-        additionalData.forEach { append("- [General fact]: $it\n") }
-        append(INJECTED_CONTEXT_SUFFIX)
+        return LLMRequest.Message(
+            LLMMessageRole.user,
+            "$INJECTED_CONTEXT_PREFIX- [General fact]: Текущие дата и время: $dateTime\n$INJECTED_CONTEXT_SUFFIX",
+        )
     }
 }
 

@@ -19,11 +19,13 @@ import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.ActiveAgentExecutionConflictException
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.repository.CommittedAgentTurn
+import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.metrics.BackendMetrics
 
 class PostgresAgentExecutionRepository(
     private val dataSource: DataSource,
     private val metrics: BackendMetrics? = null,
+    private val attachmentRuntimeId: UUID? = null,
 ) : AgentExecutionRepository {
     override suspend fun create(execution: AgentExecution): AgentExecution = dataSource.write(afterCommit = {
         metrics?.executions?.committed(it)
@@ -32,29 +34,32 @@ class PostgresAgentExecutionRepository(
         insert(connection, execution)
     }
 
-    override suspend fun createIfAbsent(execution: AgentExecution, dailyLaunchLimit: Int?): Boolean = dataSource.write(afterCommit = {
+    override suspend fun createScheduledIfAbsent(
+        execution: AgentExecution,
+        occurrenceKey: String,
+        dailyLaunchLimit: Int,
+    ): Boolean = dataSource.write(afterCommit = {
         if (it) metrics?.executions?.committed(execution)
     }) { connection ->
         connection.lockChat(execution.userId, execution.chatId)
         if (insert(connection, execution, ignoreDuplicate = true) == null) return@write false
-        if (dailyLaunchLimit != null) {
-            connection.prepareStatement(
-                """
-                insert into scheduled_task_daily_launches(user_id, launch_day, launches)
-                values (?, (clock_timestamp() at time zone 'UTC')::date, 1)
-                on conflict (user_id, launch_day) do update
-                  set launches = scheduled_task_daily_launches.launches + 1
-                  where scheduled_task_daily_launches.launches < ?
-                returning launches
-                """.trimIndent()
-            ).use { statement ->
-                statement.setString(1, execution.userId)
-                statement.setInt(2, dailyLaunchLimit)
-                statement.executeQuery().use { rows ->
-                    check(rows.next()) { "Scheduled task daily launch quota exhausted (UTC day)." }
-                }
+        connection.prepareStatement(
+            """
+            insert into scheduled_task_daily_launches(user_id, launch_day, launches)
+            values (?, (clock_timestamp() at time zone 'UTC')::date, 1)
+            on conflict (user_id, launch_day) do update
+              set launches = scheduled_task_daily_launches.launches + 1
+              where scheduled_task_daily_launches.launches < ?
+            returning launches
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, execution.userId)
+            statement.setInt(2, dailyLaunchLimit)
+            statement.executeQuery().use { rows ->
+                check(rows.next()) { "Scheduled task daily launch quota exhausted (UTC day)." }
             }
         }
+        HookStore.recordScheduledDispatch(connection, execution.id, occurrenceKey)
         true
     }
 
@@ -62,6 +67,7 @@ class PostgresAgentExecutionRepository(
         checkNotNull(insert(connection, execution, ignoreDuplicate = false))
 
     private fun insert(connection: Connection, execution: AgentExecution, ignoreDuplicate: Boolean): AgentExecution? {
+        if (attachmentRuntimeId != null) connection.lockPreparedAttachmentOwner(execution.userId, shared = true)
         try {
             connection.prepareStatement(
                 """
@@ -69,9 +75,9 @@ class PostgresAgentExecutionRepository(
                     id, user_id, chat_id, user_message_id, assistant_message_id, status,
                     request_id, client_message_id, model, provider, started_at, finished_at,
                     cancel_requested, error_code, error_message, usage_json, metadata,
-                    latest_device_context, runtime_owner, runtime_lease_until
+                    latest_device_context, runtime_owner, runtime_lease_until, attachment_runtime_id
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ${if (ignoreDuplicate) "on conflict (id) do nothing" else ""}
                 """.trimIndent()
             ).use { statement ->
@@ -97,6 +103,9 @@ class PostgresAgentExecutionRepository(
         it?.let { stored -> metrics?.executions?.committed(stored, expected.status) }
     }) { connection ->
         connection.lockChat(expected.userId, expected.chatId)
+        if (status == AgentExecutionStatus.RUNNING && attachmentRuntimeId != null) {
+            connection.lockPreparedAttachmentOwner(expected.userId, shared = true)
+        }
         transition(connection, expected, status, errorCode, errorMessage, usage)
     }
 
@@ -171,7 +180,8 @@ class PostgresAgentExecutionRepository(
         set status = ?, finished_at = ?, cancel_requested = ?, error_code = ?, error_message = ?,
             usage_json = coalesce(?, usage_json), assistant_message_id = coalesce(?, assistant_message_id),
             model = coalesce(?, model), provider = coalesce(?, provider),
-            runtime_lease_until = case when ? = 'waiting_option' then null else runtime_lease_until end
+            runtime_lease_until = case when ? = 'waiting_option' then null else runtime_lease_until end,
+            attachment_runtime_id = coalesce(?, attachment_runtime_id)
         where user_id = ? and chat_id = ? and id = ?
           and status = ? and cancel_requested = ? and runtime_owner is not distinct from ?
         returning *
@@ -187,12 +197,13 @@ class PostgresAgentExecutionRepository(
         statement.setString(8, routedModel?.model)
         statement.setString(9, routedModel?.provider?.name)
         statement.setString(10, status.value)
-        statement.setString(11, expected.userId)
-        statement.setObject(12, expected.chatId)
-        statement.setObject(13, expected.id)
-        statement.setString(14, expected.status.value)
-        statement.setBoolean(15, expected.cancelRequested)
-        statement.setString(16, expected.runtimeOwner)
+        statement.setObject(11, attachmentRuntimeId.takeIf { status == AgentExecutionStatus.RUNNING })
+        statement.setString(12, expected.userId)
+        statement.setObject(13, expected.chatId)
+        statement.setObject(14, expected.id)
+        statement.setString(15, expected.status.value)
+        statement.setBoolean(16, expected.cancelRequested)
+        statement.setString(17, expected.runtimeOwner)
         statement.executeQuery().use { resultSet ->
             if (resultSet.next()) resultSet.toExecution() else null
         }
@@ -216,18 +227,21 @@ class PostgresAgentExecutionRepository(
         dataSource.write(afterCommit = {
             it?.let { stored -> metrics?.executions?.committed(stored, AgentExecutionStatus.QUEUED) }
         }) { connection ->
+            if (attachmentRuntimeId != null) connection.lockPreparedAttachmentOwner(execution.userId, shared = true)
             connection.prepareStatement(
                 """
                 update agent_executions
-                set user_message_id = ?, status = 'running', started_at = now()
+                set user_message_id = ?, status = 'running', started_at = now(),
+                    attachment_runtime_id = coalesce(?, attachment_runtime_id)
                 where user_id = ? and chat_id = ? and id = ? and status = 'queued'
                 returning *
                 """.trimIndent()
             ).use { statement ->
                 statement.setObject(1, userMessageId)
-                statement.setString(2, execution.userId)
-                statement.setObject(3, execution.chatId)
-                statement.setObject(4, execution.id)
+                statement.setObject(2, attachmentRuntimeId)
+                statement.setString(3, execution.userId)
+                statement.setObject(4, execution.chatId)
+                statement.setObject(5, execution.id)
                 statement.executeQuery().use { resultSet ->
                     if (resultSet.next()) resultSet.toExecution() else null
                 }
@@ -410,6 +424,7 @@ class PostgresAgentExecutionRepository(
         statement.setJson(18, execution.latestDeviceContextJson)
         statement.setString(19, execution.runtimeOwner)
         statement.setInstant(20, execution.runtimeLeaseUntil)
+        statement.setObject(21, attachmentRuntimeId)
     }
 
     private companion object {

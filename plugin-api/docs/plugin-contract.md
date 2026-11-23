@@ -8,12 +8,17 @@ threads or launch detached work. Await structured coroutines and propagate cance
 
 ## Build and package
 
-Run from the repository root with Java 21.
+Use Java 21 and resolve released SDK versions from Maven Central
+(`https://repo.maven.apache.org/maven2`), without credentials:
 
-```bash
-./gradlew :plugin-api:publishToMavenLocal
-./gradlew -p plugin-api/examples/hello jar
+```kotlin
+repositories { mavenCentral() }
+dependencies { compileOnly("io.github.d00mch:plugin-api:2.0.0") }
 ```
+
+Copy the [Hello project](../examples/hello/) into an independent directory. With an installed Gradle,
+run `gradle wrapper --gradle-version 9.4.1` to create the wrapper, then build with `./gradlew jar`.
+The example resolves the SDK directly from Maven Central.
 
 Use the [hello build](../examples/hello/build.gradle.kts) for the compile-only SDK dependency,
 Java toolchain and required manifest attributes. Implement one public no-argument
@@ -32,6 +37,53 @@ Avoid storing plugin objects in shared-worker thread locals. For Jackson, use a 
 `JsonRecyclerPools.nonRecyclingPool()` and serialize nodes through that mapper. `JsonNode.toString()`
 and `toPrettyString()` use the default recycler, which can retain retired classloaders.
 [Plugin classloader](../../backend/src/main/kotlin/ru/souz/backend/plugins/PluginClassLoader.kt)
+
+## Developer skill
+
+Open the [`souz-jvm-plugin` skill](../../docs/skills/souz-jvm-plugin/SKILL.md) on GitHub and select
+**Raw**. Save the resulting file as `souz-jvm-plugin/SKILL.md` under your coding assistant's skills
+directory.
+In Codex, use `.agents/skills/` in your plugin project or `~/.agents/skills/` for all your projects.
+Restart Codex if the skill does not appear. [Codex skill setup](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)
+
+Invoke it in the plugin project with a prompt such as
+`$souz-jvm-plugin Build a Kotlin plugin with a greeting tool that returns a JSON message.`
+
+## SDK releases
+
+The Maven group is `io.github.d00mch`; Kotlin package names remain `ru.souz.plugins.api`.
+The [publication](../build.gradle.kts) includes the binary JAR, POM, sources and Javadoc JARs.
+Maven Central releases are immutable: increment the SDK version for each release and update
+the Hello dependency. The plugin ABI fingerprint changes only when its compatibility changes.
+
+Before the first release, the `D00mch` account owner must:
+
+1. Sign in to [Sonatype Central](https://central.sonatype.com/) through GitHub and verify the
+   `io.github.d00mch` namespace. A separate DNS domain is not required.
+2. Generate a [Central Portal user token](https://central.sonatype.org/publish/generate-portal-token/).
+3. Create a [signing key and publish its public key](https://central.sonatype.org/publish/requirements/gpg/).
+4. Configure these GitHub Actions repository secrets, without committing credentials or keys:
+
+| Secret | Value |
+| --- | --- |
+| `MAVEN_CENTRAL_USERNAME` | Generated Central Portal token username |
+| `MAVEN_CENTRAL_PASSWORD` | Generated Central Portal token password |
+| `MAVEN_SIGNING_KEY` | ASCII-armored private signing key |
+| `MAVEN_SIGNING_PASSWORD` | Signing key passphrase, if set |
+
+Push a tag matching the SDK version, such as `plugin-api-v2.0.0`, to run the
+[release workflow](../../.github/workflows/publish-plugin-sdk.yml). It verifies a staged
+publication, signs and releases the SDK, waits for Maven Central availability, and builds
+the standalone Hello project against the public repository. Downloading released SDK versions
+does not require the publishing token or signing key.
+
+The [standalone verifier](../../scripts/verify-plugin-sdk.sh) copies only the example and
+Gradle wrapper outside the checkout and uses fresh Gradle and Maven local directories.
+Run it with `SOUZ_PLUGIN_MAVEN_URL` unset to check a public release. For pre-release verification,
+run `./gradlew :plugin-api:publishSdkPublicationToVerificationRepository` and set
+`SOUZ_PLUGIN_MAVEN_URL` to the file URI of `plugin-api/build/maven-repository` before running it.
+The override resolves only the SDK from that repository and cannot fall back to Maven Central
+for a missing staged artifact.
 
 ## Invocation services
 

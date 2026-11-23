@@ -30,6 +30,8 @@ scrape_configs:
 | `souz_tool_calls_total` | Counter | `category`, `outcome` | Compiled tools and client transports, including Skill helper calls. |
 | `souz_tool_duration_seconds` | Histogram | `category`, `outcome` | Tool latency, including client-result waits. |
 | `souz_pending_tool_calls` | Gauge | — | Outstanding compiled tools and client transports on this instance. |
+| `souz_attachment_save_admitted_bytes_total` | Counter | — | Bytes charged by committed workspace save reservations, including reservations whose uploads fail. |
+| `souz_attachment_save_rejected_total` | Counter | `scope` | Workspace saves rejected by the `execution` or `owner` budget. |
 | `souz_plugin_calls_total` | Counter | `plugin`, `outcome` | Plugin invocation completions on this replica: `success`, `technical_failure`, `ignored`. |
 | `souz_plugin_versions_loaded` | Gauge | `plugin` | Versions held by this replica, including preparation and draining work. |
 | `souz_plugin_observed_revision` | Gauge | `plugin` | Last registry revision observed by this replica; admin status reports the separately applied digest. |
@@ -52,7 +54,7 @@ Elapsed time uses monotonic clocks. Scheduled dispatch delay compares the occurr
 
 Streaming usage adds only positive deltas above each attempt's high-water mark, retaining it through missing, repeated or decreasing snapshots. Missing usage adds no measured tokens. Anthropic cache-read tokens are added to its uncached/cache-creation input; OpenAI-compatible cached tokens are already part of prompt tokens. Cumulative execution usage is not added to these counters. Embedding APIs do not report usage through the shared response contract.
 
-Live-event losses cover command queue rejection, queue eviction, abandoned queues/receives, disconnects, failed sends and progress overtaken by durable replay. Each full command queue counts a `queue_full` loss even if another subscriber accepts the command. Durable replay signals and live-only bot observers are excluded. A scrape may contain zero outcome/wait/drop series before use; provider/tool series register on first use.
+Live-event losses cover command queue rejection, queue eviction, abandoned queues/receives, disconnects, failed sends and progress overtaken by durable replay. Each full command queue counts a `queue_full` loss even if another subscriber accepts the command. Durable replay signals are excluded. A scrape may contain zero outcome/wait/drop series before use; provider/tool series register on first use.
 
 ## Host meters
 

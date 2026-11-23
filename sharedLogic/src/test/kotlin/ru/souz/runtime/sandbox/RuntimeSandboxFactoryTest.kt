@@ -51,7 +51,7 @@ class RuntimeSandboxFactoryTest {
             localHomePath = Path.of("/tmp/local-home"),
             localStateRoot = Path.of("/tmp/local-state"),
             dockerHostRoot = Path.of("/tmp/docker-root"),
-            dockerSandboxCreator = { scope, hostRoot, imageName, containerName ->
+            dockerSandboxCreator = { _, _, _, _, _ ->
                 throw IllegalStateException("Docker CLI is unavailable for sandbox mode docker")
             },
         )
@@ -70,13 +70,14 @@ class RuntimeSandboxFactoryTest {
             localHomePath = Path.of("/tmp/local-home"),
             localStateRoot = Path.of("/tmp/local-state"),
             dockerHostRoot = Path.of("/tmp/docker-root"),
-            dockerSandboxCreator = { scope, hostRoot, imageName, containerName ->
+            dockerSandboxCreator = { scope, hostRoot, imageName, containerName, attachments ->
                 DockerRuntimeSandbox(
                     scope = scope,
                     hostRoot = hostRoot.resolve(scope.userId),
                     imageName = imageName,
                     containerName = containerName,
                     autoStart = false,
+                    preparedAttachments = attachments,
                 )
             },
         )

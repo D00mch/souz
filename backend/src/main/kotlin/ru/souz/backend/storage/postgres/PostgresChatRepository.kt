@@ -6,7 +6,6 @@ import ru.souz.backend.client.supportedClientTypes
 import ru.souz.backend.client.ClientToolDefinition
 import ru.souz.backend.client.DiscoveredClientTools
 import ru.souz.llms.restJsonMapper
-import java.sql.Connection
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
@@ -49,7 +48,15 @@ class PostgresChatRepository(
         initialPersonality: PersonalityParameters? = null,
     ): Chat? = dataSource.write { connection ->
         try {
-            if (initialPersonality != null) initializePersonality(connection, chat.userId, initialPersonality)
+            if (initialPersonality != null) {
+                connection.prepareStatement(
+                    "insert into user_personalities(user_id, parameters) values (?, ?) on conflict (user_id) do nothing"
+                ).use { statement ->
+                    statement.setString(1, chat.userId)
+                    statement.setJson(2, postgresStorageMapper.writeValueAsString(initialPersonality))
+                    statement.executeUpdate()
+                }
+            }
             connection.prepareStatement(
                 """
                 insert into chats(
@@ -81,16 +88,6 @@ class PostgresChatRepository(
                 throw ChatRequestConflictException(chat.userId, chat.requestId)
             }
             throw error
-        }
-    }
-
-    private fun initializePersonality(connection: Connection, userId: String, initial: PersonalityParameters) {
-        connection.prepareStatement("""
-            insert into user_personalities(user_id, parameters) values (?, ?::jsonb) on conflict (user_id) do nothing
-        """.trimIndent()).use {
-            it.setString(1, userId)
-            it.setString(2, postgresStorageMapper.writeValueAsString(initial))
-            it.executeUpdate()
         }
     }
 
@@ -156,22 +153,6 @@ class PostgresChatRepository(
             statement.setObject(1, chatId)
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next()) resultSet.toChat() else null
-            }
-        }
-    }
-
-    override suspend fun getByIds(chatIds: List<UUID>): List<Chat> {
-        if (chatIds.isEmpty()) return emptyList()
-        return dataSource.read { connection ->
-            connection.prepareStatement("select $CHAT_COLUMNS from chats where id = any(?)").use { statement ->
-                statement.setArray(1, connection.createArrayOf("uuid", chatIds.toTypedArray()))
-                statement.executeQuery().use { resultSet ->
-                    buildList {
-                        while (resultSet.next()) {
-                            add(resultSet.toChat())
-                        }
-                    }
-                }
             }
         }
     }

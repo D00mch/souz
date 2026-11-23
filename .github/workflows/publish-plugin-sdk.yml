@@ -1,0 +1,79 @@
+name: Publish Plugin SDK
+
+on:
+  push:
+    tags:
+      - plugin-api-v*
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-plugin-sdk
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout release
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Check SDK and stage publication
+        run: ./gradlew :plugin-api:check :plugin-api:publishSdkPublicationToVerificationRepository --console=plain
+
+      - name: Verify release tag matches SDK version
+        id: sdk
+        shell: bash
+        run: |
+          sdk_version="$(python -c 'import xml.etree.ElementTree as E; print(E.parse("plugin-api/build/publications/sdk/pom-default.xml").findtext("{http://maven.apache.org/POM/4.0.0}version"))')"
+          if [[ ! "$sdk_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$GITHUB_REF_NAME" != "plugin-api-v$sdk_version" ]]; then
+            echo 'The release tag must match the stable SDK version in plugin-api/build.gradle.kts.' >&2
+            exit 1
+          fi
+          printf 'version=%s\n' "$sdk_version" >> "$GITHUB_OUTPUT"
+
+      - name: Verify staged SDK in standalone Hello project
+        env:
+          SOUZ_PLUGIN_MAVEN_URL: file://${{ github.workspace }}/plugin-api/build/maven-repository
+        run: bash scripts/verify-plugin-sdk.sh
+
+      - name: Sign and publish to Maven Central
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.MAVEN_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.MAVEN_SIGNING_PASSWORD }}
+        shell: bash
+        run: |
+          for secret_name in ORG_GRADLE_PROJECT_mavenCentralUsername ORG_GRADLE_PROJECT_mavenCentralPassword ORG_GRADLE_PROJECT_signingInMemoryKey; do
+            if [[ -z "${!secret_name}" ]]; then
+              echo "Missing required publishing credential: $secret_name" >&2
+              exit 1
+            fi
+          done
+          ./gradlew :plugin-api:publishAndReleaseToMavenCentral -Psouz.signPluginSdk --no-daemon --console=plain
+
+      - name: Wait for public artifact availability
+        env:
+          SDK_VERSION: ${{ steps.sdk.outputs.version }}
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 20 \
+            --retry 60 --retry-delay 30 --retry-max-time 1800 --retry-all-errors \
+            --output "$RUNNER_TEMP/plugin-api.pom" \
+            "https://repo.maven.apache.org/maven2/io/github/d00mch/plugin-api/$SDK_VERSION/plugin-api-$SDK_VERSION.pom"
+
+      - name: Verify public SDK in standalone Hello project
+        run: bash scripts/verify-plugin-sdk.sh

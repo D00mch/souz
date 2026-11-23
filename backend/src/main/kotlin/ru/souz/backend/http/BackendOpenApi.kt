@@ -4,7 +4,6 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.openapi.GenericElement
 import io.ktor.openapi.JsonSchema
-import io.ktor.openapi.JsonSchemaInference
 import io.ktor.openapi.JsonType
 import io.ktor.openapi.Operation
 import io.ktor.openapi.Parameters
@@ -16,7 +15,6 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.openapi.describe
 import io.ktor.utils.io.ExperimentalKtorApi
 import ru.souz.backend.common.BackendLlmSupport
-import ru.souz.llms.LlmProvider
 
 internal object BackendOpenApiTags {
     const val SYSTEM = "System"
@@ -29,8 +27,6 @@ internal object BackendOpenApiTags {
     const val EVENTS = "Events"
     const val EXECUTIONS = "Executions"
     const val OPTIONS = "Options"
-    const val TELEGRAM = "Telegram"
-    const val VK = "VK"
 }
 
 internal object BackendOpenApiSecurity {
@@ -308,40 +304,6 @@ internal object BackendOpenApiSchemas {
                 "metadata",
                 "String metadata. Keys must contain at least one non-whitespace character.",
             )
-
-    fun telegramToken(schema: JsonSchema): JsonSchema =
-        schema
-            .copy(required = listOf("token"))
-            .withProperty("token") { token ->
-                token.copy(
-                    type = JsonType.STRING,
-                    description = "Telegram bot token.",
-                    minLength = 1,
-                    pattern = NON_BLANK_PATTERN,
-                    maxLength = 4_096,
-                    writeOnly = true,
-                    default = null,
-                    example = null,
-                    examples = null,
-                )
-            }
-
-    fun vkToken(schema: JsonSchema): JsonSchema =
-        schema
-            .copy(required = listOf("token"))
-            .withProperty("token") { token ->
-                token.copy(
-                    type = JsonType.STRING,
-                    description = "VK community group access token.",
-                    minLength = 1,
-                    pattern = NON_BLANK_PATTERN,
-                    maxLength = 4_096,
-                    writeOnly = true,
-                    default = null,
-                    example = null,
-                    examples = null,
-                )
-            }
 }
 
 private fun HttpStatusCode.v1ErrorDescription(): String =

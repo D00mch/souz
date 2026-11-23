@@ -1,106 +1,53 @@
 package ru.souz.backend.bootstrap
 
 import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.common.supportsChatModel
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.toDto
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.llm.hasCompleteCodexOAuthCredentials
 import ru.souz.backend.security.RequestIdentity
-import ru.souz.backend.settings.service.EffectiveSettingsResolver
+import ru.souz.backend.settings.service.UserSettingsService
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 
 class BackendBootstrapService(
     private val settingsProvider: SettingsProvider,
-    private val effectiveSettingsResolver: EffectiveSettingsResolver,
+    private val userSettingsService: UserSettingsService,
     private val featureFlags: BackendFeatureFlags,
     private val userProviderKeyRepository: UserProviderKeyRepository,
 ) {
     suspend fun response(identity: RequestIdentity): BootstrapResponse {
-        val advertisedToolNames = effectiveSettingsResolver.advertisedToolNames
-        val buildProfile = LlmBuildProfile(settingsProvider)
+        val advertisedToolNames = userSettingsService.advertisedToolNames
         val userManagedProviders = userProviderKeyRepository.list(identity.userId)
             .mapNotNullTo(linkedSetOf()) { key ->
                 key.provider.takeIf { it in BackendLlmSupport.userManagedKeyProviders }
             }
-        val effectiveSettings = effectiveSettingsResolver.resolve(
-            userId = identity.userId,
-            userManagedProviders = userManagedProviders,
-            availableToolNames = advertisedToolNames,
-        )
-        val capabilityProviders = buildSet {
-            addAll(buildProfile.availableProviders.filter { it in BackendLlmSupport.chatProviders })
-            addAll(userManagedProviders)
-            addAll(LlmProvider.entries.filter { provider ->
-                provider in BackendLlmSupport.chatProviders &&
-                    settingsProvider.hasKey(provider)
-            })
-            if (!settingsProvider.hasCompleteCodexOAuthCredentials()) {
-                remove(LlmProvider.CODEX)
-            }
-        }
+        val settings = userSettingsService.get(identity.userId, userManagedProviders, advertisedToolNames)
+        val codexAvailable = settingsProvider.hasCompleteCodexOAuthCredentials()
         return BootstrapResponse(
             user = BootstrapUser(id = identity.userId),
             features = featureFlags,
             capabilities = BootstrapCapabilities(
                 models = BackendLlmSupport.chatModels
                     .filter { model ->
-                        if (model == LLMModel.OpenAICompatibleCustom) {
-                            return@filter hasConfiguredOpenAiCompatibleChatModel() &&
-                                LlmProvider.OPENAI in capabilityProviders
-                        }
-                        model.provider in capabilityProviders
+                        settingsProvider.supportsChatModel(model) && (model.provider != LlmProvider.CODEX || codexAvailable)
                     }
-                    .map { modelCapability(it, userManagedProviders) } + effectiveSettingsResolver.namedModelNames.map {
+                    .map { model ->
+                        BootstrapModelCapability(
+                            provider = model.provider.name.lowercase(),
+                            model = model.alias,
+                            serverManagedKey = model.provider == LlmProvider.CODEX || settingsProvider.hasKey(model.provider),
+                            userManagedKey = model.provider in userManagedProviders,
+                        )
+                    } + userSettingsService.namedModelNames.map {
                         BootstrapModelCapability(provider = "openai", model = it, serverManagedKey = true, userManagedKey = false)
                     },
                 tools = advertisedToolNames.map { toolName ->
                     BootstrapToolCapability(name = toolName, enabled = true)
                 },
             ),
-            settings = effectiveSettings.toDto(),
+            settings = settings.toDto(),
         )
     }
-
-    private fun modelCapability(
-        model: LLMModel,
-        userManagedProviders: Set<LlmProvider>,
-    ): BootstrapModelCapability =
-        BootstrapModelCapability(
-            provider = model.provider.name.lowercase(),
-            model = model.alias,
-            serverManagedKey = hasServerManagedAccess(model),
-            userManagedKey = hasUserManagedAccess(model, userManagedProviders),
-        )
-
-    private fun hasServerManagedAccess(model: LLMModel): Boolean =
-        if (model == LLMModel.OpenAICompatibleCustom) {
-            hasConfiguredOpenAiCompatibleChatModel() && settingsProvider.hasKey(LlmProvider.OPENAI)
-        } else {
-            when (model.provider) {
-                LlmProvider.CODEX -> settingsProvider.hasCompleteCodexOAuthCredentials()
-                else -> settingsProvider.hasKey(model.provider)
-            }
-        }
-
-    private fun hasUserManagedAccess(
-        model: LLMModel,
-        userManagedProviders: Set<LlmProvider>,
-    ): Boolean =
-        if (model == LLMModel.OpenAICompatibleCustom) {
-            hasConfiguredOpenAiCompatibleChatModel() && LlmProvider.OPENAI in userManagedProviders
-        } else {
-            hasUserManagedAccess(model.provider, userManagedProviders)
-        }
-
-    private fun hasUserManagedAccess(
-        provider: LlmProvider,
-        userManagedProviders: Set<LlmProvider>,
-    ): Boolean =
-        provider in userManagedProviders
-
-    private fun hasConfiguredOpenAiCompatibleChatModel(): Boolean =
-        !settingsProvider.openaiModel.isNullOrBlank()
 }

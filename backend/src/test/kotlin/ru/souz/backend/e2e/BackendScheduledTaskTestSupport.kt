@@ -46,6 +46,12 @@ internal fun JobInfo.occurrenceInput(): String =
 
 internal fun JobInfo.run(attempt: Int = 1): JobRun = JobRun(id, userId, title, payload, scheduledAt, attempt)
 
+/** Existing occurrences deduplicate against these IDs across backend upgrades. */
+internal fun JobRun.occurrenceId(entity: String): UUID {
+    val attemptKey = if (payload.path("atMostOnce").asBoolean(false)) "" else ":attempt-$attempt"
+    return UUID.nameUUIDFromBytes("scheduled-task:$jobId:$scheduledAt$attemptKey:$entity".toByteArray(Charsets.UTF_8))
+}
+
 /** Move persisted retry availability forward without changing the stable occurrence timestamp. */
 internal fun BackendE2eScope.makeScheduledJobReady(id: UUID) = backend.sql { connection ->
     connection.prepareStatement("update jobs set available_at = clock_timestamp() - interval '1 second' where id = ?").use {

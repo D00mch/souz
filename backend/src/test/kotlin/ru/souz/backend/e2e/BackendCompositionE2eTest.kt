@@ -55,6 +55,7 @@ class BackendCompositionE2eTest {
             val state = client.get(BackendHttpRoutes.ONBOARDING_STATE) { trusted(userId) }.jsonBody()
             assertEquals("test-chat", state["recommendedDefaultModel"].asText())
             assertTrue(state["hasUsableModelAccess"].asBoolean())
+            assertFalse(state["availableUserManagedProviders"].flatMap { it["models"] }.any { it.asText() == "test-chat" })
             assertEquals(HttpStatusCode.OK, client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
                 trusted(userId); jsonBody("{}")
             }.status)
@@ -122,7 +123,6 @@ class BackendCompositionE2eTest {
             assertEquals(HttpStatusCode.OK, ready.status)
             assertEquals(HttpStatusCode.OK, openApi.status)
             assertTrue(openApi.jsonBody()["paths"].has(BackendHttpRoutes.SETTINGS))
-            assertFalse(root.jsonBody()["endpoints"].any { it.asText().contains("telegram-bot") })
             assertEquals(HttpStatusCode.Unauthorized, unauthorized.status)
             assertEquals("untrusted_proxy", unauthorized.jsonBody()["error"]["code"].asText())
             assertEquals(HttpStatusCode.OK, trusted.status)
@@ -418,6 +418,44 @@ class BackendCompositionE2eTest {
         }
 
     @Test
+    fun `bootstrap advertises the same providers in both languages before keys are added`() {
+        var firstCatalog: JsonNode? = null
+        for (language in listOf("ru", "en")) {
+            val source = object : BackendConfigSource {
+                override fun env(key: String): String? = when (key) {
+                    "APP_LANGUAGE" -> language
+                    "CODEX_ACCESS_TOKEN" -> "incomplete-codex-credentials"
+                    "OPENAI_MODEL" -> "unkeyed-custom-model"
+                    else -> null
+                }
+
+                override fun property(key: String): String? = null
+            }
+            backendE2eTest("e2e_catalog_$language", settingsSource = source, mockProvider = false) {
+                val userId = "catalog-user"
+                val bootstrap = client.get(BackendHttpRoutes.BOOTSTRAP) { trusted(userId) }.jsonBody()
+                val models = bootstrap["capabilities"]["models"]
+                firstCatalog?.let { assertEquals(it, models) }
+                firstCatalog = models
+                val providers = setOf("openai", "anthropic", "ai_tunnel", "qwen")
+                assertEquals(providers, models.map { it["provider"].asText() }.toSet())
+                assertTrue(models.any { it["model"].asText() == LLMModel.OpenAICompatibleCustom.alias })
+                assertTrue(models.none { it["serverManagedKey"].asBoolean() || it["userManagedKey"].asBoolean() })
+                assertEquals(language, bootstrap["settings"]["interfaceLanguage"].asText())
+                assertEquals(LLMModel.QwenMax.alias, bootstrap["settings"]["defaultModel"].asText())
+
+                val state = client.get(BackendHttpRoutes.ONBOARDING_STATE) { trusted(userId) }.jsonBody()
+                assertEquals("provider", state["currentStep"].asText())
+                assertEquals(providers, state["availableUserManagedProviders"].map { it["provider"].asText() }.toSet())
+                assertEquals(HttpStatusCode.BadRequest, client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
+                    trusted(userId)
+                    jsonBody("""{"defaultModel":"${LLMModel.OpenAIGpt5Mini.alias}"}""")
+                }.status)
+            }
+        }
+    }
+
+    @Test
     fun `onboarding validation rejects malformed preferences without partial completion`() =
         backendE2eTest("e2e_onboarding_validation") {
             val invalidBodies = listOf(
@@ -464,8 +502,8 @@ class BackendCompositionE2eTest {
         }
 
     @Test
-    fun `OpenAPI inventory and proxy security are exact with Telegram disabled and enabled`() {
-        val expectedWithoutTelegram = linkedMapOf(
+    fun `OpenAPI inventory and proxy security are exact`() {
+        val expected = linkedMapOf(
             "/" to setOf("get"),
             "/health" to setOf("get"),
             "/ready" to setOf("get"),
@@ -497,68 +535,53 @@ class BackendCompositionE2eTest {
             "/v1/chats/{chatId}/executions/{executionId}/cancel" to setOf("post"),
             "/v1/options/{optionId}/answer" to setOf("post"),
         )
-        listOf(false, true).forEach { telegramEnabled ->
-            backendE2eTest(
-                schemaPrefix = "e2e_openapi_${if (telegramEnabled) "telegram" else "base"}",
-                featureFlags = BackendFeatureFlags(telegramBot = telegramEnabled),
-                telegramApi = FakeCompositionTelegramApi.takeIf { telegramEnabled },
-            ) {
-                val docs = client.get(BackendHttpRoutes.DOCS)
-                val document = client.get(BackendHttpRoutes.OPENAPI_DOCUMENT).jsonBody()
-                val expected = expectedWithoutTelegram + if (telegramEnabled) {
-                    mapOf("/v1/chats/{chatId}/telegram-bot" to setOf("get", "put", "delete"))
-                } else {
-                    emptyMap()
-                }
-                val methods = setOf("get", "post", "put", "patch", "delete")
-                val actual = document["paths"].properties().associate { (path, item) ->
-                    path to item.fieldNames().asSequence().filter(methods::contains).toSet()
-                }
+        backendE2eTest("e2e_openapi") {
+            val docs = client.get(BackendHttpRoutes.DOCS)
+            val document = client.get(BackendHttpRoutes.OPENAPI_DOCUMENT).jsonBody()
+            val methods = setOf("get", "post", "put", "patch", "delete")
+            val actual = document["paths"].properties().associate { (path, item) ->
+                path to item.fieldNames().asSequence().filter(methods::contains).toSet()
+            }
 
-                assertEquals(HttpStatusCode.OK, docs.status)
-                assertTrue(docs.bodyAsText().contains("url: '/docs/openapi.json'"))
-                assertEquals(expected, actual)
-                assertFalse(actual.containsKey(BackendHttpRoutes.CHAT_WS_PATTERN))
-                assertFalse(actual.containsKey(BackendHttpRoutes.WS))
-                assertEquals(
-                    setOf("souzProxyAuth", "souzUserIdentity", "hookBearer", "pluginAdminBearer"),
-                    document["components"]["securitySchemes"].fieldNames().asSequence().toSet(),
-                )
-                document["paths"].properties().forEach { (path, pathItem) ->
-                    pathItem.properties().asSequence()
-                        .filter { it.key in methods }
-                        .forEach { (method, operation) ->
-                            val publicOperation =
-                                path == "/" || path == "/health" || path == "/ready" || path == "/metrics" ||
-                                    (path == "/v1/chats" && method == "post") ||
-                                    (path == "/v1/chats/{chatId}/threads/{threadId}" && method == "get")
-                            if (path == "/hooks/{hookId}") {
-                                assertEquals(setOf("hookBearer"), operation["security"][0].fieldNames().asSequence().toSet())
-                                assertEquals(0, operation["security"][1].size(), "Custom verification need not use a Bearer header")
-                            } else if (path.startsWith("/admin/v1/plugins")) {
-                                assertEquals(setOf("pluginAdminBearer"), operation["security"][0].fieldNames().asSequence().toSet())
-                            } else if (publicOperation) {
-                                assertFalse(operation.has("security"), "$method $path")
-                            } else {
-                                assertEquals(
-                                    setOf("souzProxyAuth", "souzUserIdentity"),
-                                    operation["security"][0].fieldNames().asSequence().toSet(),
-                                    "$method $path",
-                                )
-                            }
+            assertEquals(HttpStatusCode.OK, docs.status)
+            assertTrue(docs.bodyAsText().contains("url: '/docs/openapi.json'"))
+            assertEquals(expected, actual)
+            assertFalse(actual.containsKey(BackendHttpRoutes.CHAT_WS_PATTERN))
+            assertFalse(actual.containsKey(BackendHttpRoutes.WS))
+            assertEquals(
+                setOf("souzProxyAuth", "souzUserIdentity", "hookBearer", "pluginAdminBearer"),
+                document["components"]["securitySchemes"].fieldNames().asSequence().toSet(),
+            )
+            document["paths"].properties().forEach { (path, pathItem) ->
+                pathItem.properties().asSequence()
+                    .filter { it.key in methods }
+                    .forEach { (method, operation) ->
+                        val publicOperation =
+                            path == "/" || path == "/health" || path == "/ready" || path == "/metrics" ||
+                                (path == "/v1/chats" && method == "post") ||
+                                (path == "/v1/chats/{chatId}/threads/{threadId}" && method == "get")
+                        if (path == "/hooks/{hookId}") {
+                            assertEquals(setOf("hookBearer"), operation["security"][0].fieldNames().asSequence().toSet())
+                            assertEquals(0, operation["security"][1].size(), "Custom verification need not use a Bearer header")
+                        } else if (path.startsWith("/admin/v1/plugins")) {
+                            assertEquals(setOf("pluginAdminBearer"), operation["security"][0].fieldNames().asSequence().toSet())
+                        } else if (publicOperation) {
+                            assertFalse(operation.has("security"), "$method $path")
+                        } else {
+                            assertEquals(
+                                setOf("souzProxyAuth", "souzUserIdentity"),
+                                operation["security"][0].fieldNames().asSequence().toSet(),
+                                "$method $path",
+                            )
                         }
-                }
+                    }
             }
         }
     }
 
     @Test
     fun `OpenAPI contract documents parameters errors nullable fields and write-only secrets`() =
-        backendE2eTest(
-            schemaPrefix = "e2e_openapi_contract",
-            featureFlags = BackendFeatureFlags(telegramBot = true),
-            telegramApi = FakeCompositionTelegramApi,
-        ) {
+        backendE2eTest("e2e_openapi_contract") {
             val document = client.get(BackendHttpRoutes.OPENAPI_DOCUMENT).jsonBody()
             val schemes = document["components"]["securitySchemes"]
             assertEquals("apiKey", schemes["souzProxyAuth"]["type"].asText())
@@ -582,17 +605,6 @@ class BackendCompositionE2eTest {
             assertTrue(apiKey["writeOnly"].asBoolean())
             assertEquals(1, apiKey["minLength"].asInt())
             assertEquals("\\S", apiKey["pattern"].asText())
-
-            val putTelegram = document.operation(BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN, "put")
-            assertEquals("upsertTelegramBotBinding", putTelegram["operationId"].asText())
-            assertProxySecurity(putTelegram)
-            assertUuidPathParameter(putTelegram, "chatId")
-            val telegramRequest = document.resolveSchema(putTelegram.jsonRequestSchema())
-            assertEquals(listOf("token"), telegramRequest.requiredNames())
-            val telegramToken = telegramRequest["properties"]["token"]
-            assertTrue(telegramToken["writeOnly"].asBoolean())
-            assertEquals(1, telegramToken["minLength"].asInt())
-            assertEquals(4096, telegramToken["maxLength"].asInt())
 
             val createMessage = document.operation(BackendHttpRoutes.CHAT_MESSAGES_PATTERN, "post")
             assertEquals("createChatMessage", createMessage["operationId"].asText())
@@ -689,21 +701,4 @@ class BackendCompositionE2eTest {
         val error = document.resolveSchema(errorEnvelope["properties"]["error"])
         assertEquals(setOf("code", "message"), error["properties"].fieldNames().asSequence().toSet())
     }
-}
-
-private object FakeCompositionTelegramApi : ru.souz.backend.telegram.TelegramBotApi {
-    override suspend fun getMe(token: String) = ru.souz.backend.telegram.TelegramGetMeResponse(ok = true)
-
-    override suspend fun getUpdates(
-        token: String,
-        offset: Long?,
-        timeoutSeconds: Int,
-        allowedUpdates: List<String>,
-    ) = ru.souz.backend.telegram.TelegramUpdatesResponse(ok = true)
-
-    override suspend fun sendMessage(token: String, chatId: Long, text: String) = Unit
-
-    override suspend fun sendChatAction(token: String, chatId: Long, action: String) = Unit
-
-    override suspend fun deleteWebhook(token: String, dropPendingUpdates: Boolean) = Unit
 }

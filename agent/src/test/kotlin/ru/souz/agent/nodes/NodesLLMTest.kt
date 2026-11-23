@@ -7,14 +7,18 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.job
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
@@ -313,7 +317,10 @@ class NodesLLMTest {
                     val request = firstArg<LLMRequest.Chat>().also { requests += it }
                     flow {
                         emit(block(0, "${request.model} answer"))
-                        if (request.model == "simple") simpleStreamed.complete(Unit)
+                        if (request.model == "simple") {
+                            simpleStreamed.complete(Unit)
+                            if (chosen != "simple") awaitCancellation()
+                        }
                     }
                 }
             }
@@ -327,7 +334,9 @@ class NodesLLMTest {
             }
             val nodes = NodesLLM(api, mockk { every { useStreaming } returns true }, conversationInstructions = { "Be brief." },
                 complexityClassifier = classifier, routedTools = { listOf(testTool(it.model)) })
-            val context = context(listOf(SYSTEM, INJECTED, LLMRequest.Message(LLMMessageRole.user, "Prompt")), recordingSink(events))
+            val prompt = LLMRequest.Message(LLMMessageRole.user, "Prompt",
+                files = listOf(FileContent("image", "image.png", "image/png", 100)))
+            val context = context(listOf(SYSTEM, INJECTED, prompt), recordingSink(events), activeExchangeStartIndex = 1)
             val result = nodes.chat().execute(context.copy(settings = context.settings.copy(routing = ROUTING),
                 routingCapabilities = mapOf("application.action" to "Perform a saved action")), runtime())
 
@@ -342,6 +351,8 @@ class NodesLLMTest {
             assertEquals(chosen, result.settings.model)
             assertEquals(if (chosen == "simple") emptySet() else setOf(chosen), result.settings.tools.byName.keys)
             assertTrue(requests.all { request -> request.messages.any { it.content == INJECTED.content } })
+            assertTrue(requests.all { it.messages.last() == prompt.withFileReferences() })
+            assertEquals(context.activeExchangeStartIndex, result.activeExchangeStartIndex)
             assertEquals(null, result.settings.routing)
             nodes.chat().execute(result.map { "follow-up" }, runtime())
             assertEquals(if (chosen == "simple") 0 else 1, events.count { it is AgentRuntimeEvent.InitialWait })
@@ -349,25 +360,52 @@ class NodesLLMTest {
     }
 
     @Test
-    fun `routed image compaction preserves the active exchange`() = runTest {
-        for ((complex, chosen) in listOf(false to "simple", true to "complex")) {
-            val calls = mutableListOf<LLMRequest.Chat>()
-            val api = mockk<LLMChatAPI> {
-                coEvery { message(capture(calls)) } returnsMany listOf(block(0, "short summary"), block(0, "answer"))
-            }
-            val nodes = NodesLLM(api, mockk { every { useStreaming } returns false }, complexityClassifier = { _, _ -> TaskClassification(complex) })
-            val completed = exchange("x".repeat(56_000))
-            val active = activeTurn().map { it.copy(files = if (it.role == LLMMessageRole.function)
-                listOf(FileContent("image", "image.png", "image/png", 100)) else emptyList()) }
-            val ctx = context(completed + active, activeExchangeStartIndex = 2)
-            val result = nodes.chat().execute(ctx.copy(settings = ctx.settings.copy(routing = ROUTING)), runtime())
-
-            assertEquals(listOf(chosen to true, chosen to false), calls.map { it.model to it.isSummarization })
-            assertEquals(completed, calls.first().messages.dropLast(1))
-            assertEquals(active, result.history.drop(result.activeExchangeStartIndex).dropLast(1))
-            assertEquals(active.map { it.withFileReferences() }, calls.last().messages.drop(result.activeExchangeStartIndex))
-            assertEquals(1, result.activeExchangeStartIndex)
+    fun `complex routing continues after the speculative call fails`() = runTest {
+        val api = mockk<LLMChatAPI> {
+            coEvery { message(match { it.model == "simple" }) } throws LLMException(LLMResponse.Chat.Error(503, "Provider failure"))
+            coEvery { message(match { it.model == "complex" }) } returns block(0, "complex answer")
         }
+        val classifier = TaskComplexityClassifier { _, _ ->
+            val speculative = currentCoroutineContext().job.children.single()
+            speculative.join()
+            assertTrue(speculative.isCancelled)
+            TaskClassification(complex = true)
+        }
+        val nodes = NodesLLM(api, mockk { every { useStreaming } returns false }, complexityClassifier = classifier)
+        val ctx = context(activeTurn())
+
+        val result = nodes.chat().execute(ctx.copy(settings = ctx.settings.copy(routing = ROUTING)), runtime())
+
+        assertEquals("complex", result.settings.model)
+        assertEquals("complex answer", result.history.last().content)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["simple", "complex", "test-model"])
+    fun `oversized routed input waits for classification before compacting once`(chosen: String) = runTest {
+        val calls = mutableListOf<LLMRequest.Chat>()
+        val api = mockk<LLMChatAPI> {
+            coEvery { message(capture(calls)) } returns block(0, "answer")
+        }
+        val classifier = TaskComplexityClassifier { _, _ ->
+            assertTrue(currentCoroutineContext().job.children.none(), "Oversized input should wait for classification.")
+            if (chosen == "test-model") error("Jev down")
+            TaskClassification(complex = chosen == "complex")
+        }
+        val instructions = "Style ".repeat(800)
+        val nodes = NodesLLM(api, mockk { every { useStreaming } returns false },
+            conversationInstructions = { instructions }, complexityClassifier = classifier)
+        val completed = listOf(SYSTEM) + exchange("x".repeat(48_000))
+        val active = activeTurn().map { it.copy(files = if (it.role == LLMMessageRole.function)
+            listOf(FileContent("image", "image.png", "image/png", 100)) else emptyList()) }
+        val ctx = context(completed + active, activeExchangeStartIndex = completed.size)
+        val request = ctx.toChatRequest(ctx.history, CHAT_MAX_OUTPUT_TOKENS).withFileReferences()
+        assertFalse(request.exceedsContextBudget(ctx.settings.contextSize))
+        assertTrue(request.withConversationInstructions(instructions).exceedsContextBudget(ctx.settings.contextSize))
+
+        nodes.chat().execute(ctx.copy(settings = ctx.settings.copy(routing = ROUTING)), runtime())
+
+        assertEquals(listOf(chosen to true, chosen to false), calls.map { it.model to it.isSummarization })
     }
 
     private fun exchange(prompt: String) = listOf(

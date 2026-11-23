@@ -7,6 +7,7 @@ import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.attachments.AttachmentStorage
 import ru.souz.backend.attachments.AttachmentStorageConfig
 import ru.souz.backend.attachments.BackendAttachmentAccess
+import ru.souz.backend.attachments.PreparedAttachmentWorkspace
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.execution.service.AgentExecutionLauncher
 import ru.souz.backend.hooks.HookConfig
@@ -55,11 +56,12 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
+import ru.souz.backend.hooks.ScheduledHookDispatch
 import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
 import ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntime
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.scheduler.ScheduledTaskConfig
-import ru.souz.backend.scheduler.ScheduledTaskRunner
+import ru.souz.backend.scheduler.dispatchScheduledTask
 import ru.souz.backend.metrics.BackendMetrics
 import ru.souz.backend.plugins.BackendPluginRuntime
 import ru.souz.backend.plugins.PostgresPluginRepository
@@ -89,12 +91,7 @@ import ru.souz.backend.http.BackendOpenApiSecurity
 import ru.souz.backend.http.backendApplication
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.backend.storage.postgres.postgresAppConfig
-import ru.souz.backend.storage.postgres.PostgresVkBotBindingRepository
 import ru.souz.backend.toolcall.repository.ToolCallRepository
-import ru.souz.backend.telegram.TelegramBotApi
-import ru.souz.backend.telegram.TelegramBotPollingService
-import ru.souz.backend.vk.VkBotApi
-import ru.souz.backend.vk.VkBotPollingService
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMModel
@@ -102,8 +99,6 @@ import ru.souz.memory.ConversationMemoryRuntime
 import kotlin.time.Duration.Companion.milliseconds
 
 internal const val E2E_PROXY_TOKEN = "proxy-secret"
-internal const val E2E_TELEGRAM_TOKEN_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
-internal const val E2E_VK_TOKEN_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 internal const val E2E_POLICY_PROMPT = "Follow the E2E operator policy."
 internal val E2E_MODEL: LLMModel = LLMModel.QwenMax
 
@@ -151,8 +146,6 @@ internal fun backendE2eTest(
     schema: String = newPostgresSchema(schemaPrefix),
     featureFlags: BackendFeatureFlags = BackendFeatureFlags(wsEvents = true),
     llm: E2eLlmApi = E2eLlmApi(),
-    telegramApi: TelegramBotApi? = null,
-    vkApi: VkBotApi? = null,
     turnRunnerOverride: BackendConversationTurnRunner? = null,
     startBackgroundServices: Boolean = false,
     settingsSource: BackendConfigSource? = null,
@@ -176,8 +169,6 @@ internal fun backendE2eTest(
         featureFlags = featureFlags,
         skillOAuth = skillOAuth,
         llm = llm,
-        telegramApi = telegramApi,
-        vkApi = vkApi,
         turnRunnerOverride = turnRunnerOverride,
         startBackgroundServices = startBackgroundServices,
         settingsSource = settingsSource,
@@ -369,8 +360,6 @@ internal class BackendE2eBackend(
     private val featureFlags: BackendFeatureFlags,
     private val skillOAuth: Boolean = false,
     llm: E2eLlmApi,
-    telegramApi: TelegramBotApi?,
-    vkApi: VkBotApi?,
     turnRunnerOverride: BackendConversationTurnRunner?,
     startBackgroundServices: Boolean,
     private val settingsSource: BackendConfigSource? = null,
@@ -391,8 +380,6 @@ internal class BackendE2eBackend(
         schema = schema,
         featureFlags = featureFlags,
         proxyToken = E2E_PROXY_TOKEN,
-        telegramTokenEncryptionKey = E2E_TELEGRAM_TOKEN_KEY.takeIf { featureFlags.telegramBot },
-        vkTokenEncryptionKey = E2E_VK_TOKEN_KEY.takeIf { featureFlags.vkBot },
         includeSkillOAuthConfig = skillOAuth,
     ).copy(
         hindsightApiUrl = hindsightUrl,
@@ -440,7 +427,7 @@ internal class BackendE2eBackend(
             bindSingleton<RuntimeSandboxFactory>(overrides = true) { sandboxFactory(instance()) }
         }
         bindSingleton<NamedLlmConfig>(overrides = true) { source.loadNamedModels() }
-        bindSingleton<SettingsProvider>(overrides = true) {
+        bindSingleton<BackendSettingsProvider>(overrides = true) {
             BackendSettingsProvider(instance(), source, instance())
         }
         if (mockProvider) {
@@ -450,12 +437,6 @@ internal class BackendE2eBackend(
         }
         if (providerClients != null) {
             bindSingleton<ProviderHttpClients>(overrides = true) { providerClients }
-        }
-        if (telegramApi != null) {
-            bindSingleton<TelegramBotApi>(overrides = true) { telegramApi }
-        }
-        if (vkApi != null) {
-            bindSingleton<VkBotApi>(overrides = true) { vkApi }
         }
         if (turnRunnerOverride != null) {
             bindSingleton<BackendConversationTurnRunner>(overrides = true) { turnRunnerOverride }
@@ -481,31 +462,7 @@ internal class BackendE2eBackend(
                 runBlocking { recoveryService.recover() }
                 recoveryService.start(applicationScope)
             }
-            if (featureFlags.telegramBot) {
-                di.direct.instance<TelegramBotPollingService>().start()
-            }
-            if (featureFlags.vkBot) {
-                di.direct.instance<VkBotPollingService>().start()
-            }
             di.direct.instanceOrNull<HistoryMemoryWorker>()?.start(applicationScope)
-        }
-    }
-
-    private val vkSessions = mutableMapOf<UUID, VkBotPollingService.PollSession>()
-
-    suspend fun pollTelegramOnce() {
-        for (binding in di.direct.instance<ru.souz.backend.telegram.TelegramBotBindingRepository>().listEnabled()) {
-            di.direct.instance<TelegramBotPollingService>().pollBinding(binding.id)
-        }
-    }
-
-    suspend fun pollVkOnce() {
-        val bindings = di.direct.instance<PostgresVkBotBindingRepository>().listEnabled()
-        vkSessions.keys.retainAll(bindings.map { it.id }.toSet())
-        for (binding in bindings) {
-            di.direct.instance<VkBotPollingService>().pollBinding(
-                binding.id, vkSessions.getOrPut(binding.id) { VkBotPollingService.PollSession() },
-            )
         }
     }
 
@@ -515,6 +472,7 @@ internal class BackendE2eBackend(
 
     val attachmentStorage: AttachmentStorage get() = di.direct.instance()
     val attachmentAccess: BackendAttachmentAccess get() = di.direct.instance()
+    suspend fun cleanupPreparedAttachments(): Int = di.direct.instance<PreparedAttachmentWorkspace>().cleanup()
     val pluginRuntime: BackendPluginRuntime get() = di.direct.instance()
     val pluginRepository: PostgresPluginRepository get() = di.direct.instance()
     val pluginArtifacts: S3PluginArtifacts get() = di.direct.instance()
@@ -525,12 +483,11 @@ internal class BackendE2eBackend(
     val turnRunner: BackendConversationTurnRunner get() = di.direct.instance()
     val conversationRuntimeFactory: BackendConversationRuntimeFactory get() = di.direct.instance()
 
-    suspend fun startScheduledTaskWorker() {
-        val runner = di.direct.instance<ScheduledTaskRunner>()
-        di.direct.instance<PostgresJobService>().startWorker(applicationScope, runner::awaitCapacity, runner::run)
-    }
+    suspend fun startScheduledTaskWorker() =
+        dependencies.hookService.startScheduledTaskWorker(applicationScope)
 
-    suspend fun runScheduledTask(job: JobRun) = di.direct.instance<ScheduledTaskRunner>().run(job)
+    suspend fun runScheduledTask(job: JobRun) =
+        di.direct.instance<ScheduledHookDispatch>().dispatchScheduledTask(job)
 
     fun <T> sql(block: (Connection) -> T): T =
         dataSource.connection.use(block)
@@ -555,14 +512,16 @@ internal class BackendE2eBackend(
 
     suspend fun captureHistoryMemory(): Boolean = di.direct.instanceOrNull<HistoryMemoryWorker>()?.processNext() ?: false
 
-    fun createPeer(llm: E2eLlmApi = E2eLlmApi(), providerClients: ProviderHttpClients? = null): BackendE2eBackend =
+    fun createPeer(
+        llm: E2eLlmApi = E2eLlmApi(),
+        providerClients: ProviderHttpClients? = null,
+        attachments: AttachmentStorageConfig? = this.attachments,
+    ): BackendE2eBackend =
         BackendE2eBackend(
             schema = schema,
             featureFlags = featureFlags,
             skillOAuth = skillOAuth,
             llm = llm,
-            telegramApi = null,
-            vkApi = null,
             turnRunnerOverride = null,
             startBackgroundServices = false,
             providerClients = providerClients,

@@ -14,6 +14,8 @@ import org.kodein.di.instanceOrNull
 import ru.souz.backend.attachments.AttachmentCleanupWorker
 import ru.souz.backend.attachments.AttachmentStorage
 import ru.souz.backend.attachments.BackendAttachmentAccess
+import ru.souz.backend.attachments.PreparedAttachmentRuntime
+import ru.souz.backend.attachments.PreparedAttachmentWorkspace
 import ru.souz.backend.attachments.attachmentToolCatalog
 import ru.souz.backend.attachments.S3AttachmentObjects
 import ru.souz.backend.client.LiveClientToolDispatcher
@@ -39,13 +41,11 @@ import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.channels.ChannelDeliveryService
 import ru.souz.backend.channels.ChannelProviderRegistry
 import ru.souz.backend.channels.PublicClientChannelProvider
-import ru.souz.backend.channels.TelegramChannelProvider
-import ru.souz.backend.channels.VkChannelProvider
 import ru.souz.backend.channels.tool.BackendChannelToolCatalog
 import ru.souz.backend.channels.tool.ToolListActiveChannels
 import ru.souz.backend.channels.tool.ToolSendMessageToChannel
 import ru.souz.backend.chat.repository.ChatRepository
-import ru.souz.backend.scheduler.ScheduledTaskRunner
+import ru.souz.backend.hooks.ScheduledHookDispatch
 import ru.souz.backend.scheduler.ToolCreateScheduledTask
 import ru.souz.backend.scheduler.ToolDeleteScheduledTask
 import ru.souz.backend.scheduler.ToolListScheduledTasks
@@ -102,8 +102,6 @@ import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
 import ru.souz.backend.storage.postgres.PostgresReadinessProbe
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
 import ru.souz.backend.storage.postgres.PostgresToolCallRepository
-import ru.souz.backend.storage.postgres.PostgresTelegramBotBindingRepository
-import ru.souz.backend.storage.postgres.PostgresVkBotBindingRepository
 import ru.souz.backend.storage.postgres.PostgresUserRepository
 import ru.souz.backend.storage.postgres.PostgresUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
@@ -120,17 +118,6 @@ import ru.souz.runtime.di.FRIDA_FALLBACK_TAG
 import ru.souz.runtime.di.runtimeProviderHttpDiModule
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.skills.registry.fileSystemSkillRegistryDiModule
-import ru.souz.backend.telegram.HttpTelegramBotApi
-import ru.souz.backend.telegram.TelegramBotApi
-import ru.souz.backend.telegram.TelegramBotBindingRepository
-import ru.souz.backend.telegram.TelegramBotBindingService
-import ru.souz.backend.telegram.TelegramBotPollingService
-import ru.souz.backend.telegram.TelegramBotTokenCrypto
-import ru.souz.backend.vk.HttpVkBotApi
-import ru.souz.backend.vk.VkBotApi
-import ru.souz.backend.vk.VkBotBindingService
-import ru.souz.backend.vk.VkBotPollingService
-import ru.souz.backend.vk.VkBotTokenCrypto
 import ru.souz.skilloauth.impl.SkillOAuthGatewayImpl
 import ru.souz.jobs.JobService
 import ru.souz.jobs.impl.PostgresJobService
@@ -168,6 +155,7 @@ fun backendDiModule(
     import(
         runtimeToolsDiModule(
             scopeResolver = BackendSandboxScopeResolver,
+            preparedAttachmentsEnabled = appConfig.attachments != null,
         )
     )
     import(runtimeProviderHttpDiModule())
@@ -194,12 +182,14 @@ fun backendDiModule(
         }
     }
     bindSingleton<Clock> { Clock.systemUTC() }
+    bindSingleton { PreparedAttachmentRuntime(instance()) }
     appConfig.attachments?.let { config ->
         bindSingleton { S3AttachmentObjects(config) }
-        bindSingleton { PostgresAttachmentRepository(instance<HikariDataSource>()) }
+        bindSingleton { PostgresAttachmentRepository(instance<HikariDataSource>(), config.saveBudget, instance()) }
         bindSingleton { AttachmentStorage(config, instance(), instance(), instance()) }
         bindSingleton { AttachmentCleanupWorker(instance()) }
-        bindSingleton { BackendAttachmentAccess(instance(), instance()) }
+        bindSingleton { PreparedAttachmentWorkspace(instance<HikariDataSource>(), instance(), instance(), instance()) }
+        bindSingleton { BackendAttachmentAccess(instance(), instance(), instance()) }
         bindSingleton { ImageGeneration(instance(), instance<HikariDataSource>()) }
         bindSingleton { ClientImages(instance()) }
     }
@@ -227,38 +217,47 @@ fun backendDiModule(
     }
     bindSingleton { SystemBackendConfigSource.loadNamedModels() }
     bindSingleton { ImageModelRoute(appConfig.imageModel, instance()) }
-    bindSingleton<SettingsProvider> {
+    bindSingleton {
         BackendSettingsProvider(
             preferenceStore = instance(),
             namedModels = instance(),
         )
     }
+    bindSingleton<SettingsProvider> { instance<BackendSettingsProvider>() }
     bindSingleton<UserRepository> { PostgresUserRepository(instance()) }
     bindSingleton<ChatRepository> { PostgresChatRepository(instance()) }
     bindSingleton<ConversationKnowledgeStore> { PostgresConversationKnowledgeStore(instance<HikariDataSource>()) }
     bindSingleton<ClientRequestRepository> {
-        PostgresClientRequestRepository(instance(), appConfig.hindsightApiUrl != null, instance(), instance())
+        PostgresClientRequestRepository(
+            dataSource = instance(),
+            captureHistoryMemory = appConfig.hindsightApiUrl != null,
+            clock = instance(),
+            metrics = instance(),
+            attachmentRuntimeId = instance<PreparedAttachmentRuntime>().id,
+        )
     }
     bindSingleton<MessageRepository> { PostgresMessageRepository(instance()) }
     bindSingleton<AgentStateRepository> { PostgresAgentStateRepository(instance()) }
-    bindSingleton<AgentExecutionRepository> { PostgresAgentExecutionRepository(instance(), instance()) }
+    bindSingleton<AgentExecutionRepository> {
+        PostgresAgentExecutionRepository(instance(), instance(), instance<PreparedAttachmentRuntime>().id)
+    }
     bindSingleton<OptionRepository> { PostgresOptionRepository(instance()) }
     bindSingleton<AgentEventRepository> { PostgresAgentEventRepository(instance()) }
     bindSingleton<ToolCallRepository> { PostgresToolCallRepository(instance()) }
     bindSingleton<UserSettingsRepository> { PostgresUserSettingsRepository(instance()) }
     bindSingleton<UserProviderKeyRepository> { PostgresUserProviderKeyRepository(instance()) }
-    bindSingleton<TelegramBotBindingRepository> { PostgresTelegramBotBindingRepository(instance()) }
-    bindSingleton { PostgresVkBotBindingRepository(instance()) }
     bindSingleton {
         // Each AuthorizationCodeOAuthClient and SkillOAuthGatewayImpl owns its own Ktor CIO
         // HttpClient (a selector-manager thread pool each); without closing them here they leak
         // past backend shutdown.
         BackendRuntimeResources(
-            cancelAndJoinApplicationWork = { instance<BackendApplicationScope>().cancelAndJoin() },
+            cancelAndJoinApplicationWork = {
+                instance<BackendApplicationScope>().cancelAndJoin()
+                instance<PreparedAttachmentRuntime>().close()
+            },
             closeProviderClients = {
                 instance<ProviderHttpClients>().close()
                 instanceOrNull<ClientImages>()?.close()
-                (instanceOrNull<VkBotApi>() as? AutoCloseable)?.close()
             },
             closeSkillOAuthClients = {
                 skillOAuthConfig?.providers?.values.orEmpty().filterIsInstance<AutoCloseable>().forEach { it.close() }
@@ -296,7 +295,19 @@ fun backendDiModule(
     bindSingleton { HookStore(instance<HikariDataSource>(), appConfig.hooks) }
     bindSingleton { HookDefinitions(instance(), appConfig.hooks) }
     bindSingleton { HookVerifier(appConfig.hooks, instance()) }
-    bindSingleton { HookService(appConfig.hooks, instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton {
+        HookService(
+            config = appConfig.hooks,
+            definitions = instance(),
+            store = instance(),
+            executions = instance(),
+            executionService = instance(),
+            messages = instance(),
+            verifier = instance(),
+            scheduled = instance(),
+            jobs = instance(),
+        )
+    }
     bindSingleton<ProviderCredentialResolver> {
         StoredProviderCredentialResolver(
             baseSettingsProvider = instance(),
@@ -464,78 +475,6 @@ fun backendDiModule(
             waitingPhrases = instance(),
         )
     }
-    if (appConfig.featureFlags.telegramBot) {
-        bindSingleton<TelegramBotApi> { HttpTelegramBotApi() }
-        bindSingleton {
-            TelegramBotTokenCrypto(
-                rawBase64Key = appConfig.telegramTokenEncryptionKey
-                    ?: error("Telegram token encryption key is required.")
-            )
-        }
-        bindSingleton {
-            TelegramBotBindingService(
-                chatRepository = instance(),
-                bindingRepository = instance(),
-                telegramBotApi = instance(),
-                tokenCrypto = instance(),
-                clock = instance(),
-            )
-        }
-        bindSingleton {
-            TelegramBotPollingService(
-                repository = instance(),
-                botApi = instance(),
-                executionService = instance(),
-                tokenCrypto = instance(),
-                scope = instance<BackendApplicationScope>(),
-                maxConcurrency = appConfig.telegramPollingMaxConcurrency,
-            )
-        }
-        bindSingleton {
-            TelegramChannelProvider(
-                bindingRepository = instance(),
-                deliveryService = instance(),
-                telegramBotApi = instance(),
-                tokenCrypto = instance(),
-            )
-        }
-    }
-    if (appConfig.featureFlags.vkBot) {
-        bindSingleton<VkBotApi> { HttpVkBotApi() }
-        bindSingleton {
-            VkBotTokenCrypto(
-                rawBase64Key = appConfig.vkTokenEncryptionKey
-                    ?: error("VK token encryption key is required.")
-            )
-        }
-        bindSingleton {
-            VkBotBindingService(
-                chatRepository = instance(),
-                bindingRepository = instance(),
-                vkBotApi = instance(),
-                tokenCrypto = instance(),
-                clock = instance(),
-            )
-        }
-        bindSingleton {
-            VkBotPollingService(
-                repository = instance(),
-                botApi = instance(),
-                executionService = instance(),
-                tokenCrypto = instance(),
-                scope = instance<BackendApplicationScope>(),
-                maxConcurrency = appConfig.vkPollingMaxConcurrency,
-            )
-        }
-        bindSingleton {
-            VkChannelProvider(
-                bindingRepository = instance(),
-                deliveryService = instance(),
-                vkBotApi = instance(),
-                tokenCrypto = instance(),
-            )
-        }
-    }
     bindSingleton {
         ChannelDeliveryService(
             chatRepository = instance(),
@@ -545,31 +484,14 @@ fun backendDiModule(
         )
     }
     bindSingleton {
-        val telegramBindingRepository = instance<TelegramBotBindingRepository>()
-        val vkBindingRepository = instance<PostgresVkBotBindingRepository>()
         PublicClientChannelProvider(
             chatRepository = instance(),
             deliveryService = instance(),
             attachmentStorage = instanceOrNull(),
-            isClaimedByAnotherProvider = { chatId ->
-                // Gated on the same flags TelegramChannelProvider/VkChannelProvider's registration
-                // is gated on below — otherwise a leftover Telegram/VK binding would hide a chat
-                // from ListActiveChannels entirely once that channel's flag is turned off.
-                (appConfig.featureFlags.telegramBot &&
-                    telegramBindingRepository.getByChat(chatId)?.active == true) ||
-                    (appConfig.featureFlags.vkBot &&
-                        vkBindingRepository.getByChat(chatId)?.active == true)
-            },
         )
     }
     bindSingleton {
-        ChannelProviderRegistry(
-            providers = listOfNotNull(
-                if (appConfig.featureFlags.telegramBot) instance<TelegramChannelProvider>() else null,
-                if (appConfig.featureFlags.vkBot) instance<VkChannelProvider>() else null,
-                instance<PublicClientChannelProvider>(),
-            )
-        )
+        ChannelProviderRegistry(listOf(instance<PublicClientChannelProvider>()))
     }
     bindSingleton { ToolListActiveChannels(registry = instance()) }
     bindSingleton { ToolSendMessageToChannel(registry = instance()) }
@@ -587,7 +509,7 @@ fun backendDiModule(
         )
     }
     bindSingleton {
-        ScheduledTaskRunner(
+        ScheduledHookDispatch(
             chats = instance(),
             executions = instance(),
             launcher = instance(),
@@ -634,7 +556,7 @@ fun backendDiModule(
     bindSingleton {
         BackendBootstrapService(
             settingsProvider = instance(),
-            effectiveSettingsResolver = instance(),
+            userSettingsService = instance(),
             featureFlags = instance(),
             userProviderKeyRepository = instance(),
         )
@@ -662,8 +584,6 @@ fun backendDiModule(
             publicClientService = instance(),
             hookService = instance(),
             pluginAdministration = instanceOrNull(),
-            telegramBotBindingService = if (featureFlags.telegramBot) instance() else null,
-            vkBotBindingService = if (featureFlags.vkBot) instance() else null,
             featureFlags = featureFlags,
             readinessProbe = instance(),
             selectedModel = { settingsResolver.defaultModel() },

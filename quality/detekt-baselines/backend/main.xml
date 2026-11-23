@@ -10,6 +10,5 @@
     <ID>SuspendFunSwallowedCancellation:EventRoutes.kt:runCatching</ID>
     <ID>SuspendFunSwallowedCancellation:PublicClientService.kt:PublicClientService$catch (error: CancellationException) { withContext(NonCancellable) { runCatching { reconcileFailedStart(chat, requestId, threadId) } } throw error }</ID>
     <ID>SuspendFunSwallowedCancellation:PublicClientService.kt:PublicClientService$runCatching</ID>
-    <ID>SuspendFunSwallowedCancellation:TelegramChannelProvider.kt:TelegramChannelProvider$catch (e: Exception) { e }</ID>
   </CurrentIssues>
 </SmellBaseline>

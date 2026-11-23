@@ -19,45 +19,56 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
+import java.time.Instant
+import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class NodesCommonTest {
     @Test
-    fun `host context includes locale and refreshes request timezone across turns`() = runTest {
+    fun `host context refreshes the localized date and time without geolocation`() = runTest {
+        val zones = listOf("Europe/Moscow", "Asia/Tokyo", "UTC").map(ZoneId::of)
         val environment = object : AgentRuntimeEnvironment {
-            override val locale = Locale.US
-            override var zoneId: ZoneId = ZoneId.of("Europe/Moscow")
+            override val locale = Locale.FRANCE
+            override var zoneId: ZoneId = zones.first()
         }
         val nodesCommon = nodesCommon(environment = environment)
-        val context = stringContext(
+        val dateTimeFormatter = DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss", environment.locale)
+        val dateTimePrefix = "- [General fact]: Текущие дата и время: "
+        var context = stringContext(
             input = "Проверь Telegram",
             model = LLMModel.OpenAIGpt5Mini.alias,
         )
 
-        val result = nodesCommon.nodeAppendAdditionalData().execute(context, graphRuntime())
-        val injectedContext = assertNotNull(result.history.firstOrNull { it.isInjectedContextMessage() })
-        assertEquals(1, result.activeExchangeStartIndex)
-        assertTrue(injectedContext.content.contains("Текущие дата и время:"))
-        assertTrue(injectedContext.content.contains("locale=en-US"))
-        assertTrue(injectedContext.content.contains("timezone=Europe/Moscow"))
+        for ((turn, zoneId) in zones.withIndex()) {
+            environment.zoneId = zoneId
+            val exchangeStart = if (turn == 0) {
+                1
+            } else {
+                context = NodesPlain.inputToHistory().execute(context, graphRuntime())
+                context.activeExchangeStartIndex - 1
+            }
 
-        var nextContext = result
-        for (zoneId in listOf("America/New_York", "UTC")) {
-            environment.zoneId = ZoneId.of(zoneId)
-            nextContext = NodesPlain.inputToHistory().execute(nextContext, graphRuntime())
-            val startBeforeCleanup = nextContext.activeExchangeStartIndex
-            nextContext = nodesCommon.nodeAppendAdditionalData().execute(nextContext, graphRuntime())
-            assertEquals(startBeforeCleanup - 1, nextContext.activeExchangeStartIndex)
-            assertTrue(nextContext.history[nextContext.activeExchangeStartIndex].isInjectedContextMessage())
-            val refreshed = nextContext.history.single { it.isInjectedContextMessage() }.content
-            assertFalse(refreshed.contains("timezone=Europe/Moscow"))
-            assertTrue(refreshed.contains("timezone=$zoneId"))
+            val beforeExecution = Instant.now().truncatedTo(ChronoUnit.SECONDS)
+            context = nodesCommon.nodeAppendAdditionalData().execute(context, graphRuntime())
+            val afterExecution = Instant.now()
+
+            val injectedContext = context.history.single { it.isInjectedContextMessage() }
+            assertEquals(exchangeStart, context.activeExchangeStartIndex)
+            assertEquals(injectedContext, context.history[exchangeStart])
+            assertFalse(injectedContext.content.contains("User geo:"), injectedContext.content)
+            val facts = injectedContext.content.substringAfter("\n---\n").substringBeforeLast("\n</context>").lines()
+            assertEquals(1, facts.size, injectedContext.content)
+            val fact = facts.single()
+            assertTrue(fact.startsWith(dateTimePrefix), fact)
+            val dateTime = LocalDateTime.parse(fact.removePrefix(dateTimePrefix), dateTimeFormatter)
+            assertTrue(dateTime.atZone(zoneId).toInstant() in beforeExecution..afterExecution, "$zoneId: $dateTime")
         }
     }
 

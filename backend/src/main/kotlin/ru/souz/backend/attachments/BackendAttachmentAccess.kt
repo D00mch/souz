@@ -2,11 +2,8 @@ package ru.souz.backend.attachments
 
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runInterruptible
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import ru.souz.backend.crypto.sha256Hex
 import ru.souz.llms.FileContent
 import ru.souz.llms.FilePresentation
 import ru.souz.llms.ToolInvocationMeta
@@ -21,38 +18,25 @@ data class PreparedAttachment(val attachment: FileContent, val path: String)
  * Moves owner-scoped stored files between S3 and the invoking user's sandbox.
  * Workspace transfers require Docker isolation; stored-file selection uses owner-scoped storage directly.
  */
-class BackendAttachmentAccess(
+class BackendAttachmentAccess internal constructor(
     private val storage: AttachmentStorage,
     private val sandboxResolver: ToolInvocationRuntimeSandboxResolver,
+    private val preparedWorkspace: PreparedAttachmentWorkspace,
 ) {
     suspend fun prepare(meta: ToolInvocationMeta, fileId: String): PreparedAttachment = safely("prepare") {
-        val fs = isolatedFileSystem(meta)
-        val (file, bytes) = storage.load(meta.userId, attachmentId(fileId))
-        // Rebuild from immutable S3 bytes even if a previous working copy has been edited.
-        val root = fs.runtimePaths.workspaceRootPath ?: throw AttachmentException("attachment_workspace_unavailable")
-        val path = runInterruptible(Dispatchers.IO) {
-            val directory = fs.resolvePath("$root/attachments/${file.id}")
-            if (!fs.isPathSafe(directory) || directory.isSymbolicLink) throw AttachmentException("attachment_path_forbidden")
-            fs.createDirectory(directory)
-            val target = fs.resolvePath("${directory.path}/${file.name}")
-            if (!fs.isPathSafe(target) || target.isSymbolicLink) throw AttachmentException("attachment_path_forbidden")
-            fs.writeBytes(target, bytes)
-            target.path
-        }
-        PreparedAttachment(file.toContent(), path)
+        isolatedFileSystem(meta)
+        val file = storage.get(meta.userId, attachmentId(fileId))
+        preparedWorkspace.prepare(file) { storage.read(file) }
     }
 
     /** Saves a completed sandbox file; the same bytes and name within one execution reuse the stored object. */
     suspend fun save(meta: ToolInvocationMeta, path: String, presentation: FilePresentation): FileContent = safely("save") {
-        val request = meta.requestId ?: throw AttachmentException("attachment_execution_required")
+        val executionId = meta.requestId?.let(UUID::fromString) ?: throw AttachmentException("attachment_execution_required")
         val fs = isolatedFileSystem(meta)
         val resolved = fs.resolvePath(path)
         if (!fs.isPathSafe(resolved) || resolved.isSymbolicLink) throw AttachmentException("attachment_path_forbidden")
         if (!resolved.exists || !resolved.isRegularFile) throw AttachmentException("attachment_path_not_found")
-        val nameHash = resolved.name.toByteArray().sha256Hex()
-        val file = runInterruptible(Dispatchers.IO) { fs.openInputStream(resolved) }.use { input ->
-            storage.save(meta.userId, resolved.name, input) { contentHash -> "$request:output:$contentHash:$nameHash" }
-        }
+        val file = storage.saveWorkspaceOutput(meta.userId, executionId, resolved.name) { fs.openInputStream(resolved) }
         file.toContent(presentation)
     }
 
