@@ -400,7 +400,7 @@ private fun optionPattern(option: String): Regex {
             "$it(?! (?:$SPOKEN_NUMBER|часов|минут)(?![\\p{L}\\p{N}]))"
         }
         listOfNotNull(time, spoken).joinToString("|")
-    } else Regex.escape(option)
+    } else DOCTOR_SURNAMES[option] ?: Regex.escape(option)
     return Regex("(?<![\\p{L}\\p{N}])(?:$pattern)(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE)
 }
 
@@ -408,6 +408,13 @@ private const val TELEGRAM_ID = "telegram-fixture-1050"
 private const val BUDGET = 2500
 private const val DOCTOR_CLINIC_DISTANCE_KM = 1
 private val DOCTOR_ORDERS = setOf("rating", "price", "experience")
+// Russian case forms of the fixture surnames; Вера Ким's surname does not decline.
+private val DOCTOR_SURNAMES = mapOf(
+    "Петрова" to "Петров(?:а|ой|у|ою)",
+    "Волков" to "Волков(?:а|у|ым|е)?",
+    "Соколов" to "Соколов(?:а|у|ым|е)?",
+    "Лебедев" to "Лебедев(?:а|у|ым|е)?",
+)
 private val SAINT_PETERSBURG_NAMES = setOf("санкт-петербург", "санкт петербург", "питер", "спб")
 private val TRAIN_TIME = Regex("""(?:[01]\d|2[0-3]):[0-5]\d""")
 private const val SPOKEN_NUMBER = "ноль|один|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|" +

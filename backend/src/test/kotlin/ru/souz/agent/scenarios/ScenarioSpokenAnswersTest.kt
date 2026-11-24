@@ -29,6 +29,27 @@ class ScenarioSpokenAnswersTest {
     }
 
     @Test
+    fun `inflected doctor surnames pass with the same searches and deliveries`() = runTest {
+        for ((initial, budget) in listOf(
+            "Есть записи у Веры Ким, Анны Петровой, Сергея Волкова, Ивана Соколова и Олега Лебедева." to
+                "До 2500 рублей есть записи у Анны Петровой и Ивана Соколова.",
+            "Можно записаться к Вере Ким, Анне Петровой, Сергею Волкову, Ивану Соколову и Олегу Лебедеву." to
+                "До 2500 рублей можно записаться к Анне Петровой и Ивану Соколову.",
+            "Нашёл Веру Ким, Анну Петрову, Сергея Волкова, Ивана Соколова и Олега Лебедева." to
+                "Нашёл Анну Петрову за 2200 рублей и Ивана Соколова за 2400 рублей.",
+            "Выбирайте между Верой Ким, Анной Петровой, Сергеем Волковым, Иваном Соколовым и Олегом Лебедевым." to
+                "Выбирайте между Анной Петровой и Иваном Соколовым.",
+            "Расскажу о Вере Ким, Анне Петровой, Сергее Волкове, Иване Соколове и Олеге Лебедеве." to
+                "Расскажу об Анне Петровой и Иване Соколове.",
+            "Выбирайте между КИМ, ПЕТРОВОЮ, ВОЛКОВЫМ, СОКОЛОВЫМ и ЛЕБЕДЕВЫМ." to
+                "Выбирайте между ПЕТРОВОЮ и СОКОЛОВЫМ.",
+        )) {
+            val score = evaluate(mapOf(1 to initial, 2 to budget))
+            assertTrue(score.failures.isEmpty(), "$initial $budget: ${score.failures}")
+        }
+    }
+
+    @Test
     fun `spoken times accept units and explicit afternoon or evening markers`() = runTest {
         val score = evaluate(mapOf(
             4 to "В ВОСЕМЬ\u00a0ЧАСОВ ДЕСЯТЬ МИНУТ утра и в два часа двадцать минут дня.",
@@ -250,8 +271,22 @@ class ScenarioSpokenAnswersTest {
 
     @Test
     fun `missing and ineligible surnames still fail answer scoring`() = runTest {
-        for (answer in listOf("Петрова.", "Петрова, Соколов и Ким.", "Петрова и Соколовский.")) {
+        for (answer in listOf(
+            "Петрова.", "Петрова, Соколов и Ким.", "Петрова и Соколовский.",
+            "Нашёл Анну Петрову.", "Нашёл Анну Петрову и Ивана Соколовского.",
+            "Петровскую и Соколова.", "Петровой и Лжесоколовым.", "Петровой и Соколовым123.",
+        )) {
             assertAnswerFailure(evaluate(mapOf(2 to answer)), 2)
+        }
+    }
+
+    @Test
+    fun `inflected ineligible surnames still fail budget answer scoring`() = runTest {
+        for (ineligible in listOf(
+            "Ким", "Волкова", "Волкову", "Волковым", "Волкове",
+            "Лебедева", "Лебедеву", "Лебедевым", "Лебедеве",
+        )) {
+            assertAnswerFailure(evaluate(mapOf(2 to "Петрову, Соколова и $ineligible.")), 2)
         }
     }
 
