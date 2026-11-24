@@ -342,9 +342,8 @@ private fun Map<String, String>.intOption(name: String, default: Int): Int? {
 private fun String.presentsTimes(times: Map<String, String>): Boolean {
     if (times.isEmpty()) return true
     // Consume title/time pairs in reading order, allowing either order within each entry.
-    // A time belongs to only one entry; commas may occur inside an entry.
-    val presented = split(SCHEDULE_CLAUSE_BOUNDARY).flatMap { rawClause ->
-        val clause = rawClause.replace(ANSWER_WHITESPACE, " ")
+    // A time belongs to only one entry; commas and wrapped lines may occur inside an entry.
+    val presented = split(SCHEDULE_CLAUSE_BOUNDARY).flatMap { it.scheduleEntries(times) }.flatMap { clause ->
         val mentions = (times.keys + times.values).flatMap { option ->
             optionPattern(option).findAll(clause).map { it.range.first to option }
         }.sortedBy { it.first }.map { it.second }
@@ -367,6 +366,27 @@ private fun String.presentsTimes(times: Map<String, String>): Boolean {
         if (unpairedTime) emptySet() else paired
     }
     return presented.containsAll(times.keys)
+}
+
+private fun String.scheduleEntries(times: Map<String, String>): List<String> = buildList {
+    fun hasPair(text: String) = times.keys.any { text.mentionsOption(it) } &&
+        times.values.any { text.mentionsOption(it) }
+
+    var pending = ""
+    for (line in lineSequence()) {
+        val text = line.replace(ANSWER_WHITESPACE, " ").trim()
+        // Complete lines stand alone so neighbouring commentary cannot invalidate their pairs.
+        if (hasPair(text) && pending.isNotEmpty()) {
+            add(pending)
+            pending = ""
+        }
+        pending = "$pending $text".trim()
+        if (hasPair(pending)) {
+            add(pending)
+            pending = ""
+        }
+    }
+    if (pending.isNotEmpty()) add(pending)
 }
 
 private fun String.mentionsOption(option: String): Boolean = optionPattern(option).containsMatchIn(this)
@@ -401,8 +421,12 @@ private val SPOKEN_TIMES = mapOf(
     "19:30" to "(?:девятнадцать(?: часов)? тридцать(?: минут)?|семь(?: часов)? тридцать(?: минут)? вечера|половина восьмого вечера)",
 )
 private val ANSWER_WHITESPACE = Regex("""[\s\p{Z}]+""")
+// Keep wrapped lines together, but separate paragraphs and Markdown list entries, headings and table rows.
 // A period between digits belongs to a numeric date, not a sentence boundary.
-private val SCHEDULE_CLAUSE_BOUNDARY = Regex("""[;!?\r\n]+|(?<!\d)\.|\.(?!\d)""")
+private val SCHEDULE_CLAUSE_BOUNDARY = Regex(
+    """[;!?]+|(?<!\d)\.|\.(?!\d)|\r?\n[ \t]*\r?\n|""" +
+        """\r?\n[ \t]*(?=(?:[-+*]|\d+[.)]|#{1,6})[ \t]|\|)""",
+)
 private val TRAIN_SORTS = setOf("departure", "duration")
 private val AFISHA_DAY_PUNCTUATION = Regex("""[^\p{L}\p{N}_+]+""")
 private val AFISHA_WEEKDAY_PREFIX = Regex("""^(?:в|во|on|this|next|ближайш[\p{L}\p{N}_]*) """)
