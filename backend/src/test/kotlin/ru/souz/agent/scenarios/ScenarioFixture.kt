@@ -401,7 +401,8 @@ private val SPOKEN_TIMES = mapOf(
     "19:30" to "(?:девятнадцать(?: часов)? тридцать(?: минут)?|семь(?: часов)? тридцать(?: минут)? вечера|половина восьмого вечера)",
 )
 private val ANSWER_WHITESPACE = Regex("""[\s\p{Z}]+""")
-private val SCHEDULE_CLAUSE_BOUNDARY = Regex("""[;.!?\r\n]+""")
+// A period between digits belongs to a numeric date, not a sentence boundary.
+private val SCHEDULE_CLAUSE_BOUNDARY = Regex("""[;!?\r\n]+|(?<!\d)\.|\.(?!\d)""")
 private val TRAIN_SORTS = setOf("departure", "duration")
 private val AFISHA_DAY_PUNCTUATION = Regex("""[^\p{L}\p{N}_+]+""")
 private val AFISHA_WEEKDAY_PREFIX = Regex("""^(?:в|во|on|this|next|ближайш[\p{L}\p{N}_]*) """)

@@ -109,6 +109,32 @@ class ScenarioSpokenAnswersTest {
     }
 
     @Test
+    fun `numeric dates within schedule entries preserve title and time pairs`() = runTest {
+        for (date in listOf("28.11", "28.11.2026", "28.11.26")) {
+            for (answer in listOf(
+                "Северный ветер — $date в 17:00; Огни на крыше — $date в 19:30.",
+                "Северный ветер — $date в 17:00. Огни на крыше — $date в 19:30.",
+                "В 17:00 $date — Северный ветер; в 19:30 $date — Огни на крыше.",
+                "Северный ветер — $date в пять вечера; Огни на крыше — $date в семь тридцать вечера.",
+            )) {
+                val score = evaluate(mapOf(6 to answer))
+                assertTrue(score.failures.isEmpty(), "$answer: ${score.failures}")
+            }
+        }
+    }
+
+    @Test
+    fun `dated schedules still reject swapped times and pairs across sentences`() = runTest {
+        for (answer in listOf(
+            "Северный ветер — 28.11 в 19:30; Огни на крыше — 28.11 в 17:00.",
+            "В 19:30 28.11.2026 — Северный ветер; в 17:00 28.11.2026 — Огни на крыше.",
+            "Северный ветер. 28.11 в 17:00; Огни на крыше — 28.11 в 19:30.",
+            "28.11 в 17:00. Северный ветер; Огни на крыше — 28.11 в 19:30.",
+            "Северный ветер.28.11 в 17:00; Огни на крыше — 28.11 в 19:30.",
+        )) assertAnswerFailure(evaluate(mapOf(6 to answer)), 6)
+    }
+
+    @Test
     fun `one time cannot be credited to neighbouring or repeated titles`() = runTest {
         for (answer in listOf(
             "Северный ветер — 19:30 и Огни на крыше — 17:00 (выберите Северный ветер).",
