@@ -219,8 +219,9 @@ private fun doctorTask(today: LocalDate, appointment: LocalDate): ScenarioTask {
         },
         expectedLinks = eligible.mapTo(mutableSetOf()) { it.link },
         initialRows = "DOCTOR" to doctors.size,
-        initialAnswerOptions = doctors.map { it.name },
-        budgetAnswerOptions = eligible.map { it.name },
+        // Surnames uniquely identify these doctors and match the Skill's voice-response instructions.
+        initialAnswerOptions = doctors.map { it.name.substringAfterLast(' ') },
+        budgetAnswerOptions = eligible.map { it.name.substringAfterLast(' ') },
         initialQuery = { "--max-price" !in it },
     )
 }
@@ -331,9 +332,16 @@ private fun Map<String, String>.intOption(name: String, default: Int): Int? {
 }
 
 private fun String.mentionsOption(option: String): Boolean {
-    if (!TRAIN_TIME.matches(option)) return contains(option, ignoreCase = true)
-    val time = if (option.startsWith('0')) "0?${option.drop(1)}" else option
-    return Regex("(?<!\\d)$time(?!\\d)").containsMatchIn(this)
+    val pattern = if (TRAIN_TIME.matches(option)) {
+        val time = if (option.startsWith('0')) "0?${option.drop(1)}" else option
+        // A reading such as "двадцать пять" must not match the shorter minute "двадцать".
+        val spoken = SPOKEN_TIMES[option]?.let {
+            "$it(?! (?:один|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять)(?![\\p{L}\\p{N}]))"
+        }
+        listOfNotNull(time, spoken).joinToString("|")
+    } else Regex.escape(option)
+    return Regex("(?<![\\p{L}\\p{N}])(?:$pattern)(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE)
+        .containsMatchIn(this)
 }
 
 private const val TELEGRAM_ID = "telegram-fixture-1050"
@@ -342,6 +350,13 @@ private const val DOCTOR_CLINIC_DISTANCE_KM = 1
 private val DOCTOR_ORDERS = setOf("rating", "price", "experience")
 private val SAINT_PETERSBURG_NAMES = setOf("санкт-петербург", "санкт петербург", "питер", "спб")
 private val TRAIN_TIME = Regex("""(?:[01]\d|2[0-3]):[0-5]\d""")
+// Equivalent readings of the fixture times; 12-hour afternoon/evening forms need a day-period marker.
+private val SPOKEN_TIMES = mapOf(
+    "08:10" to "восемь(?: часов)? десять(?: минут)?(?! (?:минут|дня|вечера|ночи)(?![\\p{L}\\p{N}]))",
+    "14:20" to "(?:четырнадцать(?: часов)? двадцать(?: минут)?|два(?: часа)? двадцать(?: минут)? дня)",
+    "17:00" to "(?:семнадцать ноль ноль|пять(?: часов)? вечера)",
+    "19:30" to "(?:девятнадцать(?: часов)? тридцать(?: минут)?|семь(?: часов)? тридцать(?: минут)? вечера|половина восьмого вечера)",
+)
 private val ANSWER_WHITESPACE = Regex("""[\s\p{Z}]+""")
 private val TRAIN_SORTS = setOf("departure", "duration")
 private val AFISHA_DATE_FORMATS = listOf("uuuu-M-d", "d.M.uuuu").map {
