@@ -94,12 +94,6 @@ tasks.test {
     systemProperty("plugin.host.classpath.file", probeClasspathFile.absolutePath)
 }
 
-tasks.processTestResources {
-    from(project(":sharedLogic").layout.projectDirectory.dir("docker/skills")) {
-        into("skills/runtime")
-    }
-}
-
 tasks.withType<Sync>().configureEach {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
