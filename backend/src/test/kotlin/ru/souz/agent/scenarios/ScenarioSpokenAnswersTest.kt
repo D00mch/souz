@@ -70,6 +70,8 @@ class ScenarioSpokenAnswersTest {
             "| Спектакль | Начало |\n| Северный ветер | 17:00 |\n| Огни на крыше | 19:30 |",
             "17:00 — Северный ветер; 19:30 — Огни на крыше.",
             "В ДЕВЯТНАДЦАТЬ\u00a0ТРИДЦАТЬ — Огни на крыше; в семнадцать часов — Северный ветер.",
+            "Северный ветер — 17:00 и Огни на крыше — 19:30 (выберите Северный ветер).",
+            "17:00 — Северный ветер и 19:30 — Огни на крыше (выберите Огни на крыше).",
         )) {
             val score = evaluate(mapOf(6 to answer))
             assertTrue(score.failures.isEmpty(), "$answer: ${score.failures}")
@@ -91,6 +93,32 @@ class ScenarioSpokenAnswersTest {
             val score = evaluate(mapOf(6 to answer))
             assertTrue(score.failures.isEmpty(), "$answer: ${score.failures}")
         }
+    }
+
+    @Test
+    fun `commas within schedule entries preserve title and time pairs`() = runTest {
+        for (answer in listOf(
+            "Северный ветер, начало в 17:00; Огни на крыше, начало в 19:30.",
+            "Северный ветер, начало в 17:00, и Огни на крыше, начало в 19:30.",
+            "В 19:30, вечером, — Огни на крыше; в 17:00, вечером, — Северный ветер.",
+            "Северный ветер, начало в пять вечера, а в семь тридцать вечера — Огни на крыше.",
+        )) {
+            val score = evaluate(mapOf(6 to answer))
+            assertTrue(score.failures.isEmpty(), "$answer: ${score.failures}")
+        }
+    }
+
+    @Test
+    fun `one time cannot be credited to neighbouring or repeated titles`() = runTest {
+        for (answer in listOf(
+            "Северный ветер — 19:30 и Огни на крыше — 17:00 (выберите Северный ветер).",
+            "Огни на крыше — 17:00 и Северный ветер — 19:30 (выберите Огни на крыше).",
+            "Северный ветер — в девятнадцать тридцать и Огни на крыше — в пять вечера (выберите Северный ветер).",
+            "19:30 — Северный ветер и 17:00 — Огни на крыше (выберите Северный ветер).",
+            "Северный ветер, начало в 19:30; Огни на крыше, начало в 17:00 (выберите Северный ветер).",
+            "Северный ветер — 17:00 и Огни на крыше (выберите Северный ветер).",
+            "Северный ветер — 17:00 и 19:30; Огни на крыше — 19:30 и 17:00.",
+        )) assertAnswerFailure(evaluate(mapOf(6 to answer)), 6)
     }
 
     @Test

@@ -55,6 +55,48 @@ class ScenarioAfishaDatesTest {
         )) assertEquals(expected, fixture.search(query), query.toString())
     }
 
+    @Test
+    fun `weekday expressions match the nearest requested day including today`() = runTest {
+        val weekdays = listOf(
+            listOf("понедельник", "пн", "monday"),
+            listOf("вторник", "вт", "tuesday"),
+            listOf("среда", "среду", "ср", "wednesday"),
+            listOf("четверг", "чт", "thursday"),
+            listOf("пятница", "пятницу", "пт", "friday"),
+            listOf("суббота", "субботу", "сб", "saturday"),
+            listOf("воскресенье", "вс", "sunday"),
+        )
+        for (today in listOf(LocalDate.parse("2026-11-24"), LocalDate.parse("2026-12-29"))) {
+            for (offset in 0L..6L) {
+                val date = today.plusDays(offset)
+                val fixture = theatreFixture(today.toString(), date.minusDays(3).toString())
+                val expected = fixture.search(listOf("--date", date.toString()))
+                assertEquals(0, expected.exitCode)
+                for (weekday in weekdays[date.dayOfWeek.value - 1]) {
+                    for (prefix in listOf("", "в ", "во ", "on ", "this ", "next ", "ближайшую ")) {
+                        val named = (prefix + weekday).uppercase()
+                        for (query in listOf(
+                            listOf("--date", named),
+                            listOf("--from", named, "--to", date.toString()),
+                            listOf("--from", date.toString(), "--to", named),
+                            listOf("--from", named, "--days", "1"),
+                        )) assertEquals(expected, fixture.search(query), "$today: $query")
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `different and unsupported weekdays cannot return the requested shows`() = runTest {
+        val fixture = theatreFixture("2026-11-24", "2026-11-25")
+        for (date in listOf("пятница", "в воскресенье", "tuesday", "next friday", "субботник", "на субботу")) {
+            val result = fixture.search(listOf("--date", date))
+            assertEquals(1, result.exitCode, date)
+            assertEquals("", result.stdout, date)
+        }
+    }
+
     private fun theatreFixture(today: String, appointment: String) =
         ScenarioFixture(LocalDate.parse(today), LocalDate.parse(appointment)).apply { afterTurn(5, null) }
 

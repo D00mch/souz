@@ -320,6 +320,11 @@ private fun theatreTask(today: LocalDate, date: LocalDate): ScenarioTask {
 
 private fun String.afishaDay(today: LocalDate): LocalDate? {
     val text = trim()
+    // Match the bundled parse_day normalization and nearest-weekday rule, including today.
+    val named = text.lowercase().replace('ё', 'е').replace(AFISHA_DAY_PUNCTUATION, " ").trim()
+        .replace(AFISHA_WEEKDAY_PREFIX, "")
+    val weekday = AFISHA_WEEKDAYS.indexOfFirst { named in it }
+    if (weekday >= 0) return today.plusDays(((weekday + 8 - today.dayOfWeek.value) % 7).toLong())
     val yearless = text.count { it == '.' } == 1
     val input = if (yearless) "$text.${today.year}" else text
     val day = AFISHA_DATE_FORMATS.firstNotNullOfOrNull { format ->
@@ -335,23 +340,31 @@ private fun Map<String, String>.intOption(name: String, default: Int): Int? {
 }
 
 private fun String.presentsTimes(times: Map<String, String>): Boolean {
-    // Each clause can use either presentation order. Keep line breaks until splitting
-    // so list/table rows and neighbouring clauses cannot donate times to each other.
+    if (times.isEmpty()) return true
+    // Consume title/time pairs in reading order, allowing either order within each entry.
+    // A time belongs to only one entry; commas may occur inside an entry.
     val presented = split(SCHEDULE_CLAUSE_BOUNDARY).flatMap { rawClause ->
         val clause = rawClause.replace(ANSWER_WHITESPACE, " ")
-        val titles = times.keys.flatMap { title -> optionPattern(title).findAll(clause).map { title to it.range } }
-            .sortedBy { it.second.first }
-        listOf(false, true).flatMap { timeBeforeTitle ->
-            titles.mapIndexedNotNull { index, title ->
-                val start = if (timeBeforeTitle) titles.getOrNull(index - 1)?.second?.last?.plus(1) ?: 0 else title.second.last + 1
-                val end = if (timeBeforeTitle) title.second.first else titles.getOrNull(index + 1)?.second?.first ?: clause.length
-                val interval = clause.substring(start, end)
-                val expected = times.getValue(title.first)
-                title.first.takeIf {
-                    interval.mentionsOption(expected) && times.values.filter { it != expected }.none { interval.mentionsOption(it) }
-                }
+        val mentions = (times.keys + times.values).flatMap { option ->
+            optionPattern(option).findAll(clause).map { it.range.first to option }
+        }.sortedBy { it.first }.map { it.second }
+        val paired = mutableSetOf<String>()
+        var unpairedTime = false
+        var index = 0
+        while (index < mentions.size) {
+            val first = mentions[index]
+            val next = mentions.getOrNull(index + 1)
+            if (next != null && (first in times) != (next in times)) {
+                val (title, time) = if (first in times) first to next else next to first
+                if (times[title] == time) paired += title
+                index += 2
+            } else {
+                unpairedTime = unpairedTime || first !in times
+                index++
             }
         }
+        // Multiple times without separate titles leave the schedule ambiguous.
+        if (unpairedTime) emptySet() else paired
     }
     return presented.containsAll(times.keys)
 }
@@ -388,8 +401,19 @@ private val SPOKEN_TIMES = mapOf(
     "19:30" to "(?:девятнадцать(?: часов)? тридцать(?: минут)?|семь(?: часов)? тридцать(?: минут)? вечера|половина восьмого вечера)",
 )
 private val ANSWER_WHITESPACE = Regex("""[\s\p{Z}]+""")
-private val SCHEDULE_CLAUSE_BOUNDARY = Regex("""[,;.!?\r\n]+""")
+private val SCHEDULE_CLAUSE_BOUNDARY = Regex("""[;.!?\r\n]+""")
 private val TRAIN_SORTS = setOf("departure", "duration")
+private val AFISHA_DAY_PUNCTUATION = Regex("""[^\p{L}\p{N}_+]+""")
+private val AFISHA_WEEKDAY_PREFIX = Regex("""^(?:в|во|on|this|next|ближайш[\p{L}\p{N}_]*) """)
+private val AFISHA_WEEKDAYS = listOf(
+    setOf("понедельник", "пн", "monday"),
+    setOf("вторник", "вт", "tuesday"),
+    setOf("среда", "среду", "ср", "wednesday"),
+    setOf("четверг", "чт", "thursday"),
+    setOf("пятница", "пятницу", "пт", "friday"),
+    setOf("суббота", "субботу", "сб", "saturday"),
+    setOf("воскресенье", "вс", "sunday"),
+)
 private val AFISHA_DATE_FORMATS = listOf("uuuu-M-d", "d.M.uuuu").map {
     DateTimeFormatter.ofPattern(it).withResolverStyle(ResolverStyle.STRICT)
 }
