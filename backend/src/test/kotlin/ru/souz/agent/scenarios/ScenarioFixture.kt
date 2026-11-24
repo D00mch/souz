@@ -12,11 +12,12 @@ import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.format.ResolverStyle
 import java.time.temporal.ChronoUnit
 
 internal class ScenarioFixture(today: LocalDate, appointment: LocalDate) {
     private val doctor = doctorTask(today, appointment)
-    private val tasks = listOf(doctor, trainTask(appointment.plusDays(2)), theatreTask(appointment.plusDays(3)))
+    private val tasks = listOf(doctor, trainTask(appointment.plusDays(2)), theatreTask(today, appointment.plusDays(3)))
     private val taskByTurn = tasks.flatMap { task -> List(task.turns.size) { task } }
     val turns = tasks.flatMap { it.turns }
     val initialHistory = listOf(
@@ -270,14 +271,13 @@ private fun trainTask(date: LocalDate): ScenarioTask {
     )
 }
 
-private fun theatreTask(date: LocalDate): ScenarioTask {
+private fun theatreTask(today: LocalDate, date: LocalDate): ScenarioTask {
     val early = "https://theatre.example/event/severnyi-veter"
     val late = "https://theatre.example/event/ogni-na-kryshe"
     val earlyTitle = "Северный ветер"
     val lateTitle = "Огни на крыше"
     val earlyStart = "17:00"
     val lateStart = "19:30"
-    val requestedDay = date.toString()
     val events = listOf(
         "EVENT\t104\ttheatre\t$earlyTitle\tдрама\t16+\t8.0\t90 мин\tСценическая драма\t$date $earlyStart\t$early",
         "EVENT\t209\ttheatre\t$lateTitle\tкомедия\t12+\t8.1\t110 мин\tКамерная комедия\t$date $lateStart\t$late",
@@ -295,9 +295,9 @@ private fun theatreTask(date: LocalDate): ScenarioTask {
         search = { args ->
             val limit = args.intOption("--limit", 5)
             val days = args.intOption("--days", 14)
-            val singleDayRange = args["--from"] == requestedDay &&
-                (args["--to"]?.let { it == requestedDay } ?: (days == 1))
-            val singleDay = args["--date"]?.let { it == requestedDay } ?: singleDayRange
+            val singleDayRange = args["--from"]?.afishaDay(today) == date &&
+                (args["--to"]?.let { it.afishaDay(today) == date } ?: (days == 1))
+            val singleDay = args["--date"]?.let { it.afishaDay(today) == date } ?: singleDayRange
             if (args["--type"] != "theatre" ||
                 !args["--city"].equals("Москва", ignoreCase = true) ||
                 !singleDay || days == null || limit == null || limit < 1
@@ -312,6 +312,17 @@ private fun theatreTask(date: LocalDate): ScenarioTask {
         initialRows = "EVENT" to events.size,
         initialAnswerOptions = listOf(earlyTitle, lateTitle, earlyStart, lateStart),
     )
+}
+
+private fun String.afishaDay(today: LocalDate): LocalDate? {
+    val text = trim()
+    val yearless = text.count { it == '.' } == 1
+    val input = if (yearless) "$text.${today.year}" else text
+    val day = AFISHA_DATE_FORMATS.firstNotNullOfOrNull { format ->
+        runCatching { LocalDate.parse(input, format) }.getOrNull()
+    } ?: return null
+    // Match the bundled parse_day rule for dates written without a year.
+    return if (yearless && day < today.minusDays(30)) day.plusYears(1) else day
 }
 
 private fun Map<String, String>.intOption(name: String, default: Int): Int? {
@@ -333,4 +344,7 @@ private val SAINT_PETERSBURG_NAMES = setOf("санкт-петербург", "с�
 private val TRAIN_TIME = Regex("""(?:[01]\d|2[0-3]):[0-5]\d""")
 private val ANSWER_WHITESPACE = Regex("""[\s\p{Z}]+""")
 private val TRAIN_SORTS = setOf("departure", "duration")
+private val AFISHA_DATE_FORMATS = listOf("uuuu-M-d", "d.M.uuuu").map {
+    DateTimeFormatter.ofPattern(it).withResolverStyle(ResolverStyle.STRICT)
+}
 private val URL = Regex("""https?://[^\s<>()\[\]"']+""")
