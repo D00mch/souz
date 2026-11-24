@@ -87,8 +87,6 @@ internal class ScenarioFixture(today: LocalDate, appointment: LocalDate) {
             assertions.check((first until last).none { evidence[it].deliveries.isNotEmpty() },
                 "${task.skillId} delivered a message before the user requested a link.")
             val deliveries = evidence[last].deliveries
-            assertions.check(deliveries.size == 1,
-                "${task.skillId} must deliver exactly one Telegram message on the final turn.")
             val links = deliveries.flatMap { delivery ->
                 URL.findAll(delivery).map { it.value.trimEnd('.', ',', ';', '!', '?') }.toList()
             }
@@ -338,16 +336,20 @@ private fun Map<String, String>.intOption(name: String, default: Int): Int? {
 private fun String.presentsTimes(times: Map<String, String>): Boolean {
     val titles = times.keys.flatMap { title -> optionPattern(title).findAll(this).map { title to it.range } }
         .sortedBy { it.second.first }
-    // Support both title-then-time lists and time-then-title schedules. Each interval is
-    // bounded by neighbouring titles so another show's time cannot satisfy this one.
+    // Support both title-then-time lists and time-then-title schedules. Each show needs
+    // one correct association; mentions outside the schedule need not repeat its time.
+    // Bound intervals by neighbouring titles so another show's time cannot satisfy this one.
     return listOf(false, true).any { timeBeforeTitle ->
-        titles.withIndex().all { (index, title) ->
+        val presented = titles.mapIndexedNotNull { index, title ->
             val start = if (timeBeforeTitle) titles.getOrNull(index - 1)?.second?.last?.plus(1) ?: 0 else title.second.last + 1
             val end = if (timeBeforeTitle) title.second.first else titles.getOrNull(index + 1)?.second?.first ?: length
             val interval = substring(start, end)
             val expected = times.getValue(title.first)
-            interval.mentionsOption(expected) && times.values.filter { it != expected }.none { interval.mentionsOption(it) }
+            title.first.takeIf {
+                interval.mentionsOption(expected) && times.values.filter { it != expected }.none { interval.mentionsOption(it) }
+            }
         }
+        presented.containsAll(times.keys)
     }
 }
 

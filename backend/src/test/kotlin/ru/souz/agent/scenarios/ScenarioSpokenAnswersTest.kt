@@ -77,6 +77,58 @@ class ScenarioSpokenAnswersTest {
     }
 
     @Test
+    fun `show titles outside the scored schedule do not need repeated times`() = runTest {
+        for (answer in listOf(
+            "Северный ветер — 17:00; Огни на крыше — 19:30. Могу прислать ссылку на «Огни на крыше».",
+            "Северный ветер — 17:00; Огни на крыше — 19:30. Какой выбрать: Северный ветер или Огни на крыше?",
+            "Нашёл Северный ветер и Огни на крыше. Северный ветер — 17:00; Огни на крыше — 19:30.",
+            "Огни на крыше — в девятнадцать тридцать; Северный ветер — в пять вечера. Могу прислать Северный ветер.",
+            "17:00 — Северный ветер; 19:30 — Огни на крыше. Могу прислать ссылку на «Огни на крыше».",
+            "В семнадцать часов — Северный ветер; в девятнадцать тридцать — Огни на крыше. Выбирайте Северный ветер.",
+        )) {
+            val score = evaluate(mapOf(6 to answer))
+            assertTrue(score.failures.isEmpty(), "$answer: ${score.failures}")
+        }
+    }
+
+    @Test
+    fun `repeated titles still require a correct schedule association for each show`() = runTest {
+        for (answer in listOf(
+            "Северный ветер — 19:30; Огни на крыше — 17:00. Могу прислать Огни на крыше.",
+            "Северный ветер — 17:00; Огни на крыше. Какой выбрать: Северный ветер или Огни на крыше?",
+            "19:30 — Северный ветер; 17:00 — Огни на крыше. Могу прислать Северный ветер.",
+        )) assertAnswerFailure(evaluate(mapOf(6 to answer)), 6)
+    }
+
+    @Test
+    fun `doctor links may be delivered in separate Telegram messages`() = runTest {
+        val score = evaluate(deliveries = mapOf(3 to DOCTOR_LINKS.reversed()))
+        assertTrue(score.failures.isEmpty(), score.failures.toString())
+    }
+
+    @Test
+    fun `split doctor deliveries still reject missing duplicated and unexpected links`() = runTest {
+        for (messages in listOf(
+            emptyList(),
+            DOCTOR_LINKS.take(1),
+            listOf(DOCTOR_LINKS[0], DOCTOR_LINKS[0]),
+            DOCTOR_LINKS + DOCTOR_LINKS[1],
+            DOCTOR_LINKS + "https://booking.example/doctor/vera-kim-494",
+        )) {
+            val score = evaluate(deliveries = mapOf(3 to messages))
+            assertTrue(score.failures.any { it.contains("must deliver each requested link exactly once") },
+                "$messages: ${score.failures}")
+        }
+    }
+
+    @Test
+    fun `split doctor deliveries still reject links sent before the request`() = runTest {
+        val score = evaluate(deliveries = mapOf(2 to DOCTOR_LINKS.take(1), 3 to DOCTOR_LINKS))
+        assertTrue(score.failures.any { it.contains("delivered a message before the user requested a link") },
+            score.failures.toString())
+    }
+
+    @Test
     fun `missing and ineligible surnames still fail answer scoring`() = runTest {
         for (answer in listOf("Петрова.", "Петрова, Соколов и Ким.", "Петрова и Соколовский.")) {
             assertAnswerFailure(evaluate(mapOf(2 to answer)), 2)
@@ -113,7 +165,10 @@ class ScenarioSpokenAnswersTest {
         assertTrue(score.failures.single().contains("answer on turn $turn"), score.failures.toString())
     }
 
-    private suspend fun evaluate(answers: Map<Int, String> = emptyMap()): ScenarioAssertionResult {
+    private suspend fun evaluate(
+        answers: Map<Int, String> = emptyMap(),
+        deliveries: Map<Int, List<String>> = emptyMap(),
+    ): ScenarioAssertionResult {
         val fixture = ScenarioFixture(LocalDate.parse("2026-11-24"), LocalDate.parse("2026-11-25"))
         val replies = listOf(
             "Вера Ким, Анна Петрова, Сергей Волков, Иван Соколов, Олег Лебедев.",
@@ -145,13 +200,13 @@ class ScenarioSpokenAnswersTest {
                 ))
                 assertEquals(0, result.exitCode, result.stderr)
             }
-            val delivery = when (turn) {
-                3 -> "https://booking.example/doctor/anna-petrova-317\nhttps://booking.example/doctor/ivan-sokolov-668"
+            val defaultDelivery = when (turn) {
+                3 -> DOCTOR_LINKS.joinToString("\n")
                 5 -> "https://rail.example/rybinsk/608a-1420"
                 7 -> "https://theatre.example/event/ogni-na-kryshe"
                 else -> null
             }
-            if (delivery != null) {
+            for (delivery in deliveries[turn] ?: listOfNotNull(defaultDelivery)) {
                 val recipient = fixture.channels.listAll("test-user").single()
                 assertIs<ChannelSendResult.Delivered>(fixture.channels.send(
                     "test-user", recipient.channelType, recipient.channelId, delivery,
@@ -160,5 +215,12 @@ class ScenarioSpokenAnswersTest {
             fixture.afterTurn(turn, answers[turn] ?: replies[turn - 1])
         }
         return ScenarioAssertions().also(fixture::verify).result()
+    }
+
+    private companion object {
+        val DOCTOR_LINKS = listOf(
+            "https://booking.example/doctor/anna-petrova-317",
+            "https://booking.example/doctor/ivan-sokolov-668",
+        )
     }
 }

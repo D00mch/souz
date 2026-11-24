@@ -41,7 +41,7 @@ internal class ScenarioEvaluationReport(
             "provider" to model.provider.name,
             "providerHost" to model.providerHost,
             "reasoningEffort" to model.reasoningEffort,
-            "scenarioVersion" to "agent-scenarios-v15",
+            "scenarioVersion" to "agent-scenarios-v16",
             "skillsSha256" to skills.sha256,
             "skillsCount" to skills.bundles.size,
             "appointmentDate" to appointment.toString(),
