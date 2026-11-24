@@ -104,10 +104,11 @@ internal class ScenarioFixture(today: LocalDate, appointment: LocalDate) {
         excluded: List<String> = emptyList(),
         times: Map<String, String> = emptyMap(),
     ) {
-        val answer = evidence[turnIndex].answer.orEmpty().replace(ANSWER_WHITESPACE, " ")
+        val rawAnswer = evidence[turnIndex].answer.orEmpty()
+        val answer = rawAnswer.replace(ANSWER_WHITESPACE, " ")
         val missing = expected.filterNot { answer.mentionsOption(it) }
         val unexpected = excluded.filter { answer.mentionsOption(it) }
-        val timesMatch = answer.presentsTimes(times)
+        val timesMatch = rawAnswer.presentsTimes(times)
         assertions.check(missing.isEmpty() && unexpected.isEmpty() && timesMatch,
             "$skillId answer on turn ${turnIndex + 1} did not present the expected options " +
                 "(missing: $missing, unexpected: $unexpected, start times correct: $timesMatch).")
@@ -334,23 +335,25 @@ private fun Map<String, String>.intOption(name: String, default: Int): Int? {
 }
 
 private fun String.presentsTimes(times: Map<String, String>): Boolean {
-    val titles = times.keys.flatMap { title -> optionPattern(title).findAll(this).map { title to it.range } }
-        .sortedBy { it.second.first }
-    // Support both title-then-time lists and time-then-title schedules. Each show needs
-    // one correct association; mentions outside the schedule need not repeat its time.
-    // Bound intervals by neighbouring titles so another show's time cannot satisfy this one.
-    return listOf(false, true).any { timeBeforeTitle ->
-        val presented = titles.mapIndexedNotNull { index, title ->
-            val start = if (timeBeforeTitle) titles.getOrNull(index - 1)?.second?.last?.plus(1) ?: 0 else title.second.last + 1
-            val end = if (timeBeforeTitle) title.second.first else titles.getOrNull(index + 1)?.second?.first ?: length
-            val interval = substring(start, end)
-            val expected = times.getValue(title.first)
-            title.first.takeIf {
-                interval.mentionsOption(expected) && times.values.filter { it != expected }.none { interval.mentionsOption(it) }
+    // Each clause can use either presentation order. Keep line breaks until splitting
+    // so list/table rows and neighbouring clauses cannot donate times to each other.
+    val presented = split(SCHEDULE_CLAUSE_BOUNDARY).flatMap { rawClause ->
+        val clause = rawClause.replace(ANSWER_WHITESPACE, " ")
+        val titles = times.keys.flatMap { title -> optionPattern(title).findAll(clause).map { title to it.range } }
+            .sortedBy { it.second.first }
+        listOf(false, true).flatMap { timeBeforeTitle ->
+            titles.mapIndexedNotNull { index, title ->
+                val start = if (timeBeforeTitle) titles.getOrNull(index - 1)?.second?.last?.plus(1) ?: 0 else title.second.last + 1
+                val end = if (timeBeforeTitle) title.second.first else titles.getOrNull(index + 1)?.second?.first ?: clause.length
+                val interval = clause.substring(start, end)
+                val expected = times.getValue(title.first)
+                title.first.takeIf {
+                    interval.mentionsOption(expected) && times.values.filter { it != expected }.none { interval.mentionsOption(it) }
+                }
             }
         }
-        presented.containsAll(times.keys)
     }
+    return presented.containsAll(times.keys)
 }
 
 private fun String.mentionsOption(option: String): Boolean = optionPattern(option).containsMatchIn(this)
@@ -385,6 +388,7 @@ private val SPOKEN_TIMES = mapOf(
     "19:30" to "(?:девятнадцать(?: часов)? тридцать(?: минут)?|семь(?: часов)? тридцать(?: минут)? вечера|половина восьмого вечера)",
 )
 private val ANSWER_WHITESPACE = Regex("""[\s\p{Z}]+""")
+private val SCHEDULE_CLAUSE_BOUNDARY = Regex("""[,;.!?\r\n]+""")
 private val TRAIN_SORTS = setOf("departure", "duration")
 private val AFISHA_DATE_FORMATS = listOf("uuuu-M-d", "d.M.uuuu").map {
     DateTimeFormatter.ofPattern(it).withResolverStyle(ResolverStyle.STRICT)

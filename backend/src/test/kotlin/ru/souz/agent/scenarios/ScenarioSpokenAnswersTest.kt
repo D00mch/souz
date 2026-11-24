@@ -77,6 +77,34 @@ class ScenarioSpokenAnswersTest {
     }
 
     @Test
+    fun `schedule clauses can mix title first and time first phrasing`() = runTest {
+        for (answer in listOf(
+            "Северный ветер начинается в 17:00, а в 19:30 — Огни на крыше.",
+            "В 17:00 — Северный ветер, а Огни на крыше начинаются в 19:30.",
+            "Огни на крыше начинаются в 19:30, а в 17:00 — Северный ветер.",
+            "В 19:30 — Огни на крыше, а Северный ветер начинается в 17:00.",
+            "Северный ветер — в пять вечера; в семь тридцать вечера — Огни на крыше.",
+            "В девятнадцать тридцать — Огни на крыше. Северный ветер — в семнадцать часов.",
+            "17:00 — Северный ветер\nОгни на крыше — 19:30",
+            "| Северный ветер | 17:00 |\n| 19:30 | Огни на крыше |",
+        )) {
+            val score = evaluate(mapOf(6 to answer))
+            assertTrue(score.failures.isEmpty(), "$answer: ${score.failures}")
+        }
+    }
+
+    @Test
+    fun `mixed schedule clauses still reject swapped and unassociated times`() = runTest {
+        for (answer in listOf(
+            "Северный ветер начинается в 19:30, а в 17:00 — Огни на крыше.",
+            "В 17:00 — Огни на крыше, а Северный ветер начинается в 19:30.",
+            "Северный ветер — в семь тридцать вечера; в пять вечера — Огни на крыше.",
+            "Северный ветер. В 17:00 и 19:30 — Огни на крыше.",
+            "Северный ветер — 19:30; Огни на крыше — 17:00. Могу прислать Северный ветер.",
+        )) assertAnswerFailure(evaluate(mapOf(6 to answer)), 6)
+    }
+
+    @Test
     fun `show titles outside the scored schedule do not need repeated times`() = runTest {
         for (answer in listOf(
             "Северный ветер — 17:00; Огни на крыше — 19:30. Могу прислать ссылку на «Огни на крыше».",
