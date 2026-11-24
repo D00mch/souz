@@ -38,6 +38,45 @@ class ScenarioSpokenAnswersTest {
     }
 
     @Test
+    fun `ordinary hour only readings pass theatre scoring`() = runTest {
+        for (time in listOf("семнадцать", "семнадцать часов", "семнадцать часов вечера",
+            "семнадцать часов ноль ноль", "семнадцать часов ноль ноль минут")) {
+            val score = evaluate(mapOf(
+                6 to "Северный ветер — в $time, Огни на крыше — в девятнадцать тридцать.",
+            ))
+            assertTrue(score.failures.isEmpty(), "$time: ${score.failures}")
+        }
+    }
+
+    @Test
+    fun `swapped show times fail despite correct searches and deliveries`() = runTest {
+        for (answer in listOf(
+            "Северный ветер — 19:30, Огни на крыше — 17:00.",
+            "Северный ветер — в девятнадцать тридцать, Огни на крыше — в пять вечера.",
+            "Огни на крыше — в семнадцать часов, Северный ветер — в девятнадцать тридцать.",
+            "19:30 — Северный ветер; 17:00 — Огни на крыше.",
+            "Северный ветер, Огни на крыше. Начало в 17:00 и 19:30.",
+            "Северный ветер — 17:00 и 19:30. Огни на крыше — 17:00 и 19:30.",
+            "Северный ветер — 17:00, Огни на крыше.",
+            "Северный ветер — 17:00, другой спектакль — 19:30.",
+        )) assertAnswerFailure(evaluate(mapOf(6 to answer)), 6)
+    }
+
+    @Test
+    fun `show time associations accept reordered lists and time first schedules`() = runTest {
+        for (answer in listOf(
+            "Огни на крыше — 19:30; Северный ветер — 17:00.",
+            "1. **Северный ветер** — в семнадцать часов.\n2. **Огни на крыше** — в девятнадцать тридцать.",
+            "| Спектакль | Начало |\n| Северный ветер | 17:00 |\n| Огни на крыше | 19:30 |",
+            "17:00 — Северный ветер; 19:30 — Огни на крыше.",
+            "В ДЕВЯТНАДЦАТЬ\u00a0ТРИДЦАТЬ — Огни на крыше; в семнадцать часов — Северный ветер.",
+        )) {
+            val score = evaluate(mapOf(6 to answer))
+            assertTrue(score.failures.isEmpty(), "$answer: ${score.failures}")
+        }
+    }
+
+    @Test
     fun `missing and ineligible surnames still fail answer scoring`() = runTest {
         for (answer in listOf("Петрова.", "Петрова, Соколов и Ким.", "Петрова и Соколовский.")) {
             assertAnswerFailure(evaluate(mapOf(2 to answer)), 2)
@@ -60,10 +99,13 @@ class ScenarioSpokenAnswersTest {
     }
 
     @Test
-    fun `a longer spoken minute cannot match the theatre start time`() = runTest {
-        assertAnswerFailure(evaluate(mapOf(
-            6 to "Северный ветер — в пять вечера, Огни на крыше — в девятнадцать тридцать пять.",
-        )), 6)
+    fun `nonzero and longer spoken minutes cannot match theatre start times`() = runTest {
+        val wrongEarly = listOf("17:05", "семнадцать пять", "семнадцать часов пять минут",
+            "семнадцать ноль пять", "семнадцать часов ноль пять минут", "семнадцать тридцать",
+            "семнадцать часов двадцать минут")
+        val answers = wrongEarly.map { "Северный ветер — в $it, Огни на крыше — в девятнадцать тридцать." } +
+            "Северный ветер — в пять вечера, Огни на крыше — в девятнадцать тридцать пять."
+        for (answer in answers) assertAnswerFailure(evaluate(mapOf(6 to answer)), 6)
     }
 
     private fun assertAnswerFailure(score: ScenarioAssertionResult, turn: Int) {
