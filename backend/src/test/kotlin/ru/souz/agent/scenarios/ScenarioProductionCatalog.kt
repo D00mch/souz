@@ -2,8 +2,6 @@ package ru.souz.agent.scenarios
 
 import io.mockk.coEvery
 import io.mockk.mockk
-import java.nio.file.Files
-import java.nio.file.Path
 import java.time.Instant
 import java.util.UUID
 import ru.souz.backend.chat.model.Chat
@@ -17,9 +15,6 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
-import ru.souz.agent.skills.SkillId
-import ru.souz.agent.skills.bundle.SkillBundle
-import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.runtime.conversation.backendExecutionToolCatalog
@@ -46,6 +41,7 @@ internal fun scenarioBackendDi(
     resolver: ToolInvocationRuntimeSandboxResolver,
     registry: SkillRegistryRepository,
     knowledge: ConversationKnowledgeStore,
+    channels: ChannelProviderRegistry,
 ): DI {
     val config = BackendAppConfig(BackendFeatureFlags(), server = mockk(), postgres = mockk())
     return DI {
@@ -58,7 +54,7 @@ internal fun scenarioBackendDi(
         bindSingleton<SkillOAuthGateway> { mockk() }
         bindSingleton<JobService>(overrides = true) { mockk() }
         bindSingleton<AgentExecutionRepository>(overrides = true) { mockk() }
-        bindSingleton<ChannelProviderRegistry>(overrides = true) { mockk() }
+        bindSingleton<ChannelProviderRegistry>(overrides = true) { channels }
     }
 }
 
@@ -94,28 +90,12 @@ internal suspend fun scenarioProductionCatalog(
     )
 }
 
-internal fun scenarioTool(productionTool: LLMToolSetup, executionMock: LLMToolSetup? = null): LLMToolSetup {
-    val execution = executionMock ?: mockk<LLMToolSetup>().also { tool ->
+internal fun scenarioTool(productionTool: LLMToolSetup): LLMToolSetup {
+    val execution = mockk<LLMToolSetup>().also { tool ->
         coEvery { tool.invoke(any()) } throws AssertionError("No scenario reply configured for ${productionTool.fn.name}.")
         coEvery { tool.invoke(any(), any()) } throws AssertionError("No scenario reply configured for ${productionTool.fn.name}.")
     }
     return object : LLMToolSetup by execution {
         override val fn = productionTool.fn
     }
-}
-
-/** processTestResources copies the complete production sandbox Skill tree, including supporting files. */
-internal suspend fun installProductionSkillBundles(registry: SkillRegistryRepository, userId: String) {
-    val root = Path.of(requireNotNull(ScenarioLiveModel::class.java.getResource("/skills/runtime")).toURI())
-    val bundles = Files.list(root).use { directories ->
-        directories.filter { Files.isDirectory(it) }.sorted().map { directory ->
-            val files = Files.walk(directory).use { paths ->
-                paths.filter { Files.isRegularFile(it) }.sorted().map { path ->
-                    SkillFile(directory.relativize(path).toString().replace('\\', '/'), Files.readAllBytes(path))
-                }.toList()
-            }
-            SkillBundle.fromFiles(SkillId(directory.fileName.toString()), files)
-        }.toList()
-    }
-    bundles.forEach { registry.saveSkillBundle(userId, it) }
 }
