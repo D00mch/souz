@@ -9,6 +9,7 @@ import java.time.ZoneId
 import java.util.HexFormat
 import java.util.zip.ZipInputStream
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
@@ -18,6 +19,24 @@ import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillFile
 
 class AgentScenarioEvaluationTest {
+    @Test
+    fun `budget reply accepts both eligible doctors in the accusative`() {
+        assertTrue(budgetReplyPasses("Рекомендую Петрову и Соколова."))
+    }
+
+    @Test
+    fun `budget reply rejects an extra over-budget doctor in the accusative`() {
+        assertFalse(budgetReplyPasses("Подходят Петрова и Соколов. Ещё рекомендую Волкова."))
+    }
+
+    private fun budgetReplyPasses(reply: String): Boolean {
+        val fixture = ScenarioFixture(LocalDate.of(2026, 11, 24))
+        val turn = fixture.turns[1].apply { assistantReply = reply }
+        val checks = ScenarioChecks()
+        fixture.scoreDoctorReply(turn, checks)
+        return checks.passed == 1
+    }
+
     @Test
     fun `evaluate skill switching in one conversation`() = runBlocking {
         withScenarioModel { model ->
@@ -34,7 +53,7 @@ class AgentScenarioEvaluationTest {
             report.write("run", mapOf(
                 "schemaVersion" to 1, "startedAt" to clock.instant().toString(), "revision" to System.getenv("SOUZ_SCENARIO_REVISION"),
                 "model" to model.modelId, "provider" to "OPENAI", "providerHost" to model.providerHost,
-                "reasoningEffort" to model.reasoningEffort, "scenarioVersion" to "skill-switch-numeric-v1",
+                "reasoningEffort" to model.reasoningEffort, "scenarioVersion" to "skill-switch-numeric-v2",
                 "skillsSha256" to HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(archive)),
                 "skillsCount" to skills.size, "appointmentDate" to nextAppointment(today).toString(), "repeats" to repeats,
             ))

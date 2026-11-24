@@ -193,10 +193,7 @@ internal class ScenarioFixture(private val today: LocalDate) {
         search(2, cheap, BUDGET)
         search(4, rail)
         search(6, theatre)
-        for ((index, expected) in listOf(doctors, eligible).withIndex()) {
-            val actual = doctors.filter { turns[index].assistantReply.orEmpty().mentions(it.surname) }
-            checks.check(actual == expected, "Turn ${index + 1} must present exactly ${expected.map { it.surname }}.")
-        }
+        for (turn in turns.take(2)) scoreDoctorReply(turn, checks)
         val timetable = turns[3].assistantReply.orEmpty()
         checks.check(trains.all { timetable.mentions(it.departure) }, "Turn 4 must show both departure times.")
         for (show in shows) {
@@ -213,10 +210,25 @@ internal class ScenarioFixture(private val today: LocalDate) {
                 "Turn ${turn.number} expected ${expected ?: "no Telegram delivery"}, received ${turn.telegram}.")
         }
     }
+
+    fun scoreDoctorReply(turn: ScenarioTurn, checks: ScenarioChecks) {
+        val expected = if (turn.number == 1) doctors else eligible
+        val actual = doctors.filter { turn.assistantReply.orEmpty().mentions(it.surname) }
+        checks.check(actual == expected, "Turn ${turn.number} must present exactly ${expected.map { it.surname }}.")
+    }
 }
 
-private fun String.mentions(value: String) =
-    Regex("""(?<![\p{L}\p{N}])${Regex.escape(value)}(?![\p{L}\p{N}])""", RegexOption.IGNORE_CASE).containsMatchIn(this)
+private val surnamePatterns = mapOf(
+    "Петрова" to "Петров(?:а|ой|у|ою)",
+    "Волков" to "Волков(?:а|у|ым|е)?",
+    "Соколов" to "Соколов(?:а|у|ым|е)?",
+    "Лебедев" to "Лебедев(?:а|у|ым|е)?",
+)
+
+private fun String.mentions(value: String): Boolean {
+    val pattern = surnamePatterns[value] ?: Regex.escape(value)
+    return Regex("""(?<![\p{L}\p{N}])$pattern(?![\p{L}\p{N}])""", RegexOption.IGNORE_CASE).containsMatchIn(this)
+}
 
 internal data class Search(val cap: Int?, val links: List<String>)
 
