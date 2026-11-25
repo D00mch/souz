@@ -1,49 +1,30 @@
-# Model scenario tests
+# Backend agent scenario evaluation
 
-Each scenario runs the production Skills graph with the full [production catalogue](../src/test/kotlin/ru/souz/agent/scenarios/ScenarioProductionCatalog.kt) and real Skill discovery. Use fresh state and mock tool side effects, subagent execution, memory mutations and sandbox processes. Unconfigured side effects fail. The selected model handles both Skill selection and conversation and is the only external service contacted. [Scenario wiring](../src/test/kotlin/ru/souz/agent/scenarios/AgentScenarioTestSupport.kt)
+Run the [seven-turn evaluation](../src/test/kotlin/ru/souz/agent/scenarios/AgentScenarioEvaluationTest.kt) from the repository root with `OPENAI_BASE_URL`, `OPENAI_MODEL`, and `OPENAI_API_KEY` set for your OpenAI-compatible provider.
 
-Keep prompts consistent across models. `SOUZ_BACKEND_SYSTEM_PROMPT` (or `souz.backend.systemPrompt`) overrides the production system prompt. `SOUZ_BACKEND_POLICY_PROMPT` (or `souz.backend.policyPrompt`) supplies optional policy. See the [trace](../src/test/kotlin/ru/souz/agent/scenarios/ScenarioTrace.kt) for the fixed model-facing date, call budget, and recorded metrics.
-
-Use the fixed runtime-environment clock for deterministic host context. Scenarios use the backend no-op desktop context and must not instantiate desktop integrations or native model execution.
-
-## Run a selected model
-
-Set `OPENAI_API_KEY` in the invoking environment, then select a model and OpenAI-compatible endpoint. For example:
-
-```bash
-SOUZ_AGENT_INTEGRATION_TESTS_ON=true \
-OPENAI_MODEL=gpt-5.6-terra \
-OPENAI_BASE_URL=https://api.openai.com/v1 \
-SOUZ_AGENT_INTEGRATION_TEST_REASONING_EFFORT=none \
-./gradlew :backend:test --tests 'ru.souz.agent.scenarios.GraphAgentSkillScenariosIntegrationTest'
+```sh
+SOUZ_AGENT_INTEGRATION_TESTS_ON=true SOUZ_SCENARIO_REVISION="$(git rev-parse HEAD)" \
+  ./gradlew :backend:test --tests 'ru.souz.agent.scenarios.AgentScenarioEvaluationTest' --rerun
 ```
 
-Replace the model ID and endpoint to evaluate another model. The provider defaults to `openai`; `OPENAI_MODEL`, `OPENAI_BASE_URL` and `OPENAI_API_KEY` are required after opt-in.
+Ordinary backend tests skip the evaluation before opening a client. Set `SOUZ_SCENARIO_REPEATS` for independent repetitions and `SOUZ_AGENT_INTEGRATION_TEST_REASONING_EFFORT` for a provider-supported effort. Keep the model, provider, reasoning effort, prompt overrides, scenario version, and Skill archive hash with each comparison.
 
-For an existing Codex login, set `SOUZ_AGENT_INTEGRATION_TEST_PROVIDER=codex`, select the Codex model with `OPENAI_MODEL`, and supply its current `CODEX_ACCESS_TOKEN` and `CODEX_ACCOUNT_ID` through the invoking process environment. This uses the production `CodexChatAPI`; `OPENAI_API_KEY` and `OPENAI_BASE_URL` are not required. The harness borrows only the access token. Its owning Codex session manages refresh; obtain a current token again if it expires. Keep tokens out of tracked files and test output.
+## What a trial measures
 
-Reasoning effort is optional. Use a value supported by the selected provider or omit it for the provider default. Keep the configured provider parameters and report the original scenario result without retries.
+Each trial opens a fresh conversation with the production Skills graph, the [backend catalogue](../src/test/kotlin/ru/souz/agent/scenarios/ScenarioProductionCatalog.kt), the backend no-op desktop context, and the same [31 bundled Skills](../src/test/resources/skills/scenario-set.zip). The selected model handles Skill discovery and conversation. A sandbox command stub returns search results, the production channel tools deliver to an in-memory Telegram inbox, and unconfigured side effects fail. The fixture and agent share the Moscow clock captured at suite start. The production system and policy prompt overrides apply.
 
-Without `SOUZ_AGENT_INTEGRATION_TESTS_ON=true`, live tests skip before reading credentials or creating an HTTP client.
+| Turns | User request | Scored outcome |
+| --- | --- | --- |
+| 1–3 | Find five Moscow therapists for next Wednesday, narrow the search to ₽2,500, then send both links. | The model presents the five surnames, runs a new capped search, presents only the two eligible doctors, and delivers each link once. |
+| 4–5 | Show two direct trains and send the afternoon departure. | The reply gives both departure times in digits and Telegram receives the later train’s link. |
+| 6–7 | Show two plays and send the one starting at 19:30. | Each requested title appears with its numeric start time on its own line and Telegram receives the matching link. |
 
-## Add a scenario
+Each search must return the expected options through its bundled Skill command. Each delivery must occur on the requested turn. The doctor links can arrive together or in separate messages. The [fixture](../src/test/kotlin/ru/souz/agent/scenarios/ScenarioFixture.kt) defines the command arguments, results, and acceptance checks.
 
-Add an ordinary Kotlin test in the same package. Create mocked `LLMToolSetup` objects with their schemas and replies, then call:
+## Reports
 
-```kotlin
-val result = model.runScenario(
-    userPrompt = "Запиши результат проверки заявки CASE-42 в журнал.",
-    skillResources = mapOf("scenario-smoke" to "/skills/scenario-smoke/SKILL.md"),
-    mockedTools = listOf(tool),
-)
-```
+Open the matching HTML and JSONL files under `backend/build/reports/agent-evaluation/` or set `SOUZ_SCENARIO_REPORT_DIR` to another directory. Every run gets a unique ID. Reports include assertion scores, failures, transcripts, selected tools and Skills, Telegram messages, and model call and suite timing. Token totals and averages use provider-reported usage. Missing measurements stay unavailable and reported zeroes stay zero.
 
-Use `ScenarioLiveModel.fromEnvironment().use { model -> ... }` inside `runTest(timeout = 5.minutes)` for opt-in and client cleanup. Map exact Skill IDs to classpath Markdown and let normal discovery select them. A mock matching a production tool name replaces execution and preserves production metadata. Mock both `fn` and `invoke(functionCall, meta)`. Use natural requests that leave the Skill or command for the model to discover.
+The first conversational request must contain the seeded exchange. Across turns the evaluator checks the order of earlier user, assistant, and tool messages. It also compares the wire message prefix and tool definitions and records cached input on both calls. Changes to system text and cache measurements are diagnostic.
 
-Assert tool arguments, ordering and exact side-effect counts. Read-only discovery may repeat. The [example scenario](../src/test/kotlin/ru/souz/agent/scenarios/GraphAgentSkillScenariosIntegrationTest.kt) checks discovery followed by one invocation with a control value found only in the Skill.
-
-## Read results
-
-Provider errors, empty answers and incomplete final responses fail the run, including a Skill selection error followed by a successful answer. Use the JUnit verdict for scenario success. The harness prints execution status and metrics even on failure.
-
-JUnit XML and HTML reports are under `backend/build/test-results/test/` and `backend/build/reports/tests/test/`. They include stdout with model metadata and the tool sequence. Preserve reports before rerunning with another model, because Gradle overwrites them. Compare models using identical scenarios, Skill resources, tool replies and reasoning settings. A failed scenario is an evaluation result; do not relax its expectations to make a model pass.
+Each turn has a four-minute timeout and a budget of 24 model calls. After a recoverable turn failure the trial continues from the latest available history. Provider errors, execution errors, and failed checks have separate verdicts. Any unsuccessful trial fails JUnit after the reports are written.
